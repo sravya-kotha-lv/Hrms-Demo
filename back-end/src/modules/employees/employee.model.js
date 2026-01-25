@@ -1,0 +1,144 @@
+const mongoose = require("mongoose");
+
+const emergencyContactSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true
+    },
+    relation: {
+      type: String,
+      required: true
+    },
+    phone: {
+      type: String,
+      required: true
+    }
+  },
+  { _id: false }
+);
+
+const employeeSchema = new mongoose.Schema(
+  {
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "organizations",
+      required: true,
+      index: true
+    },
+
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "users",
+      required: true,
+      unique: true
+    },
+
+    // 👤 Mandatory personal info
+    firstName: {
+      type: String,
+      required: true,
+      trim: true
+    },
+
+    lastName: {
+      type: String,
+      required: true,
+      trim: true
+    },
+
+    phone: {
+      type: String,
+      required: true
+    },
+
+    // 🏢 Mandatory work info
+    employeeCode: {
+      type: String,
+      required: true
+    },
+
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "departments",
+      required: true
+    },
+
+    // ✅ CHANGED: dynamic designation
+    designationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "designations",
+      required: true
+    },
+
+    dateOfJoining: {
+      type: Date,
+      required: true
+    },
+
+    employmentType: {
+      type: String,
+      enum: ["full_time", "part_time", "contract"],
+      required: true
+    },
+
+    // 👤 Optional personal details
+    dob: Date,
+    gender: String,
+
+    address: {
+      line1: String,
+      line2: String,
+      city: String,
+      state: String,
+      country: String,
+      zip: String
+    },
+
+    emergencyContacts: {
+      type: [emergencyContactSchema],
+      default: []
+    },
+
+    managerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees"
+    },
+
+    status: {
+      type: String,
+      enum: ["active", "on_leave", "resigned"],
+      default: "active"
+    },
+
+    // 🗑 Soft delete fields
+    isDeleted: {
+      type: Boolean,
+      default: false
+    },
+
+    deletedAt: {
+      type: Date
+    },
+
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "users"
+    }
+  },
+  { timestamps: true }
+);
+
+// 🔒 Unique employee code per org
+employeeSchema.index(
+  { organizationId: 1, employeeCode: 1 },
+  { unique: true }
+);
+
+// 🔍 Automatically ignore deleted employees
+employeeSchema.pre(/^find/, function (next) {
+  this.where({ isDeleted: false });
+  next();
+});
+
+module.exports = mongoose.model("employees", employeeSchema);
