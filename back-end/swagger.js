@@ -38,7 +38,7 @@ const swaggerDefinition = {
                 type: "object",
                 required: ["email", "password", "organizationId"],
                 properties: {
-                  email: { type: "string", example: "admin@company.com" },
+                  email: { type: "string", example: "admin@luvetha.com" },
                   password: { type: "string", example: "Password@123" },
                   organizationId: {
                     type: "string",
@@ -72,7 +72,7 @@ const swaggerDefinition = {
                 type: "object",
                 required: ["email", "password"],
                 properties: {
-                  email: { type: "string", example: "admin@company.com" },
+                  email: { type: "string", example: "admin@luvetha.com" },
                   password: { type: "string", example: "Password@123" }
                 }
               }
