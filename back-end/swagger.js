@@ -20,6 +20,148 @@ const swaggerDefinition = {
         scheme: "bearer",
         bearerFormat: "JWT"
       }
+    },
+    schemas: {
+      CreateEmployee: {
+        type: "object",
+        required: [
+          "userId",
+          "firstName",
+          "lastName",
+          "phone",
+          "employeeCode",
+          "departmentId",
+          "designationId",
+          "dateOfJoining",
+          "employmentType"
+        ],
+        properties: {
+          userId: { type: "string" },
+
+          firstName: { type: "string", minLength: 2 },
+          lastName: { type: "string", minLength: 2 },
+
+          phone: {
+            type: "string",
+            example: "+91-9876543210"
+          },
+
+          employeeCode: { type: "string", example: "EMP-001" },
+
+          departmentId: { type: "string" },
+          designationId: { type: "string" },
+
+          dateOfJoining: {
+            type: "string",
+            format: "date"
+          },
+
+          employmentType: {
+            type: "string",
+            enum: ["full_time", "part_time", "contract"]
+          },
+
+          managerId: {
+            type: "string",
+            nullable: true
+          },
+
+          dob: {
+            type: "string",
+            format: "date"
+          },
+
+          gender: {
+            type: "string",
+            example: "male"
+          },
+
+          address: {
+            type: "object",
+            properties: {
+              line1: { type: "string" },
+              line2: { type: "string" },
+              city: { type: "string" },
+              state: { type: "string" },
+              country: { type: "string" },
+              zip: { type: "string" }
+            }
+          },
+
+          emergencyContacts: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["name", "relation", "phone"],
+              properties: {
+                name: { type: "string" },
+                relation: { type: "string" },
+                phone: { type: "string" }
+              }
+            }
+          }
+        }
+      },
+      UpdateEmployee: {
+        type: "object",
+        properties: {
+          firstName: { type: "string", minLength: 2 },
+          lastName: { type: "string", minLength: 2 },
+
+          phone: { type: "string" },
+
+          departmentId: { type: "string" },
+          designationId: { type: "string" },
+
+          employmentType: {
+            type: "string",
+            enum: ["full_time", "part_time", "contract"]
+          },
+
+          managerId: {
+            type: "string",
+            nullable: true
+          },
+
+          dob: {
+            type: "string",
+            format: "date"
+          },
+
+          gender: { type: "string" },
+
+          status: {
+            type: "string",
+            enum: ["active", "on_leave", "resigned"]
+          },
+
+          address: {
+            type: "object",
+            properties: {
+              line1: { type: "string" },
+              line2: { type: "string" },
+              city: { type: "string" },
+              state: { type: "string" },
+              country: { type: "string" },
+              zip: { type: "string" }
+            }
+          },
+
+          emergencyContacts: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["name", "relation", "phone"],
+              properties: {
+                name: { type: "string" },
+                relation: { type: "string" },
+                phone: { type: "string" }
+              }
+            }
+          }
+        }
+      }
+
     }
   },
   security: [{ bearerAuth: [] }],
@@ -154,160 +296,10 @@ const swaggerDefinition = {
       }
     },
 
-    "/employees": {
+    "/organizations": {
       post: {
-        tags: ["Employees"],
-        summary: "Create employee",
-        description: "Requires permission: EMP_CREATE",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                $ref: "#/components/schemas/CreateEmployee"
-              }
-            }
-          }
-        },
-        responses: {
-          201: { description: "Employee created successfully" },
-          400: { description: "Validation error" },
-          401: { description: "Unauthorized" },
-          403: { description: "Forbidden" }
-        }
-      },
-
-      get: {
-        tags: ["Employees"],
-        summary: "List employees",
-        description: "Requires permission: EMP_VIEW",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          { name: "page", in: "query", schema: { type: "integer", example: 1 } },
-          { name: "limit", in: "query", schema: { type: "integer", example: 10 } },
-          { name: "search", in: "query", schema: { type: "string" } },
-          { name: "departmentId", in: "query", schema: { type: "string" } },
-          { name: "designationId", in: "query", schema: { type: "string" } },
-          {
-            name: "status",
-            in: "query",
-            schema: {
-              type: "string",
-              enum: ["active", "on_leave", "resigned"]
-            }
-          }
-        ],
-        responses: {
-          200: { description: "Employees fetched successfully" }
-        }
-      }
-    },
-
-    "/employees/{id}": {
-      get: {
-        tags: ["Employees"],
-        summary: "Get employee by ID",
-        description: "Requires permission: EMP_VIEW",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-        responses: {
-          200: { description: "Employee fetched successfully" },
-          404: { description: "Employee not found" }
-        }
-      },
-
-      put: {
-        tags: ["Employees"],
-        summary: "Update employee",
-        description: "Requires permission: EMP_UPDATE",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                $ref: "#/components/schemas/UpdateEmployee"
-              }
-            }
-          }
-        },
-        responses: {
-          200: { description: "Employee updated successfully" }
-        }
-      },
-
-      delete: {
-        tags: ["Employees"],
-        summary: "Delete employee (soft delete)",
-        description: "Requires permission: EMP_DELETE",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-        responses: {
-          200: { description: "Employee deleted successfully" }
-        }
-      }
-    },
-
-    "/employees/me": {
-      get: {
-        tags: ["Employees"],
-        summary: "Get logged-in employee profile",
-        description: "Requires permission: EMP_SELF_VIEW",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          200: { description: "Employee profile fetched" }
-        }
-      }
-    },
-
-    "/employees/{id}/restore": {
-      patch: {
-        tags: ["Employees"],
-        summary: "Restore deleted employee",
-        description: "Requires permission: EMP_RESTORE",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-        responses: {
-          200: { description: "Employee restored successfully" }
-        }
-      }
-    },
-
-    "/departments": {
-      post: {
-        tags: ["Departments"],
-        summary: "Create department",
-        description: "Create a new department in the organization",
+        tags: ["Organizations"],
+        summary: "Create organization",
         security: [{ bearerAuth: [] }],
 
         requestBody: {
@@ -316,22 +308,23 @@ const swaggerDefinition = {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["name", "code"],
+                required: ["name", "code", "timezone", "currency"],
                 properties: {
                   name: {
                     type: "string",
-                    minLength: 2,
-                    example: "Human Resources"
+                    example: "Luvetha Tech Solutions"
                   },
                   code: {
                     type: "string",
-                    minLength: 2,
-                    example: "HR"
+                    example: "LV"
                   },
-                  managerId: {
+                  timezone: {
                     type: "string",
-                    nullable: true,
-                    example: "64f1c9e8f9b1a23c8a9d1234"
+                    example: "Asia/Kolkata"
+                  },
+                  currency: {
+                    type: "string",
+                    example: "INR"
                   }
                 }
               }
@@ -341,87 +334,46 @@ const swaggerDefinition = {
 
         responses: {
           201: {
-            description: "Department created successfully"
+            description: "Organization created successfully"
           },
-          400: {
-            description: "Validation error"
-          },
-          403: {
-            description: "Permission denied"
+          401: {
+            description: "Unauthorized"
           },
           409: {
-            description: "Department with same code already exists"
+            description: "Organization already exists"
           }
         }
       },
       get: {
-        tags: ["Departments"],
-        summary: "List departments",
-        description: "Fetch all active departments for the organization",
+        tags: ["Organizations"],
+        summary: "List organizations",
         security: [{ bearerAuth: [] }],
-
-        responses: {
-          200: {
-            description: "Departments fetched successfully",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      _id: {
-                        type: "string",
-                        example: "64f1c9e8f9b1a23c8a9d1234"
-                      },
-                      name: {
-                        type: "string",
-                        example: "Human Resources"
-                      },
-                      code: {
-                        type: "string",
-                        example: "HR"
-                      },
-                      managerId: {
-                        type: "string",
-                        nullable: true,
-                        example: "64f1c9e8f9b1a23c8a9d5678"
-                      },
-                      status: {
-                        type: "string",
-                        enum: ["active", "inactive"],
-                        example: "active"
-                      },
-                      createdAt: {
-                        type: "string",
-                        format: "date-time"
-                      },
-                      updatedAt: {
-                        type: "string",
-                        format: "date-time"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-
-          401: {
-            description: "Unauthorized"
-          },
-          403: {
-            description: "Permission denied"
-          }
-        }
+        responses: { 200: { description: "Organizations fetched" } }
       }
     },
 
-    "/departments/{id}": {
+    "/organizations/{id}": {
+      get: {
+        tags: ["Organizations"],
+        summary: "Get organization by ID",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: { description: "Organization fetched" },
+          404: { description: "Organization not found" }
+        }
+      },
+
       put: {
-        tags: ["Departments"],
-        summary: "Update department",
-        description: "Update an existing department",
+        tags: ["Organizations"],
+        summary: "Update organization",
         security: [{ bearerAuth: [] }],
 
         parameters: [
@@ -429,12 +381,11 @@ const swaggerDefinition = {
             name: "id",
             in: "path",
             required: true,
-            schema: {
-              type: "string"
-            }
+            schema: { type: "string" }
           }
         ],
 
+        // 🔥 THIS IS WHAT YOU MISSED
         requestBody: {
           required: true,
           content: {
@@ -444,23 +395,19 @@ const swaggerDefinition = {
                 properties: {
                   name: {
                     type: "string",
-                    minLength: 2,
-                    example: "Updated HR"
+                    example: "Luvetha Tech Solutions"
                   },
-                  code: {
+                  timezone: {
                     type: "string",
-                    minLength: 2,
-                    example: "HR_NEW"
+                    example: "Asia/Kolkata"
                   },
-                  managerId: {
+                  currency: {
                     type: "string",
-                    nullable: true,
-                    example: "64f1c9e8f9b1a23c8a9d1234"
+                    example: "INR"
                   },
                   status: {
                     type: "string",
-                    enum: ["active", "inactive"],
-                    example: "active"
+                    enum: ["active", "inactive"]
                   }
                 }
               }
@@ -469,51 +416,10 @@ const swaggerDefinition = {
         },
 
         responses: {
-          200: {
-            description: "Department updated successfully"
-          },
-          400: {
-            description: "Validation error"
-          },
-          403: {
-            description: "Permission denied"
-          },
-          404: {
-            description: "Department not found"
-          }
-        }
-      },
-      delete: {
-        tags: ["Departments"],
-        summary: "Delete department",
-        description: "Soft delete a department",
-        security: [{ bearerAuth: [] }],
-
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string"
-            },
-            description: "Department ID"
-          }
-        ],
-
-        responses: {
-          200: {
-            description: "Department deleted successfully"
-          },
-          401: {
-            description: "Unauthorized"
-          },
-          403: {
-            description: "Permission denied"
-          },
-          404: {
-            description: "Department not found"
-          }
+          200: { description: "Organization updated successfully" },
+          400: { description: "Validation error" },
+          401: { description: "Unauthorized" },
+          404: { description: "Organization not found" }
         }
       }
     },
@@ -651,10 +557,11 @@ const swaggerDefinition = {
       }
     },
 
-    "/organizations": {
+    "/departments": {
       post: {
-        tags: ["Organizations"],
-        summary: "Create organization",
+        tags: ["Departments"],
+        summary: "Create department",
+        description: "Create a new department in the organization",
         security: [{ bearerAuth: [] }],
 
         requestBody: {
@@ -663,23 +570,232 @@ const swaggerDefinition = {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["name", "code", "timezone", "currency"],
+                required: ["name", "code"],
                 properties: {
                   name: {
                     type: "string",
-                    example: "Luvetha Tech Solutions"
+                    minLength: 2,
+                    example: "Human Resources"
                   },
                   code: {
                     type: "string",
-                    example: "LV"
+                    minLength: 2,
+                    example: "HR"
                   },
-                  timezone: {
+                  // managerId: {
+                  //   type: "string",
+                  //   nullable: true,
+                  //   example: "64f1c9e8f9b1a23c8a9d1234"
+                  // }
+                }
+              }
+            }
+          }
+        },
+
+        responses: {
+          201: {
+            description: "Department created successfully"
+          },
+          400: {
+            description: "Validation error"
+          },
+          403: {
+            description: "Permission denied"
+          },
+          409: {
+            description: "Department with same code already exists"
+          }
+        }
+      },
+      get: {
+        tags: ["Departments"],
+        summary: "List departments",
+        description: "Fetch all active departments for the organization",
+        security: [{ bearerAuth: [] }],
+
+        responses: {
+          200: {
+            description: "Departments fetched successfully",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      _id: {
+                        type: "string",
+                        example: "64f1c9e8f9b1a23c8a9d1234"
+                      },
+                      name: {
+                        type: "string",
+                        example: "Human Resources"
+                      },
+                      code: {
+                        type: "string",
+                        example: "HR"
+                      },
+                      managerId: {
+                        type: "string",
+                        nullable: true,
+                        example: "64f1c9e8f9b1a23c8a9d5678"
+                      },
+                      status: {
+                        type: "string",
+                        enum: ["active", "inactive"],
+                        example: "active"
+                      },
+                      createdAt: {
+                        type: "string",
+                        format: "date-time"
+                      },
+                      updatedAt: {
+                        type: "string",
+                        format: "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+
+          401: {
+            description: "Unauthorized"
+          },
+          403: {
+            description: "Permission denied"
+          }
+        }
+      }
+    },
+
+    "/departments/{id}": {
+      put: {
+        tags: ["Departments"],
+        summary: "Update department",
+        description: "Update an existing department",
+        security: [{ bearerAuth: [] }],
+
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  name: {
                     type: "string",
-                    example: "Asia/Kolkata"
+                    minLength: 2,
+                    example: "Updated HR"
                   },
-                  currency: {
+                  code: {
                     type: "string",
-                    example: "INR"
+                    minLength: 2,
+                    example: "HR_NEW"
+                  },
+                  // managerId: {
+                  //   type: "string",
+                  //   nullable: true,
+                  //   example: "64f1c9e8f9b1a23c8a9d1234"
+                  // },
+                  status: {
+                    type: "string",
+                    enum: ["active", "inactive"],
+                    example: "active"
+                  }
+                }
+              }
+            }
+          }
+        },
+
+        responses: {
+          200: {
+            description: "Department updated successfully"
+          },
+          400: {
+            description: "Validation error"
+          },
+          403: {
+            description: "Permission denied"
+          },
+          404: {
+            description: "Department not found"
+          }
+        }
+      },
+      delete: {
+        tags: ["Departments"],
+        summary: "Delete department",
+        description: "Soft delete a department",
+        security: [{ bearerAuth: [] }],
+
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            },
+            description: "Department ID"
+          }
+        ],
+
+        responses: {
+          200: {
+            description: "Department deleted successfully"
+          },
+          401: {
+            description: "Unauthorized"
+          },
+          403: {
+            description: "Permission denied"
+          },
+          404: {
+            description: "Department not found"
+          }
+        }
+      }
+    },
+
+    "/designations": {
+      post: {
+        tags: ["Designations"],
+        summary: "Create designation",
+        description: "Create a new designation for the organization",
+        security: [{ bearerAuth: [] }],
+
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name"],
+                properties: {
+                  name: {
+                    type: "string",
+                    minLength: 2,
+                    example: "Senior Software Engineer"
+                  },
+                  level: {
+                    type: "number",
+                    example: 3,
+                    description: "Optional hierarchy level"
                   }
                 }
               }
@@ -689,46 +805,63 @@ const swaggerDefinition = {
 
         responses: {
           201: {
-            description: "Organization created successfully"
+            description: "Designation created successfully"
           },
-          401: {
-            description: "Unauthorized"
+          400: {
+            description: "Validation error"
+          },
+          403: {
+            description: "Permission denied"
           },
           409: {
-            description: "Organization already exists"
+            description: "Designation already exists"
           }
         }
       },
       get: {
-        tags: ["Organizations"],
-        summary: "List organizations",
+        tags: ["Designations"],
+        summary: "List designations",
+        description: "Fetch all active designations",
         security: [{ bearerAuth: [] }],
-        responses: { 200: { description: "Organizations fetched" } }
+
+        responses: {
+          200: {
+            description: "Designations fetched successfully",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      _id: { type: "string" },
+                      name: { type: "string" },
+                      level: { type: "number" },
+                      status: {
+                        type: "string",
+                        enum: ["active", "inactive"]
+                      },
+                      createdAt: {
+                        type: "string",
+                        format: "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { description: "Unauthorized" },
+          403: { description: "Permission denied" }
+        }
       }
     },
 
-    "/organizations/{id}": {
-      get: {
-        tags: ["Organizations"],
-        summary: "Get organization by ID",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-        responses: {
-          200: { description: "Organization fetched" },
-          404: { description: "Organization not found" }
-        }
-      },
-
+    "/designations/{id}": {
       put: {
-        tags: ["Organizations"],
-        summary: "Update organization",
+        tags: ["Designations"],
+        summary: "Update designation",
+        description: "Update an existing designation",
         security: [{ bearerAuth: [] }],
 
         parameters: [
@@ -736,11 +869,13 @@ const swaggerDefinition = {
             name: "id",
             in: "path",
             required: true,
-            schema: { type: "string" }
+            schema: {
+              type: "string"
+            },
+            description: "Designation ID"
           }
         ],
 
-        // 🔥 THIS IS WHAT YOU MISSED
         requestBody: {
           required: true,
           content: {
@@ -750,19 +885,17 @@ const swaggerDefinition = {
                 properties: {
                   name: {
                     type: "string",
-                    example: "Luvetha Tech Solutions"
+                    minLength: 2,
+                    example: "Lead Software Engineer"
                   },
-                  timezone: {
-                    type: "string",
-                    example: "Asia/Kolkata"
-                  },
-                  currency: {
-                    type: "string",
-                    example: "INR"
+                  level: {
+                    type: "number",
+                    example: 4
                   },
                   status: {
                     type: "string",
-                    enum: ["active", "inactive"]
+                    enum: ["active", "inactive"],
+                    example: "active"
                   }
                 }
               }
@@ -771,10 +904,222 @@ const swaggerDefinition = {
         },
 
         responses: {
-          200: { description: "Organization updated successfully" },
+          200: {
+            description: "Designation updated successfully"
+          },
+          400: {
+            description: "Validation error"
+          },
+          403: {
+            description: "Permission denied"
+          },
+          404: {
+            description: "Designation not found"
+          }
+        }
+      },
+      delete: {
+        tags: ["Designations"],
+        summary: "Delete designation",
+        description: "Soft delete a designation",
+        security: [{ bearerAuth: [] }],
+
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+
+        responses: {
+          200: {
+            description: "Designation deleted successfully"
+          },
+          401: { description: "Unauthorized" },
+          403: { description: "Permission denied" },
+          404: { description: "Designation not found" }
+        }
+      }
+    },
+
+    "/employees": {
+      post: {
+        tags: ["Employees"],
+        summary: "Create employee",
+        description: "Requires permission: EMP_CREATE",
+        security: [{ bearerAuth: [] }],
+
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/CreateEmployee"
+              }
+            }
+          }
+        },
+
+        responses: {
+          201: { description: "Employee created successfully" },
           400: { description: "Validation error" },
           401: { description: "Unauthorized" },
-          404: { description: "Organization not found" }
+          403: { description: "Permission denied" },
+          409: { description: "Duplicate employee code" }
+        }
+      },
+
+      get: {
+        tags: ["Employees"],
+        summary: "List employees",
+        description: "Requires permission: EMP_VIEW",
+        security: [{ bearerAuth: [] }],
+
+        parameters: [
+          { name: "page", in: "query", schema: { type: "integer", example: 1 } },
+          { name: "limit", in: "query", schema: { type: "integer", example: 10 } },
+          { name: "search", in: "query", schema: { type: "string" } },
+          { name: "departmentId", in: "query", schema: { type: "string" } },
+          { name: "designationId", in: "query", schema: { type: "string" } },
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["active", "on_leave", "resigned"]
+            }
+          }
+        ],
+
+        responses: {
+          200: { description: "Employees fetched successfully" },
+          401: { description: "Unauthorized" },
+          403: { description: "Permission denied" }
+        }
+      },
+    },
+
+    "/employees/{id}": {
+      get: {
+        tags: ["Employees"],
+        summary: "Get employee by ID",
+        description: "Requires permission: EMP_VIEW",
+        security: [{ bearerAuth: [] }],
+
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+
+        responses: {
+          200: { description: "Employee fetched successfully" },
+          401: { description: "Unauthorized" },
+          403: { description: "Permission denied" },
+          404: { description: "Employee not found" }
+        }
+      },
+
+      put: {
+        tags: ["Employees"],
+        summary: "Update employee",
+        description: "Requires permission: EMP_UPDATE",
+        security: [{ bearerAuth: [] }],
+
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/UpdateEmployee"
+              }
+            }
+          }
+        },
+
+        responses: {
+          200: { description: "Employee updated successfully" },
+          400: { description: "Validation error" },
+          401: { description: "Unauthorized" },
+          403: { description: "Permission denied" },
+          404: { description: "Employee not found" }
+        }
+      },
+
+      delete: {
+        tags: ["Employees"],
+        summary: "Delete employee (soft delete)",
+        description: "Requires permission: EMP_DELETE",
+        security: [{ bearerAuth: [] }],
+
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+
+        responses: {
+          200: { description: "Employee deleted successfully" },
+          401: { description: "Unauthorized" },
+          403: { description: "Permission denied" },
+          404: { description: "Employee not found" }
+        }
+      }
+    },
+
+    "/api/employees/me": {
+      get: {
+        tags: ["Employees"],
+        summary: "Get logged-in employee profile",
+        description: "Requires permission: EMP_SELF_VIEW",
+        security: [{ bearerAuth: [] }],
+
+        responses: {
+          200: { description: "Employee profile fetched successfully" },
+          401: { description: "Unauthorized" },
+          403: { description: "Permission denied" }
+        }
+      }
+    },
+
+    "/api/employees/{id}/restore": {
+      patch: {
+        tags: ["Employees"],
+        summary: "Restore deleted employee",
+        description: "Requires permission: EMP_RESTORE",
+        security: [{ bearerAuth: [] }],
+
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+
+        responses: {
+          200: { description: "Employee restored successfully" },
+          401: { description: "Unauthorized" },
+          403: { description: "Permission denied" },
+          404: { description: "Employee not found" }
         }
       }
     }

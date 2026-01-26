@@ -2,6 +2,7 @@ const Designation = require("./designation.model");
 const { audit } = require("../auditLogs/auditLogs.service");
 
 exports.create = async (req) => {
+  try {
   const designation = await Designation.create({
     ...req.body,
     organizationId: req.user.organizationId
@@ -16,6 +17,9 @@ exports.create = async (req) => {
   });
 
   return designation;
+  } catch (error) {
+    throw error;
+  }
 };
 
 exports.update = async (req) => {

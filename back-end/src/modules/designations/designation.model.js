@@ -42,9 +42,8 @@ designationSchema.index(
   { unique: true }
 );
 
-designationSchema.pre(/^find/, function (next) {
+designationSchema.pre(/^find/, async function () {
   this.where({ isDeleted: false });
-  next();
 });
 
 module.exports = mongoose.model("designations", designationSchema);

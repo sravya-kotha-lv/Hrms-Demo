@@ -16,4 +16,6 @@ router.put("/:id", auth, authorize("DEPT_UPDATE"), validate(updateDepartmentSche
 router.delete("/:id", auth, authorize("DEPT_DELETE"), asyncHandler(controller.remove));
 router.get("/", auth, authorize("DEPT_VIEW"), asyncHandler(controller.list));
 
+// router.patch("/:id/restore", auth, authorize("DEPT_RESTORE"), asyncHandler(controller.restore));
+
 module.exports = router;
