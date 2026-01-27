@@ -11,7 +11,7 @@ import Attendance from "./pages/Attendance";
 import Leave from "./pages/Leave";
 import Payroll from "./pages/Payroll";
 import PerformanceDashboard from "./pages/PerformanceDashboard";
-import ProfilePage from "./pages/✅ ProfilePage";
+import ProfilePage from "./pages/ProfilePage";
 import Organization from "./pages/Organization";
 import AddOrganization from "./pages/AddOrganization";
 import NotFound from "./pages/NotFound";
