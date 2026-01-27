@@ -15,6 +15,7 @@ import ProfilePage from "./pages/✅ ProfilePage";
 import Organization from "./pages/Organization";
 import AddOrganization from "./pages/AddOrganization";
 import NotFound from "./pages/NotFound";
+import Login from "./pages/Login";
 
 const queryClient = new QueryClient();
 const PrivateRoute = ({ children }: any) => {
@@ -29,6 +30,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/employees" element={<Employees />} />
           <Route path="/employees/add" element={<AddEmployee />} />
