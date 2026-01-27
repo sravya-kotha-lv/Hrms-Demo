@@ -14,6 +14,8 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   const data = await userService.login(req);
+
+  res.setHeader("Access-Control-Expose-Headers", "Authorization");
   res.setHeader("Authorization", `Bearer ${data.token}`);
   delete data.token;
 
