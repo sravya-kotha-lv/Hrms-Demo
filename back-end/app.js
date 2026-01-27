@@ -66,8 +66,7 @@ app.use("/api/organizations", require("./src/modules/organizations/organization.
 app.use("/api/roles", require("./src/modules/roles/role.routes"));
 // app.use("/api/employees", require("./src/modules/employees/employee.routes"));
 app.use("/api/departments", require("./src/modules/departments/department.routes"));
-// app.use("/api/designations", require("./modules/designations/designation.routes"));
-// add more modules here...
+app.use("/api/designations", require("./src/modules/designations/designation.routes"));
 
 /* -------------------------------------------------------------------------- */
 /*                         GLOBAL ERROR HANDLER                                */
