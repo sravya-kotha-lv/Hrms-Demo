@@ -12,6 +12,8 @@ import Leave from "./pages/Leave";
 import Payroll from "./pages/Payroll";
 import PerformanceDashboard from "./pages/PerformanceDashboard";
 import ProfilePage from "./pages/✅ ProfilePage";
+import Organization from "./pages/Organization";
+import AddOrganization from "./pages/AddOrganization";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +38,9 @@ const App = () => (
           <Route path="/payroll" element={<Payroll />} />
           <Route path="/performance" element={<PerformanceDashboard />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/organization" element={<Organization />} />
+          <Route path="/organization/add" element={<AddOrganization />} />
+          <Route path="/organization/edit/:id" element={<AddOrganization />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

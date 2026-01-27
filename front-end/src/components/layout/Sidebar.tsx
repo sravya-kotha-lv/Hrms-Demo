@@ -74,10 +74,10 @@ const menuItems = [
   { icon: <Building2 size={20} />, label: "Organization", to: "/organization" },
 ];
 
-const bottomItems = [
-  { icon: <HelpCircle size={20} />, label: "Support", to: "/support" },
-  { icon: <Settings size={20} />, label: "Settings", to: "/settings" },
-];
+// const bottomItems = [
+//   { icon: <HelpCircle size={20} />, label: "Support", to: "/support" },
+//   { icon: <Settings size={20} />, label: "Settings", to: "/settings" },
+// ];
 
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
@@ -136,7 +136,7 @@ export const Sidebar = () => {
 
       {/* Bottom Section */}
       <div className="border-t border-white/10 py-4 px-3">
-        <div className="space-y-1">
+        {/* <div className="space-y-1">
           {bottomItems.map((item) => (
             <NavItem key={item.to} {...item} collapsed={collapsed} />
           ))}
@@ -160,7 +160,7 @@ export const Sidebar = () => {
       </AnimatePresence>
     </motion.button>
 
-        </div>
+        </div> */}
 
         {/* User Profile */}
         <div className="mt-4 pt-4 border-t border-white/10">
