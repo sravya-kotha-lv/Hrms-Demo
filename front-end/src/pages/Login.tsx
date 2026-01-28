@@ -32,11 +32,11 @@ const Login = () => {
           const redirectPath = localStorage.getItem("postLoginRedirect");
           const activeRole = response.data.activeRole;
 
-          if (redirectPath) {
-            localStorage.removeItem("postLoginRedirect");
-            navigate(redirectPath);
-            return;
-          }
+          // if (redirectPath) {
+          //   localStorage.removeItem("postLoginRedirect");
+          //   navigate(redirectPath);
+          //   return;
+          // }
 
           if (["super_admin"].includes(activeRole?.slug)) {
             navigate('/')

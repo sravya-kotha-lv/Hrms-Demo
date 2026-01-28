@@ -43,3 +43,13 @@ exports.list = async (req, res) => {
     })
   );
 };
+
+exports.deleteById = async (req, res) => {
+  await service.deleteById(req.params.id);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Organization deleted successfully"
+    })
+  );
+};

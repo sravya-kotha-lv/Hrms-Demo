@@ -1,167 +1,328 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { Search, Plus, MoreHorizontal, Edit, Trash2 } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {getApiWithToken, postApiWithToken} from "@/lib/api";
-import axios from "axios";
+import { DataTable, Column } from "@/components/ui/DataTable";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  getApiWithToken,
+  postApiWithToken,
+  putApiWithToken,
+  deleteApiWithToken,
+} from "@/services/apiWrapper";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useNavigate } from "react-router-dom";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Trash2, Plus, FilePenLine } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-
-const Organization = () => {
-  const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
-  const queryClient = useQueryClient();
-
-const { data, isLoading, error } = useQuery({
-  queryKey: ["organizations"],
-  queryFn: async () => {
-    const res = await getApiWithToken(
-      "/organizations"
-    );
-    console.log("🚀 ~ file: Organization.tsx:36 ~ queryFn: ~ res:", res)
-    return res.data;
-  },
-});
- const deleteMutation = useMutation({
-  mutationFn: async (id: number) => {
-    await axios.delete(
-      `http://localhost:8000/api/organizations/${id}`
-    );
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["organizations"] });
-  },
-});
- if (isLoading) {
-  return <MainLayout title="Organization">Loading...</MainLayout>;
+interface Organization {
+  _id?: string;
+  name: string;
+  code: string;
+  timezone: string;
+  currency: string;
+  status: "active" | "inactive";
 }
 
-if (error) {
-  return <MainLayout title="Organization">Error loading data</MainLayout>;
-}
+const emptyOrg: Organization = {
+  name: "",
+  code: "",
+  timezone: "Asia/Kolkata",
+  currency: "INR",
+  status: "active",
+};
+
+const OrganizationPage = () => {
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [open, setOpen] = useState(false);
+  const [isEdit, setIsEdit] = useState(false);
+  const [form, setForm] = useState<Organization>(emptyOrg);
+
+  const fetchOrganizations = async () => {
+    const response = await getApiWithToken("/organizations");
+    setOrganizations(response?.data || []);
+  };
+
+  useEffect(() => {
+    fetchOrganizations();
+  }, []);
+
+  // 🗑 Delete
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this organization?")) return;
+
+    const res = await deleteApiWithToken(`/organizations/${id}`);
+    if (res?.success) {
+      toast.success("Organization deleted");
+      fetchOrganizations();
+    } else {
+      toast.error(res?.message || "Delete failed");
+    }
+  };
+
+  // 💾 Submit (ADD or EDIT)
+  const handleSubmit = async () => {
+    // common fields
+    const basePayload = {
+      name: form.name,
+      timezone: form.timezone,
+      currency: form.currency,
+      status: form.status,
+    };
+
+    let res;
+
+    if (isEdit && form._id) {
+      // ❌ DO NOT SEND code while updating
+      res = await putApiWithToken(
+        `/organizations/${form._id}`,
+        basePayload
+      );
+    } else {
+      // ✅ SEND code only while creating
+      res = await postApiWithToken("/organizations", {
+        ...basePayload,
+        code: form.code,
+      });
+    }
+
+    if (res?.success) {
+      toast.success(
+        isEdit ? "Organization updated" : "Organization created"
+      );
+      setOpen(false);
+      setForm(emptyOrg);
+      fetchOrganizations();
+    } else {
+      toast.error(res?.message || "Operation failed");
+    }
+  };
+
+  const columns: Column<Organization>[] = [
+    { header: "Name", accessor: "name", sortable: true },
+    { header: "Code", accessor: "code", sortable: true },
+    { header: "Timezone", accessor: "timezone" },
+    { header: "Currency", accessor: "currency" },
+    {
+      header: "Status",
+      accessor: "status",
+      render: (org) => (
+        <Badge className="capitalize">
+          {org.status || "active"}
+        </Badge>
+      ),
+    },
+    {
+      header: "Actions",
+      accessor: "_id",
+      render: (org) => {
+        const isInactive = org.status === "inactive";
+
+        return (
+          <div className="flex items-center gap-4">
+            {/* ✏️ Edit */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <FilePenLine
+                    className={`
+          w-4 h-4 transition-all duration-200
+          ${isInactive
+                        ? "text-gray-400 cursor-not-allowed"
+                        : `
+                cursor-pointer
+                text-blue-600
+                hover:text-blue-700
+                hover:scale-110
+                hover:-translate-y-0.5
+              `
+                      }
+        `}
+                    onClick={() => {
+                      if (isInactive) return;
+                      setIsEdit(true);
+                      setForm(org);
+                      setOpen(true);
+                    }}
+                  />
+                </TooltipTrigger>
+
+                <TooltipContent>
+                  {isInactive
+                    ? "Inactive organizations cannot be edited"
+                    : "Edit organization"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
 
+            {/* 🗑 Delete */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className={`
+          group
+          ${isInactive
+                        ? "text-gray-400 cursor-not-allowed"
+                        : "text-red-500 hover:text-red-600 cursor-pointer"
+                      }
+        `}
+                    onClick={() => {
+                      if (isInactive) return;
+                      handleDelete(org._id!);
+                    }}
+                  >
+                    <Trash2
+                      className={`
+            w-4 h-4 transition-transform duration-200
+            ${isInactive
+                          ? ""
+                          : "group-hover:-rotate-12 group-hover:scale-110"
+                        }
+          `}
+                    />
+                  </div>
+                </TooltipTrigger>
+
+                <TooltipContent>
+                  {isInactive
+                    ? "Inactive organizations cannot be deleted"
+                    : "Delete organization"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        );
+      },
+    }
+  ];
 
   return (
     <MainLayout
       title="Organization"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Organization" }]}
     >
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <motion.div className="stat-card" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <p className="text-sm text-muted-foreground">Total Organizations</p>
-          <p className="text-3xl font-bold text-primary">12</p>
-        </motion.div>
-        <motion.div className="stat-card" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <p className="text-sm text-muted-foreground">Active</p>
-          <p className="text-3xl font-bold text-success">10</p>
-        </motion.div>
-        <motion.div className="stat-card" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <p className="text-sm text-muted-foreground">Inactive</p>
-          <p className="text-3xl font-bold text-destructive">2</p>
-        </motion.div>
-      </div>
-
-      {/* Action Bar */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="relative w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search organization..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
+      {/* ➕ Add Organization */}
+      <div className="flex justify-end mb-4">
         <Button
+          onClick={() => {
+            setIsEdit(false);
+            setForm(emptyOrg);
+            setOpen(true);
+          }}
           className="gap-2"
-          onClick={() => navigate("/organization/add")}
         >
           <Plus className="w-4 h-4" />
           Add Organization
         </Button>
       </div>
 
-      {/* Table */}
-      <motion.div
-        className="bg-card rounded-xl card-shadow overflow-hidden"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
-        <Table>
-          <TableHeader>
-            <TableRow className="table-header">
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data?.map((org: any) => (
+      <DataTable
+        columns={columns}
+        data={organizations}
+        rowKey="_id"
+        searchKey="name"
+        selectable
+      />
 
-              <TableRow key={org.id} className="table-row-hover">
-                <TableCell className="font-medium">{org.name}</TableCell>
-                <TableCell>{org.email}</TableCell>
-                <TableCell>{org.phone}</TableCell>
-                <TableCell>{org.location}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={org.status === "Active" ? "default" : "secondary"}
-                  >
-                    {org.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger>
-                      <MoreHorizontal className="w-4 h-4" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={() => navigate(`/organization/edit/${org.id}`)}
-                        className="gap-2"
-                      >
-                        <Edit className="w-4 h-4" /> Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => deleteMutation.mutate(org.id)}
-                        className="gap-2 text-destructive"
-                        >
-                        <Trash2 className="w-4 h-4" /> Delete
-                        </DropdownMenuItem>
+      {/* 📝 Add/Edit Modal */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {isEdit ? "Edit Organization" : "Add Organization"}
+            </DialogTitle>
+          </DialogHeader>
 
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </motion.div>
+          <div className="space-y-4">
+            <Input
+              placeholder="Organization Name"
+              value={form.name}
+              onChange={(e) =>
+                setForm({ ...form, name: e.target.value })
+              }
+            />
+            <Input
+              placeholder="Code"
+              value={form.code}
+              disabled={isEdit} // 🔒 locked in edit mode
+              className={isEdit ? "cursor-not-allowed opacity-70" : ""}
+              onChange={(e) =>
+                setForm({ ...form, code: e.target.value })
+              }
+            />
+            <Select
+              value={form.timezone}
+              onValueChange={(value: string) =>
+                setForm({ ...form, timezone: value })
+              }>
+              <SelectTrigger>
+                <SelectValue placeholder="Select timezone" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Asia/Kolkata">
+                  Asia/Kolkata (India)
+                </SelectItem>
+                <SelectItem value="America/New_York">
+                  America/New_York (USA)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={form.currency}
+              onValueChange={(value: "INR" | "USD") =>
+                setForm({ ...form, currency: value })
+              }>
+              <SelectTrigger>
+                <SelectValue placeholder="Select currency" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="INR">INR – Indian Rupee</SelectItem>
+                <SelectItem value="USD">USD – US Dollar</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={form.status}
+              onValueChange={(value: "active" | "inactive") =>
+                setForm({ ...form, status: value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={handleSubmit} className="w-full">
+              {isEdit ? "Update Organization" : "Create Organization"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 };
 
-export default Organization;
+export default OrganizationPage;

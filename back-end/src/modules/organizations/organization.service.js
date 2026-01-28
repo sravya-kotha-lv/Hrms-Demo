@@ -50,3 +50,10 @@ exports.getById = async (id) => {
 exports.list = async () => {
   return Organization.find().sort({ createdAt: -1 });
 };
+
+exports.deleteById = async (id) => {
+  const org = await Organization.findById(id);
+  if (!org) throw { code: 404, message: "Organization not found" };
+
+  await Organization.deleteOne({ _id: id });
+};

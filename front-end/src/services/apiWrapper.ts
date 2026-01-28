@@ -117,6 +117,35 @@ export const getApiWithOutToken = async (apiUrl: string) => {
   }
 };
 
+// PUT with token
+export const putApiWithToken = async (
+  apiUrl: string,
+  payload: any,
+  _headers: any = null
+) => {
+  try {
+    const headers = _headers
+      ? { "Content-Type": undefined }
+      : { "Content-Type": "application/json" };
+
+    const response = await api.put(apiUrl, payload, { headers });
+    return response.data;
+  } catch (error: any) {
+    return error.response?.data || error;
+  }
+};
+
+// DELETE with token
+export const deleteApiWithToken = async (apiUrl: string) => {
+  try {
+    const response = await api.delete(apiUrl);
+    return response.data;
+  } catch (error: any) {
+    return error.response?.data || error;
+  }
+};
+
+
 /* ================================
    CONFIG EXPORTS (UNCHANGED)
 ================================ */

@@ -40,4 +40,11 @@ router.get(
   asyncHandler(controller.list)
 );
 
+router.delete(
+  "/:id",
+  auth,
+  authorize("ORG_DELETE"),
+  asyncHandler(controller.deleteById)
+);
+
 module.exports = router;
