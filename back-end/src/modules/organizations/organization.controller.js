@@ -87,7 +87,9 @@ exports.getById = async (req, res) => {
  */
 exports.list = async (req, res) => {
   try {
-    const orgs = await organizationService.getOrganizations();
+    const orgs = await organizationService.getOrganizations({
+      user: req.user
+    });
 
     return res.status(200).json(
       buildSuccessResponse({

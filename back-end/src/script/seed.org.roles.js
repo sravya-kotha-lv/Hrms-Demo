@@ -29,9 +29,10 @@ const Permission = require("../modules/permissions/permission.model");
     for (const org of organizations) {
       console.log(`\n🔹 Seeding roles & permissions for org: ${org.name}`);
 
-      /**
-       * 1️⃣ Ensure wildcard ALL_ACCESS permission exists
-       */
+      /* ------------------------------------------------------------------ */
+      /* 1️⃣ Ensure wildcard ALL_ACCESS permission exists                     */
+      /* ------------------------------------------------------------------ */
+
       let allAccessPermission = await Permission.findOne({
         code: "*",
         organizationId: org._id
@@ -49,15 +50,28 @@ const Permission = require("../modules/permissions/permission.model");
         console.log("   ⚠️ Permission already exists: * (ALL_ACCESS)");
       }
 
-      /**
-       * 2️⃣ Ensure standard org permissions exist (for HR, etc.)
-       */
+      /* ------------------------------------------------------------------ */
+      /* 2️⃣ Ensure ALL standard permissions exist (ADD ONLY)                */
+      /* ------------------------------------------------------------------ */
+
       const permissionCodes = [
+        // Existing org/user permissions (DO NOT REMOVE)
         "ORG_MANAGE",
         "USER_CREATE",
         "USER_VIEW",
         "USER_EDIT",
-        "USER_DELETE"
+        "USER_DELETE",
+
+        // Employee management
+        "EMP_CREATE",
+        "EMP_UPDATE",
+        "EMP_DELETE",
+        "EMP_VIEW",
+        "EMP_RESTORE",
+
+        // Employee self-service
+        "EMP_SELF_VIEW",
+        "EMP_SELF_EDIT"
       ];
 
       const orgPermissions = [];
@@ -72,18 +86,21 @@ const Permission = require("../modules/permissions/permission.model");
           permission = await Permission.create({
             name: code,
             code,
-            module: "ORG",
+            module: code.startsWith("EMP_") ? "EMPLOYEE" : "ORG",
             organizationId: org._id
           });
           console.log(`   ✅ Permission created: ${code}`);
+        } else {
+          console.log(`   ⚠️ Permission exists: ${code}`);
         }
 
         orgPermissions.push(permission);
       }
 
-      /**
-       * 3️⃣ OrgAdmin → FULL ACCESS via wildcard
-       */
+      /* ------------------------------------------------------------------ */
+      /* 3️⃣ OrgAdmin → FULL ACCESS                                          */
+      /* ------------------------------------------------------------------ */
+
       await createRoleIfNotExists({
         name: "OrgAdmin",
         slug: "org-admin",
@@ -91,9 +108,10 @@ const Permission = require("../modules/permissions/permission.model");
         organizationId: org._id
       });
 
-      /**
-       * 4️⃣ HR → Limited permissions (no ORG_MANAGE)
-       */
+      /* ------------------------------------------------------------------ */
+      /* 4️⃣ HR → Employee + User management (NO ORG_MANAGE)                 */
+      /* ------------------------------------------------------------------ */
+
       await createRoleIfNotExists({
         name: "HR",
         slug: "hr",
@@ -103,13 +121,18 @@ const Permission = require("../modules/permissions/permission.model");
         organizationId: org._id
       });
 
-      /**
-       * 5️⃣ Employee → No permissions
-       */
+      /* ------------------------------------------------------------------ */
+      /* 5️⃣ Employee → SELF SERVICE ONLY                                    */
+      /* ------------------------------------------------------------------ */
+
       await createRoleIfNotExists({
         name: "Employee",
         slug: "employee",
-        permissionIds: [],
+        permissionIds: orgPermissions
+          .filter(p =>
+            ["EMP_SELF_VIEW", "EMP_SELF_EDIT"].includes(p.code)
+          )
+          .map(p => p._id),
         organizationId: org._id
       });
     }
@@ -118,14 +141,14 @@ const Permission = require("../modules/permissions/permission.model");
     process.exit(0);
 
   } catch (err) {
-    console.error("❌ Seeding failed:", err.message);
+    console.error("❌ Seeding failed:", err);
     process.exit(1);
   }
 })();
 
-/**
- * Helper: create role if missing
- */
+/* -------------------------------------------------------------------------- */
+/* Helper: create role if missing                                              */
+/* -------------------------------------------------------------------------- */
 async function createRoleIfNotExists({
   name,
   slug,

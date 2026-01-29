@@ -33,7 +33,7 @@ exports.audit = async ({
 }) => {
   return AuditLog.create({
     organizationId: req.user.organizationId,
-    userId: req.user._id,
+    userId: req.user._id || req.user.userId,
     module,
     action,
     entityId,

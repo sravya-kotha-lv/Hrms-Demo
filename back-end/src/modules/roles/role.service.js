@@ -18,7 +18,7 @@ exports.getRolesByIds = async (roleIds = []) => {
  */
 exports.create = async ({ organizationId, name, slug, permissionIds = [], isSystemRole = false }) => {
 
-  await organizationService.getById(organizationId);
+  await organizationService.getOrganizationById(organizationId);
 
   const existing = await Role.findOne({ organizationId, slug }).lean();
   if (existing) {

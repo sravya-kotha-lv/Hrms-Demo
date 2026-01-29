@@ -3,45 +3,43 @@ const { audit } = require("../auditLogs/auditLogs.service");
 
 exports.create = async (req) => {
   try {
-  let { organizationId } = req.body;
-  let { managerId } = req.user;
-  if (!organizationId) {
-    organizationId = req.user.organizationId;
+    let { organizationId, managerId } = req.body;
+    if (!organizationId) {
+      organizationId = req.user.organizationId;
+    }
+    if (!managerId) {
+      managerId = req.user._id;
+    }
+
+    const exists = await Department.findOne({
+      organizationId,
+      code: req.body.code
+    });
+
+    if (exists) {
+      throw { code: 400, message: "Department code already exists" };
+    }
+
+    const department = await Department.create({
+      ...req.body,
+      organizationId,
+      managerId
+    });
+
+    await audit({
+      req,
+      module: "departments",
+      action: "CREATE",
+      entityId: department._id,
+      before: null,
+      after: department.toObject()
+    });
+    
+    return department;
+  } catch (error) {
+    console.log(error);
+    throw error;
   }
-  if (!managerId) {
-    managerId = req.user._id;
-  }
-
-  const exists = await Department.findOne({
-    organizationId,
-    code: req.body.code
-  });
-
-  if (exists) {
-    throw { code: 400, message: "Department code already exists" };
-  }
-
-  const department = await Department.create({
-    ...req.body,
-    managerId: req?.user?._id || null,
-    organizationId,
-    managerId
-  });
-
-  await audit({
-    req,
-    module: "departments",
-    action: "CREATE",
-    entityId: department._id,
-    before: null,
-    after: department.toObject()
-  });
-
-  return department;
-} catch (error) {
-  console.log(error);
-  throw error;
-}
 };
 
 exports.update = async (req) => {
@@ -87,14 +85,14 @@ exports.remove = async (req) => {
   department.deletedBy = req.user._id;
   await department.save();
 
-  await audit({
-    req,
-    module: "departments",
-    action: "DELETE",
-    entityId: department._id,
-    before,
-    after: department.toObject()
-  });
+  // await audit({
+  //   req,
+  //   module: "departments",
+  //   action: "DELETE",
+  //   entityId: department._id,
+  //   before,
+  //   after: department.toObject()
+  // });
 };
 
 exports.list = async (req) => {

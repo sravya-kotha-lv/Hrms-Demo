@@ -9,13 +9,14 @@ const objectId = Joi.string().custom((v, h) => {
 exports.createDepartmentSchema = Joi.object({
   name: Joi.string().min(2).required(),
   code: Joi.string().min(2).required(),
-  managerId: objectId.optional().allow(null),
-  organizationId: objectId.required(),
+  managerId: Joi.string().optional().allow(null, ""),
+  status: Joi.string().valid("active", "inactive").default("active"),
+  // organizationId: objectId.required(),
 });
 
 exports.updateDepartmentSchema = Joi.object({
   name: Joi.string().min(2).optional(),
   code: Joi.string().min(2).optional(),
-  managerId: objectId.optional().allow(null),
-  status: Joi.string().valid("active", "inactive").optional()
+  managerId: Joi.string().optional(),
+  status: Joi.string().valid("active", "inactive").required()
 });

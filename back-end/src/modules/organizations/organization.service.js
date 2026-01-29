@@ -41,12 +41,37 @@ exports.createOrganization = async ({
 };
 
 /**
- * GET ALL ORGANIZATIONS (excluding SYSTEM)
+ * Get organizations visible to logged-in user
  */
-exports.getOrganizations = async () => {
-  return Organization.find({ code: { $ne: "SYSTEM" } })
-    .sort({ createdAt: -1 });
+exports.getOrganizations = async ({ user }) => {
+  const isSuperAdmin = await isUserSuperAdmin(user.userId);
+  if (isSuperAdmin) {
+    return Organization.find({ code: { $ne: "SYSTEM" } })
+      .sort({ createdAt: -1 });
+  }
+
+  const memberships = await OrgUser.find({
+    userId: user.userId
+  }).select("organizationId");
+
+  const orgIds = memberships.map(m => m.organizationId);
+
+  return Organization.find({
+    _id: { $in: orgIds },
+    status: "active"
+  }).sort({ createdAt: -1 });
 };
+
+/**
+ * Helper: detect SuperAdmin safely
+ */
+async function isUserSuperAdmin(userId) {
+  const memberships = await OrgUser.find({ userId }).populate("roleIds");
+
+  return memberships.some(m =>
+    m.roleIds.some(r => r.slug === "superadmin")
+  );
+}
 
 /**
  * GET ORGANIZATION BY ID

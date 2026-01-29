@@ -20,7 +20,7 @@ module.exports = (requiredPermission) => {
         organizationId: user.organizationId
       }).lean();
 
-      console.log(role,"role", user);
+      // console.log(role,"role", user);
       
       if (!role) {
         const roleDetails = await Role.findOne({

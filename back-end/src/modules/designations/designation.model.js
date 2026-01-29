@@ -16,6 +16,11 @@ const designationSchema = new mongoose.Schema(
     },
 
     level: Number,
+    departmentId:{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "departments",
+      required: true
+    },
 
     status: {
       type: String,

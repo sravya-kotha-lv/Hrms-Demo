@@ -24,7 +24,7 @@ module.exports = async (req, res, next) => {
       "_id email organizationIds activeOrganizationId status tokenList"
     );
 
-    console.log(user, decoded);
+    // console.log(user, decoded);
 
     if (!user) {
       return res.status(401).json({
