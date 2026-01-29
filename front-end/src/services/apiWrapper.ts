@@ -139,15 +139,15 @@ export const putApiWithToken = async (
 
 // DELETE with token
 export const deleteApiWithToken = async (apiUrl: string) => {
-  try {
-    const response = await api.delete(apiUrl);
+  try { 
+    const response = await api.delete(apiUrl, {
+      headers: { "Content-Type": "application/json" },
+    });
     return response.data;
   } catch (error: any) {
     return error.response?.data || error;
   }
 };
-
-
 /* ================================
    CONFIG EXPORTS (UNCHANGED)
 ================================ */
