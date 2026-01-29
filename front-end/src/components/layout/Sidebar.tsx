@@ -18,6 +18,9 @@ import {
   TrendingUp,
   FileText,
   UserCircle,
+  Shield,
+  Building,
+  Briefcase,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -72,6 +75,9 @@ const menuItems = [
   { icon: <FileText size={20} />, label: "Reports", to: "/reports" },
   { icon: <Inbox size={20} />, label: "Inbox", to: "/inbox" },
   { icon: <Building2 size={20} />, label: "Organization", to: "/organization" },
+  { icon: <Shield size={20} />, label: "Roles", to: "/roles" },
+  { icon: <Building size={20} />, label: "Departments", to: "/departments" },
+  { icon: <Briefcase size={20} />, label: "Designations", to: "/designations" },
 ];
 
 // const bottomItems = [

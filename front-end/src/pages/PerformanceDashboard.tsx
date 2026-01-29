@@ -10,6 +10,8 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import { MainLayout } from "@/components/layout/MainLayout";
+import { Button } from "@/components/ui/button";
 
 ChartJS.register(
   CategoryScale,
@@ -36,6 +38,7 @@ const PerformanceDashboard = () => {
         label: "Average Rating",
         data: [4.1, 4.5, 3.9, 4.3, 4.0],
         backgroundColor: "#0F5BD3",
+        borderRadius: 6,
       },
     ],
   };
@@ -55,43 +58,63 @@ const PerformanceDashboard = () => {
   };
 
   return (
-    <div className="p-6 bg-[#F4F6F9] min-h-screen">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gray-800">
-          Performance Dashboard
-        </h1>
-        <button className="bg-[#0F5BD3] text-white px-4 py-2 rounded-lg shadow hover:opacity-90">
+    <MainLayout
+      title="Performance Dashboard"
+      breadcrumb={[
+        { label: "Home", href: "/" },
+        { label: "Performance" },
+      ]}
+    >
+      {/* Header Action */}
+      <div className="flex justify-end mb-6">
+        <Button className="bg-[#0F5BD3] hover:bg-blue-700">
           + Create Review Cycle
-        </button>
+        </Button>
       </div>
 
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-              {summaryCards.map((card, index) => (
-                <div key={index} className="bg-white p-6 rounded-lg shadow">
-                  <p className="text-gray-600 text-sm mb-2">{card.title}</p>
-                  <p className={`text-3xl font-bold ${card.color}`}>{card.value}</p>
-                </div>
-              ))}
-            </div>
-      
-            {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Bar Chart */}
-              <div className="bg-white p-6 rounded-lg shadow">
-                <h2 className="text-lg font-semibold mb-4 text-gray-800">Department Ratings</h2>
-                <Bar data={barData} options={{ responsive: true, maintainAspectRatio: true }} />
-              </div>
-      
-              {/* Line Chart */}
-              <div className="bg-white p-6 rounded-lg shadow">
-                <h2 className="text-lg font-semibold mb-4 text-gray-800">Performance Trend</h2>
-                <Line data={lineData} options={{ responsive: true, maintainAspectRatio: true }} />
-              </div>
-            </div>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {summaryCards.map((card, index) => (
+          <div
+            key={index}
+            className="bg-white rounded-xl shadow-sm p-6"
+          >
+            <p className="text-gray-500 text-sm mb-2">{card.title}</p>
+            <p className={`text-3xl font-bold ${card.color}`}>
+              {card.value}
+            </p>
           </div>
-        );
-      };
-      
-      export default PerformanceDashboard;
+        ))}
+      </div>
+
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Bar Chart */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold mb-4">
+            Department Ratings
+          </h2>
+          <Bar
+            data={barData}
+            options={{ responsive: true, maintainAspectRatio: false }}
+            height={300}
+          />
+        </div>
+
+        {/* Line Chart */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold mb-4">
+            Performance Trend
+          </h2>
+          <Line
+            data={lineData}
+            options={{ responsive: true, maintainAspectRatio: false }}
+            height={300}
+          />
+        </div>
+      </div>
+    </MainLayout>
+  );
+};
+
+export default PerformanceDashboard;

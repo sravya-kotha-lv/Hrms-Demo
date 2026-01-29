@@ -15,7 +15,14 @@ import ProfilePage from "./pages/ProfilePage";
 import Organization from "./pages/Organization";
 import AddOrganization from "./pages/AddOrganization";
 import NotFound from "./pages/NotFound";
+import Roles from "./pages/Roles";
+import AddRole from "./pages/AddRole";
 import Login from "./pages/Login";
+import Departments from "./pages/Departments";
+import AddDepartment from "./pages/AddDepartment";
+import Designations from "./pages/Designations";
+import AddDesignation from "./pages/AddDesignation";
+import React from "react";
 
 const queryClient = new QueryClient();
 const PrivateRoute = ({ children }: any) => {
@@ -23,6 +30,7 @@ const PrivateRoute = ({ children }: any) => {
   return token ? children : <Navigate to="/login" replace />;
 };
 const App = () => (
+  <React.StrictMode>
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -43,12 +51,22 @@ const App = () => (
           <Route path="/organization" element={<Organization />} />
           <Route path="/organization/add" element={<AddOrganization />} />
           <Route path="/organization/edit/:id" element={<AddOrganization />} />
+          <Route path="/roles" element={<Roles />} />
+          <Route path="/roles/add" element={<AddRole />} />
+          <Route path="/roles/edit/:id" element={<AddRole />} />
+          <Route path="/departments" element={<Departments />} />
+          <Route path="/departments/add" element={<AddDepartment />} />
+          <Route path="/departments/edit/:id" element={<AddDepartment />} />
+          <Route path="/designations" element={<Designations />} />
+          <Route path="/designations/add" element={<AddDesignation />} />
+          <Route path="/designations/edit/:id" element={<AddDesignation />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
+  </React.StrictMode>
 );
 
 export default App;
