@@ -68,6 +68,8 @@ exports.remove = async (id) => {
  * List roles
  */
 exports.list = async (organizationId) => {
+  console.log(organizationId,"orgid");
+  
   return Role.find({ organizationId }).lean();
 };
 

@@ -2,7 +2,15 @@ const Department = require("./department.model");
 const { audit } = require("../auditLogs/auditLogs.service");
 
 exports.create = async (req) => {
-  const { organizationId } = req.user;
+  try {
+  let { organizationId } = req.body;
+  let { managerId } = req.user;
+  if (!organizationId) {
+    organizationId = req.user.organizationId;
+  }
+  if (!managerId) {
+    managerId = req.user._id;
+  }
 
   const exists = await Department.findOne({
     organizationId,
@@ -16,7 +24,8 @@ exports.create = async (req) => {
   const department = await Department.create({
     ...req.body,
     managerId: req?.user?._id || null,
-    organizationId
+    organizationId,
+    managerId
   });
 
   await audit({
@@ -29,6 +38,10 @@ exports.create = async (req) => {
   });
 
   return department;
+} catch (error) {
+  console.log(error);
+  throw error;
+}
 };
 
 exports.update = async (req) => {

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
-import { postApiWithoutToken } from "../services/apiWrapper";
+import { postApiWithoutToken } from "@/services/apiWrapper";
+import { setToken } from "@/utils/auth";
 const Login = () => {
   const navigate = useNavigate();
 
@@ -10,48 +11,51 @@ const Login = () => {
   const [error, setError] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
+  e.preventDefault();
+  setError("");
 
-    // Basic validation
-    if (!email || !password) {
-      setError("Email and password are required");
-      return;
+  if (!email || !password) {
+    setError("Email and password are required");
+    return;
+  }
+
+  try {
+    const response: any = await postApiWithoutToken(
+      "/users/login",
+      { email, password }
+    );
+
+    if (response.code === 200) {
+      const { roles } = response.data;
+
+      localStorage.setItem(
+        "userProfile",
+        JSON.stringify(response.data)
+      );
+
+      const isSuperAdmin = roles?.some(
+        (role: any) => role.slug === "superadmin"
+      );
+
+      toast.success("Logged in successfully!");
+
+      setTimeout(() => {
+        if (isSuperAdmin) {
+          localStorage.setItem("isSuperAdmin", "true");
+          localStorage.setItem("adminUserId", response.data.userId);
+          localStorage.setItem("adminRoleId", response.data.roles[0]._id);
+          navigate("/dashboard", { replace: true });
+        } else {
+          navigate("/", { replace: true });
+        }
+      }, 800);
+    } else {
+      toast.warning(response.message || "Login failed");
     }
-
-    try {
-      const response: any = await postApiWithoutToken("/users/login", {email, password});
-
-      console.log(response,"res");
-      
-      if (response.code === 200) {
-        localStorage.setItem("userRoles", JSON.stringify(response.data));
-        toast.success("Logged in successfully!");
-
-        setTimeout(() => {
-          const redirectPath = localStorage.getItem("postLoginRedirect");
-          const activeRole = response.data.activeRole;
-
-          // if (redirectPath) {
-          //   localStorage.removeItem("postLoginRedirect");
-          //   navigate(redirectPath);
-          //   return;
-          // }
-
-          if (["super_admin"].includes(activeRole?.slug)) {
-            navigate('/')
-            return;
-          }
-          // navigate(`/${activeRole.homePage}`, { replace: true });
-        }, 1200);
-      } else {
-        toast.warning(response.message || "Login failed");
-      }
-    } catch (error) {
-      toast.error("An error occurred during login. Please try again.");
-    }
-  };
-
+  } catch (err) {
+    toast.error("Login failed");
+  }
+};
   
   return (
     <div className="h-screen flex items-center justify-center bg-gray-100">

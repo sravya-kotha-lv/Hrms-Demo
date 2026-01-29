@@ -2,17 +2,12 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
-    organizationId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "organizations",
-      required: true
-    },
-
     email: {
       type: String,
       required: true,
       lowercase: true,
-      trim: true
+      trim: true,
+      unique: true
     },
 
     password: {
@@ -21,20 +16,21 @@ const userSchema = new mongoose.Schema(
       select: false
     },
 
-    roleIds: [
+    organizationIds: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "roles",
-        required: true
+        ref: "organizations"
       }
     ],
 
+    activeOrganizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "organizations"
+    },
+
     otp: String,
     otpTimestamp: Date,
-    otpAttempts: {
-      type: Number,
-      default: 0
-    },
+    otpAttempts: { type: Number, default: 0 },
 
     tokenList: [
       {
@@ -55,11 +51,6 @@ const userSchema = new mongoose.Schema(
     lastLoginAt: Date
   },
   { timestamps: true }
-);
-
-userSchema.index(
-  { organizationId: 1, email: 1 },
-  { unique: true }
 );
 
 module.exports = mongoose.model("users", userSchema);

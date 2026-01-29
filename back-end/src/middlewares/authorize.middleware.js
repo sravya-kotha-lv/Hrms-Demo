@@ -1,18 +1,10 @@
 const Role = require("../modules/roles/role.model");
 const Permission = require("../modules/permissions/permission.model");
 
-/**
- * RBAC authorize middleware
- * Usage: authorize("EMP_CREATE")
- */
 module.exports = (requiredPermission) => {
   return async (req, res, next) => {
     try {
       const user = req.user;
-
-      console.log(user,req.user, "userid");
-
-      // 🔐 Basic guard
       if (!user || !user.activeRoleId) {
         return res.status(403).json({
           success: false,
@@ -23,13 +15,21 @@ module.exports = (requiredPermission) => {
         });
       }
 
-      // 🔍 Fetch role (let mongoose cast ObjectId)
       const role = await Role.findOne({
         _id: user.activeRoleId,
         organizationId: user.organizationId
       }).lean();
 
+      console.log(role,"role", user);
+      
       if (!role) {
+        const roleDetails = await Role.findOne({
+        _id: user.activeRoleId,
+      }).lean();
+        console.log(roleDetails,"userDetails");
+        if(roleDetails?.slug == "superadmin"){
+          return next();
+        } 
         return res.status(403).json({
           success: false,
           code: 403,
@@ -39,25 +39,18 @@ module.exports = (requiredPermission) => {
         });
       }
 
-      // ⭐ SYSTEM ROLE → FULL ACCESS
-      if (role.isSystemRole === true) {
-        return next();
-      }
-      console.log("Allowed to next");
+      if (role.isSystemRole === true) return next();
 
-      // 🚫 No permissions assigned
-      if (!role.permissionIds || role.permissionIds.length === 0) {
+      if (!role.permissionIds?.length) {
         return res.status(403).json({
           success: false,
           code: 403,
-          message: "No permissions assigned to role",
+          message: "No permissions assigned",
           data: null,
           error: null
         });
       }
-      console.log("Allowed to next");
 
-      // 🔍 Fetch permissions
       const permissions = await Permission.find({
         _id: { $in: role.permissionIds },
         organizationId: user.organizationId
@@ -67,12 +60,8 @@ module.exports = (requiredPermission) => {
 
       const permissionCodes = permissions.map(p => p.code);
 
-      // ⭐ Wildcard permission support
-      if (permissionCodes.includes("*")) {
-        return next();
-      }
+      if (permissionCodes.includes("*")) return next();
 
-      // ❌ Permission denied
       if (!permissionCodes.includes(requiredPermission)) {
         return res.status(403).json({
           success: false,
@@ -83,11 +72,10 @@ module.exports = (requiredPermission) => {
         });
       }
 
-      // ✅ Permission allowed      
       next();
     } catch (err) {
-      console.error("Authorize error:", err);
-
+      console.log(err);
+      
       return res.status(500).json({
         success: false,
         code: 500,

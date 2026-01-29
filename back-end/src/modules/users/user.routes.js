@@ -1,18 +1,31 @@
 const router = require("express").Router();
 const asyncHandler = require("../../middlewares/asyncHandler");
+const auth = require("../../middlewares/auth.middleware");
+const authorize = require("../../middlewares/authorize.middleware");
 const validate = require("../../middlewares/validate.middleware");
 
-const userController = require("./user.controller");
-const {
-  registerUserSchema,
-  loginUserSchema,
-  sendOTPUserSchema,
-  validateOTPSchema
-} = require("./user.validator");
+const controller = require("./user.controller");
+const validator = require("./user.validator");
 
-router.post("/register", validate(registerUserSchema), asyncHandler(userController.register));
-router.post("/login", validate(loginUserSchema), asyncHandler(userController.login));
-router.post("/send-otp", validate(sendOTPUserSchema), asyncHandler(userController.sendOtp));
-router.post("/verify-otp", validate(validateOTPSchema), asyncHandler(userController.verifyOtp));
+router.post("/login", validate(validator.loginSchema), asyncHandler(controller.login));
+
+router.post(
+  "/org-user",
+  auth,
+  authorize("USER_CREATE"),
+  validate(validator.createUserSchema),
+  asyncHandler(controller.createUser)
+);
+
+router.post(
+  "/switch-org",
+  auth,
+  validate(validator.switchOrgSchema),
+  asyncHandler(controller.switchOrganization)
+);
+
+router.post("/send-otp", validate(validator.sendOTPUserSchema), asyncHandler(controller.sendOtp));
+router.post("/verify-otp", validate(validator.validateOTPSchema), asyncHandler(controller.verifyOtp));
+
 
 module.exports = router;

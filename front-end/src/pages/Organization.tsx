@@ -57,6 +57,8 @@ const OrganizationPage = () => {
 
   const fetchOrganizations = async () => {
     const response = await getApiWithToken("/organizations");
+    console.log(response,"response");
+    
     setOrganizations(response?.data || []);
   };
 
@@ -221,7 +223,7 @@ const OrganizationPage = () => {
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Organization" }]}
     >
       {/* ➕ Add Organization */}
-      <div className="flex justify-end mb-4">
+      {/* <div className="flex justify-end mb-4">
         <Button
           onClick={() => {
             setIsEdit(false);
@@ -233,7 +235,7 @@ const OrganizationPage = () => {
           <Plus className="w-4 h-4" />
           Add Organization
         </Button>
-      </div>
+      </div> */}
 
       <DataTable
         columns={columns}

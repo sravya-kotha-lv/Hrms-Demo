@@ -17,13 +17,14 @@ module.exports = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
-    // 🔐 Verify JWT signature
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // 🔍 Load user
-    const user = await User.findById(decoded._id).select(
-      "_id email roleIds organizationId status tokenList"
+    const userId = decoded.userId || decoded._id;
+    
+    const user = await User.findById(userId).select(
+      "_id email organizationIds activeOrganizationId status tokenList"
     );
+
+    console.log(user, decoded);
 
     if (!user) {
       return res.status(401).json({
@@ -45,7 +46,6 @@ module.exports = async (req, res, next) => {
       });
     }
 
-    // 🔥 TOKEN MUST MATCH DB (ONLY tokenList[0] is valid)
     if (!user.tokenList?.[0] || user.tokenList[0].token !== token) {
       return res.status(401).json({
         success: false,
@@ -56,12 +56,12 @@ module.exports = async (req, res, next) => {
       });
     }
 
-    // ✅ Attach user context
+    // org-scoped context
     req.user = {
-      _id: user._id,
+      userId: user._id,
       email: user.email,
-      organizationId: user.organizationId,
-      roleIds: decoded.roleIds || [],
+      organizationId: decoded.organizationId,
+      roleIds: decoded.roleIds,
       activeRoleId: decoded.activeRoleId
     };
 
@@ -69,8 +69,6 @@ module.exports = async (req, res, next) => {
 
     next();
   } catch (err) {
-    console.error("Auth error:", err.message);
-
     return res.status(401).json({
       success: false,
       code: 401,

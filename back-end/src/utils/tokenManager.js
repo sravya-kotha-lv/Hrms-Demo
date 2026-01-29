@@ -1,26 +1,38 @@
-// src/utils/tokenManager.js
 exports.rotateUserToken = async (UserModel, userId, newToken) => {
   const limit = Number(process.env.TOKEN_LIST_LIMIT || 10);
 
-  // 🔹 Pull existing tokens
-  const user = await UserModel.findById(userId).select("tokenList");
-  let tokenList = user?.tokenList || [];
+  try {
+    
+    const result = await UserModel.updateOne(
+      { _id: userId },
+      {
+        $push: {
+          tokenList: {
+            $each: [
+              {
+                token: newToken,
+                loginTimestamp: new Date().toISOString(),
+                status: "active"
+              }
+            ],
+            $position: 0,
+            $slice: limit
+          }
+        },
+        $set: {
+          lastLoginAt: new Date()
+        }
+      }
+    );
+    console.log(result);
 
-  // 🔹 Add new token at index 0
-  tokenList.unshift({
-    token: newToken,
-    loginTimestamp: new Date(),
-    status: "active"
-  });
+    if (result.matchedCount === 0) {
+      throw new Error("User not found while rotating token");
+    }
 
-  // 🔹 Trim old tokens
-  if (tokenList.length > limit) {
-    tokenList = tokenList.slice(0, limit);
+    return true;
+  } catch (err) {
+    console.error("❌ rotateUserToken failed:", err);
+    throw err;
   }
-
-  // 🔹 Save back
-  await UserModel.findByIdAndUpdate(userId, {
-    tokenList,
-    lastLoginAt: new Date()
-  });
 };

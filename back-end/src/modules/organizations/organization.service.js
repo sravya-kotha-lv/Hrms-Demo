@@ -1,59 +1,96 @@
 const Organization = require("./organization.model");
-const { seedRoles } = require("../roles/role.seed");
-const { seedPermissions } = require("../permissions/permission.seed");
-const { mapPermissionsToRoles } = require("../roles/role.permission.map");
+const User = require("../users/user.model");
+const OrgUser = require("./org-user.model");
 
 /**
- * Create organization + seed RBAC
+ * CREATE ORGANIZATION + ASSIGN ADMIN
  */
-exports.create = async (data) => {
-  const exists = await Organization.findOne({ code: data.code });
-  if (exists) {
-    throw { code: 409, message: "Organization code already exists" };
+exports.createOrganization = async ({
+  name,
+  code,
+  timezone,
+  currency,
+  adminUserId,
+  adminRoleId
+}) => {
+  const org = await Organization.create({
+    name,
+    code,
+    timezone,
+    currency
+  });
+
+  const admin = await User.findById(adminUserId);
+  if (!admin) {
+    throw { code: 404, message: "Admin user not found" };
   }
 
-  const org = await Organization.create(data);
+  if (!admin.organizationIds.includes(org._id)) {
+    admin.organizationIds.push(org._id);
+    admin.activeOrganizationId = org._id;
+    await admin.save();
+  }
 
-  // 🔥 Seed RBAC (VERY IMPORTANT)
-  await seedRoles(org._id);
-  await seedPermissions(org._id);
-  await mapPermissionsToRoles(org._id);
-
-  return org;
-};
-
-/**
- * Update organization
- */
-exports.update = async (id, data) => {
-  const org = await Organization.findById(id);
-  if (!org) throw { code: 404, message: "Organization not found" };
-
-  Object.assign(org, data);
-  await org.save();
+  await OrgUser.create({
+    userId: admin._id,
+    organizationId: org._id,
+    roleIds: [adminRoleId]
+  });
 
   return org;
 };
 
 /**
- * Get organization by ID
+ * GET ALL ORGANIZATIONS (excluding SYSTEM)
  */
-exports.getById = async (id) => {
-  const org = await Organization.findById(id);
-  if (!org) throw { code: 404, message: "Organization not found" };
+exports.getOrganizations = async () => {
+  return Organization.find({ code: { $ne: "SYSTEM" } })
+    .sort({ createdAt: -1 });
+};
+
+/**
+ * GET ORGANIZATION BY ID
+ */
+exports.getOrganizationById = async (orgId) => {
+  const org = await Organization.findById(orgId);
+
+  if (!org) {
+    throw { code: 404, message: "Organization not found" };
+  }
+
   return org;
 };
 
 /**
- * List organizations (Super Admin only)
+ * UPDATE ORGANIZATION
  */
-exports.list = async () => {
-  return Organization.find().sort({ createdAt: -1 });
+exports.updateOrganization = async (orgId, payload) => {
+  const org = await Organization.findByIdAndUpdate(
+    orgId,
+    payload,
+    { new: true }
+  );
+
+  if (!org) {
+    throw { code: 404, message: "Organization not found" };
+  }
+
+  return org;
 };
 
-exports.deleteById = async (id) => {
-  const org = await Organization.findById(id);
-  if (!org) throw { code: 404, message: "Organization not found" };
+/**
+ * SOFT DELETE ORGANIZATION
+ */
+exports.deleteOrganization = async (orgId) => {
+  const org = await Organization.findByIdAndUpdate(
+    orgId,
+    { status: "inactive" },
+    { new: true }
+  );
 
-  await Organization.deleteOne({ _id: id });
+  if (!org) {
+    throw { code: 404, message: "Organization not found" };
+  }
+
+  return true;
 };

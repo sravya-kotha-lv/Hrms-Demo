@@ -1,222 +1,167 @@
-const swaggerJSDoc = require("swagger-jsdoc");
-
-const swaggerDefinition = {
+module.exports = {
   openapi: "3.0.0",
   info: {
-    title: "HRMS API",
-    version: "1.0.0",
-    description: "HRMS backend APIs"
+    title: "Upanaya HRMS API",
+    description: "Multi-Org HRMS Backend APIs",
+    version: "1.0.0"
   },
+
   servers: [
     {
       url: "http://localhost:8000/api",
       description: "Local server"
     }
   ],
+
   components: {
     securitySchemes: {
-      bearerAuth: {
+      BearerAuth: {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT"
       }
     },
+
     schemas: {
-      CreateEmployee: {
+      /* ===================== AUTH ===================== */
+      LoginRequest: {
+        type: "object",
+        required: ["email", "password"],
+        properties: {
+          email: {
+            type: "string",
+            example: "superadmin@luvetha.com"
+          },
+          password: {
+            type: "string",
+            example: "SuperAdmin@123"
+          }
+        }
+      },
+
+      LoginResponse: {
+        type: "object",
+        properties: {
+          token: { type: "string" },
+          organization: { type: "object" },
+          roles: {
+            type: "array",
+            items: { type: "object" }
+          }
+        }
+      },
+
+      /* ===================== ORGANIZATION ===================== */
+      Organization: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          name: { type: "string" },
+          code: { type: "string" },
+          timezone: { type: "string" },
+          currency: { type: "string" },
+          status: {
+            type: "string",
+            enum: ["active", "inactive"]
+          },
+          createdAt: { type: "string" },
+          updatedAt: { type: "string" }
+        }
+      },
+
+      CreateOrganizationRequest: {
         type: "object",
         required: [
-          "userId",
-          "firstName",
-          "lastName",
-          "phone",
-          "employeeCode",
-          "departmentId",
-          "designationId",
-          "dateOfJoining",
-          "employmentType"
+          "name",
+          "code",
+          "timezone",
+          "currency",
+          "adminUserId",
+          "adminRoleId"
         ],
         properties: {
-          userId: { type: "string" },
+          name: { type: "string" },
+          code: { type: "string" },
+          timezone: { type: "string" },
+          currency: { type: "string" },
+          adminUserId: { type: "string" },
+          adminRoleId: { type: "string" }
+        }
+      },
 
-          firstName: { type: "string", minLength: 2 },
-          lastName: { type: "string", minLength: 2 },
-
-          phone: {
+      SwitchOrgRequest: {
+        type: "object",
+        required: ["organizationId"],
+        properties: {
+          organizationId: {
             type: "string",
-            example: "+91-9876543210"
+            description: "Target organization ID"
           },
+          // roleId: {
+          //   type: "string",
+          //   description: "Optional role ID inside the organization"
+          // }
+        }
+      },
 
-          employeeCode: { type: "string", example: "EMP-001" },
-
-          departmentId: { type: "string" },
-          designationId: { type: "string" },
-
-          dateOfJoining: {
+      SwitchOrgResponse: {
+        type: "object",
+        properties: {
+          token: {
             type: "string",
-            format: "date"
+            description: "New JWT token after switching context"
           },
-
-          employmentType: {
-            type: "string",
-            enum: ["full_time", "part_time", "contract"]
+          organizationId: {
+            type: "string"
           },
-
-          managerId: {
-            type: "string",
-            nullable: true
+          activeRoleId: {
+            type: "string"
           },
-
-          dob: {
-            type: "string",
-            format: "date"
-          },
-
-          gender: {
-            type: "string",
-            example: "male"
-          },
-
-          address: {
-            type: "object",
-            properties: {
-              line1: { type: "string" },
-              line2: { type: "string" },
-              city: { type: "string" },
-              state: { type: "string" },
-              country: { type: "string" },
-              zip: { type: "string" }
-            }
-          },
-
-          emergencyContacts: {
+          roles: {
             type: "array",
             items: {
-              type: "object",
-              required: ["name", "relation", "phone"],
-              properties: {
-                name: { type: "string" },
-                relation: { type: "string" },
-                phone: { type: "string" }
-              }
+              type: "object"
             }
           }
         }
       },
-      UpdateEmployee: {
+
+      /* ===================== USERS ===================== */
+      CreateUserRequest: {
         type: "object",
+        required: ["email", "password", "roleIds"],
         properties: {
-          firstName: { type: "string", minLength: 2 },
-          lastName: { type: "string", minLength: 2 },
-
-          phone: { type: "string" },
-
-          departmentId: { type: "string" },
-          designationId: { type: "string" },
-
-          employmentType: {
+          email: {
             type: "string",
-            enum: ["full_time", "part_time", "contract"]
+            example: "employee@luvetha.com"
           },
-
-          managerId: {
+          password: {
             type: "string",
-            nullable: true
+            example: "Employee@123"
           },
-
-          dob: {
-            type: "string",
-            format: "date"
-          },
-
-          gender: { type: "string" },
-
-          status: {
-            type: "string",
-            enum: ["active", "on_leave", "resigned"]
-          },
-
-          address: {
-            type: "object",
-            properties: {
-              line1: { type: "string" },
-              line2: { type: "string" },
-              city: { type: "string" },
-              state: { type: "string" },
-              country: { type: "string" },
-              zip: { type: "string" }
-            }
-          },
-
-          emergencyContacts: {
+          roleIds: {
             type: "array",
-            items: {
-              type: "object",
-              required: ["name", "relation", "phone"],
-              properties: {
-                name: { type: "string" },
-                relation: { type: "string" },
-                phone: { type: "string" }
-              }
-            }
+            items: { type: "string" }
           }
         }
       }
-
     }
   },
-  security: [{ bearerAuth: [] }],
 
-  // 🔥 ALL ROUTES DEFINED HERE
   paths: {
-    "/users/register": {
-      post: {
-        tags: ["Users"],
-        summary: "Register a new user",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["email", "password", "organizationId"],
-                properties: {
-                  email: { type: "string", example: "admin@luvetha.com" },
-                  password: { type: "string", example: "Password@123" },
-                  organizationId: {
-                    type: "string",
-                    example: "65c1f0b0b9a1eaa111111111"
-                  },
-                  roleIds: {
-                    type: "array",
-                    items: { type: "string" }
-                  }
-                }
-              }
-            }
-          }
-        },
-        responses: {
-          201: { description: "User registered successfully" },
-          409: { description: "Email already registered" }
-        }
-      }
-    },
+    /* ===================== AUTH ===================== */
 
     "/users/login": {
       post: {
-        tags: ["Users"],
-        summary: "Login user",
+        tags: ["Auth"],
+        summary: "Login user (SuperAdmin / Org Admin / Employee)",
+        description: "Authenticate user and return JWT token",
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
-                type: "object",
-                required: ["email", "password"],
-                properties: {
-                  email: { type: "string", example: "admin@luvetha.com" },
-                  password: { type: "string", example: "Password@123" }
-                }
+                $ref: "#/components/schemas/LoginRequest"
               }
             }
           }
@@ -227,20 +172,57 @@ const swaggerDefinition = {
             content: {
               "application/json": {
                 schema: {
+                  $ref: "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          400: {
+            description: "Invalid credentials"
+          }
+        }
+      }
+    },
+
+    "/users/switch-org": {
+      post: {
+        tags: ["Users"],
+        summary: "Switch active organization / role",
+        description: "Switch user context to another organization and optionally a role",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/SwitchOrgRequest"
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: "Organization / role switched successfully",
+            content: {
+              "application/json": {
+                schema: {
                   type: "object",
                   properties: {
-                    token: { type: "string" },
-                    activeRole: { type: "object" },
-                    availableRoles: {
-                      type: "array",
-                      items: { type: "object" }
-                    }
+                    success: { type: "boolean", example: true },
+                    code: { type: "number", example: 200 },
+                    message: { type: "string", example: "Context switched successfully" },
+                    data: {
+                      $ref: "#/components/schemas/SwitchOrgResponse"
+                    },
+                    error: { type: "null" }
                   }
                 }
               }
             }
           },
-          400: { description: "Invalid credentials" }
+          403: {
+            description: "User does not belong to organization / role"
+          }
         }
       }
     },
@@ -269,8 +251,7 @@ const swaggerDefinition = {
         }
       }
     },
-
-    "/users/verify-otp": {
+"/users/verify-otp": {
       post: {
         tags: ["Users"],
         summary: "Verify OTP",
@@ -295,68 +276,58 @@ const swaggerDefinition = {
         }
       }
     },
+    /* ===================== ORGANIZATIONS ===================== */
+
 
     "/organizations": {
       post: {
-        tags: ["Organizations"],
-        summary: "Create organization",
-        security: [{ bearerAuth: [] }],
-
+        tags: ["Organization"],
+        summary: "Create organization and assign admin",
+        security: [{ BearerAuth: [] }],
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
-                type: "object",
-                required: ["name", "code", "timezone", "currency"],
-                properties: {
-                  name: {
-                    type: "string",
-                    example: "Luvetha Tech Solutions"
-                  },
-                  code: {
-                    type: "string",
-                    example: "LV"
-                  },
-                  timezone: {
-                    type: "string",
-                    example: "Asia/Kolkata"
-                  },
-                  currency: {
-                    type: "string",
-                    example: "INR"
+                $ref: "#/components/schemas/CreateOrganizationRequest"
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "Organization created successfully"
+          }
+        }
+      },
+
+      get: {
+        tags: ["Organization"],
+        summary: "Get all organizations",
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: {
+            description: "List of organizations",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    $ref: "#/components/schemas/Organization"
                   }
                 }
               }
             }
           }
-        },
-
-        responses: {
-          201: {
-            description: "Organization created successfully"
-          },
-          401: {
-            description: "Unauthorized"
-          },
-          409: {
-            description: "Organization already exists"
-          }
         }
-      },
-      get: {
-        tags: ["Organizations"],
-        summary: "List organizations",
-        security: [{ bearerAuth: [] }],
-        responses: { 200: { description: "Organizations fetched" } }
       }
     },
 
     "/organizations/{id}": {
       get: {
-        tags: ["Organizations"],
+        tags: ["Organization"],
         summary: "Get organization by ID",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
         parameters: [
           {
             name: "id",
@@ -366,16 +337,16 @@ const swaggerDefinition = {
           }
         ],
         responses: {
-          200: { description: "Organization fetched" },
-          404: { description: "Organization not found" }
+          200: {
+            description: "Organization details"
+          }
         }
       },
 
       put: {
-        tags: ["Organizations"],
+        tags: ["Organization"],
         summary: "Update organization",
-        security: [{ bearerAuth: [] }],
-
+        security: [{ BearerAuth: [] }],
         parameters: [
           {
             name: "id",
@@ -384,8 +355,6 @@ const swaggerDefinition = {
             schema: { type: "string" }
           }
         ],
-
-        // 🔥 THIS IS WHAT YOU MISSED
         requestBody: {
           required: true,
           content: {
@@ -393,18 +362,9 @@ const swaggerDefinition = {
               schema: {
                 type: "object",
                 properties: {
-                  name: {
-                    type: "string",
-                    example: "Luvetha Tech Solutions"
-                  },
-                  timezone: {
-                    type: "string",
-                    example: "Asia/Kolkata"
-                  },
-                  currency: {
-                    type: "string",
-                    example: "INR"
-                  },
+                  name: { type: "string" },
+                  timezone: { type: "string" },
+                  currency: { type: "string" },
                   status: {
                     type: "string",
                     enum: ["active", "inactive"]
@@ -414,12 +374,55 @@ const swaggerDefinition = {
             }
           }
         },
-
         responses: {
-          200: { description: "Organization updated successfully" },
-          400: { description: "Validation error" },
-          401: { description: "Unauthorized" },
-          404: { description: "Organization not found" }
+          200: {
+            description: "Organization updated successfully"
+          }
+        }
+      },
+
+      delete: {
+        tags: ["Organization"],
+        summary: "Deactivate organization",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Organization deactivated successfully"
+          }
+        }
+      }
+    },
+
+    /* ===================== USERS ===================== */
+
+    "/users/org-user": {
+      post: {
+        tags: ["Users"],
+        summary: "Org Admin / HR creates user",
+        description: "Employees cannot self-register",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/CreateUserRequest"
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: "User created successfully"
+          }
         }
       }
     },
@@ -428,7 +431,7 @@ const swaggerDefinition = {
       get: {
         tags: ["Roles"],
         summary: "List roles",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
         responses: { 200: { description: "Roles fetched" } }
       },
 
@@ -436,7 +439,7 @@ const swaggerDefinition = {
         tags: ["Roles"],
         summary: "Create role",
         description: "Create a new role with permissions",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         requestBody: {
           required: true,
@@ -493,7 +496,7 @@ const swaggerDefinition = {
       put: {
         tags: ["Roles"],
         summary: "Update role",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
         parameters: [
           {
             name: "id",
@@ -528,7 +531,7 @@ const swaggerDefinition = {
       delete: {
         tags: ["Roles"],
         summary: "Delete role",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true }],
         responses: { 200: { description: "Role deleted" } }
       }
@@ -538,7 +541,7 @@ const swaggerDefinition = {
       post: {
         tags: ["Roles"],
         summary: "Switch active role",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -562,7 +565,7 @@ const swaggerDefinition = {
         tags: ["Departments"],
         summary: "Create department",
         description: "Create a new department in the organization",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         requestBody: {
           required: true,
@@ -612,7 +615,7 @@ const swaggerDefinition = {
         tags: ["Departments"],
         summary: "List departments",
         description: "Fetch all active departments for the organization",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         responses: {
           200: {
@@ -676,7 +679,7 @@ const swaggerDefinition = {
         tags: ["Departments"],
         summary: "Update department",
         description: "Update an existing department",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           {
@@ -741,7 +744,7 @@ const swaggerDefinition = {
         tags: ["Departments"],
         summary: "Delete department",
         description: "Soft delete a department",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           {
@@ -777,7 +780,7 @@ const swaggerDefinition = {
         tags: ["Designations"],
         summary: "Create designation",
         description: "Create a new designation for the organization",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         requestBody: {
           required: true,
@@ -822,7 +825,7 @@ const swaggerDefinition = {
         tags: ["Designations"],
         summary: "List designations",
         description: "Fetch all active designations",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         responses: {
           200: {
@@ -862,7 +865,7 @@ const swaggerDefinition = {
         tags: ["Designations"],
         summary: "Update designation",
         description: "Update an existing designation",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           {
@@ -922,7 +925,7 @@ const swaggerDefinition = {
         tags: ["Designations"],
         summary: "Delete designation",
         description: "Soft delete a designation",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           {
@@ -949,7 +952,7 @@ const swaggerDefinition = {
         tags: ["Employees"],
         summary: "Create employee",
         description: "Requires permission: EMP_CREATE",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         requestBody: {
           required: true,
@@ -975,7 +978,7 @@ const swaggerDefinition = {
         tags: ["Employees"],
         summary: "List employees",
         description: "Requires permission: EMP_VIEW",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", example: 1 } },
@@ -1006,7 +1009,7 @@ const swaggerDefinition = {
         tags: ["Employees"],
         summary: "Get employee by ID",
         description: "Requires permission: EMP_VIEW",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           {
@@ -1029,7 +1032,7 @@ const swaggerDefinition = {
         tags: ["Employees"],
         summary: "Update employee",
         description: "Requires permission: EMP_UPDATE",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           {
@@ -1064,7 +1067,7 @@ const swaggerDefinition = {
         tags: ["Employees"],
         summary: "Delete employee (soft delete)",
         description: "Requires permission: EMP_DELETE",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           {
@@ -1089,7 +1092,7 @@ const swaggerDefinition = {
         tags: ["Employees"],
         summary: "Get logged-in employee profile",
         description: "Requires permission: EMP_SELF_VIEW",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         responses: {
           200: { description: "Employee profile fetched successfully" },
@@ -1104,7 +1107,7 @@ const swaggerDefinition = {
         tags: ["Employees"],
         summary: "Restore deleted employee",
         description: "Requires permission: EMP_RESTORE",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           {
@@ -1123,15 +1126,5 @@ const swaggerDefinition = {
         }
       }
     }
-
-  },
-
-  tags: [
-    { name: "Users", description: "User authentication & OTP APIs" }
-  ]
+  }
 };
-
-module.exports = swaggerJSDoc({
-  definition: swaggerDefinition,
-  apis: [] // 👈 empty because we are NOT scanning route files
-});

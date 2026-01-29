@@ -26,7 +26,14 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // CORS
-app.use(cors());
+app.use(
+  cors({
+    origin: "*", // for development
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["Authorization"]
+  })
+);
 
 // HTTP request logging (dev)
 app.use(morgan("dev"));
@@ -64,7 +71,7 @@ app.get("/health", (req, res) => {
 app.use("/api/users", require("./src/modules/users/user.routes"));
 app.use("/api/organizations", require("./src/modules/organizations/organization.routes"));
 app.use("/api/roles", require("./src/modules/roles/role.routes"));
-// app.use("/api/employees", require("./src/modules/employees/employee.routes"));
+app.use("/api/employees", require("./src/modules/employees/employee.routes"));
 app.use("/api/departments", require("./src/modules/departments/department.routes"));
 app.use("/api/designations", require("./src/modules/designations/designation.routes"));
 

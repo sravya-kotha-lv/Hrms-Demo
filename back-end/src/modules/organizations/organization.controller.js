@@ -1,55 +1,132 @@
-const service = require("./organization.service");
-const { buildSuccessResponse } = require("../../utils/responseBuilder");
+const organizationService = require("./organization.service");
+const {
+  buildSuccessResponse,
+  buildFailureResponse
+} = require("../../utils/responseBuilder");
 
+/**
+ * CREATE ORGANIZATION
+ */
 exports.create = async (req, res) => {
-  const data = await service.create(req.body);
+  try {
+    const org = await organizationService.createOrganization(req.body);
 
-  res.status(201).json(
-    buildSuccessResponse({
-      code: 201,
-      message: "Organization created successfully",
-      data
-    })
-  );
+    return res.status(201).json(
+      buildSuccessResponse({
+        code: 201,
+        message: "Organization created successfully",
+        data: org
+      })
+    );
+  } catch (err) {
+    return res.status(err.code || 500).json(
+      buildFailureResponse({
+        code: err.code || 500,
+        message: err.message || "Organization creation failed",
+        error: err.error || null
+      })
+    );
+  }
 };
 
+/**
+ * UPDATE ORGANIZATION
+ */
 exports.update = async (req, res) => {
-  const data = await service.update(req.params.id, req.body);
+  try {
+    const org = await organizationService.updateOrganization(
+      req.params.id,
+      req.body
+    );
 
-  res.json(
-    buildSuccessResponse({
-      message: "Organization updated successfully",
-      data
-    })
-  );
+    return res.status(200).json(
+      buildSuccessResponse({
+        code: 200,
+        message: "Organization updated successfully",
+        data: org
+      })
+    );
+  } catch (err) {
+    return res.status(err.code || 500).json(
+      buildFailureResponse({
+        code: err.code || 500,
+        message: err.message || "Organization update failed",
+        error: err.error || null
+      })
+    );
+  }
 };
 
+/**
+ * GET ORGANIZATION BY ID
+ */
 exports.getById = async (req, res) => {
-  const data = await service.getById(req.params.id);
+  try {
+    const org = await organizationService.getOrganizationById(req.params.id);
 
-  res.json(
-    buildSuccessResponse({
-      data
-    })
-  );
+    return res.status(200).json(
+      buildSuccessResponse({
+        code: 200,
+        message: "Organization fetched successfully",
+        data: org
+      })
+    );
+  } catch (err) {
+    return res.status(err.code || 500).json(
+      buildFailureResponse({
+        code: err.code || 500,
+        message: err.message || "Organization not found",
+        error: err.error || null
+      })
+    );
+  }
 };
 
+/**
+ * LIST ORGANIZATIONS
+ */
 exports.list = async (req, res) => {
-  const data = await service.list();
+  try {
+    const orgs = await organizationService.getOrganizations();
 
-  res.json(
-    buildSuccessResponse({
-      data
-    })
-  );
+    return res.status(200).json(
+      buildSuccessResponse({
+        code: 200,
+        message: "Organizations fetched successfully",
+        data: orgs
+      })
+    );
+  } catch (err) {
+    return res.status(500).json(
+      buildFailureResponse({
+        code: 500,
+        message: "Failed to fetch organizations",
+        error: err.message
+      })
+    );
+  }
 };
 
+/**
+ * DELETE (SOFT)
+ */
 exports.deleteById = async (req, res) => {
-  await service.deleteById(req.params.id);
+  try {
+    await organizationService.deleteOrganization(req.params.id);
 
-  res.json(
-    buildSuccessResponse({
-      message: "Organization deleted successfully"
-    })
-  );
+    return res.status(200).json(
+      buildSuccessResponse({
+        code: 200,
+        message: "Organization deactivated successfully"
+      })
+    );
+  } catch (err) {
+    return res.status(err.code || 500).json(
+      buildFailureResponse({
+        code: err.code || 500,
+        message: err.message || "Organization deletion failed",
+        error: err.error || null
+      })
+    );
+  }
 };

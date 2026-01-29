@@ -1,8 +1,21 @@
 const Joi = require("joi");
 
-exports.registerUserSchema = Joi.object({
-  organizationId: Joi.string().required(),
+exports.createUserSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required(),
+  roleIds: Joi.array().items(Joi.string()).required()
+});
 
+exports.switchOrgSchema = Joi.object({
+  organizationId: Joi.string().required()
+});
+
+exports.loginSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().required()
+});
+
+exports.createUserSchema = Joi.object({
   email: Joi.string()
     .email()
     .required(),
@@ -13,15 +26,13 @@ exports.registerUserSchema = Joi.object({
 
   roleIds: Joi.array()
     .items(Joi.string())
-    .optional()
+    .min(1)
+    .required()
 });
 
-exports.loginUserSchema = Joi.object({
-  email: Joi.string()
-    .required(),
-
-  password: Joi.string()
-    .required()
+exports.switchOrgSchema = Joi.object({
+  organizationId: Joi.string().required(),
+  // roleId: Joi.string().optional()
 });
 
 exports.sendOTPUserSchema = Joi.object({

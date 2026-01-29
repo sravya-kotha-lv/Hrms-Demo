@@ -10,22 +10,32 @@ const {
   updateOrganizationSchema
 } = require("./organization.validation");
 
+/**
+ * CREATE ORGANIZATION
+ * SuperAdmin / OrgAdmin
+ */
 router.post(
   "/",
   auth,
-  authorize("ORG_CREATE"),
+  authorize("ORG_MANAGE"),
   validate(createOrganizationSchema),
   asyncHandler(controller.create)
 );
 
+/**
+ * UPDATE ORGANIZATION
+ */
 router.put(
   "/:id",
   auth,
-  authorize("ORG_UPDATE"),
+  authorize("ORG_MANAGE"),
   validate(updateOrganizationSchema),
   asyncHandler(controller.update)
 );
 
+/**
+ * GET ORGANIZATION BY ID
+ */
 router.get(
   "/:id",
   auth,
@@ -33,6 +43,9 @@ router.get(
   asyncHandler(controller.getById)
 );
 
+/**
+ * LIST ORGANIZATIONS
+ */
 router.get(
   "/",
   auth,
@@ -40,10 +53,13 @@ router.get(
   asyncHandler(controller.list)
 );
 
+/**
+ * DELETE (SOFT) ORGANIZATION
+ */
 router.delete(
   "/:id",
   auth,
-  authorize("ORG_DELETE"),
+  authorize("ORG_MANAGE"),
   asyncHandler(controller.deleteById)
 );
 

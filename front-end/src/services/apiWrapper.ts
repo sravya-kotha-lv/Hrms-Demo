@@ -18,6 +18,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => {
     // ✅ Capture token from ANY response (login / switch-role)
+    console.log(response,"----");
+    
     const authHeader = response.headers?.authorization;
     if (authHeader) {
       setToken(authHeader);
@@ -32,11 +34,11 @@ api.interceptors.response.use(
       // window.location.href = "/no-access";
     }
 
-    if (status === 401) {
-      toast.error("Session expired. Please login again");
-      clearAuth();
-      window.location.href = "/login";
-    }
+    // if (status === 401) {
+    //   toast.error("Session expired. Please login again");
+    //   clearAuth();
+    //   window.location.href = "/login";
+    // }
 
     return Promise.reject(error);
   }
