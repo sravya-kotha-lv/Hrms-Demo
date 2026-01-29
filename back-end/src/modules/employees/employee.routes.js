@@ -6,61 +6,39 @@ const validate = require("../../middlewares/validate.middleware");
 const asyncHandler = require("../../middlewares/asyncHandler");
 
 const {
-  createEmployeeSchema,
-  updateEmployeeSchema
+  createEmployeeByHrSchema,
+  completeProfileSchema
 } = require("./employee.validation");
 
-const employeeController = require("./employee.controller");
+const controller = require("./employee.controller");
 
+/**
+ * HR / ADMIN creates employee (onboarding)
+ */
 router.post(
   "/",
   auth,
   authorize("EMP_CREATE"),
-  validate(createEmployeeSchema),
-  asyncHandler(employeeController.create)
+  validate(createEmployeeByHrSchema),
+  asyncHandler(controller.createByHr)
 );
 
+/**
+ * Employee completes own profile (first login)
+ */
 router.put(
-  "/:id",
+  "/me/profile",
   auth,
-  authorize("EMP_UPDATE"),
-  validate(updateEmployeeSchema),
-  asyncHandler(employeeController.update)
-);
-
-router.delete(
-  "/:id",
-  auth,
-  authorize("EMP_DELETE"),
-  asyncHandler(employeeController.remove)
+  authorize("EMP_SELF_EDIT"),
+  validate(completeProfileSchema),
+  asyncHandler(controller.completeMyProfile)
 );
 
 router.get(
   "/",
   auth,
   authorize("EMP_VIEW"),
-  asyncHandler(employeeController.list)
-);
-
-router.get(
-  "/:id",
-  auth,
-  authorize("EMP_VIEW"),
-  asyncHandler(employeeController.getById)
-);
-
-router.get(
-  "/me",
-  auth,
-  authorize("EMP_SELF_VIEW"),
-  asyncHandler(employeeController.getMe)
-);
-
-router.patch(
-  "/:id/restore",
-  auth,
-  authorize("DEPT_RESTORE"),
-  asyncHandler(departmentController.restore)
+  asyncHandler(controller.listByOrganization)
 );
 
 module.exports = router;

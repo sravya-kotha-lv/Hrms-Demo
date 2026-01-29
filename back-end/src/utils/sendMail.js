@@ -95,6 +95,8 @@ module.exports = async (template, toName, subject, content, toEmail) => {
     logger.info("Email sent", { template, toEmail });
     return true;
   } catch (err) {
+    console.log(err,"------");
+    
     logger.error("Failed to send email", {
       error: err.message,
       template,

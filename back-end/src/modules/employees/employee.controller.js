@@ -1,71 +1,40 @@
-const employeeService = require("./employee.service");
+const service = require("./employee.service");
 const { buildSuccessResponse } = require("../../utils/responseBuilder");
 
-exports.create = async (req, res) => {
-  const data = await employeeService.create(req);
-  return res.status(201).json(
+/**
+ * HR / Admin creates employee
+ */
+exports.createByHr = async (req, res) => {
+  const data = await service.createByHr(req);
+
+  res.status(201).json(
     buildSuccessResponse({
-      code: 201,
-      message: "Employee created successfully",
+      message: "Employee created and onboarding email sent",
       data
     })
   );
 };
 
-exports.update = async (req, res) => {
-  const data = await employeeService.update(req);
-  return res.json(
+/**
+ * Employee completes profile (first login)
+ */
+exports.completeMyProfile = async (req, res) => {
+  const data = await service.completeMyProfile(req);
+
+  res.json(
     buildSuccessResponse({
-      message: "Employee updated successfully",
+      message: "Profile completed successfully",
       data
     })
   );
 };
 
-exports.remove = async (req, res) => {
-  await employeeService.remove(req);
-  return res.json(
-    buildSuccessResponse({
-      message: "Employee deleted successfully"
-    })
-  );
-};
+exports.listByOrganization = async (req, res) => {
+  const data = await service.listByOrganization(req);
 
-exports.list = async (req, res) => {
-  const data = await employeeService.list(req);
-  return res.json(
+  res.json(
     buildSuccessResponse({
       message: "Employees fetched successfully",
-      data
-    })
-  );
-};
-
-exports.getById = async (req, res) => {
-  const data = await employeeService.getById(req);
-  return res.json(
-    buildSuccessResponse({
-      message: "Employee details fetched successfully",
-      data
-    })
-  );
-};
-
-exports.getMe = async (req, res) => {
-  const data = await employeeService.getMe(req);
-  return res.json(
-    buildSuccessResponse({
-      message: "My employee profile fetched successfully",
-      data
-    })
-  );
-};
-
-exports.restore = async (req, res) => {
-  const data = await departmentService.restore(req);
-  return res.json(
-    buildSuccessResponse({
-      message: "Department restored successfully",
       data
     })
   );

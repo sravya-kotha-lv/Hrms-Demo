@@ -4,15 +4,12 @@ const emergencyContactSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: true
     },
     relation: {
       type: String,
-      required: true
     },
     phone: {
       type: String,
-      required: true
     }
   },
   { _id: false }
@@ -49,7 +46,6 @@ const employeeSchema = new mongoose.Schema(
 
     phone: {
       type: String,
-      required: true
     },
 
     // 🏢 Mandatory work info
@@ -82,6 +78,10 @@ const employeeSchema = new mongoose.Schema(
       required: true
     },
 
+    profileCompleted: {
+      type: Boolean,
+      default: false
+    },
     // 👤 Optional personal details
     dob: Date,
     gender: String,

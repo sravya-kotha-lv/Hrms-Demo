@@ -144,6 +144,182 @@ module.exports = {
             items: { type: "string" }
           }
         }
+      },
+
+      CreateEmployeeByHr: {
+        type: "object",
+        required: [
+          "email",
+          "roleIds",
+          "firstName",
+          "lastName",
+          "employeeCode",
+          "departmentId",
+          "designationId",
+          "dateOfJoining",
+          "employmentType"
+        ],
+        properties: {
+          email: {
+            type: "string",
+            format: "email",
+            example: "john.doe@company.com"
+          },
+          roleIds: {
+            type: "array",
+            items: {
+              type: "string",
+              example: "65b1f1c4b92c1a00123abcd1"
+            }
+          },
+          firstName: {
+            type: "string",
+            example: "John"
+          },
+          lastName: {
+            type: "string",
+            example: "Doe"
+          },
+          employeeCode: {
+            type: "string",
+            example: "EMP-001"
+          },
+          departmentId: {
+            type: "string",
+            example: "65b1f1c4b92c1a00123abcd2"
+          },
+          designationId: {
+            type: "string",
+            example: "65b1f1c4b92c1a00123abcd3"
+          },
+          dateOfJoining: {
+            type: "string",
+            format: "date",
+            example: "2026-02-01"
+          },
+          employmentType: {
+            type: "string",
+            enum: ["full_time", "part_time", "contract"],
+            example: "full_time"
+          }
+        }
+      },
+
+      CompleteEmployeeProfile: {
+        type: "object",
+        properties: {
+          phone: {
+            type: "string",
+            example: "+91-9876543210"
+          },
+          dob: {
+            type: "string",
+            format: "date",
+            example: "1995-08-15"
+          },
+          gender: {
+            type: "string",
+            example: "male"
+          },
+          address: {
+            type: "object",
+            properties: {
+              line1: { type: "string", example: "Street 1" },
+              line2: { type: "string", example: "Area" },
+              city: { type: "string", example: "Bangalore" },
+              state: { type: "string", example: "KA" },
+              country: { type: "string", example: "India" },
+              zip: { type: "string", example: "560001" }
+            }
+          },
+          emergencyContacts: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["name", "relation", "phone"],
+              properties: {
+                name: { type: "string", example: "Jane Doe" },
+                relation: { type: "string", example: "Spouse" },
+                phone: { type: "string", example: "+91-9876543211" }
+              }
+            }
+          }
+        }
+      },
+
+      ApiSuccessResponse: {
+        type: "object",
+        properties: {
+          success: { type: "boolean", example: true },
+          message: { type: "string" },
+          data: { type: "object", nullable: true }
+        }
+      },
+
+      ApiErrorResponse: {
+        type: "object",
+        properties: {
+          success: { type: "boolean", example: false },
+          code: { type: "number", example: 400 },
+          message: { type: "string" },
+          data: { nullable: true },
+          error: { nullable: true }
+        }
+      },
+
+      Employee: {
+        type: "object",
+        properties: {
+          _id: {
+            type: "string",
+            example: "65a9f2d1e3b4c1a9f2d1e3b4"
+          },
+          firstName: {
+            type: "string",
+            example: "John"
+          },
+          lastName: {
+            type: "string",
+            example: "Doe"
+          },
+          employeeCode: {
+            type: "string",
+            example: "EMP001"
+          },
+          phone: {
+            type: "string",
+            example: "+91-9876543210"
+          },
+          departmentId: {
+            type: "object",
+            properties: {
+              _id: { type: "string" },
+              name: { type: "string", example: "Engineering" }
+            }
+          },
+          designationId: {
+            type: "object",
+            properties: {
+              _id: { type: "string" },
+              name: { type: "string", example: "Software Engineer" }
+            }
+          },
+          status: {
+            type: "string",
+            enum: ["active", "on_leave", "resigned"],
+            example: "active"
+          },
+          dateOfJoining: {
+            type: "string",
+            format: "date",
+            example: "2024-01-15"
+          },
+          employmentType: {
+            type: "string",
+            enum: ["full_time", "part_time", "contract"],
+            example: "full_time"
+          }
+        }
       }
     }
   },
@@ -251,7 +427,7 @@ module.exports = {
         }
       }
     },
-"/users/verify-otp": {
+    "/users/verify-otp": {
       post: {
         tags: ["Users"],
         summary: "Verify OTP",
@@ -950,42 +1126,79 @@ module.exports = {
     "/employees": {
       post: {
         tags: ["Employees"],
-        summary: "Create employee",
-        description: "Requires permission: EMP_CREATE",
-        security: [{ BearerAuth: [] }],
+        summary: "HR/Admin creates employee",
+        description:
+          "Creates User + Employee and sends onboarding email. Requires permission: EMP_CREATE",
+        security: [{ bearerAuth: [] }],
 
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
-                $ref: "#/components/schemas/CreateEmployee"
+                $ref: "#/components/schemas/CreateEmployeeByHr"
               }
             }
           }
         },
 
         responses: {
-          201: { description: "Employee created successfully" },
+          201: {
+            description: "Employee created & onboarding email sent",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ApiSuccessResponse" }
+              }
+            }
+          },
           400: { description: "Validation error" },
           401: { description: "Unauthorized" },
           403: { description: "Permission denied" },
-          409: { description: "Duplicate employee code" }
+          409: { description: "User already exists" }
         }
       },
-
       get: {
         tags: ["Employees"],
-        summary: "List employees",
-        description: "Requires permission: EMP_VIEW",
-        security: [{ BearerAuth: [] }],
+        summary: "List employees (organization-wise)",
+        description: "Fetch employees belonging to the logged-in user's organization. Requires permission: EMP_VIEW",
+        security: [{ bearerAuth: [] }],
 
         parameters: [
-          { name: "page", in: "query", schema: { type: "integer", example: 1 } },
-          { name: "limit", in: "query", schema: { type: "integer", example: 10 } },
-          { name: "search", in: "query", schema: { type: "string" } },
-          { name: "departmentId", in: "query", schema: { type: "string" } },
-          { name: "designationId", in: "query", schema: { type: "string" } },
+          {
+            name: "page",
+            in: "query",
+            schema: { type: "integer", example: 1 }
+          },
+          {
+            name: "limit",
+            in: "query",
+            schema: { type: "integer", example: 10 }
+          },
+          {
+            name: "search",
+            in: "query",
+            schema: {
+              type: "string",
+              example: "john"
+            },
+            description: "Search by first name, last name, employee code, or phone"
+          },
+          {
+            name: "departmentId",
+            in: "query",
+            schema: {
+              type: "string",
+              example: "65a9f2d1e3b4c1a9f2d1e3b4"
+            }
+          },
+          {
+            name: "designationId",
+            in: "query",
+            schema: {
+              type: "string",
+              example: "65a9f2d1e3b4c1a9f2d1e3b5"
+            }
+          },
           {
             name: "status",
             in: "query",
@@ -997,132 +1210,74 @@ module.exports = {
         ],
 
         responses: {
-          200: { description: "Employees fetched successfully" },
+          200: {
+            description: "Employees fetched successfully",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean", example: true },
+                    message: { type: "string", example: "Employees fetched successfully" },
+                    data: {
+                      type: "object",
+                      properties: {
+                        items: {
+                          type: "array",
+                          items: { $ref: "#/components/schemas/Employee" }
+                        },
+                        pagination: {
+                          type: "object",
+                          properties: {
+                            total: { type: "integer", example: 25 },
+                            page: { type: "integer", example: 1 },
+                            limit: { type: "integer", example: 10 },
+                            totalPages: { type: "integer", example: 3 }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           401: { description: "Unauthorized" },
           403: { description: "Permission denied" }
         }
-      },
+      }
     },
 
-    "/employees/{id}": {
-      get: {
-        tags: ["Employees"],
-        summary: "Get employee by ID",
-        description: "Requires permission: EMP_VIEW",
-        security: [{ BearerAuth: [] }],
-
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-
-        responses: {
-          200: { description: "Employee fetched successfully" },
-          401: { description: "Unauthorized" },
-          403: { description: "Permission denied" },
-          404: { description: "Employee not found" }
-        }
-      },
-
+    "/employees/me/profile": {
       put: {
         tags: ["Employees"],
-        summary: "Update employee",
-        description: "Requires permission: EMP_UPDATE",
-        security: [{ BearerAuth: [] }],
-
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
+        summary: "Employee completes own profile",
+        description:
+          "Employee fills remaining profile details on first login. Requires permission: EMP_SELF_EDIT",
+        security: [{ bearerAuth: [] }],
 
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
-                $ref: "#/components/schemas/UpdateEmployee"
+                $ref: "#/components/schemas/CompleteEmployeeProfile"
               }
             }
           }
         },
 
         responses: {
-          200: { description: "Employee updated successfully" },
-          400: { description: "Validation error" },
+          200: {
+            description: "Profile completed successfully",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ApiSuccessResponse" }
+              }
+            }
+          },
           401: { description: "Unauthorized" },
-          403: { description: "Permission denied" },
-          404: { description: "Employee not found" }
-        }
-      },
-
-      delete: {
-        tags: ["Employees"],
-        summary: "Delete employee (soft delete)",
-        description: "Requires permission: EMP_DELETE",
-        security: [{ BearerAuth: [] }],
-
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-
-        responses: {
-          200: { description: "Employee deleted successfully" },
-          401: { description: "Unauthorized" },
-          403: { description: "Permission denied" },
-          404: { description: "Employee not found" }
-        }
-      }
-    },
-
-    "/api/employees/me": {
-      get: {
-        tags: ["Employees"],
-        summary: "Get logged-in employee profile",
-        description: "Requires permission: EMP_SELF_VIEW",
-        security: [{ BearerAuth: [] }],
-
-        responses: {
-          200: { description: "Employee profile fetched successfully" },
-          401: { description: "Unauthorized" },
-          403: { description: "Permission denied" }
-        }
-      }
-    },
-
-    "/api/employees/{id}/restore": {
-      patch: {
-        tags: ["Employees"],
-        summary: "Restore deleted employee",
-        description: "Requires permission: EMP_RESTORE",
-        security: [{ BearerAuth: [] }],
-
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: { type: "string" }
-          }
-        ],
-
-        responses: {
-          200: { description: "Employee restored successfully" },
-          401: { description: "Unauthorized" },
-          403: { description: "Permission denied" },
-          404: { description: "Employee not found" }
+          404: { description: "Employee record not found" }
         }
       }
     }

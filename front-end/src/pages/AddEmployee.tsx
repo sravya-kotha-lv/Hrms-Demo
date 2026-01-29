@@ -1,70 +1,123 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Upload, User } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
+  SelectTrigger,
   SelectContent,
   SelectItem,
-  SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import {
+  getApiWithToken,
+  postApiWithToken,
+} from "@/services/apiWrapper";
+
+/* ================= TYPES ================= */
+
+interface Option {
+  _id: string;
+  name: string;
+}
+
+const emptyForm = {
+  email: "",
+  firstName: "",
+  lastName: "",
+  employeeCode: "",
+  departmentId: "",
+  designationId: "",
+  roleId: "",
+  employmentType: "",
+  dateOfJoining: "",
+};
+
+/* ================= COMPONENT ================= */
 
 const AddEmployee = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const [formData, setFormData] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    gender: "",
-    dateOfBirth: "",
-    address: "",
-    emergencyContact: "",
-    department: "",
-    role: "",
-    manager: "",
-    employmentType: "",
-    joinDate: "",
-    status: "Active",
-    basicSalary: "",
-    allowance: "",
-    bonus: "",
-    deductions: "",
-    bankName: "",
-    accountNumber: "",
-    routingNumber: "",
-  });
 
-  const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const [form, setForm] = useState(emptyForm);
+  const [departments, setDepartments] = useState<Option[]>([]);
+  const [designations, setDesignations] = useState<Option[]>([]);
+  const [roles, setRoles] = useState<Option[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  /* ================= FETCH MASTER DATA ================= */
+
+  useEffect(() => {
+    fetchDepartments();
+    fetchDesignations();
+    fetchRoles();
+  }, []);
+
+  const fetchDepartments = async () => {
+    const res = await getApiWithToken("/departments");
+    console.log(res,"dept");
+    
+    if (res?.code == 200) setDepartments(res.data || []);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Validation
-    if (!formData.firstName || !formData.lastName || !formData.email) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields.",
-        variant: "destructive",
-      });
+  const fetchDesignations = async () => {
+    const res = await getApiWithToken("/designations");
+    console.log(res,"Desi");
+    if (res?.code == 200) setDesignations(res.data || []);
+  };
+
+  const fetchRoles = async () => {
+    const res = await getApiWithToken("/roles");
+    console.log(res,"Role");
+    if (res?.code == 200) setRoles(res.data || []);
+  };
+
+  /* ================= SUBMIT ================= */
+
+  const handleSubmit = async () => {
+    if (
+      !form.email ||
+      !form.firstName ||
+      !form.lastName ||
+      !form.employeeCode ||
+      !form.departmentId ||
+      !form.designationId ||
+      !form.roleId ||
+      !form.employmentType ||
+      !form.dateOfJoining
+    ) {
+      toast.error("Please fill all required fields");
       return;
     }
 
-    toast({
-      title: "Success",
-      description: "Employee has been added successfully.",
-    });
-    navigate("/employees");
+    const payload = {
+      email: form.email,
+      roleIds: [form.roleId],
+      firstName: form.firstName,
+      lastName: form.lastName,
+      employeeCode: form.employeeCode,
+      departmentId: form.departmentId,
+      designationId: form.designationId,
+      employmentType: form.employmentType,
+      dateOfJoining: form.dateOfJoining,
+    };
+
+    setLoading(true);
+    const res = await postApiWithToken("/employees", payload);
+    setLoading(false);
+
+    if (res?.success) {
+      toast.success("Employee created & onboarding email sent");
+      navigate("/employees");
+    } else {
+      toast.error(res?.message || "Failed to create employee");
+    }
   };
+
+  /* ================= UI ================= */
 
   return (
     <MainLayout
@@ -75,343 +128,153 @@ const AddEmployee = () => {
         { label: "Add Employee" },
       ]}
     >
-      <form onSubmit={handleSubmit}>
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <button
-            type="button"
-            onClick={() => navigate("/employees")}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Employees
-          </button>
-          <div className="flex items-center gap-3">
-            <Button type="button" variant="outline" onClick={() => navigate("/employees")}>
-              Cancel
-            </Button>
-            <Button type="submit">Save Employee</Button>
-          </div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <button
+          onClick={() => navigate("/employees")}
+          className="flex items-center gap-2 text-muted-foreground"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </button>
+
+        <Button onClick={handleSubmit} disabled={loading}>
+          {loading ? "Saving..." : "Create Employee"}
+        </Button>
+      </div>
+
+      {/* Form */}
+      <div className="stat-card grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label>Email *</Label>
+          <Input
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            placeholder="employee@email.com"
+          />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Photo Upload */}
-          <motion.div
-            className="stat-card flex flex-col items-center justify-center py-8"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <div className="w-32 h-32 rounded-full bg-muted flex items-center justify-center mb-4 border-4 border-dashed border-border">
-              <User className="w-16 h-16 text-muted-foreground" />
-            </div>
-            <h3 className="font-medium text-foreground mb-2">Profile Photo</h3>
-            <p className="text-sm text-muted-foreground text-center mb-4">
-              Upload a profile photo for the employee
-            </p>
-            <Button variant="outline" className="gap-2">
-              <Upload className="w-4 h-4" />
-              Upload Photo
-            </Button>
-          </motion.div>
-
-          {/* Right Column - Form Sections */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Personal Information */}
-            <motion.div
-              className="stat-card"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <h3 className="text-lg font-semibold mb-4">Personal Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="firstName" className="form-label">First Name *</Label>
-                  <Input
-                    id="firstName"
-                    value={formData.firstName}
-                    onChange={(e) => handleChange("firstName", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter first name"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="lastName" className="form-label">Last Name *</Label>
-                  <Input
-                    id="lastName"
-                    value={formData.lastName}
-                    onChange={(e) => handleChange("lastName", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter last name"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="gender" className="form-label">Gender</Label>
-                  <Select value={formData.gender} onValueChange={(v) => handleChange("gender", v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select gender" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="dateOfBirth" className="form-label">Date of Birth</Label>
-                  <Input
-                    id="dateOfBirth"
-                    type="date"
-                    value={formData.dateOfBirth}
-                    onChange={(e) => handleChange("dateOfBirth", e.target.value)}
-                    className="form-input"
-                  />
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Contact Information */}
-            <motion.div
-              className="stat-card"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
-              <h3 className="text-lg font-semibold mb-4">Contact Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="email" className="form-label">Email Address *</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter email address"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="phone" className="form-label">Phone Number *</Label>
-                  <Input
-                    id="phone"
-                    value={formData.phone}
-                    onChange={(e) => handleChange("phone", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter phone number"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Label htmlFor="address" className="form-label">Address</Label>
-                  <Textarea
-                    id="address"
-                    value={formData.address}
-                    onChange={(e) => handleChange("address", e.target.value)}
-                    className="form-input min-h-[80px]"
-                    placeholder="Enter full address"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Label htmlFor="emergencyContact" className="form-label">Emergency Contact</Label>
-                  <Input
-                    id="emergencyContact"
-                    value={formData.emergencyContact}
-                    onChange={(e) => handleChange("emergencyContact", e.target.value)}
-                    className="form-input"
-                    placeholder="Name and phone number"
-                  />
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Job Information */}
-            <motion.div
-              className="stat-card"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <h3 className="text-lg font-semibold mb-4">Job Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="department" className="form-label">Department</Label>
-                  <Select value={formData.department} onValueChange={(v) => handleChange("department", v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select department" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="engineering">Engineering</SelectItem>
-                      <SelectItem value="design">Design</SelectItem>
-                      <SelectItem value="marketing">Marketing</SelectItem>
-                      <SelectItem value="finance">Finance</SelectItem>
-                      <SelectItem value="hr">HR</SelectItem>
-                      <SelectItem value="sales">Sales</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="role" className="form-label">Role</Label>
-                  <Input
-                    id="role"
-                    value={formData.role}
-                    onChange={(e) => handleChange("role", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter role/position"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="manager" className="form-label">Manager</Label>
-                  <Select value={formData.manager} onValueChange={(v) => handleChange("manager", v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select manager" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="john-doe">John Doe</SelectItem>
-                      <SelectItem value="jane-smith">Jane Smith</SelectItem>
-                      <SelectItem value="mike-johnson">Mike Johnson</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="employmentType" className="form-label">Employment Type</Label>
-                  <Select value={formData.employmentType} onValueChange={(v) => handleChange("employmentType", v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="full-time">Full-time</SelectItem>
-                      <SelectItem value="part-time">Part-time</SelectItem>
-                      <SelectItem value="contract">Contract</SelectItem>
-                      <SelectItem value="intern">Intern</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="joinDate" className="form-label">Join Date</Label>
-                  <Input
-                    id="joinDate"
-                    type="date"
-                    value={formData.joinDate}
-                    onChange={(e) => handleChange("joinDate", e.target.value)}
-                    className="form-input"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="status" className="form-label">Status</Label>
-                  <Select value={formData.status} onValueChange={(v) => handleChange("status", v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Active">Active</SelectItem>
-                      <SelectItem value="Inactive">Inactive</SelectItem>
-                      <SelectItem value="On Leave">On Leave</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Salary Information */}
-            <motion.div
-              className="stat-card"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <h3 className="text-lg font-semibold mb-4">Salary Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="basicSalary" className="form-label">Basic Salary</Label>
-                  <Input
-                    id="basicSalary"
-                    type="number"
-                    value={formData.basicSalary}
-                    onChange={(e) => handleChange("basicSalary", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter amount"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="allowance" className="form-label">Allowance</Label>
-                  <Input
-                    id="allowance"
-                    type="number"
-                    value={formData.allowance}
-                    onChange={(e) => handleChange("allowance", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter amount"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="bonus" className="form-label">Bonus</Label>
-                  <Input
-                    id="bonus"
-                    type="number"
-                    value={formData.bonus}
-                    onChange={(e) => handleChange("bonus", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter amount"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="deductions" className="form-label">Deductions</Label>
-                  <Input
-                    id="deductions"
-                    type="number"
-                    value={formData.deductions}
-                    onChange={(e) => handleChange("deductions", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter amount"
-                  />
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Bank Details */}
-            <motion.div
-              className="stat-card"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
-            >
-              <h3 className="text-lg font-semibold mb-4">Bank Details</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="bankName" className="form-label">Bank Name</Label>
-                  <Input
-                    id="bankName"
-                    value={formData.bankName}
-                    onChange={(e) => handleChange("bankName", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter bank name"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="accountNumber" className="form-label">Account Number</Label>
-                  <Input
-                    id="accountNumber"
-                    value={formData.accountNumber}
-                    onChange={(e) => handleChange("accountNumber", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter account number"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="routingNumber" className="form-label">Routing Number</Label>
-                  <Input
-                    id="routingNumber"
-                    value={formData.routingNumber}
-                    onChange={(e) => handleChange("routingNumber", e.target.value)}
-                    className="form-input"
-                    placeholder="Enter routing number"
-                  />
-                </div>
-              </div>
-            </motion.div>
-          </div>
+        <div>
+          <Label>Employee Code *</Label>
+          <Input
+            value={form.employeeCode}
+            onChange={(e) =>
+              setForm({ ...form, employeeCode: e.target.value })
+            }
+          />
         </div>
-      </form>
+
+        <div>
+          <Label>First Name *</Label>
+          <Input
+            value={form.firstName}
+            onChange={(e) =>
+              setForm({ ...form, firstName: e.target.value })
+            }
+          />
+        </div>
+
+        <div>
+          <Label>Last Name *</Label>
+          <Input
+            value={form.lastName}
+            onChange={(e) =>
+              setForm({ ...form, lastName: e.target.value })
+            }
+          />
+        </div>
+
+        <div>
+          <Label>Department *</Label>
+          <Select
+            value={form.departmentId}
+            onValueChange={(v) =>
+              setForm({ ...form, departmentId: v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Department" />
+            </SelectTrigger>
+            <SelectContent>
+              {departments.map((d) => (
+                <SelectItem key={d._id} value={d._id}>
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label>Designation *</Label>
+          <Select
+            value={form.designationId}
+            onValueChange={(v) =>
+              setForm({ ...form, designationId: v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Designation" />
+            </SelectTrigger>
+            <SelectContent>
+              {designations.map((d) => (
+                <SelectItem key={d._id} value={d._id}>
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label>Role *</Label>
+          <Select
+            value={form.roleId}
+            onValueChange={(v) => setForm({ ...form, roleId: v })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Role" />
+            </SelectTrigger>
+            <SelectContent>
+              {roles.map((r) => (
+                <SelectItem key={r._id} value={r._id}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label>Employment Type *</Label>
+          <Select
+            value={form.employmentType}
+            onValueChange={(v) =>
+              setForm({ ...form, employmentType: v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="full_time">Full Time</SelectItem>
+              <SelectItem value="part_time">Part Time</SelectItem>
+              <SelectItem value="contract">Contract</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label>Date of Joining *</Label>
+          <Input
+            type="date"
+            value={form.dateOfJoining}
+            onChange={(e) =>
+              setForm({ ...form, dateOfJoining: e.target.value })
+            }
+          />
+        </div>
+      </div>
     </MainLayout>
   );
 };

@@ -1,207 +1,196 @@
+const mongoose = require("mongoose");
+const User = require("../users/user.model");
 const Employee = require("./employee.model");
-const { audit } = require("../auditLogs/auditLogs.service");
+const OrganizationService = require('../organizations/organization.service');
+const { genHashedPassword } = require("../../utils/bcryptUtils");
+const sendMail = require("../../utils/sendMail");
 
-/**
- * CREATE
- */
-exports.create = async (req) => {
-  const { organizationId } = req.user;
+/* ------------------------------------------------------------------ */
+/* HR / ADMIN CREATES EMPLOYEE                                         */
+/* ------------------------------------------------------------------ */
+exports.createByHr = async (req) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  const exists = await Employee.findOne({
-    organizationId,
-    employeeCode: req.body.employeeCode
-  });
+  try {
+    const {
+      email,
+      roleIds,
+      firstName,
+      lastName,
+      employeeCode,
+      departmentId,
+      designationId,
+      dateOfJoining,
+      employmentType
+    } = req.body;
 
-  if (exists) {
-    throw { code: 400, message: "Employee code already exists" };
-  }
+    const { organizationId } = req.user;
 
-  const employee = await Employee.create({
-    ...req.body,
-    organizationId
-  });
+    /* 1️⃣ Prevent duplicate user */
+    const existingUser = await User.findOne(
+      { email, organizationId },
+      null,
+      { session }
+    );
 
-  await audit({
-    req,
-    module: "employees",
-    action: "CREATE",
-    entityId: employee._id,
-    after: employee.toObject()
-  });
-
-  return employee;
-};
-
-/**
- * UPDATE
- */
-exports.update = async (req) => {
-  const employee = await Employee.findOne({
-    _id: req.params.id,
-    organizationId: req.user.organizationId
-  });
-
-  if (!employee) {
-    throw { code: 404, message: "Employee not found" };
-  }
-
-  const before = employee.toObject();
-
-  Object.assign(employee, req.body);
-  await employee.save();
-
-  await audit({
-    req,
-    module: "employees",
-    action: "UPDATE",
-    entityId: employee._id,
-    before,
-    after: employee.toObject()
-  });
-
-  return employee;
-};
-
-/**
- * DELETE (SOFT)
- */
-exports.remove = async (req) => {
-  const employee = await Employee.findOne({
-    _id: req.params.id,
-    organizationId: req.user.organizationId
-  });
-
-  if (!employee) {
-    throw { code: 404, message: "Employee not found" };
-  }
-
-  const before = employee.toObject();
-
-  employee.isDeleted = true;
-  employee.deletedAt = new Date();
-  employee.deletedBy = req.user._id;
-
-  await employee.save();
-
-  await audit({
-    req,
-    module: "employees",
-    action: "DELETE",
-    entityId: employee._id,
-    before,
-    after: employee.toObject()
-  });
-};
-
-/**
- * LIST
- */
-exports.list = async (req) => {
-  const {
-    page = 1,
-    limit = 10,
-    search,
-    departmentId,
-    designationId,
-    status
-  } = req.query;
-
-  const query = {
-    organizationId: req.user.organizationId,
-    isDeleted: false
-  };
-
-  if (search) {
-    query.$or = [
-      { firstName: { $regex: search, $options: "i" } },
-      { lastName: { $regex: search, $options: "i" } },
-      { employeeCode: { $regex: search, $options: "i" } },
-      { phone: { $regex: search, $options: "i" } }
-    ];
-  }
-
-  if (departmentId) query.departmentId = departmentId;
-  if (designationId) query.designationId = designationId;
-  if (status) query.status = status;
-
-  const skip = (Number(page) - 1) * Number(limit);
-
-  const [items, total] = await Promise.all([
-    Employee.find(query)
-      .populate("departmentId", "name")
-      .populate("designationId", "name")
-      .populate("managerId", "firstName lastName")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit)),
-    Employee.countDocuments(query)
-  ]);
-
-  return {
-    items,
-    pagination: {
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: Math.ceil(total / limit)
+    if (existingUser) {
+      throw { code: 409, message: "User already exists" };
     }
-  };
-};
 
-exports.getById = async (req) => {
-  const employee = await Employee.findOne({
-    _id: req.params.id,
-    organizationId: req.user.organizationId
-  })
-    .populate("departmentId", "name")
-    .populate("designationId", "name")
-    .populate("managerId", "firstName lastName");
+    /* 2️⃣ Generate password */
+    const plainPassword = generatePassword();
+    const hashedPassword = await genHashedPassword(plainPassword);
 
-  if (!employee) {
-    throw { code: 404, message: "Employee not found" };
+    /* 3️⃣ Create USER */
+    const [user] = await User.create(
+      [
+        {
+          organizationId,
+          email,
+          password: hashedPassword,
+          roleIds,
+          status: "active",
+          isFirstLogin: true
+        }
+      ],
+      { session }
+    );
+
+    /* 4️⃣ Create EMPLOYEE */
+    const [employee] = await Employee.create(
+      [
+        {
+          organizationId,
+          userId: user._id,
+          firstName,
+          lastName,
+          employeeCode,
+          departmentId,
+          designationId,
+          dateOfJoining,
+          employmentType,
+          profileCompleted: false
+        }
+      ],
+      { session }
+    );
+
+    const orgDetails = await OrganizationService.getOrganizationById(organizationId);
+    console.log(orgDetails,"orgs");
+    
+    await sendMail(
+      "employeeOnboarding",                
+      firstName,                             
+      `Welcome to ${orgDetails?.name}`,      
+      {
+        employeeName: firstName,
+        email,
+        password: plainPassword,
+        loginUrl: process.env.FRONTEND_LOGIN_URL,
+        orgName:orgDetails?.name
+      },
+      email                                  
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return {
+      employeeId: employee._id,
+      userId: user._id,
+      email
+    };
+
+  } catch (err) {
+    console.log(err,"=======");
+    
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
   }
-
-  return employee;
 };
 
-exports.getMe = async (req) => {
+/* ------------------------------------------------------------------ */
+/* EMPLOYEE COMPLETES OWN PROFILE                                      */
+/* ------------------------------------------------------------------ */
+exports.completeMyProfile = async (req) => {
   const employee = await Employee.findOne({
     userId: req.user._id,
     organizationId: req.user.organizationId
-  })
-    .populate("departmentId", "name")
-    .populate("designationId", "name")
-    .populate("managerId", "firstName lastName");
+  });
 
   if (!employee) {
-    throw { code: 404, message: "Employee profile not found" };
+    throw { code: 404, message: "Employee record not found" };
   }
 
+  Object.assign(employee, req.body);
+  employee.profileCompleted = true;
+
+  await employee.save();
   return employee;
 };
 
-exports.restore = async (req) => {
-  const department = await Department.findOne({
-    _id: req.params.id,
-    organizationId: req.user.organizationId,
-    isDeleted: true
-  });
+/* ------------------------------------------------------------------ */
+/* HELPERS                                                            */
+/* ------------------------------------------------------------------ */
+function generatePassword() {
+  return Math.random().toString(36).slice(-10);
+}
 
-  if (!department) {
-    throw { code: 404, message: "Department not found or not deleted" };
-  }
+// exports.listByOrganization = async (req) => {
+//   const {
+//     page = 1,
+//     limit = 10,
+//     search,
+//     departmentId,
+//     designationId,
+//     status
+//   } = req.query;
 
-  department.isDeleted = false;
-  department.deletedAt = null;
-  department.deletedBy = null;
-  await department.save();
+//   const { organizationId } = req.user;
 
-  await audit({
-    req,
-    module: "departments",
-    action: "RESTORE",
-    entityId: department._id
-  });
+//   const query = {
+//     organizationId,
+//     isDeleted: false
+//   };
 
-  return department;
-};
+//   /* 🔍 Search */
+//   if (search) {
+//     query.$or = [
+//       { firstName: { $regex: search, $options: "i" } },
+//       { lastName: { $regex: search, $options: "i" } },
+//       { employeeCode: { $regex: search, $options: "i" } },
+//       { phone: { $regex: search, $options: "i" } }
+//     ];
+//   }
+
+//   /* 🎯 Filters */
+//   if (departmentId) query.departmentId = departmentId;
+//   if (designationId) query.designationId = designationId;
+//   if (status) query.status = status;
+
+//   const skip = (Number(page) - 1) * Number(limit);
+
+//   const [employees, total] = await Promise.all([
+//     Employee.find(query)
+//       .populate("departmentId", "name")
+//       .populate("designationId", "name")
+//       .populate("managerId", "firstName lastName")
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(Number(limit)),
+
+//     Employee.countDocuments(query)
+//   ]);
+
+//   return {
+//     items: employees,
+//     pagination: {
+//       total,
+//       page: Number(page),
+//       limit: Number(limit),
+//       totalPages: Math.ceil(total / limit)
+//     }
+//   };
+// };
