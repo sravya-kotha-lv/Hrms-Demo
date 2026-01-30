@@ -25,16 +25,33 @@ const MONGO_URI = process.env.MONGO_URI;
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// CORS
-app.use(
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:8000",
+  "http://localhost:3001",
+  "https://upanaya.vercel.app"
+];
+server.set("trust proxy", 1);
+server.disable("x-powered-by");
+
+server.use(
   cors({
-    origin: "*", // for development
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    exposedHeaders: ["Authorization"]
+    origin: function (origin, callback) {
+      // allow requests with no origin (like mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) === -1) {
+        const msg = "CORS policy does not allow this origin: " + origin;
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: "Content-Type,Authorization,Access-Control-Allow-Credentials",
+    exposedHeaders: "Content-Type,Authorization,Access-Control-Allow-Credentials",
+    credentials: true,
   })
 );
-
 // HTTP request logging (dev)
 app.use(morgan("dev"));
 
