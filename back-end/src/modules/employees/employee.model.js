@@ -136,9 +136,8 @@ employeeSchema.index(
 );
 
 // 🔍 Automatically ignore deleted employees
-employeeSchema.pre(/^find/, function (next) {
+employeeSchema.pre(/^find/, async function () {
   this.where({ isDeleted: false });
-  next();
 });
 
 module.exports = mongoose.model("employees", employeeSchema);
