@@ -1,7 +1,7 @@
 const nodemailer = require("nodemailer");
 const fs = require("fs");
 const path = require("path");
-const logger = require("../logger/logger");
+// const logger = require("../logger/logger");
 
 // Create transporter
 const transporter = nodemailer.createTransport({
@@ -92,16 +92,16 @@ module.exports = async (template, toName, subject, content, toEmail) => {
       text
     });
 
-    logger.info("Email sent", { template, toEmail });
+    // logger.info("Email sent", { template, toEmail });
     return true;
   } catch (err) {
     console.log(err,"------");
     
-    logger.error("Failed to send email", {
-      error: err.message,
-      template,
-      toEmail
-    });
+    // logger.error("Failed to send email", {
+    //   error: err.message,
+    //   template,
+    //   toEmail
+    // });
 
     // ❗ Do not break app for email failure
     return false;

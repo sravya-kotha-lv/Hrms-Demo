@@ -1,4 +1,4 @@
-const logger = require("../logger/logger");
+// const logger = require("../logger/logger");
 
 module.exports = (req, res, next) => {
   const start = Date.now();
@@ -11,15 +11,15 @@ module.exports = (req, res, next) => {
   }
 
   res.on("finish", () => {
-    logger.info("HTTP Request", {
-      method: req.method,
-      url: req.originalUrl,
-      statusCode: res.statusCode,
-      durationMs: Date.now() - start,
-      userId: req.user?._id || null,
-      ip: req.ip,
-      userAgent: req.headers["user-agent"]
-    });
+    // logger.info("HTTP Request", {
+    //   method: req.method,
+    //   url: req.originalUrl,
+    //   statusCode: res.statusCode,
+    //   durationMs: Date.now() - start,
+    //   userId: req.user?._id || null,
+    //   ip: req.ip,
+    //   userAgent: req.headers["user-agent"]
+    // });
   });
 
   next();
