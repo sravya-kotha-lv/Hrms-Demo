@@ -39,8 +39,8 @@ app.use(
 app.use(morgan("dev"));
 
 // Custom request logger (audit / tracing)
-const requestLogger = require("./src/middlewares/requestLogger");
-app.use(requestLogger);
+// const requestLogger = require("./src/middlewares/requestLogger");
+// app.use(requestLogger);
 
 // Rate limiting
 // const rateLimiter = require("./src/middlewares/rateLimiter");
