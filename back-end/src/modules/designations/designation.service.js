@@ -1,5 +1,6 @@
 const Designation = require("./designation.model");
 const { audit } = require("../auditLogs/auditLogs.service");
+const mongoose = require("mongoose");
 
 exports.create = async (req) => {
   try {
@@ -72,7 +73,43 @@ exports.remove = async (req) => {
 };
 
 exports.list = async (req) => {
-  return Designation.find({
-    organizationId: req.user.organizationId
-  }).sort({ level: 1, name: 1 });
+  // return Designation.find({
+  //   organizationId: req.user.organizationId
+  // }).sort({ level: 1, name: 1 });
+  try{
+    const results = await Designation.aggregate([
+      { $match: { organizationId: new mongoose.Types.ObjectId(req.user.organizationId) } },
+      {
+        $lookup: {
+          from: 'departments',
+          localField: 'departmentId',
+          foreignField: '_id',
+          as: 'departments'
+        }
+      },
+      {
+        $unwind: {
+          path: '$departments',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          organizationId: 1,
+          name: 1,
+          departmentId: 1,
+          status: 1,
+          isDeleted: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          departmentName: '$departments.name'
+        }
+      }
+    ]);
+  
+  return results;
+} catch(err){
+console.log(err,'erer')
+}
 };
