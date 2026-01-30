@@ -1129,7 +1129,7 @@ module.exports = {
         summary: "HR/Admin creates employee",
         description:
           "Creates User + Employee and sends onboarding email. Requires permission: EMP_CREATE",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         requestBody: {
           required: true,
@@ -1161,7 +1161,7 @@ module.exports = {
         tags: ["Employees"],
         summary: "List employees (organization-wise)",
         description: "Fetch employees belonging to the logged-in user's organization. Requires permission: EMP_VIEW",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         parameters: [
           {
@@ -1254,7 +1254,7 @@ module.exports = {
         summary: "Employee completes own profile",
         description:
           "Employee fills remaining profile details on first login. Requires permission: EMP_SELF_EDIT",
-        security: [{ bearerAuth: [] }],
+        security: [{ BearerAuth: [] }],
 
         requestBody: {
           required: true,
