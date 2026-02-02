@@ -247,6 +247,18 @@ module.exports = {
         }
       },
 
+      LeaveType: {
+        type: "object",
+        required: ["name", "code", "daysPerYear", "organizationId"],
+        properties: {
+          name: { type: "string", example: "Annual Leave" },
+          code: { type: "string", example: "AL" },
+          daysPerYear: { type: "number", example: 15 },
+          isCarryForward: { type: "boolean", example: false },
+          status: { type: "string", enum: ["active", "inactive"], default: "active" },
+        },
+      },
+
       ApiSuccessResponse: {
         type: "object",
         properties: {
@@ -1280,6 +1292,91 @@ module.exports = {
           404: { description: "Employee record not found" }
         }
       }
-    }
+    },
+
+    "/employees/leave-types": {
+      get: {
+        tags: ["Employees"],
+        summary: "List all employee leave types",
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: { description: "Success" },
+        },
+      },
+    },
+    
+    "/leave-types": {
+      post: {
+        tags: ["LeaveTypes"],
+        summary: "Create a new leave type",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/LeaveType" },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Created successfully" },
+        },
+      },
+      get: {
+        tags: ["LeaveTypes"],
+        summary: "List all leave types",
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: { description: "Success" },
+        },
+      },
+    },
+    "/leave-types/{id}": {
+      put: {
+        tags: ["LeaveTypes"],
+        summary: "Update/Enable/Disable Leave Type",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  status: { type: "string", enum: ["active", "inactive"] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Updated" },
+        },
+      },
+      delete: {
+        tags: ["LeaveTypes"],
+        summary: "Soft delete (Deactivate)",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          200: { description: "Deactivated" },
+        },
+      },
+    },
   }
 };
