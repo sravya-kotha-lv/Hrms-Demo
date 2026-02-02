@@ -138,59 +138,59 @@ function generatePassword() {
   return Math.random().toString(36).slice(-10);
 }
 
-// exports.listByOrganization = async (req) => {
-//   const {
-//     page = 1,
-//     limit = 10,
-//     search,
-//     departmentId,
-//     designationId,
-//     status
-//   } = req.query;
+exports.listByOrganization = async (req) => {
+  const {
+    page = 1,
+    limit = 10,
+    search,
+    departmentId,
+    designationId,
+    status
+  } = req.query;
 
-//   const { organizationId } = req.user;
+  const { organizationId } = req.user;
 
-//   const query = {
-//     organizationId,
-//     isDeleted: false
-//   };
+  const query = {
+    organizationId,
+    isDeleted: false
+  };
 
-//   /* 🔍 Search */
-//   if (search) {
-//     query.$or = [
-//       { firstName: { $regex: search, $options: "i" } },
-//       { lastName: { $regex: search, $options: "i" } },
-//       { employeeCode: { $regex: search, $options: "i" } },
-//       { phone: { $regex: search, $options: "i" } }
-//     ];
-//   }
+  /* 🔍 Search */
+  if (search) {
+    query.$or = [
+      { firstName: { $regex: search, $options: "i" } },
+      { lastName: { $regex: search, $options: "i" } },
+      { employeeCode: { $regex: search, $options: "i" } },
+      { phone: { $regex: search, $options: "i" } }
+    ];
+  }
 
-//   /* 🎯 Filters */
-//   if (departmentId) query.departmentId = departmentId;
-//   if (designationId) query.designationId = designationId;
-//   if (status) query.status = status;
+  /* 🎯 Filters */
+  if (departmentId) query.departmentId = departmentId;
+  if (designationId) query.designationId = designationId;
+  if (status) query.status = status;
 
-//   const skip = (Number(page) - 1) * Number(limit);
+  const skip = (Number(page) - 1) * Number(limit);
 
-//   const [employees, total] = await Promise.all([
-//     Employee.find(query)
-//       .populate("departmentId", "name")
-//       .populate("designationId", "name")
-//       .populate("managerId", "firstName lastName")
-//       .sort({ createdAt: -1 })
-//       .skip(skip)
-//       .limit(Number(limit)),
+  const [employees, total] = await Promise.all([
+    Employee.find(query)
+      .populate("departmentId", "name")
+      .populate("designationId", "name")
+      .populate("managerId", "firstName lastName")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit)),
 
-//     Employee.countDocuments(query)
-//   ]);
+    Employee.countDocuments(query)
+  ]);
 
-//   return {
-//     items: employees,
-//     pagination: {
-//       total,
-//       page: Number(page),
-//       limit: Number(limit),
-//       totalPages: Math.ceil(total / limit)
-//     }
-//   };
-// };
+  return {
+    items: employees,
+    pagination: {
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages: Math.ceil(total / limit)
+    }
+  };
+};
