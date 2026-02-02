@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,14 +16,6 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
@@ -35,7 +26,6 @@ import {
   deleteApiWithToken,
 } from "@/services/apiWrapper";
 import { DataTable, Column } from "@/components/ui/DataTable";
-import { useNavigate } from "react-router-dom";
 
 /* ================= TYPES ================= */
 
@@ -130,6 +120,65 @@ const Designations = () => {
     }
   };
 
+  const filteredDesignations = useMemo(() => {
+    if (!search) return designations;
+    return designations.filter((d) => {
+      const name = (d.name || "").toLowerCase();
+      const dept = (d.departmentName || "").toLowerCase();
+      return (
+        name.includes(search.toLowerCase()) ||
+        dept.includes(search.toLowerCase())
+      );
+    });
+  }, [designations, search]);
+
+  const columns: Column<any>[] = [
+    {
+      header: "Designation",
+      accessor: "name",
+      sortable: true
+    },
+    {
+      header: "Department",
+      accessor: "departmentName",
+      render: (des) => des.departmentName || "-",
+      sortable: true
+    },
+    {
+      header: "Status",
+      accessor: "status",
+      render: (des) => (
+        <Badge variant={des.status === "active" ? "default" : "secondary"}>
+          {des.status}
+        </Badge>
+      )
+    },
+    {
+      header: "Actions",
+      accessor: "_id",
+      render: (des) => (
+        <div className="flex gap-3">
+          <PermissionGate permissions={["DESIG_UPDATE"]}>
+            <Pencil
+              className="w-4 h-4 cursor-pointer text-blue-500 hover:text-blue-700"
+              onClick={() => {
+                setIsEdit(true);
+                setForm(des);
+                setOpen(true);
+              }}
+            />
+          </PermissionGate>
+          <PermissionGate permissions={["DESIG_DELETE"]}>
+            <Trash2
+              className="w-4 h-4 cursor-pointer text-red-500 hover:text-red-700"
+              onClick={() => handleDelete(des._id)}
+            />
+          </PermissionGate>
+        </div>
+      )
+    }
+  ];
+
   /* ================= UI ================= */
 
   return (
@@ -162,6 +211,14 @@ const Designations = () => {
           </Button>
         </PermissionGate>
       </div>
+
+      {/* ---------- Table ---------- */}
+      <DataTable
+        columns={columns}
+        data={filteredDesignations}
+        rowKey="_id"
+        searchKey="name"
+      />
 
       {/* ---------- Modal ---------- */}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -223,56 +280,6 @@ const Designations = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ---------- Table ---------- */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50">
-              <TableHead>Designation</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead></TableHead>
-            </TableRow>
-          </TableHeader>
-
-          <TableBody>
-            {designations?.map((des: any) => (
-              <TableRow key={des._id} className="hover:bg-gray-50">
-                <TableCell className="font-medium">{des.name}</TableCell>
-                <TableCell>{des.departmentName || "-"}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      des.status === "active" ? "default" : "secondary"
-                    }
-                  >
-                    {des.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="flex gap-3">
-                  <PermissionGate permissions={["DESIG_UPDATE"]}>
-                    <Pencil
-                      className="w-4 h-4 cursor-pointer text-blue-500 hover:text-blue-700"
-                      onClick={() => {
-                        setIsEdit(true);
-                        setForm(des);
-                        setOpen(true);
-                      }}
-                    />
-                  </PermissionGate>
-
-                  <PermissionGate permissions={["DESIG_DELETE"]}>
-                    <Trash2
-                      className="w-4 h-4 cursor-pointer text-red-500 hover:text-red-700"
-                      onClick={() => handleDelete(des._id)}
-                    />
-                  </PermissionGate>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
     </MainLayout>
   );
 };
