@@ -13,7 +13,6 @@ const calculateDays = (from, to) => {
 
 exports.applyLeave = async (req) => {
 
-  console.log(req.body);
   // 1. Find employee from logged-in user
   // const employee = await Employee.findOne({
   //   userId: req.user._id,
