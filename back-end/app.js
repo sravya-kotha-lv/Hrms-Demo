@@ -15,7 +15,6 @@ const app = express();
 /* -------------------------------------------------------------------------- */
 
 const PORT = process.env.PORT || 4000;
-const MONGO_URI = process.env.MONGO_URI;
 
 /* -------------------------------------------------------------------------- */
 /*                               MIDDLEWARES                                  */
@@ -29,6 +28,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:8080",
   "http://localhost:8000",
+  "http://localhost:8001",
   "http://localhost:3001",
   "https://upanaya.vercel.app"
 ];
@@ -92,6 +92,7 @@ app.use("/api/roles", require("./src/modules/roles/role.routes"));
 app.use("/api/employees", require("./src/modules/employees/employee.routes"));
 app.use("/api/departments", require("./src/modules/departments/department.routes"));
 app.use("/api/designations", require("./src/modules/designations/designation.routes"));
+app.use("/api/leave-types", require("./src/modules/leaveTypes/leaveType.routes"))
 
 /* -------------------------------------------------------------------------- */
 /*                         GLOBAL ERROR HANDLER                                */
