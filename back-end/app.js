@@ -92,7 +92,9 @@ app.use("/api/roles", require("./src/modules/roles/role.routes"));
 app.use("/api/employees", require("./src/modules/employees/employee.routes"));
 app.use("/api/departments", require("./src/modules/departments/department.routes"));
 app.use("/api/designations", require("./src/modules/designations/designation.routes"));
-app.use("/api/leave-types", require("./src/modules/leaveTypes/leaveType.routes"))
+app.use("/api/leave-types", require("./src/modules/leaveTypes/leaveType.routes"));
+app.use("/api/leaves", require("./src/modules/leaves/leave.routes"));
+
 
 /* -------------------------------------------------------------------------- */
 /*                         GLOBAL ERROR HANDLER                                */
