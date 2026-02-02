@@ -30,37 +30,68 @@ interface NavItemProps {
   label: string;
   to: string;
   collapsed: boolean;
+   children?: {
+    icon: React.ReactNode;
+    label: string;
+    to: string;
+  }[];
 }
 
-const NavItem = ({ icon, label, to, collapsed }: NavItemProps) => {
+
+const NavItem = ({ icon, label, to, collapsed ,children}: NavItemProps) => {
   const location = useLocation();
+  const [open, setOpen] = useState(false);
+
+  const hasChildren = children && children.length > 0;
   const isActive = location.pathname === to || location.pathname.startsWith(to + "/");
 
   return (
-    <NavLink to={to}>
-      <motion.div
+   <div>
+      <div
         className={cn(
-          "nav-item",
+          "nav-item flex items-center justify-between cursor-pointer",
           isActive && "nav-item-active"
         )}
-        whileHover={{ x: 4 }}
-        transition={{ duration: 0.2 }}
+        onClick={() => hasChildren && setOpen(!open)}
       >
-        <span className="w-5 h-5 flex-shrink-0">{icon}</span>
-        <AnimatePresence>
-          {!collapsed && (
-            <motion.span
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: "auto" }}
-              exit={{ opacity: 0, width: 0 }}
-              className="whitespace-nowrap overflow-hidden"
-            >
-              {label}
-            </motion.span>
-          )}
-        </AnimatePresence>
-      </motion.div>
-    </NavLink>
+        <NavLink
+          to={hasChildren ? "#" : to}
+          className="flex items-center gap-3 w-full"
+        >
+          <span className="w-5 h-5">{icon}</span>
+          {!collapsed && <span>{label}</span>}
+        </NavLink>
+
+        {!collapsed && hasChildren && (
+          <ChevronRight
+            size={16}
+            className={`transition-transform ${
+              open ? "rotate-90" : ""
+            }`}
+          />
+        )}
+      </div>
+
+      {/* CHILDREN */}
+      {!collapsed && open && hasChildren && (
+        <div className="ml-8 mt-1 space-y-1">
+          {children.map((child) => (
+            <NavLink key={child.to} to={child.to}>
+              <div
+                className={cn(
+                  "nav-item text-sm",
+                  location.pathname === child.to &&
+                    "nav-item-active"
+                )}
+              >
+                {child.icon}
+                <span>{child.label}</span>
+              </div>
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -77,7 +108,19 @@ const menuItems = [
   { icon: <Building2 size={20} />, label: "Organization", to: "/organization" },
   { icon: <Shield size={20} />, label: "Roles", to: "/roles" },
   { icon: <Building size={20} />, label: "Departments", to: "/departments" },
-  { icon: <Briefcase size={20} />, label: "Designations", to: "/designations" },
+  {
+  icon: <Building size={20} />,
+  label: "Departments",
+  to: "/departments",
+  children: [
+    {
+      icon: <Briefcase size={18} />,
+      label: "Designations",
+      to: "/designations",
+    },
+  ],
+},
+
 ];
 
 // const bottomItems = [
@@ -132,14 +175,14 @@ export const Sidebar = () => {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 overflow-y-auto">
+      <nav className="flex-1 py-4 px-3 overflow-y-auto scroll-smooth custom-scroll">
         <div className="space-y-1">
           {menuItems.map((item) => (
             <NavItem key={item.to} {...item} collapsed={collapsed} />
           ))}
         </div>
       </nav>
-
+       
       {/* Bottom Section */}
       <div className="border-t border-white/10 py-4 px-3">
         {/* <div className="space-y-1">
