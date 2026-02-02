@@ -2,7 +2,6 @@ const service = require("./leave.service");
 const { buildSuccessResponse } = require("../../utils/responseBuilder");
 
 exports.apply = async (req, res) => {
-  console.log(req.user);
   const data = await service.applyLeave(req);
   res.status(201).json(
     buildSuccessResponse({ message: "Leave applied" })
