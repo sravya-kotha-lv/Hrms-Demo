@@ -94,6 +94,17 @@ app.use("/api/departments", require("./src/modules/departments/department.routes
 app.use("/api/designations", require("./src/modules/designations/designation.routes"));
 app.use("/api/leave-types", require("./src/modules/leaveTypes/leaveType.routes"));
 app.use("/api/leaves", require("./src/modules/leaves/leave.routes"));
+app.use("/api/holidays", require("./src/modules/holidays/holiday.routes"));
+app.use(
+  "/api/week-offs",
+  require("./src/modules/weekOffs/weekOff.routes")
+);
+app.use(
+  "/api/leave-balances",
+  require("./src/modules/leaveBalances/leaveBalance.routes")
+);
+
+
 
 
 /* -------------------------------------------------------------------------- */

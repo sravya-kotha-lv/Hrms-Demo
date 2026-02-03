@@ -4,6 +4,9 @@ const Employee = require("./employee.model");
 const OrganizationService = require('../organizations/organization.service');
 const { genHashedPassword } = require("../../utils/bcryptUtils");
 const sendMail = require("../../utils/sendMail");
+const leaveBalanceService =
+  require("../leaveBalances/leaveBalance.service");
+
 
 /* ------------------------------------------------------------------ */
 /* HR / ADMIN CREATES EMPLOYEE                                         */
@@ -74,6 +77,10 @@ exports.createByHr = async (req) => {
         }
       ],
       { session }
+    );
+    await leaveBalanceService.initializeForEmployee(
+      employee,
+      req.user.organizationId
     );
 
     const orgDetails = await OrganizationService.getOrganizationById(organizationId);
