@@ -1,4 +1,5 @@
 const service = require("./employee.service");
+const { getEmployeeleaves } = require("../leaveTypes/leaveType.service")
 const { buildSuccessResponse } = require("../../utils/responseBuilder");
 
 /**
@@ -38,4 +39,9 @@ exports.listByOrganization = async (req, res) => {
       data
     })
   );
+};
+
+exports.getEmployeeleaves = async (req, res) => {
+  const data = await getEmployeeleaves(req);
+  return res.status(200).json(buildSuccessResponse({ data }));
 };

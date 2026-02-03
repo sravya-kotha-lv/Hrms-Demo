@@ -41,4 +41,6 @@ router.get(
   asyncHandler(controller.listByOrganization)
 );
 
+router.get("/leave-types", auth, asyncHandler(controller.getEmployeeleaves));
+
 module.exports = router;
