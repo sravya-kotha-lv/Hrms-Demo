@@ -1,15 +1,10 @@
-<<<<<<< Updated upstream
 import { useEffect, useState } from "react";
-=======
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
->>>>>>> Stashed changes
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-<<<<<<< Updated upstream
   Dialog,
   DialogContent,
   DialogHeader,
@@ -23,8 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-=======
->>>>>>> Stashed changes
   Table,
   TableBody,
   TableCell,
@@ -32,7 +25,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-<<<<<<< Updated upstream
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -42,6 +34,7 @@ import {
   deleteApiWithToken,
 } from "@/services/apiWrapper";
 import { DataTable, Column } from "@/components/ui/DataTable";
+import { useNavigate } from "react-router-dom";
 
 /* ================= TYPES ================= */
 
@@ -136,116 +129,14 @@ const Designations = () => {
     }
   };
 
-  const columns: Column<any>[] = [
-    {
-      header: "Name",
-      accessor: "name",
-      sortable: true,
-    },
-    {
-      header: "Department",
-      accessor: "departmentId",
-      render: (row) => row.department?.name || "-",
-    },
-    {
-      header: "Status",
-      accessor: "status",
-      render: (row) => (
-        <Badge
-          variant={row.status === "active" ? "default" : "secondary"}
-          className="capitalize"
-        >
-          {row.status}
-        </Badge>
-      ),
-    },
-    {
-      header: "Actions",
-      accessor: "_id",
-      render: (row) => (
-        <div className="flex gap-3">
-          <Pencil
-            className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
-            onClick={() => {
-              setIsEdit(true);
-              setForm({
-                _id: row._id,
-                name: row.name,
-                departmentId: row.departmentId,
-                status: row.status,
-              });
-              setOpen(true);
-            }}
-          />
-
-          <Trash2
-            className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
-            onClick={() => handleDelete(row._id)}
-          />
-        </div>
-      ),
-    },
-  ];
-
   /* ================= UI ================= */
-=======
-import { Search, Plus, Edit, Trash2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { getApiWithToken, deleteApiWithToken } from "@/services/apiWrapper";
-
-const Designations = () => {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
-
-  // ✅ GET API
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["designations"],
-    queryFn: async () => {
-      const res = await getApiWithToken("/designations");
-      return res.data;
-    },
-  });
-
-  // ✅ DELETE API
-  const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await deleteApiWithToken(`/designations/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["designations"] });
-    },
-  });
-
-  if (isLoading) {
-    return <MainLayout title="Designations">Loading...</MainLayout>;
-  }
-
-  if (error) {
-    return <MainLayout title="Designations">Error loading data</MainLayout>;
-  }
-
-  const filteredData = data?.filter((des: any) =>
-    des.name.toLowerCase().includes(search.toLowerCase())
-  );
->>>>>>> Stashed changes
 
   return (
     <MainLayout
       title="Designations"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Designations" }]}
     >
-<<<<<<< Updated upstream
       {/* ---------- Action Bar ---------- */}
-      <div className="flex justify-end mb-6">
-        <Button
-          onClick={() => {
-            setIsEdit(false);
-            setForm(emptyDesignation);
-            setOpen(true);
-          }}
-        >
-=======
       <div className="flex justify-between items-center mb-6">
         <div className="relative w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -257,22 +148,17 @@ const Designations = () => {
           />
         </div>
 
-        <Button onClick={() => navigate("/designations/add")}>
->>>>>>> Stashed changes
+        <Button
+          onClick={() => {
+            setIsEdit(false);
+            setForm(emptyDesignation);
+            setOpen(true);
+          }}
+        >
           <Plus className="w-4 h-4 mr-2" />
           Add Designation
         </Button>
       </div>
-
-<<<<<<< Updated upstream
-
-      {/* ---------- Table ---------- */}
-      <DataTable
-        columns={columns}
-        data={designations}
-        rowKey="_id"
-        searchKey="name"
-      />
 
       {/* ---------- Modal ---------- */}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -333,53 +219,46 @@ const Designations = () => {
           </div>
         </DialogContent>
       </Dialog>
-=======
+
+      {/* ---------- Table ---------- */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead>Designation</TableHead>
               <TableHead>Department</TableHead>
-              <TableHead>Role Type</TableHead>
               <TableHead>Status</TableHead>
               <TableHead></TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
-            {filteredData?.map((des: any) => (
-              <TableRow key={des.id} className="hover:bg-gray-50">
+            {designations?.map((des: any) => (
+              <TableRow key={des._id} className="hover:bg-gray-50">
                 <TableCell className="font-medium">{des.name}</TableCell>
-                <TableCell>{des.department}</TableCell>
-                <TableCell>{des.role}</TableCell>
+                <TableCell>{des.departmentId}</TableCell>
                 <TableCell>
                   <Badge
                     variant={
-                      des.status === "Active" ? "default" : "secondary"
+                      des.status === "active" ? "default" : "secondary"
                     }
                   >
                     {des.status}
                   </Badge>
                 </TableCell>
                 <TableCell className="flex gap-3">
-                  <Edit
+                  <Pencil
                     className="w-4 h-4 cursor-pointer text-blue-500 hover:text-blue-700"
-                    onClick={() =>
-                      navigate(`/designations/edit/${des.id}`)
-                    }
+                    onClick={() => {
+                      setIsEdit(true);
+                      setForm(des);
+                      setOpen(true);
+                    }}
                   />
 
                   <Trash2
                     className="w-4 h-4 cursor-pointer text-red-500 hover:text-red-700"
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "Are you sure you want to delete this designation?"
-                        )
-                      ) {
-                        deleteMutation.mutate(des.id);
-                      }
-                    }}
+                    onClick={() => handleDelete(des._id)}
                   />
                 </TableCell>
               </TableRow>
@@ -387,7 +266,6 @@ const Designations = () => {
           </TableBody>
         </Table>
       </div>
->>>>>>> Stashed changes
     </MainLayout>
   );
 };

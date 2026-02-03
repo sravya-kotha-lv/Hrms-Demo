@@ -107,6 +107,23 @@ export const getApiWithToken = async (apiUrl: string, _headers: any = null) => {
   }
 };
 
+export const putApiWithToken = async (
+  apiUrl: string,
+  params: any,
+  _headers: any = null
+) => {
+  try {
+    const headers = _headers
+      ? { "Content-Type": undefined }
+      : { "Content-Type": "application/json" };
+    const response = await api.put(apiUrl, params, { headers });
+    return response.data;
+  } catch (error: any) {
+    return error.response?.data || error;
+  }     
+};
+
+
 // GET without token
 export const getApiWithOutToken = async (apiUrl: string) => {
   try {
