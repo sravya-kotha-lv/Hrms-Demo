@@ -16,6 +16,14 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
@@ -26,6 +34,7 @@ import {
   deleteApiWithToken,
 } from "@/services/apiWrapper";
 import { DataTable, Column } from "@/components/ui/DataTable";
+import { useNavigate } from "react-router-dom";
 
 /* ================= TYPES ================= */
 
@@ -279,7 +288,6 @@ const Designations = () => {
           </div>
         </DialogContent>
       </Dialog>
-
     </MainLayout>
   );
 };
