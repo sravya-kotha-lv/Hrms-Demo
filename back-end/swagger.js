@@ -258,6 +258,74 @@ module.exports = {
           status: { type: "string", enum: ["active", "inactive"], default: "active" },
         },
       },
+      
+      Holiday: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          name: { type: "string", example: "New Year's Day" },
+          date: { type: "string", format: "date", example: "2026-01-01" },
+          year: { type: "number", example: 2026 },
+          status: { type: "string", enum: ["active", "inactive"] },
+          createdAt: { type: "string" },
+          updatedAt: { type: "string" }
+        }
+      },
+
+      CreateHolidayRequest: {
+        type: "object",
+        required: ["name", "date"],
+        properties: {
+          name: { type: "string", example: "Republic Day" },
+          date: { type: "string", format: "date", example: "2026-01-26" },
+          status: { type: "string", enum: ["active", "inactive"], default: "active" }
+        }
+      },
+
+      UpdateHolidayRequest: {
+        type: "object",
+        properties: {
+          name: { type: "string", example: "Republic Day" },
+          date: { type: "string", format: "date", example: "2026-01-26" },
+          status: { type: "string", enum: ["active", "inactive"] }
+        }
+      },
+
+      WeekOff: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          weekOffDays: {
+            type: "array",
+            items: { type: "number", minimum: 0, maximum: 6 },
+            example: [0, 6]
+          }
+        }
+      },
+
+      WeekOffUpsertRequest: {
+        type: "object",
+        required: ["weekOffDays"],
+        properties: {
+          weekOffDays: {
+            type: "array",
+            items: { type: "number", minimum: 0, maximum: 6 },
+            example: [0, 6]
+          }
+        }
+      },
+
+      LeaveBalance: {
+        type: "object",
+        properties: {
+          leaveTypeId: { type: "string" },
+          leaveType: { type: "string", example: "Annual Leave" },
+          code: { type: "string", example: "AL" },
+          total: { type: "number", example: 15 },
+          used: { type: "number", example: 4 },
+          remaining: { type: "number", example: 11 }
+        }
+      },
 
       ApiSuccessResponse: {
         type: "object",
@@ -1375,6 +1443,141 @@ module.exports = {
         ],
         responses: {
           200: { description: "Deactivated" },
+        },
+      },
+    },
+
+    "/holidays": {
+      post: {
+        tags: ["Holidays"],
+        summary: "Create a holiday",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateHolidayRequest" },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Holiday created" },
+        },
+      },
+      get: {
+        tags: ["Holidays"],
+        summary: "List holidays",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "year",
+            in: "query",
+            required: false,
+            schema: { type: "number", example: 2026 },
+          },
+        ],
+        responses: {
+          200: { description: "Success" },
+        },
+      },
+    },
+
+    "/holidays/{id}": {
+      put: {
+        tags: ["Holidays"],
+        summary: "Update a holiday",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateHolidayRequest" },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Holiday updated" },
+        },
+      },
+      delete: {
+        tags: ["Holidays"],
+        summary: "Delete a holiday",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          200: { description: "Holiday deleted" },
+        },
+      },
+    },
+
+    "/week-offs": {
+      post: {
+        tags: ["WeekOffs"],
+        summary: "Create or update week off configuration",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/WeekOffUpsertRequest" },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Week off configuration saved" },
+        },
+      },
+      get: {
+        tags: ["WeekOffs"],
+        summary: "Get week off configuration",
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: { description: "Success" },
+        },
+      },
+    },
+
+    "/leave-balances/my": {
+      get: {
+        tags: ["LeaveBalances"],
+        summary: "Get my leave balance",
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: { description: "Success" },
+        },
+      },
+    },
+
+    "/leave-balances/employee/{employeeId}": {
+      get: {
+        tags: ["LeaveBalances"],
+        summary: "Get employee leave balance",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "employeeId",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          200: { description: "Success" },
         },
       },
     },
