@@ -23,3 +23,8 @@ exports.getByIds = async (permissionIds, organizationId) => {
 
   return permissions;
 };
+
+exports.listByOrganization = async (organizationId) => {
+  return Permission.find({ organizationId })
+    .sort({ module: 1, code: 1 });
+};

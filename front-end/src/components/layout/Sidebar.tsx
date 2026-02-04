@@ -21,6 +21,8 @@ import {
   Shield,
   Building,
   Briefcase,
+  CalendarDays,
+  CalendarOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -101,12 +103,15 @@ const menuItems = [
   { icon: <Users size={20} />, label: "Employees", to: "/employees" },
   { icon: <Calendar size={20} />, label: "Attendance", to: "/attendance" },
   { icon: <FolderKanban size={20} />, label: "Leave", to: "/leave" },
+  { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays" },
+  { icon: <CalendarOff size={20} />, label: "Week Offs", to: "/week-offs" },
   { icon: <DollarSign size={20} />, label: "Payroll", to: "/payroll" },
   { icon: <TrendingUp size={20} />, label: "Performance", to: "/performance" },
   { icon: <FileText size={20} />, label: "Reports", to: "/reports" },
   { icon: <Inbox size={20} />, label: "Inbox", to: "/inbox" },
   { icon: <Building2 size={20} />, label: "Organization", to: "/organization" },
   { icon: <Shield size={20} />, label: "Roles", to: "/roles" },
+  { icon: <Shield size={20} />, label: "Permissions", to: "/permissions" },
   { icon: <Building size={20} />, label: "Departments", to: "/departments" },
   {
   icon: <Building size={20} />,

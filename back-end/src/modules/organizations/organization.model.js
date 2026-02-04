@@ -27,7 +27,15 @@ const organizationSchema = new mongoose.Schema(
       type: String,
       enum: ["active", "inactive"],
       default: "active"
+    },
+
+    leaveCycleStartMonth: {
+      type: Number,
+      min: 1,
+      max: 12,
+      default: 1   // Apr–Mar
     }
+
   },
   { timestamps: true }
 );

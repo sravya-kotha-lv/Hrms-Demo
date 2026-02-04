@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,9 +10,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useNavigate, useParams } from "react-router-dom";
-
-const departments = ["Human Resources", "IT", "Finance"];
-const roles = ["Admin", "Manager", "Employee"];
+import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
+import { toast } from "sonner";
 
 const AddDesignation = () => {
   const navigate = useNavigate();
@@ -21,15 +20,76 @@ const AddDesignation = () => {
 
   const [formData, setFormData] = useState({
     name: "",
-    department: "",
-    role: "",
-    status: "Active",
+    departmentId: "",
+    status: "active",
   });
 
-  const handleSubmit = (e: any) => {
+  const [departments, setDepartments] = useState<any[]>([]);
+
+  const fetchDepartments = async () => {
+    const res = await getApiWithToken("/departments");
+    if (res?.success) {
+      setDepartments(res.data || []);
+    } else {
+      toast.error(res?.message || "Failed to load departments");
+    }
+  };
+
+  const fetchDesignationById = async (designationId: string) => {
+    const res = await getApiWithToken("/designations");
+    if (res?.success) {
+      const found = (res.data || []).find((d: any) => d._id === designationId);
+      if (found) {
+        setFormData({
+          name: found.name || "",
+          departmentId: found.departmentId || found.department?._id || "",
+          status: found.status || "active",
+        });
+      }
+    } else {
+      toast.error(res?.message || "Failed to load designation");
+    }
+  };
+
+  useEffect(() => {
+    fetchDepartments();
+  }, []);
+
+  useEffect(() => {
+    if (isEdit && id) {
+      fetchDesignationById(id);
+    }
+  }, [isEdit, id]);
+
+  const handleSubmit = async (e: any) => {
     e.preventDefault();
-    console.log(formData);
-    navigate("/designations");
+
+    if (!formData.name || !formData.departmentId) {
+      toast.error("Name and department are required");
+      return;
+    }
+
+    let res;
+    if (isEdit && id) {
+      res = await putApiWithToken(`/designations/${id}`, {
+        name: formData.name,
+        departmentId: formData.departmentId,
+        status: formData.status,
+      });
+    } else {
+      res = await postApiWithToken("/designations", {
+        name: formData.name,
+        departmentId: formData.departmentId,
+        status: formData.status,
+      });
+    }
+
+    if (res?.success) {
+      toast.success(isEdit ? "Designation updated" : "Designation created");
+      navigate("/designations");
+    } else {
+      toast.error(res?.message || "Operation failed");
+    }
   };
 
   return (
@@ -55,9 +115,9 @@ const AddDesignation = () => {
 
           {/* Department Dropdown */}
           <Select
-            value={formData.department}
+            value={formData.departmentId}
             onValueChange={(value) =>
-              setFormData({ ...formData, department: value })
+              setFormData({ ...formData, departmentId: value })
             }
           >
             <SelectTrigger>
@@ -65,27 +125,8 @@ const AddDesignation = () => {
             </SelectTrigger>
             <SelectContent>
               {departments.map((dept) => (
-                <SelectItem key={dept} value={dept}>
-                  {dept}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Role Dropdown */}
-          <Select
-            value={formData.role}
-            onValueChange={(value) =>
-              setFormData({ ...formData, role: value })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select Role Type" />
-            </SelectTrigger>
-            <SelectContent>
-              {roles.map((role) => (
-                <SelectItem key={role} value={role}>
-                  {role}
+                <SelectItem key={dept._id} value={dept._id}>
+                  {dept.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -102,8 +143,8 @@ const AddDesignation = () => {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Active">Active</SelectItem>
-              <SelectItem value="Inactive">Inactive</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
             </SelectContent>
           </Select>
 

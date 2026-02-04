@@ -9,6 +9,13 @@ const validator = require("./user.validator");
 
 router.post("/login", validate(validator.loginSchema), asyncHandler(controller.login));
 
+router.get(
+  "/",
+  auth,
+  authorize("USER_VIEW"),
+  asyncHandler(controller.listByOrganization)
+);
+
 router.post(
   "/org-user",
   auth,
