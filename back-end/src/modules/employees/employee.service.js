@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const User = require("../users/user.model");
+const OrgUser = require("../organizations/org-user.model");
 const Employee = require("./employee.model");
 const OrganizationService = require('../organizations/organization.service');
 const { genHashedPassword } = require("../../utils/bcryptUtils");
@@ -29,10 +30,11 @@ exports.createByHr = async (req) => {
     } = req.body;
 
     const { organizationId } = req.user;
+    const normalizedEmail = email.toLowerCase().trim();
 
     /* 1️⃣ Prevent duplicate user */
     const existingUser = await User.findOne(
-      { email, organizationId },
+      { email: normalizedEmail },
       null,
       { session }
     );
@@ -49,16 +51,29 @@ exports.createByHr = async (req) => {
     const [user] = await User.create(
       [
         {
-          organizationId,
-          email,
+          organizationIds: [organizationId],
+          activeOrganizationId: organizationId,
+          email: normalizedEmail,
           password: hashedPassword,
-          roleIds,
-          status: "active",
-          isFirstLogin: true
+          status: "active"
         }
       ],
       { session }
     );
+
+    console.log(user,"user");
+    
+    const orgUsers = await OrgUser.create(
+      [
+        {
+          userId: user._id,
+          organizationId,
+          roleIds
+        }
+      ],
+      { session }
+    );
+    console.log(orgUsers,"orgusers");
 
     /* 4️⃣ Create EMPLOYEE */
     const [employee] = await Employee.create(

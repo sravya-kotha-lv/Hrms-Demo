@@ -7,13 +7,11 @@ const asyncHandler = require("../../middlewares/asyncHandler");
 
 const {
   createEmployeeByHrSchema,
-  completeProfileSchema,
-  employeeLoginSchema
+  completeProfileSchema
 } = require("./employee.validation");
 
 const controller = require("./employee.controller");
 
-// router.post('/login',validate(employeeLoginSchema), asyncHandler(controller.login))
 /**
  * HR / ADMIN creates employee (onboarding)
  */

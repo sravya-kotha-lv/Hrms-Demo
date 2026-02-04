@@ -110,9 +110,24 @@ app.use(errorMiddleware);
 /* -------------------------------------------------------------------------- */
 
 const connectDB = require("./src/config/db");
+const Organization = require("./src/modules/organizations/organization.model");
+const { seedOrgRolesAndPermissions } = require("./src/modules/roles/role.seeder");
 
 const startServer = async () => {
   await connectDB();
+
+  try {
+    const organizations = await Organization.find({
+      code: { $ne: "SYSTEM" }
+    }).select("_id");
+
+    for (const org of organizations) {
+      await seedOrgRolesAndPermissions(org._id);
+    }
+    // console.log("✅ Org permissions synced from routes");
+  } catch (err) {
+    console.error("❌ Failed to sync org permissions from routes:", err);
+  }
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);

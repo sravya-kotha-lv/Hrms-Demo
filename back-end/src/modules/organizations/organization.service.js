@@ -1,6 +1,8 @@
 const Organization = require("./organization.model");
 const User = require("../users/user.model");
 const OrgUser = require("./org-user.model");
+const Role = require("../roles/role.model");
+const { seedOrgRolesAndPermissions } = require("../roles/role.seeder");
 
 /**
  * CREATE ORGANIZATION + ASSIGN ADMIN
@@ -20,6 +22,27 @@ exports.createOrganization = async ({
     currency
   });
 
+  await seedOrgRolesAndPermissions(org._id);
+
+  let adminRole = null;
+  if (adminRoleId) {
+    adminRole = await Role.findOne({
+      _id: adminRoleId,
+      organizationId: org._id
+    });
+  }
+
+  if (!adminRole) {
+    adminRole = await Role.findOne({
+      slug: "org-admin",
+      organizationId: org._id
+    });
+  }
+
+  if (!adminRole) {
+    throw { code: 400, message: "Admin role not found for organization" };
+  }
+
   const admin = await User.findById(adminUserId);
   if (!admin) {
     throw { code: 404, message: "Admin user not found" };
@@ -34,7 +57,7 @@ exports.createOrganization = async ({
   await OrgUser.create({
     userId: admin._id,
     organizationId: org._id,
-    roleIds: [adminRoleId]
+    roleIds: [adminRole._id]
   });
 
   return org;
