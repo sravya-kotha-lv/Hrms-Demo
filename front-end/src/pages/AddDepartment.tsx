@@ -11,16 +11,13 @@ import {
 } from "@/components/ui/select";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import axios from "axios";
-import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
+import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 
 
 const AddDepartment = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
-
-  const token = localStorage.getItem("token");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -56,7 +53,7 @@ const AddDepartment = () => {
   const mutation = useMutation({
   mutationFn: async () => {
     if (isEdit) {
-      return await postApiWithToken(`/departments/${id}`, formData);
+      return await putApiWithToken(`/departments/${id}`, formData);
     } else {
       return await postApiWithToken(`/departments`, formData);
     }
