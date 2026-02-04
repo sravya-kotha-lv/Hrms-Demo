@@ -148,12 +148,19 @@ exports.listByOrganization = async (req) => {
     status
   } = req.query;
 
-  const { organizationId } = req.user;
+  const { organizationId, _id: userId, roleIds } = req.user;
 
   const query = {
     organizationId,
     isDeleted: false
   };
+
+  /**
+   * 👔 Manager scoping
+   */
+  if (roleIds?.includes("MANAGER_ROLE_ID")) {
+    query.managerId = userId;
+  }
 
   /* 🔍 Search */
   if (search) {
@@ -193,4 +200,55 @@ exports.listByOrganization = async (req) => {
       totalPages: Math.ceil(total / limit)
     }
   };
+};
+
+exports.getById = async (req) => {
+  const { id } = req.params;
+  const { organizationId, _id: userId, roleIds } = req.user;
+
+  const employee = await Employee.findOne({
+    _id: id,
+    organizationId,
+    isDeleted: false
+  })
+    .populate("departmentId", "name")
+    .populate("designationId", "name")
+    .populate("managerId", "firstName lastName")
+    .populate("userId", "email");
+
+  if (!employee) {
+    throw { code: 404, message: "Employee not found" };
+  }
+
+  /**
+   * 🔒 Manager scoping:
+   * Manager can only view employees who report to them
+   */
+  if (
+    roleIds?.length &&
+    !req.user.isOrgAdmin && // optional helper flag if you have
+    employee.managerId &&
+    employee.managerId._id.toString() !== userId.toString()
+  ) {
+    throw { code: 403, message: "Access denied" };
+  }
+
+  return employee;
+};
+
+exports.getMe = async (req) => {
+  const employee = await Employee.findOne({
+    userId: req.user._id,
+    organizationId: req.user.organizationId,
+    isDeleted: false
+  })
+    .populate("departmentId", "name")
+    .populate("designationId", "name")
+    .populate("managerId", "firstName lastName");
+
+  if (!employee) {
+    throw { code: 404, message: "Employee record not found" };
+  }
+
+  return employee;
 };

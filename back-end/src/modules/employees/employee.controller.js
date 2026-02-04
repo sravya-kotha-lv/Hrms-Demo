@@ -44,4 +44,26 @@ exports.listByOrganization = async (req, res) => {
 exports.getEmployeeleaves = async (req, res) => {
   const data = await getEmployeeleaves(req);
   return res.status(200).json(buildSuccessResponse({ data }));
+}
+
+exports.getById = async (req, res) => {
+  const data = await service.getById(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Employee fetched successfully",
+      data
+    })
+  );
+};
+
+exports.getMe = async (req, res) => {
+  const data = await service.getMe(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Profile fetched successfully",
+      data
+    })
+  );
 };
