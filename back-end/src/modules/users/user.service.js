@@ -153,6 +153,52 @@ exports.createOrgUser = async ({
   };
 };
 
+exports.listByOrganization = async ({ organizationId, query }) => {
+  const { page = 1, limit = 20, search } = query || {};
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const userFilter = {};
+  if (search) {
+    userFilter.email = { $regex: search, $options: "i" };
+  }
+
+  const [memberships, total] = await Promise.all([
+    OrgUser.find({ organizationId })
+      .populate({
+        path: "userId",
+        select: "email status activeOrganizationId",
+        match: userFilter
+      })
+      .populate({
+        path: "roleIds",
+        select: "name slug"
+      })
+      .skip(skip)
+      .limit(Number(limit)),
+    OrgUser.countDocuments({ organizationId })
+  ]);
+
+  const items = memberships
+    .filter(m => m.userId)
+    .map(m => ({
+      userId: m.userId._id,
+      email: m.userId.email,
+      status: m.userId.status,
+      activeOrganizationId: m.userId.activeOrganizationId,
+      roles: m.roleIds
+    }));
+
+  return {
+    items,
+    pagination: {
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages: Math.ceil(total / limit)
+    }
+  };
+};
+
 exports.switchOrgAndRole = async ({
   user,
   organizationId,

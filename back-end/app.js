@@ -14,7 +14,7 @@ const app = express();
 /*                                CONFIG                                      */
 /* -------------------------------------------------------------------------- */
 
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 4000;
 
 /* -------------------------------------------------------------------------- */
 /*                               MIDDLEWARES                                  */
@@ -89,6 +89,7 @@ app.get("/health", (req, res) => {
 app.use("/api/users", require("./src/modules/users/user.routes"));
 app.use("/api/organizations", require("./src/modules/organizations/organization.routes"));
 app.use("/api/roles", require("./src/modules/roles/role.routes"));
+app.use("/api/permissions", require("./src/modules/permissions/permission.routes"));
 app.use("/api/employees", require("./src/modules/employees/employee.routes"));
 app.use("/api/departments", require("./src/modules/departments/department.routes"));
 app.use("/api/designations", require("./src/modules/designations/designation.routes"));
@@ -118,9 +119,24 @@ app.use(errorMiddleware);
 /* -------------------------------------------------------------------------- */
 
 const connectDB = require("./src/config/db");
+const Organization = require("./src/modules/organizations/organization.model");
+const { seedOrgRolesAndPermissions } = require("./src/modules/roles/role.seeder");
 
 const startServer = async () => {
   await connectDB();
+
+  try {
+    const organizations = await Organization.find({
+      code: { $ne: "SYSTEM" }
+    }).select("_id");
+
+    for (const org of organizations) {
+      await seedOrgRolesAndPermissions(org._id);
+    }
+    // console.log("✅ Org permissions synced from routes");
+  } catch (err) {
+    console.error("❌ Failed to sync org permissions from routes:", err);
+  }
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);

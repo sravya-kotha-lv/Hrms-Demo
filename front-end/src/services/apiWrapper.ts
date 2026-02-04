@@ -179,6 +179,6 @@ export function parseLocalISO(iso: string | null | undefined): Date | null {
 
 // placeholder (safe)
 export const switchRole = async (roleId: number) => {
-  const response = await api.post("/auth/switch-role", { roleId });
+  const response = await api.post("/roles/switch", { roleId });
   return response.data;
 };

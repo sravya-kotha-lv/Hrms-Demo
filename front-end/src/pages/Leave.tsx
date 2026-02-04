@@ -1,9 +1,17 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { 
-  Search, Filter, Download, Plus, MoreHorizontal, 
-  CheckCircle, XCircle, Clock, Eye, Palmtree, Stethoscope, Briefcase
+import {
+  Search,
+  Download,
+  MoreHorizontal,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Eye,
+  Palmtree,
+  Stethoscope,
+  Briefcase
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,20 +23,20 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow,
+  TableRow
 } from "@/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import {
   Dialog,
@@ -36,101 +44,35 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-
-const leaveData = [
-  {
-    id: 1,
-    employee: {
-      name: "Sarah Wilson",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
-    },
-    leaveType: "Vacation",
-    startDate: "2024-02-01",
-    endDate: "2024-02-05",
-    days: 5,
-    reason: "Family vacation",
-    status: "Pending",
-  },
-  {
-    id: 2,
-    employee: {
-      name: "Michael Chen",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
-    },
-    leaveType: "Sick Leave",
-    startDate: "2024-01-28",
-    endDate: "2024-01-29",
-    days: 2,
-    reason: "Doctor's appointment",
-    status: "Approved",
-  },
-  {
-    id: 3,
-    employee: {
-      name: "Emily Rodriguez",
-      avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
-    },
-    leaveType: "Business Trip",
-    startDate: "2024-02-10",
-    endDate: "2024-02-14",
-    days: 5,
-    reason: "Client meeting in New York",
-    status: "Pending",
-  },
-  {
-    id: 4,
-    employee: {
-      name: "James Anderson",
-      avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
-    },
-    leaveType: "Vacation",
-    startDate: "2024-01-15",
-    endDate: "2024-01-17",
-    days: 3,
-    reason: "Personal time off",
-    status: "Rejected",
-  },
-  {
-    id: 5,
-    employee: {
-      name: "Lisa Thompson",
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
-    },
-    leaveType: "Sick Leave",
-    startDate: "2024-01-26",
-    endDate: "2024-01-26",
-    days: 1,
-    reason: "Not feeling well",
-    status: "Approved",
-  },
-];
+import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
+import { toast } from "sonner";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
-    case "Approved":
+    case "approved":
       return (
         <Badge className="status-badge status-active gap-1">
           <CheckCircle className="w-3 h-3" /> Approved
         </Badge>
       );
-    case "Pending":
+    case "pending":
       return (
         <Badge className="status-badge status-pending gap-1">
           <Clock className="w-3 h-3" /> Pending
         </Badge>
       );
-    case "Rejected":
+    case "rejected":
       return (
         <Badge className="status-badge status-rejected gap-1">
           <XCircle className="w-3 h-3" /> Rejected
         </Badge>
       );
     default:
-      return <Badge variant="secondary">{status}</Badge>;
+      return <Badge variant="secondary">{status || "-"}</Badge>;
   }
 };
 
@@ -151,21 +93,141 @@ const Leave = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
-  const [selectedLeave, setSelectedLeave] = useState<typeof leaveData[0] | null>(null);
+  const [selectedLeave, setSelectedLeave] = useState<any | null>(null);
   const [actionType, setActionType] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
+  const [leaves, setLeaves] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<"all" | "my">("all");
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
+  const [applyForm, setApplyForm] = useState({
+    leaveTypeId: "",
+    fromDate: "",
+    toDate: "",
+    reason: ""
+  });
 
-  const handleAction = (leave: typeof leaveData[0], action: "approve" | "reject") => {
+  const fetchLeaves = async () => {
+    try {
+      setLoading(true);
+      let res = await getApiWithToken("/leaves");
+      if (res?.success) {
+        setLeaves(res?.data || []);
+        setViewMode("all");
+        return;
+      }
+
+      // fallback to my leaves (for employee role)
+      res = await getApiWithToken("/leaves/my");
+      if (res?.success) {
+        setLeaves(res?.data || []);
+        setViewMode("my");
+      } else {
+        toast.error(res?.message || "Failed to load leaves");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLeaves();
+  }, []);
+
+  const fetchLeaveTypes = async () => {
+    let res = await getApiWithToken("/employees/leave-types");
+    if (!res?.success) {
+      res = await getApiWithToken("/leave-types");
+    }
+    if (res?.success) {
+      setLeaveTypes(res?.data || []);
+    }
+  };
+
+  useEffect(() => {
+    fetchLeaveTypes();
+  }, []);
+
+  const submitApply = async () => {
+    if (!applyForm.leaveTypeId || !applyForm.fromDate || !applyForm.toDate) {
+      toast.error("Leave type and dates are required");
+      return;
+    }
+
+    const res = await postApiWithToken("/leaves/apply", applyForm);
+    if (res?.success) {
+      toast.success("Leave applied");
+      setApplyOpen(false);
+      setApplyForm({
+        leaveTypeId: "",
+        fromDate: "",
+        toDate: "",
+        reason: ""
+      });
+      fetchLeaves();
+    } else {
+      toast.error(res?.message || "Apply failed");
+    }
+  };
+
+  const filteredLeaves = useMemo(() => {
+    return (leaves || []).filter((leave) => {
+      const employeeName = leave.employeeId
+        ? `${leave.employeeId.firstName || ""} ${leave.employeeId.lastName || ""}`.trim()
+        : "You";
+      const typeName = leave.leaveTypeId?.name || "";
+      const matchesSearch =
+        employeeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        typeName.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus =
+        statusFilter === "all" || leave.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [leaves, searchQuery, statusFilter]);
+
+  const stats = useMemo(() => {
+    const pending = leaves.filter((l) => l.status === "pending").length;
+    const approved = leaves.filter((l) => l.status === "approved").length;
+    const rejected = leaves.filter((l) => l.status === "rejected").length;
+
+    const today = new Date();
+    const onLeaveToday = leaves.filter((l) => {
+      if (l.status !== "approved") return false;
+      const from = new Date(l.fromDate);
+      const to = new Date(l.toDate);
+      return today >= from && today <= to;
+    }).length;
+
+    return { pending, approved, rejected, onLeaveToday };
+  }, [leaves]);
+
+  const handleAction = (leave: any, action: "approve" | "reject") => {
     setSelectedLeave(leave);
     setActionType(action);
     setActionDialogOpen(true);
   };
 
-  const confirmAction = () => {
-    console.log(`${actionType} leave for ${selectedLeave?.employee.name}:`, comment);
-    setActionDialogOpen(false);
-    setSelectedLeave(null);
-    setComment("");
+  const confirmAction = async () => {
+    if (!selectedLeave) return;
+
+    const payload: any = {
+      status: actionType === "approve" ? "approved" : "rejected",
+    };
+    if (actionType === "reject") {
+      payload.rejectionReason = comment || "Rejected";
+    }
+
+    const res = await putApiWithToken(`/leaves/${selectedLeave._id}/action`, payload);
+    if (res?.success) {
+      toast.success(`Leave ${payload.status}`);
+      setActionDialogOpen(false);
+      setSelectedLeave(null);
+      setComment("");
+      fetchLeaves();
+    } else {
+      toast.error(res?.message || "Action failed");
+    }
   };
 
   return (
@@ -181,7 +243,7 @@ const Leave = () => {
           animate={{ opacity: 1, y: 0 }}
         >
           <p className="text-sm text-muted-foreground mb-1">Pending Requests</p>
-          <p className="text-3xl font-bold text-warning">8</p>
+          <p className="text-3xl font-bold text-warning">{stats.pending}</p>
           <p className="text-sm text-muted-foreground mt-1">requires action</p>
         </motion.div>
         <motion.div
@@ -191,8 +253,8 @@ const Leave = () => {
           transition={{ delay: 0.1 }}
         >
           <p className="text-sm text-muted-foreground mb-1">Approved</p>
-          <p className="text-3xl font-bold text-success">24</p>
-          <p className="text-sm text-muted-foreground mt-1">this month</p>
+          <p className="text-3xl font-bold text-success">{stats.approved}</p>
+          <p className="text-sm text-muted-foreground mt-1">total</p>
         </motion.div>
         <motion.div
           className="stat-card"
@@ -201,8 +263,8 @@ const Leave = () => {
           transition={{ delay: 0.2 }}
         >
           <p className="text-sm text-muted-foreground mb-1">Rejected</p>
-          <p className="text-3xl font-bold text-destructive">3</p>
-          <p className="text-sm text-muted-foreground mt-1">this month</p>
+          <p className="text-3xl font-bold text-destructive">{stats.rejected}</p>
+          <p className="text-sm text-muted-foreground mt-1">total</p>
         </motion.div>
         <motion.div
           className="stat-card"
@@ -211,7 +273,7 @@ const Leave = () => {
           transition={{ delay: 0.3 }}
         >
           <p className="text-sm text-muted-foreground mb-1">On Leave Today</p>
-          <p className="text-3xl font-bold text-primary">5</p>
+          <p className="text-3xl font-bold text-primary">{stats.onLeaveToday}</p>
           <p className="text-sm text-muted-foreground mt-1">employees</p>
         </motion.div>
       </div>
@@ -221,7 +283,7 @@ const Leave = () => {
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search leave requests..."
+            placeholder="Search leaves..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -243,8 +305,10 @@ const Leave = () => {
             <Download className="w-4 h-4" />
             Export
           </Button>
-          <Button className="gap-2">
-            <Plus className="w-4 h-4" />
+          <Button variant="outline" className="gap-2" onClick={fetchLeaves}>
+            Refresh
+          </Button>
+          <Button className="gap-2" onClick={() => setApplyOpen(true)}>
             Apply Leave
           </Button>
         </div>
@@ -262,115 +326,204 @@ const Leave = () => {
             <TableRow className="table-header">
               <TableHead>Employee</TableHead>
               <TableHead>Leave Type</TableHead>
-              <TableHead>Date Range</TableHead>
+              <TableHead>From</TableHead>
+              <TableHead>To</TableHead>
               <TableHead>Days</TableHead>
-              <TableHead>Reason</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-12"></TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {leaveData.map((record, index) => (
-              <motion.tr
-                key={record.id}
-                className="table-row-hover"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 + index * 0.05 }}
-              >
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <Avatar className="w-10 h-10">
-                      <AvatarImage src={record.employee.avatar} alt={record.employee.name} />
-                      <AvatarFallback>{record.employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium">{record.employee.name}</span>
-                  </div>
+            {loading && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-10">
+                  Loading...
                 </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {getLeaveTypeIcon(record.leaveType)}
-                    <span>{record.leaveType}</span>
-                  </div>
+              </TableRow>
+            )}
+            {!loading && filteredLeaves.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-10">
+                  No leave requests found
                 </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(record.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  {" - "}
-                  {new Date(record.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </TableCell>
-                <TableCell className="font-medium">{record.days}</TableCell>
-                <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                  {record.reason}
-                </TableCell>
-                <TableCell>{getStatusBadge(record.status)}</TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="p-2 rounded hover:bg-muted transition-colors">
-                      <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem className="gap-2">
-                        <Eye className="w-4 h-4" /> View Details
-                      </DropdownMenuItem>
-                      {record.status === "Pending" && (
-                        <>
-                          <DropdownMenuItem 
-                            className="gap-2 text-success"
-                            onClick={() => handleAction(record, "approve")}
-                          >
-                            <CheckCircle className="w-4 h-4" /> Approve
-                          </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            className="gap-2 text-destructive"
-                            onClick={() => handleAction(record, "reject")}
-                          >
-                            <XCircle className="w-4 h-4" /> Reject
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </motion.tr>
-            ))}
+              </TableRow>
+            )}
+            {filteredLeaves.map((leave) => {
+              const employeeName = leave.employeeId
+                ? `${leave.employeeId.firstName || ""} ${leave.employeeId.lastName || ""}`.trim()
+                : "You";
+              return (
+                <TableRow key={leave._id}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Avatar>
+                        <AvatarImage src="" />
+                        <AvatarFallback>
+                          {(employeeName || "U")
+                            .split(" ")
+                            .map((n: string) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium">{employeeName}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {leave.employeeId?.employeeCode || "SELF"}
+                        </p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {getLeaveTypeIcon(leave.leaveTypeId?.name)}
+                      {leave.leaveTypeId?.name || "-"}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {leave.fromDate ? new Date(leave.fromDate).toLocaleDateString() : "-"}
+                  </TableCell>
+                  <TableCell>
+                    {leave.toDate ? new Date(leave.toDate).toLocaleDateString() : "-"}
+                  </TableCell>
+                  <TableCell>{leave.totalDays ?? "-"}</TableCell>
+                  <TableCell>{getStatusBadge(leave.status)}</TableCell>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem>
+                          <Eye className="w-4 h-4 mr-2" /> View
+                        </DropdownMenuItem>
+                        {viewMode === "all" && leave.status === "pending" && (
+                          <>
+                            <DropdownMenuItem onClick={() => handleAction(leave, "approve")}>
+                              <CheckCircle className="w-4 h-4 mr-2 text-green-600" /> Approve
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleAction(leave, "reject")}>
+                              <XCircle className="w-4 h-4 mr-2 text-red-600" /> Reject
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </motion.div>
 
-      {/* Approve/Reject Dialog */}
+      {/* Action Dialog */}
       <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {actionType === "approve" ? "Approve" : "Reject"} Leave Request
+              {actionType === "approve" ? "Approve Leave" : "Reject Leave"}
             </DialogTitle>
             <DialogDescription>
-              {actionType === "approve" 
-                ? `Approve ${selectedLeave?.employee.name}'s leave request?`
-                : `Reject ${selectedLeave?.employee.name}'s leave request?`
-              }
+              {actionType === "approve"
+                ? "Confirm approval for this leave request."
+                : "Provide a reason for rejection."}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Label htmlFor="comment" className="form-label">Comment (Optional)</Label>
-            <Textarea
-              id="comment"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Add a comment..."
-              className="form-input"
-            />
-          </div>
+
+          {actionType === "reject" && (
+            <div className="space-y-2">
+              <Label>Rejection Reason</Label>
+              <Textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Enter reason"
+              />
+            </div>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setActionDialogOpen(false)}>
               Cancel
             </Button>
-            <Button 
-              variant={actionType === "approve" ? "default" : "destructive"} 
-              onClick={confirmAction}
-            >
+            <Button onClick={confirmAction}>
               {actionType === "approve" ? "Approve" : "Reject"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Apply Leave Dialog */}
+      <Dialog open={applyOpen} onOpenChange={setApplyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Apply Leave</DialogTitle>
+            <DialogDescription>Submit a new leave request.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label>Leave Type</Label>
+              <Select
+                value={applyForm.leaveTypeId}
+                onValueChange={(value) =>
+                  setApplyForm({ ...applyForm, leaveTypeId: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select leave type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {leaveTypes.map((lt) => (
+                    <SelectItem key={lt._id} value={lt._id}>
+                      {lt.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>From Date</Label>
+                <Input
+                  type="date"
+                  value={applyForm.fromDate}
+                  onChange={(e) =>
+                    setApplyForm({ ...applyForm, fromDate: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <Label>To Date</Label>
+                <Input
+                  type="date"
+                  value={applyForm.toDate}
+                  onChange={(e) =>
+                    setApplyForm({ ...applyForm, toDate: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Reason</Label>
+              <Textarea
+                value={applyForm.reason}
+                onChange={(e) =>
+                  setApplyForm({ ...applyForm, reason: e.target.value })
+                }
+                placeholder="Optional reason"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApplyOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitApply}>Submit</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

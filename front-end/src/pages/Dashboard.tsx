@@ -74,7 +74,7 @@ const Dashboard = () => {
 
   const fetchUsers = async () => {
     const res = await getApiWithToken("/users");
-    const list = res?.data || [];
+    const list = res?.data?.items || [];
     setUsers(list);
     setShowUserPopup(true);
     setShowCreateUser(list.length === 0);
