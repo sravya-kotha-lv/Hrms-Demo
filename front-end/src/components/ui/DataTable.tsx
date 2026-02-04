@@ -25,6 +25,11 @@ interface DataTableProps<T> {
   searchKey?: keyof T;
   rowKey: keyof T;
   selectable?: boolean;
+  tableClassName?: string;
+  renderHeader?: (columns: Column<T>[], selectable: boolean) => React.ReactNode;
+  renderRow?: (row: T) => React.ReactNode;
+  columnsCountOverride?: number;
+  hideFooter?: boolean;
 }
 
 export function DataTable<T>({
@@ -33,6 +38,11 @@ export function DataTable<T>({
   searchKey,
   rowKey,
   selectable = false,
+  tableClassName,
+  renderHeader,
+  renderRow,
+  columnsCountOverride,
+  hideFooter = false,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [sortConfig, setSortConfig] = useState<{
@@ -87,41 +97,48 @@ export function DataTable<T>({
       )}
 
       {/* 📋 Table */}
-      <Table>
+      <Table className={tableClassName}>
         <TableHeader>
-          <TableRow className="bg-muted/40">
-            {selectable && (
-              <TableHead className="w-10">
-                <Checkbox />
-              </TableHead>
-            )}
+          {renderHeader ? (
+            renderHeader(columns, selectable)
+          ) : (
+            <TableRow className="bg-muted/40">
+              {selectable && (
+                <TableHead className="w-10">
+                  <Checkbox />
+                </TableHead>
+              )}
 
-            {columns.map((col) => (
-              <TableHead
-                key={String(col.accessor)}
-                className={`text-muted-foreground font-medium ${
-                  col.sortable ? "cursor-pointer" : ""
-                } ${col.className || ""}`}
-                onClick={() =>
-                  col.sortable && handleSort(col.accessor)
-                }
-              >
-                <div className="flex items-center gap-1">
-                  {col.header}
-                  {col.sortable && (
-                    <ArrowUpDown className="w-4 h-4 opacity-60" />
-                  )}
-                </div>
-              </TableHead>
-            ))}
-          </TableRow>
+              {columns.map((col) => (
+                <TableHead
+                  key={String(col.accessor)}
+                  className={`text-muted-foreground font-medium ${
+                    col.sortable ? "cursor-pointer" : ""
+                  } ${col.className || ""}`}
+                  onClick={() =>
+                    col.sortable && handleSort(col.accessor)
+                  }
+                >
+                  <div className="flex items-center gap-1">
+                    {col.header}
+                    {col.sortable && (
+                      <ArrowUpDown className="w-4 h-4 opacity-60" />
+                    )}
+                  </div>
+                </TableHead>
+              ))}
+            </TableRow>
+          )}
         </TableHeader>
 
         <TableBody>
           {filteredData.length === 0 && (
             <TableRow>
               <TableCell
-                colSpan={columns.length + (selectable ? 1 : 0)}
+                colSpan={
+                  columnsCountOverride ??
+                  columns.length + (selectable ? 1 : 0)
+                }
                 className="text-center py-10 text-muted-foreground"
               >
                 No data found
@@ -129,36 +146,47 @@ export function DataTable<T>({
             </TableRow>
           )}
 
-          {filteredData.map((row) => (
-            <TableRow
-              key={String(row[rowKey])}
-              className="hover:bg-muted/40 transition"
-            >
-              {selectable && (
-                <TableCell>
-                  <Checkbox />
-                </TableCell>
-              )}
+          {filteredData.map((row) =>
+            renderRow ? (
+              <TableRow
+                key={String(row[rowKey])}
+                className="hover:bg-muted/40 transition"
+              >
+                {renderRow(row)}
+              </TableRow>
+            ) : (
+              <TableRow
+                key={String(row[rowKey])}
+                className="hover:bg-muted/40 transition"
+              >
+                {selectable && (
+                  <TableCell>
+                    <Checkbox />
+                  </TableCell>
+                )}
 
-              {columns.map((col) => (
-                <TableCell
-                  key={String(col.accessor)}
-                  className={`py-4 ${col.className || ""}`}
-                >
-                  {col.render
-                    ? col.render(row)
-                    : String(row[col.accessor])}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
+                {columns.map((col) => (
+                  <TableCell
+                    key={String(col.accessor)}
+                    className={`py-4 ${col.className || ""}`}
+                  >
+                    {col.render
+                      ? col.render(row)
+                      : String(row[col.accessor])}
+                  </TableCell>
+                ))}
+              </TableRow>
+            )
+          )}
         </TableBody>
       </Table>
 
       {/* 📌 Footer */}
-      <div className="px-4 py-3 text-sm text-muted-foreground border-t">
-        Showing {filteredData.length} of {data.length} records
-      </div>
+      {!hideFooter && (
+        <div className="px-4 py-3 text-sm text-muted-foreground border-t">
+          Showing {filteredData.length} of {data.length} records
+        </div>
+      )}
     </div>
   );
 }

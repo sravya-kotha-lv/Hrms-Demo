@@ -1,9 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { 
-  Search, Filter, Download, Plus, MoreHorizontal, 
-  Edit, Trash2, Eye, Mail, Phone 
+import {
+  Search,
+  Download,
+  Plus,
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  Eye,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,108 +44,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useNavigate } from "react-router-dom";
-
-const employees = [
-  {
-    id: "EMP001",
-    name: "Sarah Wilson",
-    email: "sarah.wilson@company.com",
-    phone: "+1 (555) 123-4567",
-    department: "Engineering",
-    role: "Senior Developer",
-    status: "Active",
-    joinDate: "2022-03-15",
-    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
-  },
-  {
-    id: "EMP002",
-    name: "Michael Chen",
-    email: "michael.chen@company.com",
-    phone: "+1 (555) 234-5678",
-    department: "Design",
-    role: "UI/UX Designer",
-    status: "Active",
-    joinDate: "2021-08-22",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
-  },
-  {
-    id: "EMP003",
-    name: "Emily Rodriguez",
-    email: "emily.rodriguez@company.com",
-    phone: "+1 (555) 345-6789",
-    department: "Marketing",
-    role: "Marketing Manager",
-    status: "On Leave",
-    joinDate: "2020-11-10",
-    avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
-  },
-  {
-    id: "EMP004",
-    name: "James Anderson",
-    email: "james.anderson@company.com",
-    phone: "+1 (555) 456-7890",
-    department: "Finance",
-    role: "Financial Analyst",
-    status: "Active",
-    joinDate: "2023-01-05",
-    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
-  },
-  {
-    id: "EMP005",
-    name: "Lisa Thompson",
-    email: "lisa.thompson@company.com",
-    phone: "+1 (555) 567-8901",
-    department: "HR",
-    role: "HR Specialist",
-    status: "Active",
-    joinDate: "2022-06-18",
-    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
-  },
-  {
-    id: "EMP006",
-    name: "David Kim",
-    email: "david.kim@company.com",
-    phone: "+1 (555) 678-9012",
-    department: "Engineering",
-    role: "DevOps Engineer",
-    status: "Inactive",
-    joinDate: "2021-04-12",
-    avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop",
-  },
-  {
-    id: "EMP007",
-    name: "Amanda Foster",
-    email: "amanda.foster@company.com",
-    phone: "+1 (555) 789-0123",
-    department: "Sales",
-    role: "Sales Representative",
-    status: "Active",
-    joinDate: "2023-02-28",
-    avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop",
-  },
-  {
-    id: "EMP008",
-    name: "Robert Martinez",
-    email: "robert.martinez@company.com",
-    phone: "+1 (555) 890-1234",
-    department: "Engineering",
-    role: "Backend Developer",
-    status: "Active",
-    joinDate: "2022-09-01",
-    avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop",
-  },
-];
+import { getApiWithToken } from "@/services/apiWrapper";
+import { toast } from "sonner";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
-    case "Active":
+    case "active":
       return <Badge className="status-badge status-active">Active</Badge>;
-    case "Inactive":
-      return <Badge className="status-badge status-inactive">Inactive</Badge>;
-    case "On Leave":
+    case "on_leave":
       return <Badge className="status-badge status-pending">On Leave</Badge>;
+    case "resigned":
+      return <Badge className="status-badge status-inactive">Resigned</Badge>;
     default:
-      return <Badge variant="secondary">{status}</Badge>;
+      return <Badge variant="secondary">{status || "-"}</Badge>;
   }
 };
 
@@ -149,24 +65,58 @@ const Employees = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState<typeof employees[0] | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const filteredEmployees = employees.filter((emp) => {
-    const matchesSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDepartment = departmentFilter === "all" || emp.department === departmentFilter;
-    return matchesSearch && matchesDepartment;
-  });
+  const fetchDepartments = async () => {
+    const res = await getApiWithToken("/departments");
+    if (res?.success) {
+      setDepartments(res.data || []);
+    } else {
+      toast.error(res?.message || "Failed to load departments");
+    }
+  };
 
-  const handleDelete = (employee: typeof employees[0]) => {
+  const fetchEmployees = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (searchQuery) params.set("search", searchQuery);
+      if (departmentFilter !== "all") {
+        params.set("departmentId", departmentFilter);
+      }
+      const query = params.toString();
+      const res = await getApiWithToken(`/employees${query ? `?${query}` : ""}`);
+      if (res?.success) {
+        setEmployees(res?.data?.items || []);
+      } else {
+        toast.error(res?.message || "Failed to load employees");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDepartments();
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchEmployees();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, departmentFilter]);
+
+  const handleDelete = (employee: any) => {
     setSelectedEmployee(employee);
     setDeleteDialogOpen(true);
   };
 
   const confirmDelete = () => {
-    // Handle delete logic here
-    console.log("Deleting employee:", selectedEmployee?.id);
+    toast.warning("Delete is not available for employees yet");
     setDeleteDialogOpen(false);
     setSelectedEmployee(null);
   };
@@ -194,12 +144,11 @@ const Employees = () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Departments</SelectItem>
-              <SelectItem value="Engineering">Engineering</SelectItem>
-              <SelectItem value="Design">Design</SelectItem>
-              <SelectItem value="Marketing">Marketing</SelectItem>
-              <SelectItem value="Finance">Finance</SelectItem>
-              <SelectItem value="HR">HR</SelectItem>
-              <SelectItem value="Sales">Sales</SelectItem>
+              {departments.map((dept) => (
+                <SelectItem key={dept._id} value={dept._id}>
+                  {dept.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Button variant="outline" className="gap-2">
@@ -218,114 +167,99 @@ const Employees = () => {
         className="bg-card rounded-xl card-shadow overflow-hidden"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
       >
         <Table>
           <TableHeader>
             <TableRow className="table-header">
-              <TableHead className="w-12">
-                <input type="checkbox" className="rounded border-input" />
-              </TableHead>
               <TableHead>Employee</TableHead>
-              <TableHead>Employee ID</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Phone</TableHead>
               <TableHead>Department</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Contact</TableHead>
+              <TableHead>Designation</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Join Date</TableHead>
-              <TableHead className="w-12"></TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredEmployees.map((employee, index) => (
-              <motion.tr
-                key={employee.id}
-                className="table-row-hover"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-              >
-                <TableCell>
-                  <input type="checkbox" className="rounded border-input" />
+            {loading && (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-10">
+                  Loading...
                 </TableCell>
+              </TableRow>
+            )}
+            {!loading && employees.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-10">
+                  No employees found
+                </TableCell>
+              </TableRow>
+            )}
+            {employees.map((employee) => (
+              <TableRow key={employee._id}>
                 <TableCell>
                   <div className="flex items-center gap-3">
-                    <Avatar className="w-10 h-10">
-                      <AvatarImage src={employee.avatar} alt={employee.name} />
-                      <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                    <Avatar>
+                      <AvatarImage src="" />
+                      <AvatarFallback>
+                        {`${employee.firstName?.[0] || ""}${employee.lastName?.[0] || ""}`}
+                      </AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="font-medium text-foreground">{employee.name}</p>
-                      <p className="text-sm text-muted-foreground">{employee.email}</p>
+                      <p className="font-medium">
+                        {employee.firstName} {employee.lastName}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {employee.employeeCode}
+                      </p>
                     </div>
                   </div>
                 </TableCell>
-                <TableCell className="font-mono text-sm">{employee.id}</TableCell>
-                <TableCell>{employee.department}</TableCell>
-                <TableCell>{employee.role}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <a href={`mailto:${employee.email}`} className="p-1.5 rounded hover:bg-muted transition-colors">
-                      <Mail className="w-4 h-4 text-muted-foreground" />
-                    </a>
-                    <a href={`tel:${employee.phone}`} className="p-1.5 rounded hover:bg-muted transition-colors">
-                      <Phone className="w-4 h-4 text-muted-foreground" />
-                    </a>
-                  </div>
-                </TableCell>
+                <TableCell>{employee.userId?.email || "-"}</TableCell>
+                <TableCell>{employee.phone || "-"}</TableCell>
+                <TableCell>{employee.departmentId?.name || "-"}</TableCell>
+                <TableCell>{employee.designationId?.name || "-"}</TableCell>
                 <TableCell>{getStatusBadge(employee.status)}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(employee.joinDate).toLocaleDateString('en-US', { 
-                    year: 'numeric', 
-                    month: 'short', 
-                    day: 'numeric' 
-                  })}
-                </TableCell>
                 <TableCell>
+                  {employee.dateOfJoining
+                    ? new Date(employee.dateOfJoining).toLocaleDateString()
+                    : "-"}
+                </TableCell>
+                <TableCell className="text-right">
                   <DropdownMenu>
-                    <DropdownMenuTrigger className="p-2 rounded hover:bg-muted transition-colors">
-                      <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem className="gap-2">
-                        <Eye className="w-4 h-4" /> View
+                      <DropdownMenuItem onClick={() => navigate(`/employees/${employee._id}`)}>
+                        <Eye className="w-4 h-4 mr-2" /> View
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="gap-2" onClick={() => navigate(`/employees/edit/${employee.id}`)}>
-                        <Edit className="w-4 h-4" /> Edit
+                      <DropdownMenuItem onClick={() => toast.warning("Edit is not available yet")}>
+                        <Edit className="w-4 h-4 mr-2" /> Edit
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="gap-2 text-destructive" onClick={() => handleDelete(employee)}>
-                        <Trash2 className="w-4 h-4" /> Delete
+                      <DropdownMenuItem onClick={() => handleDelete(employee)}>
+                        <Trash2 className="w-4 h-4 mr-2 text-red-500" /> Delete
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>
-              </motion.tr>
+              </TableRow>
             ))}
           </TableBody>
         </Table>
-
-        {/* Pagination */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-border">
-          <p className="text-sm text-muted-foreground">
-            Showing {filteredEmployees.length} of {employees.length} employees
-          </p>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled>Previous</Button>
-            <Button variant="outline" size="sm" className="bg-primary text-primary-foreground">1</Button>
-            <Button variant="outline" size="sm">2</Button>
-            <Button variant="outline" size="sm">3</Button>
-            <Button variant="outline" size="sm">Next</Button>
-          </div>
-        </div>
       </motion.div>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Employee</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete <span className="font-medium">{selectedEmployee?.name}</span>? 
-              This action cannot be undone.
+              Are you sure you want to delete this employee? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

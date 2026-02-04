@@ -31,6 +31,31 @@ exports.login = async (req, res) => {
   }
 };
 
+exports.listByOrganization = async (req, res) => {
+  try {
+    const data = await userService.listByOrganization({
+      organizationId: req.user.organizationId,
+      query: req.query
+    });
+
+    return res.status(200).json(
+      buildSuccessResponse({
+        code: 200,
+        message: "Users fetched successfully",
+        data
+      })
+    );
+  } catch (err) {
+    return res.status(err.code || 500).json(
+      buildFailureResponse({
+        code: err.code || 500,
+        message: err.message || "Failed to fetch users",
+        error: err.error || null
+      })
+    );
+  }
+};
+
 exports.createUser = async (req, res) => {
   try {
     const result = await userService.createOrgUser({

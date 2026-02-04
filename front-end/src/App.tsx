@@ -9,6 +9,8 @@ import Employees from "./pages/Employees";
 import AddEmployee from "./pages/AddEmployee";
 import Attendance from "./pages/Attendance";
 import Leave from "./pages/Leave";
+import Holidays from "./pages/Holidays";
+import WeekOffs from "./pages/WeekOffs";
 import Payroll from "./pages/Payroll";
 import PerformanceDashboard from "./pages/PerformanceDashboard";
 import ProfilePage from "./pages/ProfilePage";
@@ -17,6 +19,7 @@ import AddOrganization from "./pages/AddOrganization";
 import NotFound from "./pages/NotFound";
 import Roles from "./pages/Roles";
 import AddRole from "./pages/AddRole";
+import Permissions from "./pages/Permissions";
 import Login from "./pages/Login";
 import Departments from "./pages/Departments";
 import AddDepartment from "./pages/AddDepartment";
@@ -45,6 +48,8 @@ const App = () => (
           <Route path="/employees/edit/:id" element={<AddEmployee />} />
           <Route path="/attendance" element={<Attendance />} />
           <Route path="/leave" element={<Leave />} />
+          <Route path="/holidays" element={<Holidays />} />
+          <Route path="/week-offs" element={<WeekOffs />} />
           <Route path="/payroll" element={<Payroll />} />
           <Route path="/performance" element={<PerformanceDashboard />} />
           <Route path="/profile" element={<ProfilePage />} />
@@ -54,6 +59,7 @@ const App = () => (
           <Route path="/roles" element={<Roles />} />
           <Route path="/roles/add" element={<AddRole />} />
           <Route path="/roles/edit/:id" element={<AddRole />} />
+          <Route path="/permissions" element={<Permissions />} />
           <Route path="/departments" element={<Departments />} />
           <Route path="/departments/add" element={<AddDepartment />} />
           <Route path="/departments/edit/:id" element={<AddDepartment />} />

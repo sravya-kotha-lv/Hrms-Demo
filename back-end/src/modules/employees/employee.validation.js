@@ -59,8 +59,3 @@ exports.completeProfileSchema = Joi.object({
     })
   ).optional()
 });
-
-exports.employeeLoginSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: Joi.string().required()
-});
