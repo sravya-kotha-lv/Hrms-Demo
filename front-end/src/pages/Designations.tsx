@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ import {
   deleteApiWithToken,
 } from "@/services/apiWrapper";
 import { DataTable, Column } from "@/components/ui/DataTable";
+import { useNavigate } from "react-router-dom";
 
 /* ================= TYPES ================= */
 
@@ -127,57 +129,6 @@ const Designations = () => {
     }
   };
 
-  const columns: Column<any>[] = [
-    {
-      header: "Name",
-      accessor: "name",
-      sortable: true,
-    },
-    {
-      header: "Department",
-      accessor: "departmentId",
-      render: (row) => row.department?.name || "-",
-    },
-    {
-      header: "Status",
-      accessor: "status",
-      render: (row) => (
-        <Badge
-          variant={row.status === "active" ? "default" : "secondary"}
-          className="capitalize"
-        >
-          {row.status}
-        </Badge>
-      ),
-    },
-    {
-      header: "Actions",
-      accessor: "_id",
-      render: (row) => (
-        <div className="flex gap-3">
-          <Pencil
-            className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
-            onClick={() => {
-              setIsEdit(true);
-              setForm({
-                _id: row._id,
-                name: row.name,
-                departmentId: row.departmentId,
-                status: row.status,
-              });
-              setOpen(true);
-            }}
-          />
-
-          <Trash2
-            className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
-            onClick={() => handleDelete(row._id)}
-          />
-        </div>
-      ),
-    },
-  ];
-
   /* ================= UI ================= */
 
   return (
@@ -186,7 +137,17 @@ const Designations = () => {
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Designations" }]}
     >
       {/* ---------- Action Bar ---------- */}
-      <div className="flex justify-end mb-6">
+      <div className="flex justify-between items-center mb-6">
+        <div className="relative w-80">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input
+            placeholder="Search designation..."
+            className="pl-10"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
         <Button
           onClick={() => {
             setIsEdit(false);
@@ -198,15 +159,6 @@ const Designations = () => {
           Add Designation
         </Button>
       </div>
-
-
-      {/* ---------- Table ---------- */}
-      <DataTable
-        columns={columns}
-        data={designations}
-        rowKey="_id"
-        searchKey="name"
-      />
 
       {/* ---------- Modal ---------- */}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -267,6 +219,53 @@ const Designations = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ---------- Table ---------- */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50">
+              <TableHead>Designation</TableHead>
+              <TableHead>Department</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody>
+            {designations?.map((des: any) => (
+              <TableRow key={des._id} className="hover:bg-gray-50">
+                <TableCell className="font-medium">{des.name}</TableCell>
+                <TableCell>{des.departmentId}</TableCell>
+                <TableCell>
+                  <Badge
+                    variant={
+                      des.status === "active" ? "default" : "secondary"
+                    }
+                  >
+                    {des.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="flex gap-3">
+                  <Pencil
+                    className="w-4 h-4 cursor-pointer text-blue-500 hover:text-blue-700"
+                    onClick={() => {
+                      setIsEdit(true);
+                      setForm(des);
+                      setOpen(true);
+                    }}
+                  />
+
+                  <Trash2
+                    className="w-4 h-4 cursor-pointer text-red-500 hover:text-red-700"
+                    onClick={() => handleDelete(des._id)}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </MainLayout>
   );
 };

@@ -5,7 +5,6 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import {
   getApiWithToken,
   postApiWithToken,
-  putApiWithToken,
   deleteApiWithToken,
 } from "@/services/apiWrapper";
 import {
@@ -93,7 +92,7 @@ const OrganizationPage = () => {
 
     if (isEdit && form._id) {
       // ❌ DO NOT SEND code while updating
-      res = await putApiWithToken(
+      res = await postApiWithToken(
         `/organizations/${form._id}`,
         basePayload
       );

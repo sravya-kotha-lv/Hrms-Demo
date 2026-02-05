@@ -20,10 +20,10 @@ import {
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  deleteApiWithToken,
   getApiWithToken,
   postApiWithToken,
   putApiWithToken,
-  deleteApiWithToken,
 } from "@/services/apiWrapper";
 
 /* ================= TYPES ================= */
