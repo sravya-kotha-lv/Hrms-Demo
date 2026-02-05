@@ -100,32 +100,38 @@ const NavItem = ({ icon, label, to, collapsed ,children}: NavItemProps) => {
 const menuItems = [
   { icon: <Home size={20} />, label: "Home", to: "/" },
   { icon: <LayoutDashboard size={20} />, label: "Dashboard", to: "/dashboard" },
-  { icon: <Users size={20} />, label: "Employees", to: "/employees" },
-  { icon: <Calendar size={20} />, label: "Attendance", to: "/attendance" },
-  { icon: <FolderKanban size={20} />, label: "Leave", to: "/leave" },
-  { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays" },
+  {
+    icon: <Users size={20} />,
+    label: "Employees",
+    to:"/employees",
+    children: [
+      { icon: <Users size={18} />, label: "Employee", to: "/employees" },
+      { icon: <Briefcase size={18} />, label: "Attendance", to: "/attendance" },
+      { icon: <Briefcase size={18} />, label: "Leave", to: "/leave" },
+      { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays" },
+    ],
+  },
+   {
+    icon: <Building size={20} />,
+    label: "Organization",
+    to: "/organization",
+    children: [
+      { icon: <Briefcase size={18} />, label: "Roles", to: "/roles" },
+      { icon: <Shield size={18} />, label: "Departments", to: "/departments" },
+      { icon: <Briefcase size={18} />, label: "Designations", to: "/designations" },
+      { icon: <Building2 size={18} />, label: "payroll", to: "/payroll" },
+      { icon: <Shield size={18} />, label: "Permissions", to: "/permissions" },
+    ],
+  },
   { icon: <CalendarOff size={20} />, label: "Week Offs", to: "/week-offs" },
-  { icon: <DollarSign size={20} />, label: "Payroll", to: "/payroll" },
+  // { icon: <DollarSign size={20} />, label: "Payroll", to: "/payroll" },
   { icon: <TrendingUp size={20} />, label: "Performance", to: "/performance" },
   { icon: <FileText size={20} />, label: "Reports", to: "/reports" },
   { icon: <Inbox size={20} />, label: "Inbox", to: "/inbox" },
-  { icon: <Building2 size={20} />, label: "Organization", to: "/organization" },
-  { icon: <Shield size={20} />, label: "Roles", to: "/roles" },
-  { icon: <Shield size={20} />, label: "Permissions", to: "/permissions" },
-  { icon: <Building size={20} />, label: "Departments", to: "/departments" },
-  {
-  icon: <Building size={20} />,
-  label: "Departments",
-  to: "/departments",
-  children: [
-    {
-      icon: <Briefcase size={18} />,
-      label: "Designations",
-      to: "/designations",
-    },
-  ],
-},
-
+  // { icon: <Building2 size={20} />, label: "Organization", to: "/organization" },
+  // { icon: <Shield size={20} />, label: "Roles", to: "/roles" },
+  // { icon: <Shield size={20} />, label: "Permissions", to: "/permissions" },
+ 
 ];
 
 // const bottomItems = [
