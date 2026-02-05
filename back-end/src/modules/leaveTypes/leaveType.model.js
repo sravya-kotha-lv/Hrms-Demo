@@ -31,6 +31,11 @@ const leaveTypeSchema = new mongoose.Schema(
       type: String,
       enum: ["active", "inactive"],
       default: "active"
+    },
+
+    maxCarryForward: {
+      type: Number,
+      default: null   // null = no limit (or ignored if isCarryForward = false)
     }
   },
   { timestamps: true }
