@@ -22,7 +22,6 @@ exports.createByHr = async (req) => {
       roleIds,
       firstName,
       lastName,
-      employeeCode,
       departmentId,
       designationId,
       dateOfJoining,
@@ -74,6 +73,8 @@ exports.createByHr = async (req) => {
       { session }
     );
     console.log(orgUsers,"orgusers");
+
+    const employeeCode = await generateEmployeeCode(organizationId, session);
 
     /* 4️⃣ Create EMPLOYEE */
     const [employee] = await Employee.create(
@@ -160,6 +161,25 @@ function generatePassword() {
   return Math.random().toString(36).slice(-10);
 }
 
+async function generateEmployeeCode(organizationId, session) {
+  const prefix = (process.env.EMPLOYEE_CODE_PREFIX || "LV").trim() || "LV";
+  let sequence = await Employee.countDocuments(
+    { organizationId, isDeleted: false },
+    { session }
+  );
+
+  while (true) {
+    sequence += 1;
+    const code = `${prefix}-${String(sequence).padStart(4, "0")}`;
+    const exists = await Employee.findOne(
+      { organizationId, employeeCode: code },
+      "_id",
+      { session }
+    );
+    if (!exists) return code;
+  }
+}
+
 exports.listByOrganization = async (req) => {
   const {
     page = 1,
@@ -206,6 +226,7 @@ exports.listByOrganization = async (req) => {
       .populate("departmentId", "name")
       .populate("designationId", "name")
       .populate("managerId", "firstName lastName")
+      .populate("userId", "email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit)),
@@ -255,7 +276,15 @@ exports.getById = async (req) => {
     throw { code: 403, message: "Access denied" };
   }
 
-  return employee;
+  const orgUser = await OrgUser.findOne({
+    userId: employee.userId?._id || employee.userId,
+    organizationId
+  }).populate("roleIds", "name");
+
+  return {
+    ...employee.toObject(),
+    roleIds: orgUser?.roleIds || []
+  };
 };
 
 exports.getMe = async (req) => {
@@ -273,4 +302,149 @@ exports.getMe = async (req) => {
   }
 
   return employee;
+};
+
+/* ------------------------------------------------------------------ */
+/* HR / ADMIN UPDATES EMPLOYEE                                         */
+/* ------------------------------------------------------------------ */
+exports.updateByHr = async (req) => {
+  const { id } = req.params;
+  const { organizationId } = req.user;
+
+  const employee = await Employee.findOne({
+    _id: id,
+    organizationId,
+    isDeleted: false
+  });
+
+  if (!employee) {
+    throw { code: 404, message: "Employee not found" };
+  }
+
+  const {
+    email,
+    roleIds,
+    firstName,
+    lastName,
+    phone,
+    employeeCode,
+    departmentId,
+    designationId,
+    dateOfJoining,
+    employmentType,
+    status,
+    managerId,
+    dob,
+    gender,
+    address,
+    emergencyContacts
+  } = req.body;
+
+  if (employeeCode && employeeCode !== employee.employeeCode) {
+    const exists = await Employee.findOne({
+      organizationId,
+      employeeCode,
+      _id: { $ne: employee._id }
+    });
+    if (exists) {
+      throw { code: 409, message: "Employee code already exists" };
+    }
+  }
+
+  if (email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findById(employee.userId);
+    if (!user) {
+      throw { code: 404, message: "User not found" };
+    }
+
+    if (normalizedEmail !== user.email) {
+      const emailExists = await User.findOne({
+        email: normalizedEmail,
+        _id: { $ne: user._id }
+      });
+      if (emailExists) {
+        throw { code: 409, message: "Email already exists" };
+      }
+      user.email = normalizedEmail;
+      await user.save();
+    }
+  }
+
+  const updates = {
+    firstName,
+    lastName,
+    phone,
+    employeeCode,
+    departmentId,
+    designationId,
+    dateOfJoining,
+    employmentType,
+    status,
+    managerId,
+    dob,
+    gender,
+    address,
+    emergencyContacts
+  };
+
+  Object.keys(updates).forEach((key) => {
+    if (updates[key] !== undefined) {
+      employee[key] = updates[key];
+    }
+  });
+
+  await employee.save();
+
+  if (roleIds?.length) {
+    await OrgUser.findOneAndUpdate(
+      { userId: employee.userId, organizationId },
+      { roleIds },
+      { new: true }
+    );
+  }
+
+  const populatedEmployee = await Employee.findOne({
+    _id: employee._id,
+    organizationId,
+    isDeleted: false
+  })
+    .populate("departmentId", "name")
+    .populate("designationId", "name")
+    .populate("managerId", "firstName lastName")
+    .populate("userId", "email");
+
+  const orgUser = await OrgUser.findOne({
+    userId: employee.userId,
+    organizationId
+  }).populate("roleIds", "name");
+
+  return {
+    ...populatedEmployee.toObject(),
+    roleIds: orgUser?.roleIds || []
+  };
+};
+
+/* ------------------------------------------------------------------ */
+/* HR / ADMIN SOFT DELETE EMPLOYEE                                     */
+/* ------------------------------------------------------------------ */
+exports.remove = async (req) => {
+  const { id } = req.params;
+  const { organizationId } = req.user;
+
+  const employee = await Employee.findOne({
+    _id: id,
+    organizationId,
+    isDeleted: false
+  });
+
+  if (!employee) {
+    throw { code: 404, message: "Employee not found" };
+  }
+
+  employee.isDeleted = true;
+  employee.deletedAt = new Date();
+  employee.deletedBy = req.user._id;
+
+  await employee.save();
 };

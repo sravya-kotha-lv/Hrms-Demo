@@ -67,3 +67,24 @@ exports.getMe = async (req, res) => {
     })
   );
 };
+
+exports.updateByHr = async (req, res) => {
+  const data = await service.updateByHr(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Employee updated successfully",
+      data
+    })
+  );
+};
+
+exports.remove = async (req, res) => {
+  await service.remove(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Employee deleted successfully"
+    })
+  );
+};

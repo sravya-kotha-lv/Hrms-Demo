@@ -11,11 +11,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowLeft } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   getApiWithToken,
   postApiWithToken,
+  putApiWithToken,
 } from "@/services/apiWrapper";
 
 /* ================= TYPES ================= */
@@ -41,12 +42,16 @@ const emptyForm = {
 
 const AddEmployee = () => {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEdit = Boolean(id);
 
   const [form, setForm] = useState(emptyForm);
   const [departments, setDepartments] = useState<Option[]>([]);
   const [designations, setDesignations] = useState<Option[]>([]);
   const [roles, setRoles] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
+  const employeeCodePrefix =
+    (import.meta as any).env?.VITE_EMPLOYEE_CODE_PREFIX || "LV";
 
   /* ================= FETCH MASTER DATA ================= */
 
@@ -54,7 +59,33 @@ const AddEmployee = () => {
     fetchDepartments();
     fetchDesignations();
     fetchRoles();
+    if (isEdit) {
+      fetchEmployee();
+    }
   }, []);
+
+  const fetchEmployee = async () => {
+    if (!id) return;
+    const res = await getApiWithToken(`/employees/${id}`);
+    if (res?.success && res?.data) {
+      const employee = res.data;
+      setForm({
+        email: employee.userId?.email || "",
+        firstName: employee.firstName || "",
+        lastName: employee.lastName || "",
+        employeeCode: employee.employeeCode || "",
+        departmentId: employee.departmentId?._id || "",
+        designationId: employee.designationId?._id || "",
+        roleId: employee.roleIds?.[0]?._id || "",
+        employmentType: employee.employmentType || "",
+        dateOfJoining: employee.dateOfJoining
+          ? new Date(employee.dateOfJoining).toISOString().slice(0, 10)
+          : "",
+      });
+    } else {
+      toast.error(res?.message || "Failed to load employee");
+    }
+  };
 
   const fetchDepartments = async () => {
     const res = await getApiWithToken("/departments");
@@ -82,7 +113,6 @@ const AddEmployee = () => {
       !form.email ||
       !form.firstName ||
       !form.lastName ||
-      !form.employeeCode ||
       !form.departmentId ||
       !form.designationId ||
       !form.roleId ||
@@ -98,7 +128,6 @@ const AddEmployee = () => {
       roleIds: [form.roleId],
       firstName: form.firstName,
       lastName: form.lastName,
-      employeeCode: form.employeeCode,
       departmentId: form.departmentId,
       designationId: form.designationId,
       employmentType: form.employmentType,
@@ -106,14 +135,16 @@ const AddEmployee = () => {
     };
 
     setLoading(true);
-    const res = await postApiWithToken("/employees", payload);
+    const res = isEdit
+      ? await putApiWithToken(`/employees/${id}`, payload)
+      : await postApiWithToken("/employees", payload);
     setLoading(false);
 
     if (res?.success) {
-      toast.success("Employee created & onboarding email sent");
+      toast.success(isEdit ? "Employee updated" : "Employee created & onboarding email sent");
       navigate("/employees");
     } else {
-      toast.error(res?.message || "Failed to create employee");
+      toast.error(res?.message || "Failed to save employee");
     }
   };
 
@@ -121,11 +152,11 @@ const AddEmployee = () => {
 
   return (
     <MainLayout
-      title="Add Employee"
+      title={isEdit ? "Edit Employee" : "Add Employee"}
       breadcrumb={[
         { label: "Home", href: "/" },
         { label: "Employees", href: "/employees" },
-        { label: "Add Employee" },
+        { label: isEdit ? "Edit Employee" : "Add Employee" },
       ]}
     >
       {/* Header */}
@@ -139,7 +170,7 @@ const AddEmployee = () => {
         </button>
 
         <Button onClick={handleSubmit} disabled={loading}>
-          {loading ? "Saving..." : "Create Employee"}
+          {loading ? "Saving..." : isEdit ? "Update Employee" : "Create Employee"}
         </Button>
       </div>
 
@@ -155,12 +186,10 @@ const AddEmployee = () => {
         </div>
 
         <div>
-          <Label>Employee Code *</Label>
+          <Label>Employee Code (Auto)</Label>
           <Input
-            value={form.employeeCode}
-            onChange={(e) =>
-              setForm({ ...form, employeeCode: e.target.value })
-            }
+            value={isEdit ? form.employeeCode : `${employeeCodePrefix}-AUTO`}
+            disabled
           />
         </div>
 

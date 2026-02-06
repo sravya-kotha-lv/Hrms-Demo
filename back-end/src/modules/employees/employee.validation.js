@@ -15,6 +15,7 @@ const employmentType = Joi.string().valid(
   "part_time",
   "contract"
 );
+const status = Joi.string().valid("active", "on_leave", "resigned");
 
 /* ------------------------------------------------------------------ */
 /* HR CREATES EMPLOYEE (MINIMUM REQUIRED DATA)                         */
@@ -26,7 +27,7 @@ exports.createEmployeeByHrSchema = Joi.object({
   firstName: Joi.string().trim().min(2).required(),
   lastName: Joi.string().trim().min(2).required(),
 
-  employeeCode: Joi.string().trim().required(),
+  employeeCode: Joi.string().trim().optional(),
   departmentId: objectId.required(),
   designationId: objectId.required(),
 
@@ -39,6 +40,46 @@ exports.createEmployeeByHrSchema = Joi.object({
 /* ------------------------------------------------------------------ */
 exports.completeProfileSchema = Joi.object({
   phone: Joi.string().optional(),
+  dob: Joi.date().optional(),
+  gender: Joi.string().optional(),
+
+  address: Joi.object({
+    line1: Joi.string().optional(),
+    line2: Joi.string().optional(),
+    city: Joi.string().optional(),
+    state: Joi.string().optional(),
+    country: Joi.string().optional(),
+    zip: Joi.string().optional()
+  }).optional(),
+
+  emergencyContacts: Joi.array().items(
+    Joi.object({
+      name: Joi.string().required(),
+      relation: Joi.string().required(),
+      phone: Joi.string().required()
+    })
+  ).optional()
+});
+
+/* ------------------------------------------------------------------ */
+/* HR / ADMIN UPDATES EMPLOYEE                                         */
+/* ------------------------------------------------------------------ */
+exports.updateEmployeeSchema = Joi.object({
+  email: Joi.string().email().optional(),
+  roleIds: Joi.array().items(objectId).min(1).optional(),
+
+  firstName: Joi.string().trim().min(2).optional(),
+  lastName: Joi.string().trim().min(2).optional(),
+  phone: Joi.string().optional(),
+
+  employeeCode: Joi.string().trim().optional(),
+  departmentId: objectId.optional(),
+  designationId: objectId.optional(),
+  dateOfJoining: Joi.date().optional(),
+  employmentType: employmentType.optional(),
+  status: status.optional(),
+  managerId: objectId.optional(),
+
   dob: Joi.date().optional(),
   gender: Joi.string().optional(),
 

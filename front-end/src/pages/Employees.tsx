@@ -44,7 +44,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useNavigate } from "react-router-dom";
-import { getApiWithToken } from "@/services/apiWrapper";
+import { deleteApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 
 const getStatusBadge = (status: string) => {
@@ -115,8 +115,17 @@ const Employees = () => {
     setDeleteDialogOpen(true);
   };
 
-  const confirmDelete = () => {
-    toast.warning("Delete is not available for employees yet");
+  const confirmDelete = async () => {
+    if (!selectedEmployee?._id) return;
+
+    const res = await deleteApiWithToken(`/employees/${selectedEmployee._id}`);
+    if (res?.success) {
+      toast.success("Employee deleted");
+      fetchEmployees();
+    } else {
+      toast.error(res?.message || "Delete failed");
+    }
+
     setDeleteDialogOpen(false);
     setSelectedEmployee(null);
   };
@@ -238,7 +247,7 @@ const Employees = () => {
                       <DropdownMenuItem onClick={() => navigate(`/employees/${employee._id}`)}>
                         <Eye className="w-4 h-4 mr-2" /> View
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toast.warning("Edit is not available yet")}>
+                      <DropdownMenuItem onClick={() => navigate(`/employees/edit/${employee._id}`)}>
                         <Edit className="w-4 h-4 mr-2" /> Edit
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleDelete(employee)}>

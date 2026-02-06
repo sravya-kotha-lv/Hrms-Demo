@@ -7,7 +7,8 @@ const asyncHandler = require("../../middlewares/asyncHandler");
 
 const {
   createEmployeeByHrSchema,
-  completeProfileSchema
+  completeProfileSchema,
+  updateEmployeeSchema
 } = require("./employee.validation");
 
 const controller = require("./employee.controller");
@@ -42,5 +43,34 @@ router.get(
 );
 
 router.get("/leave-types", auth, asyncHandler(controller.getEmployeeleaves));
+
+router.get(
+  "/me",
+  auth,
+  authorize("EMP_SELF_VIEW"),
+  asyncHandler(controller.getMe)
+);
+
+router.get(
+  "/:id",
+  auth,
+  authorize("EMP_VIEW"),
+  asyncHandler(controller.getById)
+);
+
+router.put(
+  "/:id",
+  auth,
+  authorize("EMP_UPDATE"),
+  validate(updateEmployeeSchema),
+  asyncHandler(controller.updateByHr)
+);
+
+router.delete(
+  "/:id",
+  auth,
+  authorize("EMP_DELETE"),
+  asyncHandler(controller.remove)
+);
 
 module.exports = router;

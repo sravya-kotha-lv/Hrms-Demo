@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import Employees from "./pages/Employees";
 import AddEmployee from "./pages/AddEmployee";
+import ViewEmployee from "./pages/ViewEmployee";
 import Attendance from "./pages/Attendance";
 import Leave from "./pages/Leave";
 import Holidays from "./pages/Holidays";
@@ -46,6 +47,7 @@ const App = () => (
           <Route path="/employees" element={<Employees />} />
           <Route path="/employees/add" element={<AddEmployee />} />
           <Route path="/employees/edit/:id" element={<AddEmployee />} />
+          <Route path="/employees/:id" element={<ViewEmployee />} />
           <Route path="/attendance" element={<Attendance />} />
           <Route path="/leave" element={<Leave />} />
           <Route path="/holidays" element={<Holidays />} />
