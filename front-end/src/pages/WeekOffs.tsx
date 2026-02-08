@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { Checkbox } from "@/components/ui/checkbox";
+import { hasPermission } from "@/utils/auth";
+import PermissionGate from "@/components/PermissionGate";
 
 const DAYS = [
   { label: "Sunday", value: 0 },
@@ -18,6 +20,7 @@ const DAYS = [
 const WeekOffs = () => {
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
+  const canManage = hasPermission("WEEK_OFF_MANAGE");
 
   const fetchConfig = async () => {
     const res = await getApiWithToken("/week-offs");
@@ -74,6 +77,7 @@ const WeekOffs = () => {
               <Checkbox
                 checked={weekOffDays.includes(day.value)}
                 onCheckedChange={() => toggleDay(day.value)}
+                disabled={!canManage}
               />
               <span>{day.label}</span>
             </label>
@@ -84,9 +88,11 @@ const WeekOffs = () => {
           <Button variant="outline" onClick={fetchConfig}>
             Refresh
           </Button>
-          <Button onClick={saveConfig} disabled={loading}>
-            Save
-          </Button>
+          <PermissionGate permissions={["WEEK_OFF_MANAGE"]}>
+            <Button onClick={saveConfig} disabled={loading}>
+              Save
+            </Button>
+          </PermissionGate>
         </div>
       </div>
     </MainLayout>
