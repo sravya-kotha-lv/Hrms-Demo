@@ -224,6 +224,14 @@ const App = () => (
             }
           />
           <Route
+            path="/organization/settings"
+            element={
+              <RequireAuth permissions={["ORG_SETTINGS_VIEW"]}>
+                <OrganizationSettings />
+              </RequireAuth>
+            }
+          />
+          <Route
             path="/organization/add"
             element={
               <RequireAuth permissions={["ORG_MANAGE"]}>
