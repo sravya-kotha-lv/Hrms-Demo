@@ -99,9 +99,11 @@ app.use("/api/holidays", require("./src/modules/holidays/holiday.routes"));
 app.use("/api/week-offs", require("./src/modules/weekOffs/weekOff.routes"));
 app.use("/api/leave-balances", require("./src/modules/leaveBalances/leaveBalance.routes"));
 app.use("/api/timesheets", require("./src/modules/timesheets/timesheet.routes"));
+app.use("/api/org-settings", require("./src/modules/orgSettings/orgSettings.routes"));
 
 /* ----------------------JOBS----------------*/
 require("./src/jobs/leaveCarryForward.job");
+require("./src/jobs/leaveCredit.job");
 /* ----------------------JOBS----------------*/
 
 /* -------------------------------------------------------------------------- */

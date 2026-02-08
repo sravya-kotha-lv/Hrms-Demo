@@ -18,6 +18,7 @@ import PerformanceDashboard from "./pages/PerformanceDashboard";
 import ProfilePage from "./pages/ProfilePage";
 import Organization from "./pages/Organization";
 import AddOrganization from "./pages/AddOrganization";
+import OrganizationSettings from "./pages/OrganizationSettings";
 import NotFound from "./pages/NotFound";
 import Roles from "./pages/Roles";
 import AddRole from "./pages/AddRole";
@@ -159,6 +160,14 @@ const App = () => (
             element={
               <RequireAuth permissions={["ORG_VIEW"]}>
                 <Organization />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/organization/settings"
+            element={
+              <RequireAuth permissions={["ORG_SETTINGS_VIEW"]}>
+                <OrganizationSettings />
               </RequireAuth>
             }
           />

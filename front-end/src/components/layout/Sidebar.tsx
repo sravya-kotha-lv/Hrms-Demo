@@ -139,6 +139,7 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
       { icon: <Briefcase size={18} />, label: "Roles", to: "/roles", permissions: ["ROLE_VIEW"] },
       { icon: <Shield size={18} />, label: "Departments", to: "/departments", permissions: ["DEPT_VIEW"] },
       { icon: <Briefcase size={18} />, label: "Designations", to: "/designations", permissions: ["DESIG_VIEW"] },
+      { icon: <Settings size={18} />, label: "Settings", to: "/organization/settings", permissions: ["ORG_SETTINGS_VIEW"] },
       { icon: <Building2 size={18} />, label: "payroll", to: "/payroll" },
       { icon: <Shield size={18} />, label: "Permissions", to: "/permissions", permissions: ["PERMISSION_VIEW"] },
     ],

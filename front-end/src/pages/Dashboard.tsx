@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
+import { setPermissions } from "@/utils/auth";
 
 /* ========================= Dashboard ========================= */
 
@@ -104,6 +105,15 @@ const Dashboard = () => {
     localStorage.setItem("selectedOrganization", organizationId);
     setShowOrgPopup(false);
     toast.success("Organization switched");
+
+    try {
+      const permRes = await getApiWithToken("/users/me/permissions");
+      if (permRes?.success) {
+        setPermissions(permRes.data || []);
+      }
+    } catch {
+      setPermissions([]);
+    }
 
     fetchUsers();
   };
