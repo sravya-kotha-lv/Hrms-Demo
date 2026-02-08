@@ -2,13 +2,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Index from "./pages/Index";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Employees from "./pages/Employees";
 import AddEmployee from "./pages/AddEmployee";
 import ViewEmployee from "./pages/ViewEmployee";
 import Attendance from "./pages/Attendance";
+import EmployeeDashboard from "./pages/EmployeeDashboard";
+import Timesheets from "./pages/Timesheets";
 import Leave from "./pages/Leave";
 import Holidays from "./pages/Holidays";
 import WeekOffs from "./pages/WeekOffs";
@@ -27,12 +28,10 @@ import AddDepartment from "./pages/AddDepartment";
 import Designations from "./pages/Designations";
 import AddDesignation from "./pages/AddDesignation";
 import React from "react";
+import RequireAuth from "./components/RequireAuth";
+import RoleBasedHome from "./components/RoleBasedHome";
 
 const queryClient = new QueryClient();
-const PrivateRoute = ({ children }: any) => {
-  const token = localStorage.getItem("token");
-  return token ? children : <Navigate to="/login" replace />;
-};
 const App = () => (
   <React.StrictMode>
   <QueryClientProvider client={queryClient}>
@@ -41,33 +40,224 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Index />} />
+          <Route path="/" element={<RoleBasedHome />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/employees" element={<Employees />} />
-          <Route path="/employees/add" element={<AddEmployee />} />
-          <Route path="/employees/edit/:id" element={<AddEmployee />} />
-          <Route path="/employees/:id" element={<ViewEmployee />} />
-          <Route path="/attendance" element={<Attendance />} />
-          <Route path="/leave" element={<Leave />} />
-          <Route path="/holidays" element={<Holidays />} />
-          <Route path="/week-offs" element={<WeekOffs />} />
-          <Route path="/payroll" element={<Payroll />} />
-          <Route path="/performance" element={<PerformanceDashboard />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/organization" element={<Organization />} />
-          <Route path="/organization/add" element={<AddOrganization />} />
-          <Route path="/organization/edit/:id" element={<AddOrganization />} />
-          <Route path="/roles" element={<Roles />} />
-          <Route path="/roles/add" element={<AddRole />} />
-          <Route path="/roles/edit/:id" element={<AddRole />} />
-          <Route path="/permissions" element={<Permissions />} />
-          <Route path="/departments" element={<Departments />} />
-          <Route path="/departments/add" element={<AddDepartment />} />
-          <Route path="/departments/edit/:id" element={<AddDepartment />} />
-          <Route path="/designations" element={<Designations />} />
-          <Route path="/designations/add" element={<AddDesignation />} />
-          <Route path="/designations/edit/:id" element={<AddDesignation />} />
+          <Route
+            path="/dashboard"
+            element={
+              <RequireAuth permissions={["ORG_VIEW", "EMP_VIEW", "ROLE_VIEW", "LEAVE_VIEW_ALL", "TIMESHEET_VIEW_ALL"]}>
+                <Dashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/employee-dashboard"
+            element={
+              <RequireAuth permissions={["TIMESHEET_VIEW_SELF", "LEAVE_VIEW_SELF", "EMP_SELF_VIEW"]}>
+                <EmployeeDashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/employees"
+            element={
+              <RequireAuth permissions={["EMP_VIEW"]}>
+                <Employees />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/employees/add"
+            element={
+              <RequireAuth permissions={["EMP_CREATE"]}>
+                <AddEmployee />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/employees/edit/:id"
+            element={
+              <RequireAuth permissions={["EMP_UPDATE"]}>
+                <AddEmployee />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/employees/:id"
+            element={
+              <RequireAuth permissions={["EMP_VIEW"]}>
+                <ViewEmployee />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/attendance"
+            element={
+              <RequireAuth permissions={["TIMESHEET_VIEW_ALL"]}>
+                <Attendance />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/timesheets"
+            element={
+              <RequireAuth permissions={["TIMESHEET_VIEW_SELF", "TIMESHEET_VIEW_ALL"]}>
+                <Timesheets />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/leave"
+            element={
+              <RequireAuth permissions={["LEAVE_VIEW_ALL", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]}>
+                <Leave />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/holidays"
+            element={
+              <RequireAuth permissions={["HOLIDAY_VIEW"]}>
+                <Holidays />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/week-offs"
+            element={
+              <RequireAuth permissions={["WEEK_OFF_VIEW"]}>
+                <WeekOffs />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/payroll"
+            element={
+              <RequireAuth>
+                <Payroll />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/performance"
+            element={
+              <RequireAuth>
+                <PerformanceDashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <ProfilePage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/organization"
+            element={
+              <RequireAuth permissions={["ORG_VIEW"]}>
+                <Organization />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/organization/add"
+            element={
+              <RequireAuth permissions={["ORG_MANAGE"]}>
+                <AddOrganization />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/organization/edit/:id"
+            element={
+              <RequireAuth permissions={["ORG_MANAGE"]}>
+                <AddOrganization />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/roles"
+            element={
+              <RequireAuth permissions={["ROLE_VIEW"]}>
+                <Roles />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/roles/add"
+            element={
+              <RequireAuth permissions={["ROLE_CREATE"]}>
+                <AddRole />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/roles/edit/:id"
+            element={
+              <RequireAuth permissions={["ROLE_UPDATE"]}>
+                <AddRole />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/permissions"
+            element={
+              <RequireAuth permissions={["PERMISSION_VIEW"]}>
+                <Permissions />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/departments"
+            element={
+              <RequireAuth permissions={["DEPT_VIEW"]}>
+                <Departments />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/departments/add"
+            element={
+              <RequireAuth permissions={["DEPT_CREATE"]}>
+                <AddDepartment />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/departments/edit/:id"
+            element={
+              <RequireAuth permissions={["DEPT_UPDATE"]}>
+                <AddDepartment />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/designations"
+            element={
+              <RequireAuth permissions={["DESIG_VIEW"]}>
+                <Designations />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/designations/add"
+            element={
+              <RequireAuth permissions={["DESIG_CREATE"]}>
+                <AddDesignation />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/designations/edit/:id"
+            element={
+              <RequireAuth permissions={["DESIG_UPDATE"]}>
+                <AddDesignation />
+              </RequireAuth>
+            }
+          />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

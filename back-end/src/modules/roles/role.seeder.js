@@ -20,12 +20,24 @@ const ROLE_RULES = {
       "LEAVE_VIEW_ALL",
       "LEAVE_VIEW_SELF",
       "LEAVE_ACTION",
-      "LEAVE_APPLY"
+      "LEAVE_APPLY",
+      "TIMESHEET_CHECKIN_SELF",
+      "TIMESHEET_CHECKOUT_SELF",
+      "TIMESHEET_VIEW_SELF",
+      "TIMESHEET_CREATE_SELF",
+      "TIMESHEET_EDIT_SELF",
+      "TIMESHEET_SUBMIT_SELF",
+      "WEEK_OFF_VIEW",
+      "TIMESHEET_VIEW_ALL",
+      "TIMESHEET_ACTION"
     ]
   },
   employee: {
     type: "predicate",
-    match: (code) => code.includes("_SELF") || code === "LEAVE_APPLY"
+    match: (code) =>
+      code.includes("_SELF") ||
+      code === "LEAVE_APPLY" ||
+      code === "WEEK_OFF_VIEW"
   }
 };
 

@@ -4,6 +4,7 @@ const { genHashedPassword, checkPasswords } = require("../../utils/bcryptUtils")
 const { createJwtToken } = require("../../utils/jwtToken");
 const { rotateUserToken } = require("../../utils/tokenManager");
 const Role = require("../roles/role.model");
+const Permission = require("../permissions/permission.model");
 const sendMail = require("../../utils/sendMail");
 
 exports.loginUser = async ({ email, password }) => {
@@ -357,6 +358,34 @@ exports.switchOrgAndRole = async ({
     activeRoleId,
     roles: membership.roleIds
   };
+};
+
+exports.getActivePermissions = async ({ user }) => {
+  if (!user?.activeRoleId) {
+    throw { code: 403, message: "Active role not set" };
+  }
+
+  const role = await Role.findOne({
+    _id: user.activeRoleId,
+    organizationId: user.organizationId
+  });
+
+  if (!role) {
+    throw { code: 404, message: "Role not found" };
+  }
+
+  if (role.isSystemRole) {
+    return ["*"];
+  }
+
+  if (!role.permissionIds?.length) return [];
+
+  const permissions = await Permission.find({
+    _id: { $in: role.permissionIds },
+    organizationId: user.organizationId
+  }).select("code");
+
+  return permissions.map((p) => p.code);
 };
 
 
