@@ -30,6 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import PermissionGate from "@/components/PermissionGate";
 
 interface Organization {
   _id?: string;
@@ -137,6 +138,7 @@ const OrganizationPage = () => {
         const isInactive = org.status === "inactive";
 
         return (
+          <PermissionGate permissions={["ORG_MANAGE"]} fallback={<div className="text-muted-foreground text-sm">-</div>}>
           <div className="flex items-center gap-4">
             {/* ✏️ Edit */}
             <TooltipProvider>
@@ -211,6 +213,7 @@ const OrganizationPage = () => {
               </Tooltip>
             </TooltipProvider>
           </div>
+          </PermissionGate>
         );
       },
     }

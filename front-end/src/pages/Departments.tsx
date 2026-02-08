@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import PermissionGate from "@/components/PermissionGate";
 import {
   deleteApiWithToken,
   getApiWithToken,
@@ -144,18 +145,22 @@ const Departments = () => {
       accessor: "_id",
       render: (dept) => (
         <div className="flex gap-3">
-          <Pencil
-            className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
-            onClick={() => {
-              setIsEdit(true);
-              setForm(dept);
-              setOpen(true);
-            }}
-          />
-          <Trash2
-            className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
-            onClick={() => handleDelete(dept._id!)}
-          />
+          <PermissionGate permissions={["DEPT_UPDATE"]}>
+            <Pencil
+              className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
+              onClick={() => {
+                setIsEdit(true);
+                setForm(dept);
+                setOpen(true);
+              }}
+            />
+          </PermissionGate>
+          <PermissionGate permissions={["DEPT_DELETE"]}>
+            <Trash2
+              className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
+              onClick={() => handleDelete(dept._id!)}
+            />
+          </PermissionGate>
         </div>
       ),
     },
@@ -170,16 +175,18 @@ const Departments = () => {
     >
       {/* Action Bar */}
       <div className="flex justify-end mb-6">
-        <Button
-          onClick={() => {
-            setIsEdit(false);
-            setForm(emptyDept);
-            setOpen(true);
-          }}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Department
-        </Button>
+        <PermissionGate permissions={["DEPT_CREATE"]}>
+          <Button
+            onClick={() => {
+              setIsEdit(false);
+              setForm(emptyDept);
+              setOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Department
+          </Button>
+        </PermissionGate>
       </div>
 
       {/* DataTable */}

@@ -46,6 +46,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { deleteApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
+import PermissionGate from "@/components/PermissionGate";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -164,10 +165,12 @@ const Employees = () => {
             <Download className="w-4 h-4" />
             Export
           </Button>
-          <Button className="gap-2" onClick={() => navigate("/employees/add")}>
-            <Plus className="w-4 h-4" />
-            Add Employee
-          </Button>
+          <PermissionGate permissions={["EMP_CREATE"]}>
+            <Button className="gap-2" onClick={() => navigate("/employees/add")}>
+              <Plus className="w-4 h-4" />
+              Add Employee
+            </Button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -244,15 +247,21 @@ const Employees = () => {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => navigate(`/employees/${employee._id}`)}>
-                        <Eye className="w-4 h-4 mr-2" /> View
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => navigate(`/employees/edit/${employee._id}`)}>
-                        <Edit className="w-4 h-4 mr-2" /> Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDelete(employee)}>
-                        <Trash2 className="w-4 h-4 mr-2 text-red-500" /> Delete
-                      </DropdownMenuItem>
+                      <PermissionGate permissions={["EMP_VIEW"]}>
+                        <DropdownMenuItem onClick={() => navigate(`/employees/${employee._id}`)}>
+                          <Eye className="w-4 h-4 mr-2" /> View
+                        </DropdownMenuItem>
+                      </PermissionGate>
+                      <PermissionGate permissions={["EMP_UPDATE"]}>
+                        <DropdownMenuItem onClick={() => navigate(`/employees/edit/${employee._id}`)}>
+                          <Edit className="w-4 h-4 mr-2" /> Edit
+                        </DropdownMenuItem>
+                      </PermissionGate>
+                      <PermissionGate permissions={["EMP_DELETE"]}>
+                        <DropdownMenuItem onClick={() => handleDelete(employee)}>
+                          <Trash2 className="w-4 h-4 mr-2 text-red-500" /> Delete
+                        </DropdownMenuItem>
+                      </PermissionGate>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

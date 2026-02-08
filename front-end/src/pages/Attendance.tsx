@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { 
-  Search, Filter, Download, Plus, MoreHorizontal, 
-  Edit, CheckCircle, XCircle, Clock
+import {
+  Search,
+  Download,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Timer
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,81 +22,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const attendanceData = [
-  {
-    id: 1,
-    employee: {
-      name: "Sarah Wilson",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
-    },
-    date: "2024-01-26",
-    checkIn: "09:02 AM",
-    checkOut: "06:15 PM",
-    totalHours: "9h 13m",
-    status: "Present",
-  },
-  {
-    id: 2,
-    employee: {
-      name: "Michael Chen",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
-    },
-    date: "2024-01-26",
-    checkIn: "09:30 AM",
-    checkOut: "06:00 PM",
-    totalHours: "8h 30m",
-    status: "Late",
-  },
-  {
-    id: 3,
-    employee: {
-      name: "Emily Rodriguez",
-      avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
-    },
-    date: "2024-01-26",
-    checkIn: "-",
-    checkOut: "-",
-    totalHours: "-",
-    status: "Absent",
-  },
-  {
-    id: 4,
-    employee: {
-      name: "James Anderson",
-      avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
-    },
-    date: "2024-01-26",
-    checkIn: "08:45 AM",
-    checkOut: "05:30 PM",
-    totalHours: "8h 45m",
-    status: "Present",
-  },
-  {
-    id: 5,
-    employee: {
-      name: "Lisa Thompson",
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
-    },
-    date: "2024-01-26",
-    checkIn: "09:00 AM",
-    checkOut: "06:00 PM",
-    totalHours: "9h 00m",
-    status: "Present",
-  },
-];
+import { getApiWithToken } from "@/services/apiWrapper";
+import { toast } from "sonner";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -102,42 +39,133 @@ const getStatusBadge = (status: string) => {
           <CheckCircle className="w-3 h-3" /> Present
         </Badge>
       );
-    case "Late":
+    case "Working":
       return (
         <Badge className="status-badge status-pending gap-1">
-          <Clock className="w-3 h-3" /> Late
+          <Clock className="w-3 h-3" /> Working
         </Badge>
       );
-    case "Absent":
+    case "Week Off":
+      return (
+        <Badge variant="secondary" className="gap-1">
+          <Timer className="w-3 h-3" /> Week Off
+        </Badge>
+      );
+    default:
       return (
         <Badge className="status-badge status-rejected gap-1">
           <XCircle className="w-3 h-3" /> Absent
         </Badge>
       );
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
   }
+};
+
+const getRange = (filter: string) => {
+  const now = new Date();
+  const start = new Date(now);
+  const end = new Date(now);
+
+  if (filter === "yesterday") {
+    start.setDate(start.getDate() - 1);
+    end.setDate(end.getDate() - 1);
+  } else if (filter === "this-week") {
+    const day = start.getDay();
+    const diff = (day + 6) % 7;
+    start.setDate(start.getDate() - diff);
+  } else if (filter === "this-month") {
+    start.setDate(1);
+  }
+
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
 };
 
 const Attendance = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState("today");
+  const [attendanceData, setAttendanceData] = useState<any[]>([]);
+  const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchWeekOffs = async () => {
+    const res = await getApiWithToken("/week-offs");
+    if (res?.success) {
+      setWeekOffDays(res.data?.weekOffDays || []);
+    }
+  };
+
+  const fetchAttendance = async () => {
+    try {
+      setLoading(true);
+      const range = getRange(dateFilter);
+      const startDate = range.start.toISOString();
+      const endDate = range.end.toISOString();
+      const res = await getApiWithToken(
+        `/timesheets/attendance?startDate=${startDate}&endDate=${endDate}`
+      );
+      if (res?.success) {
+        setAttendanceData(res.data || []);
+      } else {
+        toast.error(res?.message || "Failed to load attendance");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWeekOffs();
+  }, []);
+
+  useEffect(() => {
+    fetchAttendance();
+  }, [dateFilter]);
+
+  const filteredAttendance = useMemo(() => {
+    return (attendanceData || []).filter((record) => {
+      const name = record.employeeId
+        ? `${record.employeeId.firstName || ""} ${record.employeeId.lastName || ""}`.trim()
+        : "-";
+      return name.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+  }, [attendanceData, searchQuery]);
+
+  const stats = useMemo(() => {
+    let present = 0;
+    let working = 0;
+    let weekOff = 0;
+
+    attendanceData.forEach((record) => {
+      const day = new Date(record.date).getDay();
+      const isWeekOff = weekOffDays.includes(day);
+      if (isWeekOff) {
+        weekOff += 1;
+      } else if (record.checkInAt && record.checkOutAt) {
+        present += 1;
+      } else if (record.checkInAt && !record.checkOutAt) {
+        working += 1;
+      }
+    });
+
+    return { present, working, weekOff };
+  }, [attendanceData, weekOffDays]);
 
   return (
     <MainLayout
       title="Attendance"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Attendance" }]}
     >
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <motion.div
           className="stat-card"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <p className="text-sm text-muted-foreground mb-1">Today's Attendance</p>
-          <p className="text-3xl font-bold text-primary">92%</p>
-          <p className="text-sm text-success mt-1">+2% from yesterday</p>
+          <p className="text-sm text-muted-foreground mb-1">Present</p>
+          <p className="text-3xl font-bold text-success">{stats.present}</p>
+          <p className="text-sm text-muted-foreground mt-1">employees</p>
         </motion.div>
         <motion.div
           className="stat-card"
@@ -145,8 +173,8 @@ const Attendance = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
-          <p className="text-sm text-muted-foreground mb-1">Present</p>
-          <p className="text-3xl font-bold text-success">228</p>
+          <p className="text-sm text-muted-foreground mb-1">Working</p>
+          <p className="text-3xl font-bold text-warning">{stats.working}</p>
           <p className="text-sm text-muted-foreground mt-1">employees</p>
         </motion.div>
         <motion.div
@@ -155,9 +183,9 @@ const Attendance = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
         >
-          <p className="text-sm text-muted-foreground mb-1">Late</p>
-          <p className="text-3xl font-bold text-warning">12</p>
-          <p className="text-sm text-muted-foreground mt-1">employees</p>
+          <p className="text-sm text-muted-foreground mb-1">Week Off</p>
+          <p className="text-3xl font-bold text-primary">{stats.weekOff}</p>
+          <p className="text-sm text-muted-foreground mt-1">records</p>
         </motion.div>
         <motion.div
           className="stat-card"
@@ -165,13 +193,12 @@ const Attendance = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <p className="text-sm text-muted-foreground mb-1">Absent</p>
-          <p className="text-3xl font-bold text-destructive">8</p>
-          <p className="text-sm text-muted-foreground mt-1">employees</p>
+          <p className="text-sm text-muted-foreground mb-1">Total Records</p>
+          <p className="text-3xl font-bold text-primary">{attendanceData.length}</p>
+          <p className="text-sm text-muted-foreground mt-1">this period</p>
         </motion.div>
       </div>
 
-      {/* Action Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -198,14 +225,9 @@ const Attendance = () => {
             <Download className="w-4 h-4" />
             Export
           </Button>
-          <Button className="gap-2">
-            <Plus className="w-4 h-4" />
-            Add Attendance
-          </Button>
         </div>
       </div>
 
-      {/* Attendance Table */}
       <motion.div
         className="bg-card rounded-xl card-shadow overflow-hidden"
         initial={{ opacity: 0, y: 20 }}
@@ -221,52 +243,77 @@ const Attendance = () => {
               <TableHead>Check Out</TableHead>
               <TableHead>Total Hours</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {attendanceData.map((record, index) => (
-              <motion.tr
-                key={record.id}
-                className="table-row-hover"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 + index * 0.05 }}
-              >
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <Avatar className="w-10 h-10">
-                      <AvatarImage src={record.employee.avatar} alt={record.employee.name} />
-                      <AvatarFallback>{record.employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium">{record.employee.name}</span>
-                  </div>
+            {loading && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-muted-foreground">
+                  Loading...
                 </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(record.date).toLocaleDateString('en-US', { 
-                    weekday: 'short',
-                    month: 'short', 
-                    day: 'numeric' 
-                  })}
+              </TableRow>
+            )}
+            {!loading && filteredAttendance.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-muted-foreground">
+                  No attendance records found.
                 </TableCell>
-                <TableCell className="font-mono">{record.checkIn}</TableCell>
-                <TableCell className="font-mono">{record.checkOut}</TableCell>
-                <TableCell className="font-medium">{record.totalHours}</TableCell>
-                <TableCell>{getStatusBadge(record.status)}</TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="p-2 rounded hover:bg-muted transition-colors">
-                      <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem className="gap-2">
-                        <Edit className="w-4 h-4" /> Edit
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </motion.tr>
-            ))}
+              </TableRow>
+            )}
+            {filteredAttendance.map((record) => {
+              const date = new Date(record.date);
+              const isWeekOff = weekOffDays.includes(date.getDay());
+              const status = isWeekOff
+                ? "Week Off"
+                : record.checkInAt && record.checkOutAt
+                  ? "Present"
+                  : record.checkInAt
+                    ? "Working"
+                    : "Absent";
+
+              const totalHours = record.totalMinutes
+                ? `${Math.floor(record.totalMinutes / 60)}h ${record.totalMinutes % 60}m`
+                : "-";
+
+              return (
+                <TableRow
+                  key={record._id}
+                  className={`table-row-hover ${isWeekOff ? "opacity-60" : ""}`}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Avatar className="w-10 h-10">
+                        <AvatarImage src={record.employeeId?.avatar} alt={record.employeeId?.firstName} />
+                        <AvatarFallback>
+                          {(record.employeeId?.firstName || "").charAt(0)}
+                          {(record.employeeId?.lastName || "").charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium">
+                        {record.employeeId
+                          ? `${record.employeeId.firstName || ""} ${record.employeeId.lastName || ""}`.trim()
+                          : "-"}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {date.toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </TableCell>
+                  <TableCell className="font-mono">
+                    {record.checkInAt ? new Date(record.checkInAt).toLocaleTimeString() : "-"}
+                  </TableCell>
+                  <TableCell className="font-mono">
+                    {record.checkOutAt ? new Date(record.checkOutAt).toLocaleTimeString() : "-"}
+                  </TableCell>
+                  <TableCell className="font-medium">{totalHours}</TableCell>
+                  <TableCell>{getStatusBadge(status)}</TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </motion.div>

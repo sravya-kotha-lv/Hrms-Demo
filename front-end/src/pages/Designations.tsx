@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { toast } from "sonner";
+import PermissionGate from "@/components/PermissionGate";
 import {
   getApiWithToken,
   postApiWithToken,
@@ -148,16 +149,18 @@ const Designations = () => {
           />
         </div>
 
-        <Button
-          onClick={() => {
-            setIsEdit(false);
-            setForm(emptyDesignation);
-            setOpen(true);
-          }}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Designation
-        </Button>
+        <PermissionGate permissions={["DESIG_CREATE"]}>
+          <Button
+            onClick={() => {
+              setIsEdit(false);
+              setForm(emptyDesignation);
+              setOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Designation
+          </Button>
+        </PermissionGate>
       </div>
 
       {/* ---------- Modal ---------- */}
@@ -247,19 +250,23 @@ const Designations = () => {
                   </Badge>
                 </TableCell>
                 <TableCell className="flex gap-3">
-                  <Pencil
-                    className="w-4 h-4 cursor-pointer text-blue-500 hover:text-blue-700"
-                    onClick={() => {
-                      setIsEdit(true);
-                      setForm(des);
-                      setOpen(true);
-                    }}
-                  />
+                  <PermissionGate permissions={["DESIG_UPDATE"]}>
+                    <Pencil
+                      className="w-4 h-4 cursor-pointer text-blue-500 hover:text-blue-700"
+                      onClick={() => {
+                        setIsEdit(true);
+                        setForm(des);
+                        setOpen(true);
+                      }}
+                    />
+                  </PermissionGate>
 
-                  <Trash2
-                    className="w-4 h-4 cursor-pointer text-red-500 hover:text-red-700"
-                    onClick={() => handleDelete(des._id)}
-                  />
+                  <PermissionGate permissions={["DESIG_DELETE"]}>
+                    <Trash2
+                      className="w-4 h-4 cursor-pointer text-red-500 hover:text-red-700"
+                      onClick={() => handleDelete(des._id)}
+                    />
+                  </PermissionGate>
                 </TableCell>
               </TableRow>
             ))}

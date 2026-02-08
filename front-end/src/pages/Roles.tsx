@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import PermissionGate from "@/components/PermissionGate";
 import {
   getApiWithToken,
   postApiWithToken,
@@ -148,18 +149,22 @@ const Roles = () => {
         <div className="flex gap-3">
           {!role.isSystemRole && (
             <>
-              <Pencil
-                className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
-                onClick={() => {
-                  setIsEdit(true);
-                  setForm(role);
-                  setOpen(true);
-                }}
-              />
-              <Trash2
-                className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
-                onClick={() => handleDelete(role)}
-              />
+              <PermissionGate permissions={["ROLE_UPDATE"]}>
+                <Pencil
+                  className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
+                  onClick={() => {
+                    setIsEdit(true);
+                    setForm(role);
+                    setOpen(true);
+                  }}
+                />
+              </PermissionGate>
+              <PermissionGate permissions={["ROLE_DELETE"]}>
+                <Trash2
+                  className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
+                  onClick={() => handleDelete(role)}
+                />
+              </PermissionGate>
             </>
           )}
         </div>
@@ -176,16 +181,18 @@ const Roles = () => {
     >
       {/* Action Bar */}
       <div className="flex justify-end mb-6">
-        <Button
-          onClick={() => {
-            setIsEdit(false);
-            setForm(emptyRole);
-            setOpen(true);
-          }}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Role
-        </Button>
+        <PermissionGate permissions={["ROLE_CREATE"]}>
+          <Button
+            onClick={() => {
+              setIsEdit(false);
+              setForm(emptyRole);
+              setOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Role
+          </Button>
+        </PermissionGate>
       </div>
 
       {/* DataTable */}

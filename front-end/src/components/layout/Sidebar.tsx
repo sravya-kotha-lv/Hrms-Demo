@@ -23,9 +23,11 @@ import {
   Briefcase,
   CalendarDays,
   CalendarOff,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { hasAnyPermission } from "@/utils/auth";
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -36,6 +38,21 @@ interface NavItemProps {
     icon: React.ReactNode;
     label: string;
     to: string;
+    permissions?: string[];
+  }[];
+  permissions?: string[];
+}
+
+interface MenuItem {
+  icon: React.ReactNode;
+  label: string;
+  to: string;
+  permissions?: string[];
+  children?: {
+    icon: React.ReactNode;
+    label: string;
+    to: string;
+    permissions?: string[];
   }[];
 }
 
@@ -97,33 +114,36 @@ const NavItem = ({ icon, label, to, collapsed ,children}: NavItemProps) => {
   );
 };
 
-const menuItems = [
+const menuItems = (dashboardPath: string): MenuItem[] => [
   { icon: <Home size={20} />, label: "Home", to: "/" },
-  { icon: <LayoutDashboard size={20} />, label: "Dashboard", to: "/dashboard" },
+  { icon: <LayoutDashboard size={20} />, label: "Dashboard", to: dashboardPath },
   {
     icon: <Users size={20} />,
     label: "Employees",
     to:"/employees",
+    permissions: ["EMP_VIEW"],
     children: [
-      { icon: <Users size={18} />, label: "Employee", to: "/employees" },
-      { icon: <Briefcase size={18} />, label: "Attendance", to: "/attendance" },
-      { icon: <Briefcase size={18} />, label: "Leave", to: "/leave" },
-      { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays" },
+      { icon: <Users size={18} />, label: "Employee", to: "/employees", permissions: ["EMP_VIEW"] },
+      { icon: <Briefcase size={18} />, label: "Attendance", to: "/attendance", permissions: ["TIMESHEET_VIEW_ALL"] },
+      { icon: <ClipboardCheck size={18} />, label: "Timesheets", to: "/timesheets", permissions: ["TIMESHEET_VIEW_SELF", "TIMESHEET_VIEW_ALL"] },
+      { icon: <Briefcase size={18} />, label: "Leave", to: "/leave", permissions: ["LEAVE_VIEW_SELF", "LEAVE_VIEW_ALL", "LEAVE_APPLY"] },
+      { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays", permissions: ["HOLIDAY_VIEW"] },
     ],
   },
    {
     icon: <Building size={20} />,
     label: "Organization",
     to: "/organization",
+    permissions: ["ORG_VIEW", "ROLE_VIEW", "PERMISSION_VIEW", "DEPT_VIEW", "DESIG_VIEW"],
     children: [
-      { icon: <Briefcase size={18} />, label: "Roles", to: "/roles" },
-      { icon: <Shield size={18} />, label: "Departments", to: "/departments" },
-      { icon: <Briefcase size={18} />, label: "Designations", to: "/designations" },
+      { icon: <Briefcase size={18} />, label: "Roles", to: "/roles", permissions: ["ROLE_VIEW"] },
+      { icon: <Shield size={18} />, label: "Departments", to: "/departments", permissions: ["DEPT_VIEW"] },
+      { icon: <Briefcase size={18} />, label: "Designations", to: "/designations", permissions: ["DESIG_VIEW"] },
       { icon: <Building2 size={18} />, label: "payroll", to: "/payroll" },
-      { icon: <Shield size={18} />, label: "Permissions", to: "/permissions" },
+      { icon: <Shield size={18} />, label: "Permissions", to: "/permissions", permissions: ["PERMISSION_VIEW"] },
     ],
   },
-  { icon: <CalendarOff size={20} />, label: "Week Offs", to: "/week-offs" },
+  { icon: <CalendarOff size={20} />, label: "Week Offs", to: "/week-offs", permissions: ["WEEK_OFF_VIEW"] },
   // { icon: <DollarSign size={20} />, label: "Payroll", to: "/payroll" },
   { icon: <TrendingUp size={20} />, label: "Performance", to: "/performance" },
   { icon: <FileText size={20} />, label: "Reports", to: "/reports" },
@@ -142,6 +162,34 @@ const menuItems = [
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();   // 👈 add this
+
+  const dashboardPath = hasAnyPermission([
+    "EMP_VIEW",
+    "ROLE_VIEW",
+    "PERMISSION_VIEW",
+    "LEAVE_VIEW_ALL",
+    "TIMESHEET_VIEW_ALL",
+    "ORG_VIEW"
+  ])
+    ? "/dashboard"
+    : "/employee-dashboard";
+
+  const filteredMenuItems: MenuItem[] = menuItems(dashboardPath)
+    .map((item) => {
+      if (item.children) {
+        const filteredChildren = item.children.filter((child) =>
+          !child.permissions || hasAnyPermission(child.permissions)
+        );
+        if (filteredChildren.length === 0) return null;
+        return { ...item, children: filteredChildren };
+      }
+      return item;
+    })
+    .filter(
+      (item): item is MenuItem =>
+        Boolean(item) &&
+        (!item.permissions || hasAnyPermission(item.permissions))
+    );
 
   const handleLogout = () => {
     localStorage.clear();           // remove token/user
@@ -188,7 +236,7 @@ export const Sidebar = () => {
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 overflow-y-auto scroll-smooth custom-scroll">
         <div className="space-y-1">
-          {menuItems.map((item) => (
+          {filteredMenuItems.map((item) => (
             <NavItem key={item.to} {...item} collapsed={collapsed} />
           ))}
         </div>

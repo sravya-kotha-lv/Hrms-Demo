@@ -50,6 +50,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
+import PermissionGate from "@/components/PermissionGate";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -308,9 +309,11 @@ const Leave = () => {
           <Button variant="outline" className="gap-2" onClick={fetchLeaves}>
             Refresh
           </Button>
-          <Button className="gap-2" onClick={() => setApplyOpen(true)}>
-            Apply Leave
-          </Button>
+          <PermissionGate permissions={["LEAVE_APPLY"]}>
+            <Button className="gap-2" onClick={() => setApplyOpen(true)}>
+              Apply Leave
+            </Button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -388,28 +391,30 @@ const Leave = () => {
                   <TableCell>{leave.totalDays ?? "-"}</TableCell>
                   <TableCell>{getStatusBadge(leave.status)}</TableCell>
                   <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
-                          <Eye className="w-4 h-4 mr-2" /> View
-                        </DropdownMenuItem>
-                        {viewMode === "all" && leave.status === "pending" && (
-                          <>
-                            <DropdownMenuItem onClick={() => handleAction(leave, "approve")}>
-                              <CheckCircle className="w-4 h-4 mr-2 text-green-600" /> Approve
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleAction(leave, "reject")}>
-                              <XCircle className="w-4 h-4 mr-2 text-red-600" /> Reject
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <PermissionGate permissions={["LEAVE_ACTION"]}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem>
+                            <Eye className="w-4 h-4 mr-2" /> View
+                          </DropdownMenuItem>
+                          {viewMode === "all" && leave.status === "pending" && (
+                            <>
+                              <DropdownMenuItem onClick={() => handleAction(leave, "approve")}>
+                                <CheckCircle className="w-4 h-4 mr-2 text-green-600" /> Approve
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleAction(leave, "reject")}>
+                                <XCircle className="w-4 h-4 mr-2 text-red-600" /> Reject
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </PermissionGate>
                   </TableCell>
                 </TableRow>
               );

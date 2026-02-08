@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import PermissionGate from "@/components/PermissionGate";
 import {
   getApiWithToken,
   postApiWithToken,
@@ -120,16 +121,18 @@ const Holidays = () => {
             Refresh
           </Button>
         </div>
-        <Button
-          onClick={() => {
-            setIsEdit(false);
-            setForm(emptyHoliday);
-            setOpen(true);
-          }}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Holiday
-        </Button>
+        <PermissionGate permissions={["HOLIDAY_MANAGE"]}>
+          <Button
+            onClick={() => {
+              setIsEdit(false);
+              setForm(emptyHoliday);
+              setOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Holiday
+          </Button>
+        </PermissionGate>
       </div>
 
       <div className="bg-card rounded-xl card-shadow overflow-hidden">
@@ -165,25 +168,27 @@ const Holidays = () => {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-3">
-                    <Pencil
-                      className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
-                      onClick={() => {
-                        setIsEdit(true);
-                        setForm({
-                          _id: h._id,
-                          name: h.name,
-                          date: h.date ? h.date.split("T")[0] : "",
-                          status: h.status || "active",
-                        });
-                        setOpen(true);
-                      }}
-                    />
-                    <Trash2
-                      className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
-                      onClick={() => handleDelete(h._id)}
-                    />
-                  </div>
+                  <PermissionGate permissions={["HOLIDAY_MANAGE"]}>
+                    <div className="flex justify-end gap-3">
+                      <Pencil
+                        className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
+                        onClick={() => {
+                          setIsEdit(true);
+                          setForm({
+                            _id: h._id,
+                            name: h.name,
+                            date: h.date ? h.date.split("T")[0] : "",
+                            status: h.status || "active",
+                          });
+                          setOpen(true);
+                        }}
+                      />
+                      <Trash2
+                        className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
+                        onClick={() => handleDelete(h._id)}
+                      />
+                    </div>
+                  </PermissionGate>
                 </TableCell>
               </TableRow>
             ))}
