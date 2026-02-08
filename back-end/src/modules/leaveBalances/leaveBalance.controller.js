@@ -5,7 +5,7 @@ const { buildSuccessResponse } = require("../../utils/responseBuilder");
 exports.getMyLeaveBalance = async (req, res) => {
   const data = await service.getEmployeeBalance(
     req.user.organizationId,
-    req.user._id,        // ✅ USE TOKEN _id AS STRING
+    req.user.userId,        // ✅ USE TOKEN userId AS STRING
     "USER"
   );
 

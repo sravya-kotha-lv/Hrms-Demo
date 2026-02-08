@@ -6,6 +6,7 @@ import {
   getApiWithToken,
   postApiWithToken,
   deleteApiWithToken,
+  putApiWithToken,
 } from "@/services/apiWrapper";
 import {
   Select,
@@ -93,7 +94,7 @@ const OrganizationPage = () => {
 
     if (isEdit && form._id) {
       // ❌ DO NOT SEND code while updating
-      res = await postApiWithToken(
+      res = await putApiWithToken(
         `/organizations/${form._id}`,
         basePayload
       );

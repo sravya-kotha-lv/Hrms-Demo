@@ -4,7 +4,7 @@ const Employee = require("../employees/employee.model");
 const Organization = require("../organizations/organization.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
 
-const roundHalf = (value) => Math.round(value * 2) / 2;
+const roundTwo = (value) => Math.round(value * 100) / 100;
 
 const getCycleStartDate = (date, startMonth) => {
   const d = new Date(date);
@@ -56,6 +56,16 @@ exports.applyLeaveCreditsForOrg = async (organizationId, date = new Date()) => {
   // Only credit after period has started
   if (date < periodStart) return;
 
+  // Prevent over-crediting old balances missing lastCreditedAt
+  await LeaveBalance.updateMany(
+    {
+      organizationId,
+      lastCreditedAt: { $exists: false },
+      total: { $gt: 0 }
+    },
+    { $set: { lastCreditedAt: periodStart } }
+  );
+
   const cycleStartYear = periodStart.getMonth() + 1 < org.leaveCycleStartMonth
     ? periodStart.getFullYear() - 1
     : periodStart.getFullYear();
@@ -70,7 +80,7 @@ exports.applyLeaveCreditsForOrg = async (organizationId, date = new Date()) => {
   const bulkOps = [];
 
   for (const lt of leaveTypes) {
-    const creditPerPeriod = roundHalf(lt.daysPerYear / periodsPerYear);
+    const creditPerPeriod = roundTwo(lt.daysPerYear / periodsPerYear);
 
     for (const emp of employees) {
       bulkOps.push({

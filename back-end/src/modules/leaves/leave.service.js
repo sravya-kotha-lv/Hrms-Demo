@@ -25,7 +25,7 @@ exports.applyLeave = async (req) => {
 
   // 1. Find employee from logged-in user
   // const employee = await Employee.findOne({
-  //   userId: req.user._id,
+  //   userId: req.user.userId,
   //   organizationId: req.user.organizationId
   // });
 
@@ -159,7 +159,7 @@ exports.applyLeave = async (req) => {
 
 exports.getMyLeaves = async (req) => {
   const employee = await Employee.findOne({
-    userId: req.user._id,
+    userId: req.user.userId,
     organizationId: req.user.organizationId
   });
 
@@ -183,7 +183,7 @@ exports.actionLeave = async (req) => {
   const previousStatus = leave.status;
 
   const actor = await Employee.findOne({
-    userId: req.user._id,
+    userId: req.user.userId,
     organizationId: req.user.organizationId
   });
 

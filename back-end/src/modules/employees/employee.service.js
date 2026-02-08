@@ -3,6 +3,7 @@ const User = require("../users/user.model");
 const OrgUser = require("../organizations/org-user.model");
 const Employee = require("./employee.model");
 const OrganizationService = require('../organizations/organization.service');
+const Role = require("../roles/role.model");
 const { genHashedPassword } = require("../../utils/bcryptUtils");
 const sendMail = require("../../utils/sendMail");
 const leaveBalanceService =
@@ -139,7 +140,7 @@ exports.createByHr = async (req) => {
 /* ------------------------------------------------------------------ */
 exports.completeMyProfile = async (req) => {
   const employee = await Employee.findOne({
-    userId: req.user._id,
+    userId: req.user.userId,
     organizationId: req.user.organizationId
   });
 
@@ -190,7 +191,16 @@ exports.listByOrganization = async (req) => {
     status
   } = req.query;
 
-  const { organizationId, _id: userId, roleIds } = req.user;
+  const { organizationId, userId, roleIds, activeRoleId } = req.user;
+
+  let isManager = false;
+  if (activeRoleId) {
+    const role = await Role.findOne({
+      _id: activeRoleId,
+      organizationId
+    }).select("slug");
+    isManager = role?.slug === "manager";
+  }
 
   const query = {
     organizationId,
@@ -200,8 +210,14 @@ exports.listByOrganization = async (req) => {
   /**
    * 👔 Manager scoping
    */
-  if (roleIds?.includes("MANAGER_ROLE_ID")) {
-    query.managerId = userId;
+  if (isManager) {
+    const managerEmployee = await Employee.findOne({
+      userId,
+      organizationId
+    }).select("_id");
+    if (managerEmployee) {
+      query.managerId = managerEmployee._id;
+    }
   }
 
   /* 🔍 Search */
@@ -247,7 +263,7 @@ exports.listByOrganization = async (req) => {
 
 exports.getById = async (req) => {
   const { id } = req.params;
-  const { organizationId, _id: userId, roleIds } = req.user;
+  const { organizationId, userId, roleIds, activeRoleId } = req.user;
 
   const employee = await Employee.findOne({
     _id: id,
@@ -267,13 +283,25 @@ exports.getById = async (req) => {
    * 🔒 Manager scoping:
    * Manager can only view employees who report to them
    */
-  if (
-    roleIds?.length &&
-    !req.user.isOrgAdmin && // optional helper flag if you have
-    employee.managerId &&
-    employee.managerId._id.toString() !== userId.toString()
-  ) {
-    throw { code: 403, message: "Access denied" };
+  if (roleIds?.length && employee.managerId && activeRoleId) {
+    const role = await Role.findOne({
+      _id: activeRoleId,
+      organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId,
+        organizationId
+      }).select("_id");
+
+      if (
+        managerEmployee &&
+        employee.managerId._id.toString() !== managerEmployee._id.toString()
+      ) {
+        throw { code: 403, message: "Access denied" };
+      }
+    }
   }
 
   const orgUser = await OrgUser.findOne({
@@ -289,7 +317,7 @@ exports.getById = async (req) => {
 
 exports.getMe = async (req) => {
   const employee = await Employee.findOne({
-    userId: req.user._id,
+    userId: req.user.userId,
     organizationId: req.user.organizationId,
     isDeleted: false
   })
@@ -444,7 +472,7 @@ exports.remove = async (req) => {
 
   employee.isDeleted = true;
   employee.deletedAt = new Date();
-  employee.deletedBy = req.user._id;
+  employee.deletedBy = req.user.userId;
 
   await employee.save();
 };

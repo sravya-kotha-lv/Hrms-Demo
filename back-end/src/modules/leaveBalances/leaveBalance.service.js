@@ -14,9 +14,9 @@ const getCycleStartYear = (date, startMonth) => {
 };
 
 /**
- * Round value to nearest 0.5
+ * Round value to 2 decimals
  */
-const roundHalf = (value) => Math.round(value * 2) / 2;
+const roundTwo = (value) => Math.round(value * 100) / 100;
 const getCycleStartDate = (date, startMonth) => {
   const d = new Date(date);
   const year = d.getMonth() + 1 < startMonth ? d.getFullYear() - 1 : d.getFullYear();
@@ -59,16 +59,16 @@ exports.initializeForEmployee = async (employee, organizationId) => {
 
   const settings = await OrgSettings.findOne({ organizationId });
   const frequency = settings?.leaveCreditFrequency || "monthly";
-  const { periodStart, periodsPerYear } = getPeriodInfo(
-    new Date(),
-    frequency,
-    org.leaveCycleStartMonth
-  );
-
   // 2️⃣ determine leave cycle year
   const doj = new Date(employee.dateOfJoining);
   const cycleStartYear = getCycleStartYear(
     doj,
+    org.leaveCycleStartMonth
+  );
+
+  const { periodStart, periodsPerYear } = getPeriodInfo(
+    doj,
+    frequency,
     org.leaveCycleStartMonth
   );
 
@@ -82,11 +82,11 @@ exports.initializeForEmployee = async (employee, organizationId) => {
 
   // 4️⃣ prepare bulk insert
   const bulkOps = leaveTypes.map((lt) => {
-    const creditPerPeriod = roundHalf(lt.daysPerYear / periodsPerYear);
+    const creditPerPeriod = roundTwo(lt.daysPerYear / periodsPerYear);
     let total = creditPerPeriod;
     if (frequency === "monthly") {
       const joinDay = doj.getDate();
-      if (joinDay > 15) total = roundHalf(creditPerPeriod / 2);
+      if (joinDay > 15) total = roundTwo(creditPerPeriod / 2);
     }
 
     return {
@@ -114,8 +114,6 @@ exports.initializeForEmployee = async (employee, organizationId) => {
   await LeaveBalance.bulkWrite(bulkOps);
 };
 
-
-const mongoose = require("mongoose");
 
 exports.getEmployeeBalance = async (organizationId, id, type = "USER") => {
 
