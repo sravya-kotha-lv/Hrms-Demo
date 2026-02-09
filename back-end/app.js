@@ -28,7 +28,6 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:8080",
   "http://localhost:8000",
-  "http://localhost:8001",
   "http://localhost:3001",
   "https://upanaya.vercel.app"
 ];
@@ -103,6 +102,11 @@ app.use("/api/org-settings", require("./src/modules/orgSettings/orgSettings.rout
 
 /* ----------------------JOBS----------------*/
 require("./src/jobs/leaveCarryForward.job");
+
+/* ----------------------JOBS----------------*/
+
+
+/* ----------------------JOBS----------------*/
 require("./src/jobs/leaveCredit.job");
 require("./src/jobs/attendanceAutoCheckout.job");
 /* ----------------------JOBS----------------*/
