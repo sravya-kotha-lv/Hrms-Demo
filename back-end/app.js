@@ -29,7 +29,7 @@ const allowedOrigins = [
   "http://localhost:8080",
   "http://localhost:8000",
   "http://localhost:3001",
-  "https://upanaya.vercel.app"
+  "https://upanaya.vercel.app",
 ];
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
