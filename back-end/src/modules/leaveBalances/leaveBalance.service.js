@@ -2,6 +2,7 @@ const LeaveBalance = require("./leaveBalance.model");
 const LeaveType = require("../leaveTypes/leaveType.model");
 const Organization = require("../organizations/organization.model");
 const Employee = require("../employees/employee.model");
+const OrgSettings = require("../orgSettings/orgSettings.model");
 
 /**
  * Get leave cycle start year based on org configuration
@@ -13,9 +14,65 @@ const getCycleStartYear = (date, startMonth) => {
 };
 
 /**
- * Round value to nearest 0.5
+ * Round value to 2 decimals
  */
-const roundHalf = (value) => Math.round(value * 2) / 2;
+const roundTwo = (value) => Math.round(value * 100) / 100;
+const getCycleStartDate = (date, startMonth) => {
+  const d = new Date(date);
+  const year = d.getMonth() + 1 < startMonth ? d.getFullYear() - 1 : d.getFullYear();
+  return new Date(year, startMonth - 1, 1);
+};
+
+const monthsBetween = (from, to) =>
+  (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+
+const getCycleEndDate = (date, startMonth) => {
+  const cycleStart = getCycleStartDate(date, startMonth);
+  return new Date(cycleStart.getFullYear() + 1, cycleStart.getMonth(), 0);
+};
+
+const getRemainingPeriods = (date, frequency, cycleStartMonth) => {
+  const now = new Date(date);
+  const cycleEnd = getCycleEndDate(now, cycleStartMonth);
+
+  if (frequency === "monthly") {
+    const monthsLeft = monthsBetween(now, cycleEnd) + 1;
+    return { remainingPeriods: monthsLeft, totalPeriods: 12 };
+  }
+
+  if (frequency === "quarterly") {
+    const { periodStart } = getPeriodInfo(now, frequency, cycleStartMonth);
+    const monthsLeft = monthsBetween(periodStart, cycleEnd) + 1;
+    const remainingPeriods = Math.ceil(monthsLeft / 3);
+    return { remainingPeriods, totalPeriods: 4 };
+  }
+
+  const monthsLeft = monthsBetween(now, cycleEnd) + 1;
+  return { remainingPeriods: monthsLeft, totalPeriods: 12 };
+};
+
+const getPeriodInfo = (date, frequency, cycleStartMonth) => {
+  const now = new Date(date);
+  now.setHours(0, 0, 0, 0);
+
+  if (frequency === "monthly") {
+    return { periodStart: new Date(now.getFullYear(), now.getMonth(), 1), periodsPerYear: 12 };
+  }
+
+  const cycleStart = getCycleStartDate(now, cycleStartMonth);
+  if (frequency === "yearly") {
+    return { periodStart: cycleStart, periodsPerYear: 1 };
+  }
+
+  const offsetMonths = monthsBetween(cycleStart, now);
+  const quarterIndex = Math.floor(offsetMonths / 3);
+  const periodStart = new Date(
+    cycleStart.getFullYear(),
+    cycleStart.getMonth() + quarterIndex * 3,
+    1
+  );
+  return { periodStart, periodsPerYear: 4 };
+};
 
 /**
  * Initialize leave balance when employee is created
@@ -25,6 +82,8 @@ exports.initializeForEmployee = async (employee, organizationId) => {
   const org = await Organization.findById(organizationId);
   if (!org) return;
 
+  const settings = await OrgSettings.findOne({ organizationId });
+  const frequency = settings?.leaveCreditFrequency || "monthly";
   // 2️⃣ determine leave cycle year
   const doj = new Date(employee.dateOfJoining);
   const cycleStartYear = getCycleStartYear(
@@ -32,9 +91,16 @@ exports.initializeForEmployee = async (employee, organizationId) => {
     org.leaveCycleStartMonth
   );
 
-  const joinDay = doj.getDate();
-  const joinMonthIndex = doj.getMonth();
-  const cycleStartMonthIndex = org.leaveCycleStartMonth - 1;
+  const { periodStart, periodsPerYear } = getPeriodInfo(
+    doj,
+    frequency,
+    org.leaveCycleStartMonth
+  );
+  const { remainingPeriods, totalPeriods } = getRemainingPeriods(
+    doj,
+    frequency,
+    org.leaveCycleStartMonth
+  );
 
   // 3️⃣ fetch active leave types
   const leaveTypes = await LeaveType.find({
@@ -46,21 +112,17 @@ exports.initializeForEmployee = async (employee, organizationId) => {
 
   // 4️⃣ prepare bulk insert
   const bulkOps = leaveTypes.map((lt) => {
-    const monthlyQuota = lt.daysPerYear / 12;
+    const creditPerPeriod = roundTwo(lt.daysPerYear / periodsPerYear);
+    let total = roundTwo(creditPerPeriod * remainingPeriods);
 
-    let remainingMonths =
-      12 - (joinMonthIndex - cycleStartMonthIndex);
+    if (frequency === "yearly") {
+      total = roundTwo((lt.daysPerYear / totalPeriods) * remainingPeriods);
+    }
 
-    if (remainingMonths < 1) remainingMonths = 1;
-
-    let joiningMonthLeave = monthlyQuota;
-    if (joinDay > 15) joiningMonthLeave = monthlyQuota / 2;
-
-    let total =
-      joiningMonthLeave +
-      monthlyQuota * (remainingMonths - 1);
-
-    total = roundHalf(total);
+    if (frequency === "monthly") {
+      const joinDay = doj.getDate();
+      if (joinDay > 15) total = roundTwo(total - creditPerPeriod / 2);
+    }
 
     return {
       updateOne: {
@@ -74,7 +136,8 @@ exports.initializeForEmployee = async (employee, organizationId) => {
           $setOnInsert: {
             total,
             used: 0,
-            remaining: total
+            remaining: total,
+            lastCreditedAt: periodStart
           }
         },
         upsert: true
@@ -86,8 +149,67 @@ exports.initializeForEmployee = async (employee, organizationId) => {
   await LeaveBalance.bulkWrite(bulkOps);
 };
 
+/**
+ * Initialize leave balance for all employees when a new leave type is created
+ */
+exports.initializeForNewLeaveType = async (leaveType, organizationId) => {
+  const org = await Organization.findById(organizationId);
+  if (!org) return;
 
-const mongoose = require("mongoose");
+  const settings = await OrgSettings.findOne({ organizationId });
+  const frequency = settings?.leaveCreditFrequency || "monthly";
+
+  const employees = await Employee.find({ organizationId });
+  if (!employees.length) return;
+
+  const bulkOps = employees.map((employee) => {
+    const doj = new Date(employee.dateOfJoining || new Date());
+    const cycleStartYear = getCycleStartYear(doj, org.leaveCycleStartMonth);
+    const { periodStart, periodsPerYear } = getPeriodInfo(
+      doj,
+      frequency,
+      org.leaveCycleStartMonth
+    );
+    const { remainingPeriods, totalPeriods } = getRemainingPeriods(
+      doj,
+      frequency,
+      org.leaveCycleStartMonth
+    );
+
+    const creditPerPeriod = roundTwo(leaveType.daysPerYear / periodsPerYear);
+    let total = roundTwo(creditPerPeriod * remainingPeriods);
+    if (frequency === "yearly") {
+      total = roundTwo((leaveType.daysPerYear / totalPeriods) * remainingPeriods);
+    }
+    if (frequency === "monthly") {
+      const joinDay = doj.getDate();
+      if (joinDay > 15) total = roundTwo(total - creditPerPeriod / 2);
+    }
+
+    return {
+      updateOne: {
+        filter: {
+          organizationId,
+          employeeId: employee._id,
+          leaveTypeId: leaveType._id,
+          cycleStartYear
+        },
+        update: {
+          $setOnInsert: {
+            total,
+            used: 0,
+            remaining: total,
+            lastCreditedAt: periodStart
+          }
+        },
+        upsert: true
+      }
+    };
+  });
+
+  await LeaveBalance.bulkWrite(bulkOps);
+};
+
 
 exports.getEmployeeBalance = async (organizationId, id, type = "USER") => {
 

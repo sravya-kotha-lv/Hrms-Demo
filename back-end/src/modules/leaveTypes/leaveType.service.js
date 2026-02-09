@@ -1,15 +1,37 @@
 const LeaveType = require("./leaveType.model");
+const { initializeForNewLeaveType } = require("../leaveBalances/leaveBalance.service");
 
 exports.createLeaveType = async (req) => {
-  const { name, code, descriptoin, daysPerYear, isCarryForward } = req.body; 
+  const {
+    name,
+    code,
+    description,
+    daysPerYear,
+    isCarryForward,
+    maxCarryForward,
+    status
+  } = req.body;
   const organizationId = req.user.organizationId;
-  const exists = await LeaveType.findOne({ 
-    organizationId, 
-    code: code 
+  const exists = await LeaveType.findOne({
+    organizationId,
+    code: code
   });
-  if (exists) throw { code: 400, message: "Leave type code already exists for this org" };
-  
-  return await LeaveType.create({ name, code, descriptoin, daysPerYear, isCarryForward, organizationId});
+  if (exists)
+    throw { code: 400, message: "Leave type code already exists for this org" };
+
+  const leaveType = await LeaveType.create({
+    name,
+    code,
+    description,
+    daysPerYear,
+    isCarryForward,
+    maxCarryForward: isCarryForward ? maxCarryForward ?? null : null,
+    status,
+    organizationId
+  });
+
+  await initializeForNewLeaveType(leaveType, organizationId);
+  return leaveType;
 };
 
 exports.getLeaveTypesByOrg = async (organizationId) => {
@@ -18,16 +40,6 @@ exports.getLeaveTypesByOrg = async (organizationId) => {
 
 exports.getEmployeeleaves = async (req) => {
   return await LeaveType.find({ organizationId: req.user?.organizationId, status: "active" });
-};
-
-exports.updateLeaveType = async (id, data) => {
-  const leaveType = await LeaveType.findByIdAndUpdate(id, data, { new: true });
-  if (!leaveType) throw { code: 404, message: "Leave type not found" };
-  return leaveType;
-};
-
-exports.deleteLeaveType = async (id) => {
-  return await LeaveType.findByIdAndUpdate(id, { status: "inactive" });
 };
 
 /**

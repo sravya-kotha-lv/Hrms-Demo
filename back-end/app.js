@@ -97,7 +97,8 @@ app.use("/api/leaves", require("./src/modules/leaves/leave.routes"));
 app.use("/api/holidays", require("./src/modules/holidays/holiday.routes"));
 app.use("/api/week-offs", require("./src/modules/weekOffs/weekOff.routes"));
 app.use("/api/leave-balances", require("./src/modules/leaveBalances/leaveBalance.routes"));
- 
+app.use("/api/timesheets", require("./src/modules/timesheets/timesheet.routes"));
+app.use("/api/org-settings", require("./src/modules/orgSettings/orgSettings.routes"));
 
 /* ----------------------JOBS----------------*/
 require("./src/jobs/leaveCarryForward.job");
@@ -105,9 +106,9 @@ require("./src/jobs/leaveCarryForward.job");
 /* ----------------------JOBS----------------*/
 
 
-
 /* ----------------------JOBS----------------*/
-require("./src/jobs/leaveCarryForward.job");
+require("./src/jobs/leaveCredit.job");
+require("./src/jobs/attendanceAutoCheckout.job");
 /* ----------------------JOBS----------------*/
 
 /* -------------------------------------------------------------------------- */
@@ -124,11 +125,21 @@ app.use(errorMiddleware);
 const connectDB = require("./src/config/db");
 const Organization = require("./src/modules/organizations/organization.model");
 const { seedOrgRolesAndPermissions } = require("./src/modules/roles/role.seeder");
+const { ensureSystemBootstrap } = require("./src/utils/bootstrapSystem");
 
 const startServer = async () => {
   await connectDB();
 
   try {
+    const bootstrapResult = await ensureSystemBootstrap();
+    if (bootstrapResult?.created) {
+      console.log("🎉 SYSTEM BOOTSTRAPPED SUCCESSFULLY");
+      console.log("----------------------------------");
+      console.log("SYSTEM ORG ID        :", bootstrapResult.systemOrgId);
+      console.log("SuperAdmin Email     :", bootstrapResult.email);
+      console.log("SuperAdmin Password  :", bootstrapResult.password);
+    }
+
     const organizations = await Organization.find({
       code: { $ne: "SYSTEM" }
     }).select("_id");

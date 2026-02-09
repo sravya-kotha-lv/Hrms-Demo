@@ -6,7 +6,7 @@ exports.createOrganizationSchema = Joi.object({
   timezone: Joi.string().required(),
   currency: Joi.string().required(),
   adminUserId: Joi.string().required(),
-  adminRoleId: Joi.string().required()
+  adminRoleId: Joi.string().optional()
 });
 
 exports.updateOrganizationSchema = Joi.object({

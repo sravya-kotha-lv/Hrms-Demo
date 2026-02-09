@@ -1,4 +1,5 @@
 const Department = require("./department.model");
+const Employee = require("../employees/employee.model");
 const { audit } = require("../auditLogs/auditLogs.service");
 
 exports.create = async (req) => {
@@ -8,7 +9,11 @@ exports.create = async (req) => {
       organizationId = req.user.organizationId;
     }
     if (!managerId) {
-      managerId = req.user._id;
+      const employee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId
+      }).select("_id");
+      if (employee) managerId = employee._id;
     }
 
     const exists = await Department.findOne({
@@ -82,7 +87,7 @@ exports.remove = async (req) => {
 
   department.isDeleted = true;
   department.deletedAt = new Date();
-  department.deletedBy = req.user._id;
+  department.deletedBy = req.user?.userId || req.user?._id;
   await department.save();
 
   // await audit({

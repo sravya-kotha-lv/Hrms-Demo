@@ -1,5 +1,5 @@
 const leaveTypeService = require("./leaveType.service");
-const { buildSuccessResponse } = require("../../utils/responseBuilder");
+const { buildSuccessResponse, buildFailureResponse } = require("../../utils/responseBuilder");
 
 exports.create = async (req, res) => {
   const data = await leaveTypeService.createLeaveType(req);

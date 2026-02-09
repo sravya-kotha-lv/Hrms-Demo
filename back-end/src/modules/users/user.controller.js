@@ -125,3 +125,12 @@ exports.verifyOtp = async (req, res) => {
     })
   );
 };
+
+exports.myPermissions = async (req, res) => {
+  const data = await userService.getActivePermissions({ user: req.user });
+  return res.status(200).json(
+    buildSuccessResponse({
+      data
+    })
+  );
+};

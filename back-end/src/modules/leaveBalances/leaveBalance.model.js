@@ -40,6 +40,10 @@ const leaveBalanceSchema = new mongoose.Schema(
     remaining: {
       type: Number,
       required: true
+    },
+
+    lastCreditedAt: {
+      type: Date
     }
   },
   { timestamps: true }

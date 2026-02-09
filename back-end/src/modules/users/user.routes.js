@@ -31,6 +31,12 @@ router.post(
   asyncHandler(controller.switchOrganization)
 );
 
+router.get(
+  "/me/permissions",
+  auth,
+  asyncHandler(controller.myPermissions)
+);
+
 router.post("/send-otp", validate(validator.sendOTPUserSchema), asyncHandler(controller.sendOtp));
 router.post("/verify-otp", validate(validator.validateOTPSchema), asyncHandler(controller.verifyOtp));
 

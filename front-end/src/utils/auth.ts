@@ -40,6 +40,7 @@ export const setToken = (token: string) => {
 
 export const clearAuth = () => {
   localStorage.removeItem("profile");
+  localStorage.removeItem("permissions");
   sessionStorage.removeItem("token");
 };
 
@@ -56,4 +57,30 @@ export const getActiveRoleId = (): number | null => {
 export const hasRole = (allowedRoles: number[]): boolean => {
   const roleId = getActiveRoleId();
   return roleId !== null && allowedRoles.includes(roleId);
+};
+
+/* ---------- PERMISSION HELPERS ---------- */
+
+export const setPermissions = (permissions: string[]) => {
+  localStorage.setItem("permissions", JSON.stringify(permissions || []));
+};
+
+export const getPermissions = (): string[] => {
+  try {
+    const data = localStorage.getItem("permissions");
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const hasPermission = (code: string): boolean => {
+  const permissions = getPermissions();
+  if (permissions.includes("*")) return true;
+  return permissions.includes(code);
+};
+
+export const hasAnyPermission = (codes: string[]): boolean => {
+  if (!codes || codes.length === 0) return true;
+  return codes.some((code) => hasPermission(code));
 };

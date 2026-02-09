@@ -61,7 +61,7 @@ exports.remove = async (req) => {
 
   designation.isDeleted = true;
   designation.deletedAt = new Date();
-  designation.deletedBy = req.user._id;
+  designation.deletedBy = req.user?.userId || req.user?._id;
   await designation.save();
 
   await audit({

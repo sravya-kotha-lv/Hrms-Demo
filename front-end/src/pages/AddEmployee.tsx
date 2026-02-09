@@ -33,6 +33,7 @@ const emptyForm = {
   employeeCode: "",
   departmentId: "",
   designationId: "",
+  managerId: "",
   roleId: "",
   employmentType: "",
   dateOfJoining: "",
@@ -49,6 +50,7 @@ const AddEmployee = () => {
   const [departments, setDepartments] = useState<Option[]>([]);
   const [designations, setDesignations] = useState<Option[]>([]);
   const [roles, setRoles] = useState<Option[]>([]);
+  const [managers, setManagers] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
   const employeeCodePrefix =
     (import.meta as any).env?.VITE_EMPLOYEE_CODE_PREFIX || "LV";
@@ -59,6 +61,7 @@ const AddEmployee = () => {
     fetchDepartments();
     fetchDesignations();
     fetchRoles();
+    fetchManagers();
     if (isEdit) {
       fetchEmployee();
     }
@@ -76,6 +79,7 @@ const AddEmployee = () => {
         employeeCode: employee.employeeCode || "",
         departmentId: employee.departmentId?._id || "",
         designationId: employee.designationId?._id || "",
+        managerId: employee.managerId?._id || "",
         roleId: employee.roleIds?.[0]?._id || "",
         employmentType: employee.employmentType || "",
         dateOfJoining: employee.dateOfJoining
@@ -106,6 +110,19 @@ const AddEmployee = () => {
     if (res?.code == 200) setRoles(res.data || []);
   };
 
+  const fetchManagers = async () => {
+    const res = await getApiWithToken("/employees");
+    if (res?.success) {
+      const list = res.data?.items || [];
+      setManagers(
+        list.map((e: any) => ({
+          _id: e._id,
+          name: `${e.firstName || ""} ${e.lastName || ""}`.trim()
+        }))
+      );
+    }
+  };
+
   /* ================= SUBMIT ================= */
 
   const handleSubmit = async () => {
@@ -130,6 +147,7 @@ const AddEmployee = () => {
       lastName: form.lastName,
       departmentId: form.departmentId,
       designationId: form.designationId,
+      managerId: form.managerId || undefined,
       employmentType: form.employmentType,
       dateOfJoining: form.dateOfJoining,
     };
@@ -159,6 +177,26 @@ const AddEmployee = () => {
         { label: isEdit ? "Edit Employee" : "Add Employee" },
       ]}
     >
+      {!isEdit && (departments.length === 0 || designations.length === 0) && (
+        <div className="mb-6 bg-card rounded-xl card-shadow p-4">
+          <p className="text-sm text-muted-foreground mb-3">
+            Please add {departments.length === 0 ? "a department" : "a designation"} before creating an employee.
+          </p>
+          <div className="flex gap-2">
+            {departments.length === 0 && (
+              <Button type="button" onClick={() => navigate("/departments")}>
+                Add Department
+              </Button>
+            )}
+            {designations.length === 0 && (
+              <Button type="button" variant="outline" onClick={() => navigate("/designations")}>
+                Add Designation
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <button
@@ -169,7 +207,10 @@ const AddEmployee = () => {
           Back
         </button>
 
-        <Button onClick={handleSubmit} disabled={loading}>
+        <Button
+          onClick={handleSubmit}
+          disabled={loading || (!isEdit && (departments.length === 0 || designations.length === 0))}
+        >
           {loading ? "Saving..." : isEdit ? "Update Employee" : "Create Employee"}
         </Button>
       </div>
@@ -217,14 +258,19 @@ const AddEmployee = () => {
           <Label>Department *</Label>
           <Select
             value={form.departmentId}
-            onValueChange={(v) =>
-              setForm({ ...form, departmentId: v })
-            }
+            onValueChange={(v) => {
+              if (v === "__create__") {
+                navigate("/departments");
+                return;
+              }
+              setForm({ ...form, departmentId: v });
+            }}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select Department" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="__create__">+ Create Department</SelectItem>
               {departments.map((d) => (
                 <SelectItem key={d._id} value={d._id}>
                   {d.name}
@@ -238,17 +284,44 @@ const AddEmployee = () => {
           <Label>Designation *</Label>
           <Select
             value={form.designationId}
-            onValueChange={(v) =>
-              setForm({ ...form, designationId: v })
-            }
+            onValueChange={(v) => {
+              if (v === "__create__") {
+                navigate("/designations");
+                return;
+              }
+              setForm({ ...form, designationId: v });
+            }}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select Designation" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="__create__">+ Create Designation</SelectItem>
               {designations.map((d) => (
                 <SelectItem key={d._id} value={d._id}>
                   {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label>Reporting Manager *</Label>
+          <Select
+            value={form.managerId}
+            onValueChange={(v) =>
+              setForm({ ...form, managerId: v === "none" ? "" : v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Manager" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              {managers.map((m) => (
+                <SelectItem key={m._id} value={m._id}>
+                  {m.name}
                 </SelectItem>
               ))}
             </SelectContent>

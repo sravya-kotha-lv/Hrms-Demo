@@ -9,7 +9,10 @@ const {
  */
 exports.create = async (req, res) => {
   try {
-    const org = await organizationService.createOrganization(req.body);
+    const org = await organizationService.createOrganization({
+      ...req.body,
+      creator: req.user
+    });
 
     return res.status(201).json(
       buildSuccessResponse({

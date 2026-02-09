@@ -3,6 +3,7 @@ const User = require("../users/user.model");
 const OrgUser = require("../organizations/org-user.model");
 const Employee = require("./employee.model");
 const OrganizationService = require('../organizations/organization.service');
+const Role = require("../roles/role.model");
 const { genHashedPassword } = require("../../utils/bcryptUtils");
 const sendMail = require("../../utils/sendMail");
 const leaveBalanceService =
@@ -13,10 +14,10 @@ const leaveBalanceService =
 /* HR / ADMIN CREATES EMPLOYEE                                         */
 /* ------------------------------------------------------------------ */
 exports.createByHr = async (req) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const createFlow = async (options = {}) => {
+    const { session } = options;
+    const useSession = Boolean(session);
 
-  try {
     const {
       email,
       roleIds,
@@ -25,110 +26,164 @@ exports.createByHr = async (req) => {
       departmentId,
       designationId,
       dateOfJoining,
-      employmentType
+      employmentType,
+      managerId
     } = req.body;
 
     const { organizationId } = req.user;
     const normalizedEmail = email.toLowerCase().trim();
 
-    /* 1️⃣ Prevent duplicate user */
-    const existingUser = await User.findOne(
-      { email: normalizedEmail },
-      null,
-      { session }
-    );
+    const existingUser = useSession
+      ? await User.findOne({ email: normalizedEmail }, null, { session })
+      : await User.findOne({ email: normalizedEmail });
 
     if (existingUser) {
       throw { code: 409, message: "User already exists" };
     }
 
-    /* 2️⃣ Generate password */
     const plainPassword = generatePassword();
     const hashedPassword = await genHashedPassword(plainPassword);
 
-    /* 3️⃣ Create USER */
-    const [user] = await User.create(
-      [
-        {
-          organizationIds: [organizationId],
-          activeOrganizationId: organizationId,
-          email: normalizedEmail,
-          password: hashedPassword,
-          status: "active"
-        }
-      ],
-      { session }
+    const [user] = useSession
+      ? await User.create(
+          [
+            {
+              organizationIds: [organizationId],
+              activeOrganizationId: organizationId,
+              email: normalizedEmail,
+              password: hashedPassword,
+              status: "active"
+            }
+          ],
+          { session }
+        )
+      : await User.create([
+          {
+            organizationIds: [organizationId],
+            activeOrganizationId: organizationId,
+            email: normalizedEmail,
+            password: hashedPassword,
+            status: "active"
+          }
+        ]);
+
+    const orgUsers = useSession
+      ? await OrgUser.create(
+          [
+            {
+              userId: user._id,
+              organizationId,
+              roleIds
+            }
+          ],
+          { session }
+        )
+      : await OrgUser.create([
+          {
+            userId: user._id,
+            organizationId,
+            roleIds
+          }
+        ]);
+
+    const employeeCode = await generateEmployeeCode(
+      organizationId,
+      useSession ? session : undefined
     );
 
-    console.log(user,"user");
-    
-    const orgUsers = await OrgUser.create(
-      [
-        {
-          userId: user._id,
-          organizationId,
-          roleIds
-        }
-      ],
-      { session }
-    );
-    console.log(orgUsers,"orgusers");
+    const [employee] = useSession
+      ? await Employee.create(
+          [
+            {
+              organizationId,
+              userId: user._id,
+              firstName,
+              lastName,
+              employeeCode,
+              departmentId,
+              designationId,
+              dateOfJoining,
+              employmentType,
+              managerId,
+              profileCompleted: false
+            }
+          ],
+          { session }
+        )
+      : await Employee.create([
+          {
+            organizationId,
+            userId: user._id,
+            firstName,
+            lastName,
+            employeeCode,
+            departmentId,
+            designationId,
+            dateOfJoining,
+            employmentType,
+            managerId,
+            profileCompleted: false
+          }
+        ]);
 
-    const employeeCode = await generateEmployeeCode(organizationId, session);
-
-    /* 4️⃣ Create EMPLOYEE */
-    const [employee] = await Employee.create(
-      [
-        {
-          organizationId,
-          userId: user._id,
-          firstName,
-          lastName,
-          employeeCode,
-          departmentId,
-          designationId,
-          dateOfJoining,
-          employmentType,
-          profileCompleted: false
-        }
-      ],
-      { session }
-    );
     await leaveBalanceService.initializeForEmployee(
       employee,
       req.user.organizationId
     );
 
     const orgDetails = await OrganizationService.getOrganizationById(organizationId);
-    console.log(orgDetails,"orgs");
-    
     await sendMail(
-      "employeeOnboarding",                
-      firstName,                             
-      `Welcome to ${orgDetails?.name}`,      
+      "employeeOnboarding",
+      firstName,
+      `Welcome to ${orgDetails?.name}`,
       {
         employeeName: firstName,
         email,
         password: plainPassword,
         loginUrl: process.env.FRONTEND_LOGIN_URL,
-        orgName:orgDetails?.name
+        orgName: orgDetails?.name
       },
-      email                                  
+      email
     );
-
-    await session.commitTransaction();
-    session.endSession();
 
     return {
       employeeId: employee._id,
       userId: user._id,
       email
     };
+  };
 
+  const session = await mongoose.startSession();
+
+  try {
+    try {
+      session.startTransaction();
+      const result = await createFlow({ session });
+      await session.commitTransaction();
+      session.endSession();
+      return result;
+    } catch (err) {
+      const message = err?.message || "";
+      const codeName = err?.codeName || "";
+      const isTxnError =
+        codeName === "IllegalOperation" ||
+        message.includes("Transaction numbers are only allowed");
+
+      if (isTxnError) {
+        try {
+          await session.abortTransaction();
+        } catch (_) {}
+        session.endSession();
+        return await createFlow({});
+      }
+
+      if (session.inTransaction()) {
+        await session.abortTransaction();
+      }
+      session.endSession();
+      throw err;
+    }
   } catch (err) {
-    console.log(err,"=======");
-    
-    await session.abortTransaction();
     session.endSession();
     throw err;
   }
@@ -139,15 +194,22 @@ exports.createByHr = async (req) => {
 /* ------------------------------------------------------------------ */
 exports.completeMyProfile = async (req) => {
   const employee = await Employee.findOne({
-    userId: req.user._id,
+    userId: req.user.userId,
     organizationId: req.user.organizationId
   });
 
   if (!employee) {
-    throw { code: 404, message: "Employee record not found" };
+    throw { code: 404, message: "Employee record not found. Contact admin." };
   }
 
-  Object.assign(employee, req.body);
+  const editableFields = {
+    phone: req.body.phone,
+    dob: req.body.dob,
+    gender: req.body.gender,
+    address: req.body.address,
+    emergencyContacts: req.body.emergencyContacts
+  };
+  Object.assign(employee, editableFields);
   employee.profileCompleted = true;
 
   await employee.save();
@@ -187,21 +249,38 @@ exports.listByOrganization = async (req) => {
     search,
     departmentId,
     designationId,
-    status
+    status,
+    organizationId: orgIdOverride
   } = req.query;
 
-  const { organizationId, _id: userId, roleIds } = req.user;
+  const { organizationId, userId, roleIds, activeRoleId } = req.user;
+  const isSuperAdmin = await OrganizationService.isUserSuperAdmin(userId);
+
+  let isManager = false;
+  if (activeRoleId) {
+    const role = await Role.findOne({
+      _id: activeRoleId,
+      organizationId
+    }).select("slug");
+    isManager = role?.slug === "manager";
+  }
 
   const query = {
-    organizationId,
+    organizationId: isSuperAdmin && orgIdOverride ? orgIdOverride : organizationId,
     isDeleted: false
   };
 
   /**
    * 👔 Manager scoping
    */
-  if (roleIds?.includes("MANAGER_ROLE_ID")) {
-    query.managerId = userId;
+  if (isManager) {
+    const managerEmployee = await Employee.findOne({
+      userId,
+      organizationId
+    }).select("_id");
+    if (managerEmployee) {
+      query.managerId = managerEmployee._id;
+    }
   }
 
   /* 🔍 Search */
@@ -247,7 +326,7 @@ exports.listByOrganization = async (req) => {
 
 exports.getById = async (req) => {
   const { id } = req.params;
-  const { organizationId, _id: userId, roleIds } = req.user;
+  const { organizationId, userId, roleIds, activeRoleId } = req.user;
 
   const employee = await Employee.findOne({
     _id: id,
@@ -267,13 +346,25 @@ exports.getById = async (req) => {
    * 🔒 Manager scoping:
    * Manager can only view employees who report to them
    */
-  if (
-    roleIds?.length &&
-    !req.user.isOrgAdmin && // optional helper flag if you have
-    employee.managerId &&
-    employee.managerId._id.toString() !== userId.toString()
-  ) {
-    throw { code: 403, message: "Access denied" };
+  if (roleIds?.length && employee.managerId && activeRoleId) {
+    const role = await Role.findOne({
+      _id: activeRoleId,
+      organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId,
+        organizationId
+      }).select("_id");
+
+      if (
+        managerEmployee &&
+        employee.managerId._id.toString() !== managerEmployee._id.toString()
+      ) {
+        throw { code: 403, message: "Access denied" };
+      }
+    }
   }
 
   const orgUser = await OrgUser.findOne({
@@ -289,7 +380,7 @@ exports.getById = async (req) => {
 
 exports.getMe = async (req) => {
   const employee = await Employee.findOne({
-    userId: req.user._id,
+    userId: req.user.userId,
     organizationId: req.user.organizationId,
     isDeleted: false
   })
@@ -298,7 +389,18 @@ exports.getMe = async (req) => {
     .populate("managerId", "firstName lastName");
 
   if (!employee) {
-    throw { code: 404, message: "Employee record not found" };
+    const user = await User.findById(req.user.userId).select("email");
+    return {
+      userId: { email: user?.email || "" },
+      firstName: "",
+      lastName: "",
+      departmentId: null,
+      designationId: null,
+      employmentType: "",
+      dateOfJoining: null,
+      managerId: null,
+      profileCompleted: false
+    };
   }
 
   return employee;
@@ -444,7 +546,7 @@ exports.remove = async (req) => {
 
   employee.isDeleted = true;
   employee.deletedAt = new Date();
-  employee.deletedBy = req.user._id;
+  employee.deletedBy = req.user.userId;
 
   await employee.save();
 };

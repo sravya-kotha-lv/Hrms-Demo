@@ -13,8 +13,14 @@ exports.createOrganization = async ({
   timezone,
   currency,
   adminUserId,
-  adminRoleId
+  adminRoleId,
+  creator
 }) => {
+  const isSuperAdmin = await isUserSuperAdmin(creator?.userId);
+  if (!isSuperAdmin) {
+    throw { code: 403, message: "Only SuperAdmin can create organizations" };
+  }
+
   const org = await Organization.create({
     name,
     code,
@@ -95,6 +101,8 @@ async function isUserSuperAdmin(userId) {
     m.roleIds.some(r => r.slug === "superadmin")
   );
 }
+
+exports.isUserSuperAdmin = isUserSuperAdmin;
 
 /**
  * GET ORGANIZATION BY ID

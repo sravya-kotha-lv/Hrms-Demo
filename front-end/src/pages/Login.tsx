@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
-import { postApiWithoutToken } from "@/services/apiWrapper";
-import { setToken } from "@/utils/auth";
+import { getApiWithToken, postApiWithoutToken } from "@/services/apiWrapper";
+import { setPermissions } from "@/utils/auth";
 const Login = () => {
   const navigate = useNavigate();
 
@@ -36,6 +36,17 @@ const Login = () => {
       const isSuperAdmin = roles?.some(
         (role: any) => role.slug === "superadmin"
       );
+
+      try {
+        const permRes = await getApiWithToken("/users/me/permissions");
+        if (permRes?.success) {
+          setPermissions(permRes.data || []);
+        } else {
+          setPermissions([]);
+        }
+      } catch {
+        setPermissions([]);
+      }
 
       toast.success("Logged in successfully!");
 

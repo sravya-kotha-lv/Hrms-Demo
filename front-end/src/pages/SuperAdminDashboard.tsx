@@ -1,0 +1,398 @@
+import { useEffect, useMemo, useState } from "react";
+import { MainLayout } from "@/components/layout/MainLayout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
+
+const SuperAdminDashboard = () => {
+  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [roles, setRoles] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [designations, setDesignations] = useState<any[]>([]);
+  const [managers, setManagers] = useState<any[]>([]);
+  const [selectedOrg, setSelectedOrg] = useState<string>("");
+  const [adminUserId] = useState<string>(localStorage.getItem("adminUserId") || "");
+
+  const [showCreateOrg, setShowCreateOrg] = useState(false);
+  const [showCreateUser, setShowCreateUser] = useState(false);
+
+  const [createOrgForm, setCreateOrgForm] = useState({
+    name: "",
+    code: "",
+    timezone: "Asia/Kolkata",
+    currency: "INR",
+    adminUserId: localStorage.getItem("adminUserId") || ""
+  });
+
+  const [createUserForm, setCreateUserForm] = useState({
+    email: "",
+    password: "",
+    roleIds: [] as string[],
+    firstName: "",
+    lastName: "",
+    departmentId: "",
+    designationId: "",
+    employmentType: "",
+    dateOfJoining: "",
+    managerId: ""
+  });
+
+  const navigate = useNavigate();
+
+  const fetchOrganizations = async () => {
+    const res = await getApiWithToken("/organizations");
+    if (res?.success) setOrganizations(res.data || []);
+  };
+
+  const switchOrganization = async (organizationId: string) => {
+    const res = await postApiWithToken("/users/switch-org", { organizationId });
+    if (!res?.success) {
+      toast.error("Failed to switch organization");
+      return;
+    }
+    setSelectedOrg(organizationId);
+    fetchRoles();
+    fetchDepartments();
+    fetchDesignations();
+    fetchManagers();
+    toast.success("Organization context switched");
+  };
+
+  const fetchRoles = async () => {
+    const res = await getApiWithToken("/roles");
+    if (res?.success) setRoles(res.data || []);
+  };
+
+  const fetchDepartments = async () => {
+    const res = await getApiWithToken("/departments");
+    if (res?.success) setDepartments(res.data || []);
+  };
+
+  const fetchDesignations = async () => {
+    const res = await getApiWithToken("/designations");
+    if (res?.success) setDesignations(res.data || []);
+  };
+
+  const fetchManagers = async () => {
+    const res = await getApiWithToken("/employees");
+    if (res?.success) {
+      const list = res.data?.items || [];
+      setManagers(
+        list.map((e: any) => ({
+          _id: e._id,
+          name: `${e.firstName || ""} ${e.lastName || ""}`.trim()
+        }))
+      );
+    }
+  };
+
+  const handleCreateOrganization = async () => {
+    if (!createOrgForm.adminUserId) {
+      toast.error("Admin user ID is required");
+      return;
+    }
+    const res = await postApiWithToken("/organizations", createOrgForm);
+    if (res?.success) {
+      toast.success("Organization created");
+      setShowCreateOrg(false);
+      setCreateOrgForm({
+        name: "",
+        code: "",
+        timezone: "Asia/Kolkata",
+        currency: "INR",
+        adminUserId
+      });
+      fetchOrganizations();
+    } else {
+      toast.error(res?.message || "Create organization failed");
+    }
+  };
+
+  const handleCreateUser = async () => {
+    if (!selectedOrg) {
+      toast.error("Select an organization first");
+      return;
+    }
+    if (
+      !createUserForm.email ||
+      !createUserForm.password ||
+      !createUserForm.firstName ||
+      !createUserForm.lastName ||
+      !createUserForm.employmentType ||
+      !createUserForm.dateOfJoining ||
+      createUserForm.roleIds.length === 0
+    ) {
+      toast.error("All fields are required");
+      return;
+    }
+    const res = await postApiWithToken("/users/org-user", createUserForm);
+    if (res?.success) {
+      toast.success("Admin user created");
+      setShowCreateUser(false);
+      setCreateUserForm({
+        email: "",
+        password: "",
+        roleIds: [],
+        firstName: "",
+        lastName: "",
+        departmentId: "",
+        designationId: "",
+        employmentType: "",
+        dateOfJoining: "",
+        managerId: ""
+      });
+    } else {
+      toast.error(res?.message || "User creation failed");
+    }
+  };
+
+  useEffect(() => {
+    fetchOrganizations();
+  }, []);
+
+  const selectedOrgDetails = useMemo(
+    () => organizations.find((org) => org._id === selectedOrg),
+    [organizations, selectedOrg]
+  );
+
+  return (
+    <MainLayout title="Super Admin" breadcrumb={[{ label: "Home" }, { label: "Super Admin" }]}>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-card rounded-xl card-shadow p-6 lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold">Organizations</h3>
+              <p className="text-sm text-muted-foreground">Select an org to manage roles and users.</p>
+            </div>
+            <Button onClick={() => setShowCreateOrg(true)}>+ Create Organization</Button>
+          </div>
+
+          <div className="space-y-3">
+            {organizations.map((org) => (
+              <div
+                key={org._id}
+                className={`border rounded-lg px-4 py-3 cursor-pointer transition ${
+                  selectedOrg === org._id ? "bg-muted" : "hover:bg-muted"
+                }`}
+                onClick={() => switchOrganization(org._id)}
+              >
+                <div className="font-medium">{org.name}</div>
+                <div className="text-sm text-muted-foreground">
+                  {org.code} • {org.timezone}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-card rounded-xl card-shadow p-6">
+          <h3 className="text-lg font-semibold mb-2">Admin Setup</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Create an admin user for the selected organization.
+          </p>
+
+          <div className="space-y-3 mb-4">
+            <div className="text-sm">Selected Org</div>
+            <div className="font-medium">
+              {selectedOrgDetails?.name || "No organization selected"}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Button onClick={() => setShowCreateUser(true)} disabled={!selectedOrg}>
+              Add Admin User
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/employees?organizationId=${selectedOrg}`)}
+              disabled={!selectedOrg}
+            >
+              View Employees
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <Dialog open={showCreateOrg} onOpenChange={setShowCreateOrg}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Organization</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="Organization Name"
+              value={createOrgForm.name}
+              onChange={(e) => setCreateOrgForm({ ...createOrgForm, name: e.target.value })}
+            />
+            <Input
+              placeholder="Code"
+              value={createOrgForm.code}
+              onChange={(e) => setCreateOrgForm({ ...createOrgForm, code: e.target.value })}
+            />
+            <Input
+              placeholder="Timezone"
+              value={createOrgForm.timezone}
+              onChange={(e) => setCreateOrgForm({ ...createOrgForm, timezone: e.target.value })}
+            />
+            <Input
+              placeholder="Currency"
+              value={createOrgForm.currency}
+              onChange={(e) => setCreateOrgForm({ ...createOrgForm, currency: e.target.value })}
+            />
+            <Input
+              placeholder="Admin User ID"
+              value={createOrgForm.adminUserId}
+              onChange={(e) => setCreateOrgForm({ ...createOrgForm, adminUserId: e.target.value })}
+            />
+            <Button onClick={handleCreateOrganization} className="w-full">Create</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCreateUser} onOpenChange={setShowCreateUser}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Admin User</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="First Name"
+              value={createUserForm.firstName}
+              onChange={(e) => setCreateUserForm({ ...createUserForm, firstName: e.target.value })}
+            />
+            <Input
+              placeholder="Last Name"
+              value={createUserForm.lastName}
+              onChange={(e) => setCreateUserForm({ ...createUserForm, lastName: e.target.value })}
+            />
+            <Input
+              placeholder="Email"
+              value={createUserForm.email}
+              onChange={(e) => setCreateUserForm({ ...createUserForm, email: e.target.value })}
+            />
+            <Input
+              placeholder="Password"
+              type="password"
+              value={createUserForm.password}
+              onChange={(e) => setCreateUserForm({ ...createUserForm, password: e.target.value })}
+            />
+            <Select
+              value={createUserForm.departmentId}
+              onValueChange={(value) => {
+                if (value === "__create__") {
+                  navigate("/departments");
+                  return;
+                }
+                setCreateUserForm({ ...createUserForm, departmentId: value });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Department" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__create__">+ Create Department</SelectItem>
+                {departments.map((dept) => (
+                  <SelectItem key={dept._id} value={dept._id}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={createUserForm.designationId}
+              onValueChange={(value) => {
+                if (value === "__create__") {
+                  navigate("/designations");
+                  return;
+                }
+                setCreateUserForm({ ...createUserForm, designationId: value });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Designation" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__create__">+ Create Designation</SelectItem>
+                {designations.map((des) => (
+                  <SelectItem key={des._id} value={des._id}>
+                    {des.name || des.departmentName || des._id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={createUserForm.roleIds[0] || ""}
+              onValueChange={(value) => setCreateUserForm({ ...createUserForm, roleIds: [value] })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Role" />
+              </SelectTrigger>
+              <SelectContent>
+                {roles.map((role) => (
+                  <SelectItem key={role._id} value={role._id}>
+                    {role.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={createUserForm.employmentType}
+              onValueChange={(value) => setCreateUserForm({ ...createUserForm, employmentType: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Employment Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full_time">Full Time</SelectItem>
+                <SelectItem value="part_time">Part Time</SelectItem>
+                <SelectItem value="contract">Contract</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="date"
+              placeholder="Date of Joining"
+              value={createUserForm.dateOfJoining}
+              onChange={(e) => setCreateUserForm({ ...createUserForm, dateOfJoining: e.target.value })}
+            />
+            <Select
+              value={createUserForm.managerId}
+              onValueChange={(value) =>
+                setCreateUserForm({ ...createUserForm, managerId: value === "none" ? "" : value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Reporting Manager (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {managers.map((m) => (
+                  <SelectItem key={m._id} value={m._id}>
+                    {m.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button onClick={handleCreateUser} className="w-full">Create User</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </MainLayout>
+  );
+};
+
+export default SuperAdminDashboard;

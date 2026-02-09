@@ -56,15 +56,13 @@ const employeeSchema = new mongoose.Schema(
 
     departmentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "departments",
-      required: true
+      ref: "departments"
     },
 
     // ✅ CHANGED: dynamic designation
     designationId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "designations",
-      required: true
+      ref: "designations"
     },
 
     dateOfJoining: {

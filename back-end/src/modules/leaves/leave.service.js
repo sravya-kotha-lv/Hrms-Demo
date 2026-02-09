@@ -8,6 +8,7 @@ const LeaveBalance =
   require("../leaveBalances/leaveBalance.model");
 const Organization =
   require("../organizations/organization.model");
+const Role = require("../roles/role.model");
 
 
 const calculateDays = (from, to) => {
@@ -24,10 +25,10 @@ const isSameDate = (d1, d2) =>
 exports.applyLeave = async (req) => {
 
   // 1. Find employee from logged-in user
-  // const employee = await Employee.findOne({
-  //   userId: req.user._id,
-  //   organizationId: req.user.organizationId
-  // });
+  const employee = await Employee.findOne({
+    userId: req.user.userId,
+    organizationId: req.user.organizationId
+  });
 
   const fromDate = new Date(req.body.fromDate);
   const toDate = new Date(req.body.toDate);
@@ -36,7 +37,6 @@ exports.applyLeave = async (req) => {
     throw new Error("From date cannot be greater than to date");
   }
 
-  const employee = req.user.userId;
   if (!employee) throw new Error("Employee not found");
 
   /* 🔒 STEP 4A: CHECK OVERLAPPING LEAVES */
@@ -157,9 +157,36 @@ exports.applyLeave = async (req) => {
   return leave;
 };
 
+exports.getMyLeavesRange = async (req) => {
+  const employee = await Employee.findOne({
+    userId: req.user.userId,
+    organizationId: req.user.organizationId
+  });
+
+  if (!employee) throw new Error("Employee not found");
+
+  const startDate = req.query.startDate ? new Date(req.query.startDate) : null;
+  const endDate = req.query.endDate ? new Date(req.query.endDate) : null;
+
+  const query = {
+    organizationId: req.user.organizationId,
+    employeeId: employee._id,
+    status: "approved"
+  };
+
+  if (startDate && endDate) {
+    query.fromDate = { $lte: endDate };
+    query.toDate = { $gte: startDate };
+  }
+
+  return Leave.find(query)
+    .populate("leaveTypeId", "name code")
+    .sort({ fromDate: 1 });
+};
+
 exports.getMyLeaves = async (req) => {
   const employee = await Employee.findOne({
-    userId: req.user._id,
+    userId: req.user.userId,
     organizationId: req.user.organizationId
   });
 
@@ -169,7 +196,31 @@ exports.getMyLeaves = async (req) => {
 };
 
 exports.getAllLeaves = async (req) => {
-  return Leave.find({ organizationId: req.user.organizationId })
+  const query = { organizationId: req.user.organizationId };
+
+  if (req.user.activeRoleId) {
+    const role = await Role.findOne({
+      _id: req.user.activeRoleId,
+      organizationId: req.user.organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (managerEmployee) {
+        const reportIds = await Employee.find({
+          organizationId: req.user.organizationId,
+          managerId: managerEmployee._id
+        }).distinct("_id");
+        query.employeeId = { $in: reportIds };
+      }
+    }
+  }
+
+  return Leave.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
     .sort({ createdAt: -1 });
@@ -183,9 +234,36 @@ exports.actionLeave = async (req) => {
   const previousStatus = leave.status;
 
   const actor = await Employee.findOne({
-    userId: req.user._id,
+    userId: req.user.userId,
     organizationId: req.user.organizationId
   });
+
+  if (req.user.activeRoleId) {
+    const role = await Role.findOne({
+      _id: req.user.activeRoleId,
+      organizationId: req.user.organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (managerEmployee) {
+        const reportIds = await Employee.find({
+          organizationId: req.user.organizationId,
+          managerId: managerEmployee._id
+        }).distinct("_id");
+        const isReport = reportIds.some(
+          (id) => id.toString() === leave.employeeId.toString()
+        );
+        if (!isReport) {
+          throw new Error("Access denied");
+        }
+      }
+    }
+  }
 
   if (req.body.status === "approved") {
     // 🔥 APPROVAL FLOW (deduct balance)
