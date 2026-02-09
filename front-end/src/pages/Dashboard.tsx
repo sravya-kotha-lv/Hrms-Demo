@@ -26,6 +26,7 @@ import {
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { setPermissions } from "@/utils/auth";
+import { Navigate } from "react-router-dom";
 
 /* ========================= Dashboard ========================= */
 
@@ -51,19 +52,27 @@ const Dashboard = () => {
     email: "",
     password: "",
     roleIds: [] as string[],
+    firstName: "",
+    lastName: "",
+    departmentId: "",
+    designationId: "",
+    employmentType: "",
+    dateOfJoining: "",
+    managerId: ""
   });
 
   const [roles, setRoles] = useState<any[]>([]);
   const [rolesLoading, setRolesLoading] = useState(false);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [designations, setDesignations] = useState<any[]>([]);
+  const [managers, setManagers] = useState<any[]>([]);
 
   /* ================= EFFECT ================= */
 
   useEffect(() => {
     const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
-    if (isSuperAdmin) {
-      setShowOrgPopup(true);
-      fetchOrganizations();
-    }
+    if (isSuperAdmin) return;
+    fetchOrganizations();
   }, []);
 
   /* ================= API ================= */
@@ -80,6 +89,9 @@ const Dashboard = () => {
     setShowUserPopup(true);
     setShowCreateUser(list.length === 0);
     fetchRoles();
+    fetchDepartments();
+    fetchDesignations();
+    fetchManagers();
   };
 
   const fetchRoles = async () => {
@@ -91,6 +103,29 @@ const Dashboard = () => {
       toast.error("Failed to load roles");
     } finally {
       setRolesLoading(false);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    const res = await getApiWithToken("/departments");
+    if (res?.success) setDepartments(res.data || []);
+  };
+
+  const fetchDesignations = async () => {
+    const res = await getApiWithToken("/designations");
+    if (res?.success) setDesignations(res.data || []);
+  };
+
+  const fetchManagers = async () => {
+    const res = await getApiWithToken("/employees");
+    if (res?.success) {
+      const list = res.data?.items || [];
+      setManagers(
+        list.map((e: any) => ({
+          _id: e._id,
+          name: `${e.firstName || ""} ${e.lastName || ""}`.trim()
+        }))
+      );
     }
   };
 
@@ -140,7 +175,13 @@ const Dashboard = () => {
     if (
       !createUserForm.email ||
       !createUserForm.password ||
-      createUserForm.roleIds.length === 0
+      createUserForm.roleIds.length === 0 ||
+      !createUserForm.firstName ||
+      !createUserForm.lastName ||
+      !createUserForm.departmentId ||
+      !createUserForm.designationId ||
+      !createUserForm.employmentType ||
+      !createUserForm.dateOfJoining
     ) {
       toast.error("All fields are required");
       return;
@@ -152,6 +193,18 @@ const Dashboard = () => {
       toast.success("User created");
       fetchUsers();
       setShowCreateUser(false);
+      setCreateUserForm({
+        email: "",
+        password: "",
+        roleIds: [],
+        firstName: "",
+        lastName: "",
+        departmentId: "",
+        designationId: "",
+        employmentType: "",
+        dateOfJoining: "",
+        managerId: ""
+      });
     } else {
       toast.error(res?.message || "User creation failed");
     }
@@ -285,6 +338,22 @@ const Dashboard = () => {
           {showCreateUser && (
             <div className="space-y-3 mt-4">
               <Input
+                placeholder="First Name"
+                value={createUserForm.firstName}
+                onChange={(e) =>
+                  setCreateUserForm({ ...createUserForm, firstName: e.target.value })
+                }
+              />
+
+              <Input
+                placeholder="Last Name"
+                value={createUserForm.lastName}
+                onChange={(e) =>
+                  setCreateUserForm({ ...createUserForm, lastName: e.target.value })
+                }
+              />
+
+              <Input
                 placeholder="Email"
                 value={createUserForm.email}
                 onChange={(e) =>
@@ -323,6 +392,96 @@ const Dashboard = () => {
                   {roles.map((role) => (
                     <SelectItem key={role._id} value={role._id}>
                       {role.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={createUserForm.departmentId}
+                onValueChange={(value) => {
+                  if (value === "__create__") {
+                    navigate("/departments");
+                    return;
+                  }
+                  setCreateUserForm({ ...createUserForm, departmentId: value });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__create__">+ Create Department</SelectItem>
+                  {departments.map((dept) => (
+                    <SelectItem key={dept._id} value={dept._id}>
+                      {dept.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={createUserForm.designationId}
+                onValueChange={(value) => {
+                  if (value === "__create__") {
+                    navigate("/designations");
+                    return;
+                  }
+                  setCreateUserForm({ ...createUserForm, designationId: value });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Designation" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__create__">+ Create Designation</SelectItem>
+                  {designations.map((des) => (
+                    <SelectItem key={des._id} value={des._id}>
+                      {des.name || des.departmentName || des._id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={createUserForm.employmentType}
+                onValueChange={(value) =>
+                  setCreateUserForm({ ...createUserForm, employmentType: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Employment Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full_time">Full Time</SelectItem>
+                  <SelectItem value="part_time">Part Time</SelectItem>
+                  <SelectItem value="contract">Contract</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Input
+                type="date"
+                placeholder="Date of Joining"
+                value={createUserForm.dateOfJoining}
+                onChange={(e) =>
+                  setCreateUserForm({ ...createUserForm, dateOfJoining: e.target.value })
+                }
+              />
+
+              <Select
+                value={createUserForm.managerId}
+                onValueChange={(value) =>
+                  setCreateUserForm({ ...createUserForm, managerId: value === "none" ? "" : value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Reporting Manager (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {managers.map((m) => (
+                    <SelectItem key={m._id} value={m._id}>
+                      {m.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

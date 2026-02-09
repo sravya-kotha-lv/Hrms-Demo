@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -63,6 +63,13 @@ const NavItem = ({ icon, label, to, collapsed ,children}: NavItemProps) => {
 
   const hasChildren = children && children.length > 0;
   const isActive = location.pathname === to || location.pathname.startsWith(to + "/");
+
+  // Auto-open menu when route matches, so refresh keeps highlight/expanded state
+  useEffect(() => {
+    if (hasChildren && isActive) {
+      setOpen(true);
+    }
+  }, [hasChildren, isActive]);
 
   return (
    <div>
@@ -134,11 +141,12 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
     icon: <Building size={20} />,
     label: "Organization",
     to: "/organization",
-    permissions: ["ORG_VIEW", "ROLE_VIEW", "PERMISSION_VIEW", "DEPT_VIEW", "DESIG_VIEW"],
+    permissions: ["ORG_VIEW", "ROLE_VIEW", "PERMISSION_VIEW", "DEPT_VIEW", "DESIG_VIEW", "LEAVE_TYPE_VIEW"],
     children: [
       { icon: <Briefcase size={18} />, label: "Roles", to: "/roles", permissions: ["ROLE_VIEW"] },
       { icon: <Shield size={18} />, label: "Departments", to: "/departments", permissions: ["DEPT_VIEW"] },
       { icon: <Briefcase size={18} />, label: "Designations", to: "/designations", permissions: ["DESIG_VIEW"] },
+      { icon: <ClipboardCheck size={18} />, label: "Leave Types", to: "/leave-types", permissions: ["LEAVE_TYPE_VIEW"] },
       { icon: <Settings size={18} />, label: "Settings", to: "/organization/settings", permissions: ["ORG_SETTINGS_VIEW"] },
       { icon: <Building2 size={18} />, label: "payroll", to: "/payroll" },
       { icon: <Shield size={18} />, label: "Permissions", to: "/permissions", permissions: ["PERMISSION_VIEW"] },
@@ -175,7 +183,10 @@ export const Sidebar = () => {
     ? "/dashboard"
     : "/employee-dashboard";
 
-  const filteredMenuItems: MenuItem[] = menuItems(dashboardPath)
+  const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
+  const effectiveDashboardPath = isSuperAdmin ? "/superadmin" : dashboardPath;
+
+  const filteredMenuItems: MenuItem[] = menuItems(effectiveDashboardPath)
     .map((item) => {
       if (item.children) {
         const filteredChildren = item.children.filter((child) =>

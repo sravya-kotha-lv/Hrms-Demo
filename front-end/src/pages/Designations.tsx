@@ -239,7 +239,7 @@ const Designations = () => {
             {designations?.map((des: any) => (
               <TableRow key={des._id} className="hover:bg-gray-50">
                 <TableCell className="font-medium">{des.name}</TableCell>
-                <TableCell>{des.departmentId}</TableCell>
+                <TableCell>{des.departmentName || "-"}</TableCell>
                 <TableCell>
                   <Badge
                     variant={

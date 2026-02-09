@@ -14,10 +14,10 @@ const leaveBalanceService =
 /* HR / ADMIN CREATES EMPLOYEE                                         */
 /* ------------------------------------------------------------------ */
 exports.createByHr = async (req) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const createFlow = async (options = {}) => {
+    const { session } = options;
+    const useSession = Boolean(session);
 
-  try {
     const {
       email,
       roleIds,
@@ -26,110 +26,164 @@ exports.createByHr = async (req) => {
       departmentId,
       designationId,
       dateOfJoining,
-      employmentType
+      employmentType,
+      managerId
     } = req.body;
 
     const { organizationId } = req.user;
     const normalizedEmail = email.toLowerCase().trim();
 
-    /* 1️⃣ Prevent duplicate user */
-    const existingUser = await User.findOne(
-      { email: normalizedEmail },
-      null,
-      { session }
-    );
+    const existingUser = useSession
+      ? await User.findOne({ email: normalizedEmail }, null, { session })
+      : await User.findOne({ email: normalizedEmail });
 
     if (existingUser) {
       throw { code: 409, message: "User already exists" };
     }
 
-    /* 2️⃣ Generate password */
     const plainPassword = generatePassword();
     const hashedPassword = await genHashedPassword(plainPassword);
 
-    /* 3️⃣ Create USER */
-    const [user] = await User.create(
-      [
-        {
-          organizationIds: [organizationId],
-          activeOrganizationId: organizationId,
-          email: normalizedEmail,
-          password: hashedPassword,
-          status: "active"
-        }
-      ],
-      { session }
+    const [user] = useSession
+      ? await User.create(
+          [
+            {
+              organizationIds: [organizationId],
+              activeOrganizationId: organizationId,
+              email: normalizedEmail,
+              password: hashedPassword,
+              status: "active"
+            }
+          ],
+          { session }
+        )
+      : await User.create([
+          {
+            organizationIds: [organizationId],
+            activeOrganizationId: organizationId,
+            email: normalizedEmail,
+            password: hashedPassword,
+            status: "active"
+          }
+        ]);
+
+    const orgUsers = useSession
+      ? await OrgUser.create(
+          [
+            {
+              userId: user._id,
+              organizationId,
+              roleIds
+            }
+          ],
+          { session }
+        )
+      : await OrgUser.create([
+          {
+            userId: user._id,
+            organizationId,
+            roleIds
+          }
+        ]);
+
+    const employeeCode = await generateEmployeeCode(
+      organizationId,
+      useSession ? session : undefined
     );
 
-    console.log(user,"user");
-    
-    const orgUsers = await OrgUser.create(
-      [
-        {
-          userId: user._id,
-          organizationId,
-          roleIds
-        }
-      ],
-      { session }
-    );
-    console.log(orgUsers,"orgusers");
+    const [employee] = useSession
+      ? await Employee.create(
+          [
+            {
+              organizationId,
+              userId: user._id,
+              firstName,
+              lastName,
+              employeeCode,
+              departmentId,
+              designationId,
+              dateOfJoining,
+              employmentType,
+              managerId,
+              profileCompleted: false
+            }
+          ],
+          { session }
+        )
+      : await Employee.create([
+          {
+            organizationId,
+            userId: user._id,
+            firstName,
+            lastName,
+            employeeCode,
+            departmentId,
+            designationId,
+            dateOfJoining,
+            employmentType,
+            managerId,
+            profileCompleted: false
+          }
+        ]);
 
-    const employeeCode = await generateEmployeeCode(organizationId, session);
-
-    /* 4️⃣ Create EMPLOYEE */
-    const [employee] = await Employee.create(
-      [
-        {
-          organizationId,
-          userId: user._id,
-          firstName,
-          lastName,
-          employeeCode,
-          departmentId,
-          designationId,
-          dateOfJoining,
-          employmentType,
-          profileCompleted: false
-        }
-      ],
-      { session }
-    );
     await leaveBalanceService.initializeForEmployee(
       employee,
       req.user.organizationId
     );
 
     const orgDetails = await OrganizationService.getOrganizationById(organizationId);
-    console.log(orgDetails,"orgs");
-    
     await sendMail(
-      "employeeOnboarding",                
-      firstName,                             
-      `Welcome to ${orgDetails?.name}`,      
+      "employeeOnboarding",
+      firstName,
+      `Welcome to ${orgDetails?.name}`,
       {
         employeeName: firstName,
         email,
         password: plainPassword,
         loginUrl: process.env.FRONTEND_LOGIN_URL,
-        orgName:orgDetails?.name
+        orgName: orgDetails?.name
       },
-      email                                  
+      email
     );
-
-    await session.commitTransaction();
-    session.endSession();
 
     return {
       employeeId: employee._id,
       userId: user._id,
       email
     };
+  };
 
+  const session = await mongoose.startSession();
+
+  try {
+    try {
+      session.startTransaction();
+      const result = await createFlow({ session });
+      await session.commitTransaction();
+      session.endSession();
+      return result;
+    } catch (err) {
+      const message = err?.message || "";
+      const codeName = err?.codeName || "";
+      const isTxnError =
+        codeName === "IllegalOperation" ||
+        message.includes("Transaction numbers are only allowed");
+
+      if (isTxnError) {
+        try {
+          await session.abortTransaction();
+        } catch (_) {}
+        session.endSession();
+        return await createFlow({});
+      }
+
+      if (session.inTransaction()) {
+        await session.abortTransaction();
+      }
+      session.endSession();
+      throw err;
+    }
   } catch (err) {
-    console.log(err,"=======");
-    
-    await session.abortTransaction();
     session.endSession();
     throw err;
   }
@@ -145,10 +199,17 @@ exports.completeMyProfile = async (req) => {
   });
 
   if (!employee) {
-    throw { code: 404, message: "Employee record not found" };
+    throw { code: 404, message: "Employee record not found. Contact admin." };
   }
 
-  Object.assign(employee, req.body);
+  const editableFields = {
+    phone: req.body.phone,
+    dob: req.body.dob,
+    gender: req.body.gender,
+    address: req.body.address,
+    emergencyContacts: req.body.emergencyContacts
+  };
+  Object.assign(employee, editableFields);
   employee.profileCompleted = true;
 
   await employee.save();
@@ -188,10 +249,12 @@ exports.listByOrganization = async (req) => {
     search,
     departmentId,
     designationId,
-    status
+    status,
+    organizationId: orgIdOverride
   } = req.query;
 
   const { organizationId, userId, roleIds, activeRoleId } = req.user;
+  const isSuperAdmin = await OrganizationService.isUserSuperAdmin(userId);
 
   let isManager = false;
   if (activeRoleId) {
@@ -203,7 +266,7 @@ exports.listByOrganization = async (req) => {
   }
 
   const query = {
-    organizationId,
+    organizationId: isSuperAdmin && orgIdOverride ? orgIdOverride : organizationId,
     isDeleted: false
   };
 
@@ -326,7 +389,18 @@ exports.getMe = async (req) => {
     .populate("managerId", "firstName lastName");
 
   if (!employee) {
-    throw { code: 404, message: "Employee record not found" };
+    const user = await User.findById(req.user.userId).select("email");
+    return {
+      userId: { email: user?.email || "" },
+      firstName: "",
+      lastName: "",
+      departmentId: null,
+      designationId: null,
+      employmentType: "",
+      dateOfJoining: null,
+      managerId: null,
+      profileCompleted: false
+    };
   }
 
   return employee;

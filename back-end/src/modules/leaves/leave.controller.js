@@ -22,6 +22,13 @@ exports.list = async (req, res) => {
   );
 };
 
+exports.myLeavesRange = async (req, res) => {
+  const data = await service.getMyLeavesRange(req);
+  res.status(200).json(
+    buildSuccessResponse({ data })
+  );
+};
+
 exports.action = async (req, res) => {
   const data = await service.actionLeave(req);
   res.status(200).json(

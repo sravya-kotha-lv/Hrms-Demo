@@ -6,6 +6,8 @@ const { rotateUserToken } = require("../../utils/tokenManager");
 const Role = require("../roles/role.model");
 const Permission = require("../permissions/permission.model");
 const sendMail = require("../../utils/sendMail");
+const Employee = require("../employees/employee.model");
+const leaveBalanceService = require("../leaveBalances/leaveBalance.service");
 
 exports.loginUser = async ({ email, password }) => {
   if (!email || !password) {
@@ -68,6 +70,13 @@ exports.createOrgUser = async ({
   email,
   password,
   roleIds,
+  firstName,
+  lastName,
+  departmentId,
+  designationId,
+  employmentType,
+  dateOfJoining,
+  managerId,
   creator
 }) => {
   console.log("hello");
@@ -132,6 +141,23 @@ exports.createOrgUser = async ({
     roleIds
   });
 
+  const employeeCode = await generateEmployeeCode(activeOrgId);
+  const employee = await Employee.create({
+    organizationId: activeOrgId,
+    userId: user._id,
+    firstName,
+    lastName,
+    employeeCode,
+    departmentId: departmentId || undefined,
+    designationId: designationId || undefined,
+    dateOfJoining,
+    employmentType,
+    managerId: managerId || undefined,
+    profileCompleted: false
+  });
+
+  await leaveBalanceService.initializeForEmployee(employee, activeOrgId);
+
   await sendMail(
   "employeeOnboarding",
   user.email,
@@ -153,6 +179,23 @@ exports.createOrgUser = async ({
     email: user.email
   };
 };
+
+async function generateEmployeeCode(organizationId) {
+  const prefix = (process.env.EMPLOYEE_CODE_PREFIX || "LV").trim() || "LV";
+  let sequence = await Employee.countDocuments(
+    { organizationId, isDeleted: false }
+  );
+
+  while (true) {
+    sequence += 1;
+    const code = `${prefix}-${String(sequence).padStart(4, "0")}`;
+    const exists = await Employee.findOne(
+      { organizationId, employeeCode: code },
+      "_id"
+    );
+    if (!exists) return code;
+  }
+}
 
 exports.listByOrganization = async ({ organizationId, query }) => {
   const { page = 1, limit = 20, search } = query || {};

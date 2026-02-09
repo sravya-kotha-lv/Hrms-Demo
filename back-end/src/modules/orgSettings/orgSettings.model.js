@@ -14,6 +14,16 @@ const orgSettingsSchema = new mongoose.Schema(
       type: String,
       enum: ["monthly", "quarterly", "yearly"],
       default: "monthly"
+    },
+
+    minWorkHoursPerDay: {
+      type: Number,
+      default: 8
+    },
+
+    minHalfDayHours: {
+      type: Number,
+      default: 4
     }
   },
   { timestamps: true }

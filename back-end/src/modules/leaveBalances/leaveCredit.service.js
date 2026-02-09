@@ -56,12 +56,12 @@ exports.applyLeaveCreditsForOrg = async (organizationId, date = new Date()) => {
   // Only credit after period has started
   if (date < periodStart) return;
 
-  // Prevent over-crediting old balances missing lastCreditedAt
+  // Prevent over-crediting old balances missing lastCreditedAt (created before current period)
   await LeaveBalance.updateMany(
     {
       organizationId,
       lastCreditedAt: { $exists: false },
-      total: { $gt: 0 }
+      createdAt: { $lt: periodStart }
     },
     { $set: { lastCreditedAt: periodStart } }
   );

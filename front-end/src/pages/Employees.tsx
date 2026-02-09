@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
 import {
@@ -43,7 +43,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { deleteApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
@@ -63,13 +63,21 @@ const getStatusBadge = (status: string) => {
 
 const Employees = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [organizations, setOrganizations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
+
+  const selectedOrgId = useMemo(
+    () => searchParams.get("organizationId") || "",
+    [searchParams]
+  );
 
   const fetchDepartments = async () => {
     const res = await getApiWithToken("/departments");
@@ -80,6 +88,14 @@ const Employees = () => {
     }
   };
 
+  const fetchOrganizations = async () => {
+    if (!isSuperAdmin) return;
+    const res = await getApiWithToken("/organizations");
+    if (res?.success) {
+      setOrganizations(res.data || []);
+    }
+  };
+
   const fetchEmployees = async () => {
     try {
       setLoading(true);
@@ -87,6 +103,9 @@ const Employees = () => {
       if (searchQuery) params.set("search", searchQuery);
       if (departmentFilter !== "all") {
         params.set("departmentId", departmentFilter);
+      }
+      if (isSuperAdmin && selectedOrgId) {
+        params.set("organizationId", selectedOrgId);
       }
       const query = params.toString();
       const res = await getApiWithToken(`/employees${query ? `?${query}` : ""}`);
@@ -102,6 +121,7 @@ const Employees = () => {
 
   useEffect(() => {
     fetchDepartments();
+    fetchOrganizations();
   }, []);
 
   useEffect(() => {
@@ -109,7 +129,7 @@ const Employees = () => {
       fetchEmployees();
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, departmentFilter]);
+  }, [searchQuery, departmentFilter, selectedOrgId]);
 
   const handleDelete = (employee: any) => {
     setSelectedEmployee(employee);
@@ -148,19 +168,44 @@ const Employees = () => {
           />
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Department" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Departments</SelectItem>
-              {departments.map((dept) => (
-                <SelectItem key={dept._id} value={dept._id}>
-                  {dept.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {isSuperAdmin && (
+            <Select
+              value={selectedOrgId}
+              onValueChange={(value) => {
+                if (value) {
+                  setSearchParams({ organizationId: value });
+                } else {
+                  setSearchParams({});
+                }
+              }}
+            >
+              <SelectTrigger className="w-56">
+                <SelectValue placeholder="Select Organization" />
+              </SelectTrigger>
+              <SelectContent>
+                {organizations.map((org) => (
+                  <SelectItem key={org._id} value={org._id}>
+                    {org.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {!isSuperAdmin && (
+            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Department" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map((dept) => (
+                  <SelectItem key={dept._id} value={dept._id}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button variant="outline" className="gap-2">
             <Download className="w-4 h-4" />
             Export

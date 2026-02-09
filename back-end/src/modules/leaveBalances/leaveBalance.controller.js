@@ -1,5 +1,7 @@
 const service = require("./leaveBalance.service");
 const { buildSuccessResponse } = require("../../utils/responseBuilder");
+const Role = require("../roles/role.model");
+const Employee = require("../employees/employee.model");
 
 // /me
 exports.getMyLeaveBalance = async (req, res) => {
@@ -16,6 +18,33 @@ exports.getMyLeaveBalance = async (req, res) => {
 
 // /employee/:employeeId
 exports.getEmployeeLeaveBalance = async (req, res) => {
+  if (req.user.activeRoleId) {
+    const role = await Role.findOne({
+      _id: req.user.activeRoleId,
+      organizationId: req.user.organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (managerEmployee) {
+        const reportIds = await Employee.find({
+          organizationId: req.user.organizationId,
+          managerId: managerEmployee._id
+        }).distinct("_id");
+        const isReport = reportIds.some(
+          (id) => id.toString() === req.params.employeeId.toString()
+        );
+        if (!isReport) {
+          throw new Error("Access denied");
+        }
+      }
+    }
+  }
+
   const data = await service.getEmployeeBalance(
     req.user.organizationId,
     req.params.employeeId,

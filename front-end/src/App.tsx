@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
+import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import Employees from "./pages/Employees";
 import AddEmployee from "./pages/AddEmployee";
 import ViewEmployee from "./pages/ViewEmployee";
@@ -28,9 +29,12 @@ import Departments from "./pages/Departments";
 import AddDepartment from "./pages/AddDepartment";
 import Designations from "./pages/Designations";
 import AddDesignation from "./pages/AddDesignation";
+import LeaveTypes from "./pages/LeaveTypes";
 import React from "react";
 import RequireAuth from "./components/RequireAuth";
 import RoleBasedHome from "./components/RoleBasedHome";
+import RequireProfile from "./components/RequireProfile";
+import CompleteProfile from "./pages/CompleteProfile";
 
 const queryClient = new QueryClient();
 const App = () => (
@@ -44,10 +48,28 @@ const App = () => (
           <Route path="/" element={<RoleBasedHome />} />
           <Route path="/login" element={<Login />} />
           <Route
+            path="/complete-profile"
+            element={
+              <RequireAuth>
+                <CompleteProfile />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/superadmin"
+            element={
+              <RequireAuth>
+                <SuperAdminDashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
             path="/dashboard"
             element={
               <RequireAuth permissions={["ORG_VIEW", "EMP_VIEW", "ROLE_VIEW", "LEAVE_VIEW_ALL", "TIMESHEET_VIEW_ALL"]}>
-                <Dashboard />
+                <RequireProfile>
+                  <Dashboard />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -55,7 +77,9 @@ const App = () => (
             path="/employee-dashboard"
             element={
               <RequireAuth permissions={["TIMESHEET_VIEW_SELF", "LEAVE_VIEW_SELF", "EMP_SELF_VIEW"]}>
-                <EmployeeDashboard />
+                <RequireProfile>
+                  <EmployeeDashboard />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -63,7 +87,9 @@ const App = () => (
             path="/employees"
             element={
               <RequireAuth permissions={["EMP_VIEW"]}>
-                <Employees />
+                <RequireProfile>
+                  <Employees />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -71,7 +97,9 @@ const App = () => (
             path="/employees/add"
             element={
               <RequireAuth permissions={["EMP_CREATE"]}>
-                <AddEmployee />
+                <RequireProfile>
+                  <AddEmployee />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -79,7 +107,9 @@ const App = () => (
             path="/employees/edit/:id"
             element={
               <RequireAuth permissions={["EMP_UPDATE"]}>
-                <AddEmployee />
+                <RequireProfile>
+                  <AddEmployee />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -87,7 +117,9 @@ const App = () => (
             path="/employees/:id"
             element={
               <RequireAuth permissions={["EMP_VIEW"]}>
-                <ViewEmployee />
+                <RequireProfile>
+                  <ViewEmployee />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -95,7 +127,9 @@ const App = () => (
             path="/attendance"
             element={
               <RequireAuth permissions={["TIMESHEET_VIEW_ALL"]}>
-                <Attendance />
+                <RequireProfile>
+                  <Attendance />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -103,7 +137,9 @@ const App = () => (
             path="/timesheets"
             element={
               <RequireAuth permissions={["TIMESHEET_VIEW_SELF", "TIMESHEET_VIEW_ALL"]}>
-                <Timesheets />
+                <RequireProfile>
+                  <Timesheets />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -111,7 +147,9 @@ const App = () => (
             path="/leave"
             element={
               <RequireAuth permissions={["LEAVE_VIEW_ALL", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]}>
-                <Leave />
+                <RequireProfile>
+                  <Leave />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -119,7 +157,9 @@ const App = () => (
             path="/holidays"
             element={
               <RequireAuth permissions={["HOLIDAY_VIEW"]}>
-                <Holidays />
+                <RequireProfile>
+                  <Holidays />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -127,7 +167,9 @@ const App = () => (
             path="/week-offs"
             element={
               <RequireAuth permissions={["WEEK_OFF_VIEW"]}>
-                <WeekOffs />
+                <RequireProfile>
+                  <WeekOffs />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -135,7 +177,9 @@ const App = () => (
             path="/payroll"
             element={
               <RequireAuth>
-                <Payroll />
+                <RequireProfile>
+                  <Payroll />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -143,7 +187,9 @@ const App = () => (
             path="/performance"
             element={
               <RequireAuth>
-                <PerformanceDashboard />
+                <RequireProfile>
+                  <PerformanceDashboard />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -151,7 +197,9 @@ const App = () => (
             path="/profile"
             element={
               <RequireAuth>
-                <ProfilePage />
+                <RequireProfile>
+                  <ProfilePage />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -159,7 +207,9 @@ const App = () => (
             path="/organization"
             element={
               <RequireAuth permissions={["ORG_VIEW"]}>
-                <Organization />
+                <RequireProfile>
+                  <Organization />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -167,7 +217,9 @@ const App = () => (
             path="/organization/settings"
             element={
               <RequireAuth permissions={["ORG_SETTINGS_VIEW"]}>
-                <OrganizationSettings />
+                <RequireProfile>
+                  <OrganizationSettings />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -175,7 +227,9 @@ const App = () => (
             path="/organization/add"
             element={
               <RequireAuth permissions={["ORG_MANAGE"]}>
-                <AddOrganization />
+                <RequireProfile>
+                  <AddOrganization />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -183,7 +237,9 @@ const App = () => (
             path="/organization/edit/:id"
             element={
               <RequireAuth permissions={["ORG_MANAGE"]}>
-                <AddOrganization />
+                <RequireProfile>
+                  <AddOrganization />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -191,7 +247,9 @@ const App = () => (
             path="/roles"
             element={
               <RequireAuth permissions={["ROLE_VIEW"]}>
-                <Roles />
+                <RequireProfile>
+                  <Roles />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -199,7 +257,9 @@ const App = () => (
             path="/roles/add"
             element={
               <RequireAuth permissions={["ROLE_CREATE"]}>
-                <AddRole />
+                <RequireProfile>
+                  <AddRole />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -207,7 +267,9 @@ const App = () => (
             path="/roles/edit/:id"
             element={
               <RequireAuth permissions={["ROLE_UPDATE"]}>
-                <AddRole />
+                <RequireProfile>
+                  <AddRole />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -215,7 +277,9 @@ const App = () => (
             path="/permissions"
             element={
               <RequireAuth permissions={["PERMISSION_VIEW"]}>
-                <Permissions />
+                <RequireProfile>
+                  <Permissions />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -223,7 +287,9 @@ const App = () => (
             path="/departments"
             element={
               <RequireAuth permissions={["DEPT_VIEW"]}>
-                <Departments />
+                <RequireProfile>
+                  <Departments />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -231,7 +297,9 @@ const App = () => (
             path="/departments/add"
             element={
               <RequireAuth permissions={["DEPT_CREATE"]}>
-                <AddDepartment />
+                <RequireProfile>
+                  <AddDepartment />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -239,7 +307,9 @@ const App = () => (
             path="/departments/edit/:id"
             element={
               <RequireAuth permissions={["DEPT_UPDATE"]}>
-                <AddDepartment />
+                <RequireProfile>
+                  <AddDepartment />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -247,7 +317,9 @@ const App = () => (
             path="/designations"
             element={
               <RequireAuth permissions={["DESIG_VIEW"]}>
-                <Designations />
+                <RequireProfile>
+                  <Designations />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -255,7 +327,9 @@ const App = () => (
             path="/designations/add"
             element={
               <RequireAuth permissions={["DESIG_CREATE"]}>
-                <AddDesignation />
+                <RequireProfile>
+                  <AddDesignation />
+                </RequireProfile>
               </RequireAuth>
             }
           />
@@ -263,7 +337,19 @@ const App = () => (
             path="/designations/edit/:id"
             element={
               <RequireAuth permissions={["DESIG_UPDATE"]}>
-                <AddDesignation />
+                <RequireProfile>
+                  <AddDesignation />
+                </RequireProfile>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/leave-types"
+            element={
+              <RequireAuth permissions={["LEAVE_TYPE_VIEW"]}>
+                <RequireProfile>
+                  <LeaveTypes />
+                </RequireProfile>
               </RequireAuth>
             }
           />

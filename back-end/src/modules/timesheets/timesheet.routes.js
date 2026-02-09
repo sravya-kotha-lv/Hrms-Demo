@@ -8,6 +8,7 @@ const controller = require("./timesheet.controller");
 const {
   createWeeklySchema,
   updateWeeklySchema,
+  submitWeeklySchema,
   actionWeeklySchema
 } = require("./timesheet.validation");
 
@@ -48,6 +49,13 @@ router.get(
   asyncHandler(controller.online)
 );
 
+router.get(
+  "/on-leave",
+  auth,
+  authorize("TIMESHEET_VIEW_ALL"),
+  asyncHandler(controller.onLeave)
+);
+
 // Weekly timesheets (employee)
 router.post(
   "/weekly",
@@ -76,7 +84,15 @@ router.post(
   "/weekly/:id/submit",
   auth,
   authorize("TIMESHEET_SUBMIT_SELF"),
+  validate(submitWeeklySchema),
   asyncHandler(controller.submitWeekly)
+);
+
+router.post(
+  "/weekly/:id/recall",
+  auth,
+  authorize("TIMESHEET_RECALL_SELF"),
+  asyncHandler(controller.recallWeekly)
 );
 
 // Weekly timesheets (admin/manager)

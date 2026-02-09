@@ -32,13 +32,21 @@ exports.createEmployeeByHrSchema = Joi.object({
   designationId: objectId.required(),
 
   dateOfJoining: Joi.date().required(),
-  employmentType: employmentType.required()
+  employmentType: employmentType.required(),
+  managerId: objectId.optional()
 });
 
 /* ------------------------------------------------------------------ */
 /* EMPLOYEE COMPLETES OWN PROFILE (FIRST LOGIN)                        */
 /* ------------------------------------------------------------------ */
 exports.completeProfileSchema = Joi.object({
+  firstName: Joi.string().trim().min(2).optional(),
+  lastName: Joi.string().trim().min(2).optional(),
+  departmentId: objectId.optional(),
+  designationId: objectId.optional(),
+  dateOfJoining: Joi.date().optional(),
+  employmentType: employmentType.optional(),
+
   phone: Joi.string().optional(),
   dob: Joi.date().optional(),
   gender: Joi.string().optional(),

@@ -1,0 +1,276 @@
+import { useEffect, useState } from "react";
+import { MainLayout } from "@/components/layout/MainLayout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { DataTable, Column } from "@/components/ui/DataTable";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Pencil, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import PermissionGate from "@/components/PermissionGate";
+import {
+  deleteApiWithToken,
+  getApiWithToken,
+  postApiWithToken,
+  putApiWithToken
+} from "@/services/apiWrapper";
+
+interface LeaveType {
+  _id?: string;
+  name: string;
+  code: string;
+  description?: string;
+  daysPerYear: number;
+  isCarryForward: boolean;
+  maxCarryForward?: number | null;
+  status: "active" | "inactive";
+}
+
+const emptyLeaveType: LeaveType = {
+  name: "",
+  code: "",
+  description: "",
+  daysPerYear: 0,
+  isCarryForward: false,
+  maxCarryForward: null,
+  status: "active"
+};
+
+const LeaveTypes = () => {
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+  const [open, setOpen] = useState(false);
+  const [isEdit, setIsEdit] = useState(false);
+  const [form, setForm] = useState<LeaveType>(emptyLeaveType);
+
+  const fetchLeaveTypes = async () => {
+    const response = await getApiWithToken("/leave-types");
+    if (response?.code === 200 || response?.success) {
+      setLeaveTypes(response.data || []);
+    } else {
+      toast.error(response?.message || "Failed to load leave types");
+    }
+  };
+
+  useEffect(() => {
+    fetchLeaveTypes();
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this leave type?")) return;
+    const res = await deleteApiWithToken(`/leave-types/${id}`);
+    if (res?.success) {
+      toast.success("Leave type deleted");
+      fetchLeaveTypes();
+    } else {
+      toast.error(res?.message || "Delete failed");
+    }
+  };
+
+  const handleSubmit = async () => {
+    const payload = {
+      name: form.name,
+      code: form.code,
+      description: form.description || "",
+      daysPerYear: Number(form.daysPerYear) || 0,
+      isCarryForward: Boolean(form.isCarryForward),
+      maxCarryForward: form.isCarryForward
+        ? Number(form.maxCarryForward || 0)
+        : null,
+      status: form.status
+    };
+
+    let res;
+    if (isEdit && form._id) {
+      res = await putApiWithToken(`/leave-types/${form._id}`, payload);
+    } else {
+      res = await postApiWithToken("/leave-types", payload);
+    }
+
+    if (res?.success) {
+      toast.success(isEdit ? "Leave type updated" : "Leave type created");
+      setOpen(false);
+      setForm(emptyLeaveType);
+      fetchLeaveTypes();
+    } else {
+      toast.error(res?.message || "Operation failed");
+    }
+  };
+
+  const columns: Column<LeaveType>[] = [
+    { header: "Name", accessor: "name", sortable: true },
+    { header: "Code", accessor: "code", sortable: true },
+    {
+      header: "Days/Year",
+      accessor: "daysPerYear",
+      sortable: true
+    },
+    {
+      header: "Carry Forward",
+      accessor: "isCarryForward",
+      render: (lt) => (lt.isCarryForward ? "Yes" : "No")
+    },
+    {
+      header: "Status",
+      accessor: "status",
+      render: (lt) => (
+        <Badge
+          variant={lt.status === "active" ? "default" : "secondary"}
+          className="capitalize"
+        >
+          {lt.status}
+        </Badge>
+      )
+    },
+    {
+      header: "Actions",
+      accessor: "_id",
+      render: (lt) => (
+        <div className="flex gap-3">
+          <PermissionGate permissions={["LEAVE_TYPE_MANAGE"]}>
+            <Pencil
+              className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
+              onClick={() => {
+                setIsEdit(true);
+                setForm({
+                  ...lt,
+                  maxCarryForward: lt.maxCarryForward ?? null
+                });
+                setOpen(true);
+              }}
+            />
+          </PermissionGate>
+          <PermissionGate permissions={["LEAVE_TYPE_MANAGE"]}>
+            <Trash2
+              className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
+              onClick={() => handleDelete(lt._id!)}
+            />
+          </PermissionGate>
+        </div>
+      )
+    }
+  ];
+
+  return (
+    <MainLayout
+      title="Leave Types"
+      breadcrumb={[{ label: "Home", href: "/" }, { label: "Organization" }, { label: "Leave Types" }]}
+    >
+      <div className="flex justify-end mb-6">
+        <PermissionGate permissions={["LEAVE_TYPE_MANAGE"]}>
+          <Button
+            onClick={() => {
+              setIsEdit(false);
+              setForm(emptyLeaveType);
+              setOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Leave Type
+          </Button>
+        </PermissionGate>
+      </div>
+
+      <DataTable columns={columns} data={leaveTypes} rowKey="_id" searchKey="name" />
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isEdit ? "Edit Leave Type" : "Add Leave Type"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+            <Input
+              placeholder="Name"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+            <Input
+              placeholder="Code"
+              value={form.code}
+              onChange={(e) =>
+                setForm({ ...form, code: e.target.value.toUpperCase() })
+              }
+              disabled={isEdit}
+            />
+            <Input
+              type="number"
+              placeholder="Days per year"
+              value={form.daysPerYear}
+              onChange={(e) =>
+                setForm({ ...form, daysPerYear: Number(e.target.value) })
+              }
+            />
+            <Select
+              value={form.status}
+              onValueChange={(value) =>
+                setForm({ ...form, status: value as "active" | "inactive" })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <Input
+              placeholder="Description"
+              value={form.description || ""}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={form.isCarryForward}
+                onCheckedChange={(value) =>
+                  setForm({ ...form, isCarryForward: Boolean(value) })
+                }
+              />
+              Allow carry forward
+            </label>
+            <Input
+              type="number"
+              placeholder="Max carry forward"
+              value={form.maxCarryForward ?? ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  maxCarryForward:
+                    e.target.value === "" ? null : Number(e.target.value)
+                })
+              }
+              disabled={!form.isCarryForward}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 mt-6">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit}>
+              {isEdit ? "Update" : "Create"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </MainLayout>
+  );
+};
+
+export default LeaveTypes;

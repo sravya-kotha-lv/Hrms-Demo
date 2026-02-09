@@ -8,6 +8,12 @@ const RoleBasedHome = () => {
     return <Navigate to="/login" replace />;
   }
 
+  const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
+
+  if (isSuperAdmin) {
+    return <Navigate to="/superadmin" replace />;
+  }
+
   const isAdmin = hasAnyPermission([
     "EMP_VIEW",
     "ROLE_VIEW",

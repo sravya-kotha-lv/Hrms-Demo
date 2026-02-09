@@ -1,7 +1,9 @@
 const OrgSettings = require("./orgSettings.model");
 
 const DEFAULTS = {
-  leaveCreditFrequency: "monthly"
+  leaveCreditFrequency: "monthly",
+  minWorkHoursPerDay: 8,
+  minHalfDayHours: 4
 };
 
 exports.get = async (req) => {
@@ -20,11 +22,11 @@ exports.get = async (req) => {
 };
 
 exports.upsert = async (req) => {
-  const { leaveCreditFrequency } = req.body;
+  const { leaveCreditFrequency, minWorkHoursPerDay, minHalfDayHours } = req.body;
 
   const settings = await OrgSettings.findOneAndUpdate(
     { organizationId: req.user.organizationId },
-    { leaveCreditFrequency },
+    { leaveCreditFrequency, minWorkHoursPerDay, minHalfDayHours },
     { upsert: true, new: true }
   );
 

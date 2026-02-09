@@ -26,6 +26,11 @@ exports.online = async (req, res) => {
   res.status(200).json(buildSuccessResponse({ data }));
 };
 
+exports.onLeave = async (req, res) => {
+  const data = await service.getOnLeave(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
 exports.createWeekly = async (req, res) => {
   const data = await service.createWeekly(req);
   res.status(201).json(buildSuccessResponse({ message: "Timesheet created", data }));
@@ -54,4 +59,9 @@ exports.listWeekly = async (req, res) => {
 exports.actionWeekly = async (req, res) => {
   const data = await service.actionWeekly(req);
   res.status(200).json(buildSuccessResponse({ message: req.body.status, data }));
+};
+
+exports.recallWeekly = async (req, res) => {
+  const data = await service.recallWeekly(req);
+  res.status(200).json(buildSuccessResponse({ message: "Timesheet recalled", data }));
 };

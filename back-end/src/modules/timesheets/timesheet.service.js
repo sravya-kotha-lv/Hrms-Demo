@@ -1,10 +1,27 @@
 const Timesheet = require("./timesheet.model");
 const Attendance = require("./timesheetAttendance.model");
 const Employee = require("../employees/employee.model");
+const Leave = require("../leaves/leave.model");
 const { audit } = require("../auditLogs/auditLogs.service");
+const Role = require("../roles/role.model");
+const OrgSettings = require("../orgSettings/orgSettings.model");
+
+const parseDateValue = (value) => {
+  if (value instanceof Date) return new Date(value);
+  if (typeof value === "string") {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]) - 1;
+      const day = Number(match[3]);
+      return new Date(year, month, day);
+    }
+  }
+  return new Date(value);
+};
 
 const startOfDay = (value) => {
-  const d = new Date(value);
+  const d = parseDateValue(value);
   d.setHours(0, 0, 0, 0);
   return d;
 };
@@ -39,7 +56,13 @@ const buildWeekDates = (weekStart) => {
   return dates;
 };
 
-const toDateKey = (value) => startOfDay(value).toISOString().slice(0, 10);
+const toDateKey = (value) => {
+  const d = startOfDay(value);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 const sanitizeEntries = (entries, weekStart) => {
   const byDate = new Map();
@@ -67,6 +90,89 @@ const sanitizeEntries = (entries, weekStart) => {
 
 const calculateTotalHours = (entries) =>
   (entries || []).reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0);
+
+const applyHoursToEntries = (entries, dateValue, hours) => {
+  const key = toDateKey(dateValue);
+  return (entries || []).map((entry) => {
+    if (toDateKey(entry.date) === key) {
+      return {
+        ...entry,
+        hours: Number(hours) || 0
+      };
+    }
+    return entry;
+  });
+};
+
+const upsertTimesheetHours = async ({
+  organizationId,
+  employeeId,
+  dateValue,
+  hoursWorked
+}) => {
+  const weekStart = getWeekStart(dateValue);
+  const weekEnd = getWeekEnd(weekStart);
+  let timesheet = await Timesheet.findOne({
+    organizationId,
+    employeeId,
+    weekStart
+  });
+
+  if (!timesheet) {
+    const entries = sanitizeEntries([], weekStart);
+    timesheet = await Timesheet.create({
+      organizationId,
+      employeeId,
+      weekStart,
+      weekEnd,
+      entries: applyHoursToEntries(entries, dateValue, hoursWorked),
+      totalHours: Number(hoursWorked) || 0,
+      status: "draft"
+    });
+    return timesheet;
+  }
+
+  if (["draft", "rejected"].includes(timesheet.status)) {
+    const entries = sanitizeEntries(timesheet.entries || [], weekStart);
+    timesheet.entries = applyHoursToEntries(entries, dateValue, hoursWorked);
+    timesheet.totalHours = calculateTotalHours(timesheet.entries);
+    await timesheet.save();
+  }
+
+  return timesheet;
+};
+
+exports.upsertTimesheetHours = upsertTimesheetHours;
+
+const ensureEntriesInWeek = (entries, weekStart, weekEnd) => {
+  const start = startOfDay(weekStart);
+  const end = endOfDay(weekEnd);
+  for (const entry of entries || []) {
+    const d = startOfDay(entry.date);
+    if (d < start || d > end) {
+      throw new Error("Entries must be within the selected week");
+    }
+  }
+};
+
+const validateHours = async (req, entries) => {
+  const settings = await OrgSettings.findOne({
+    organizationId: req.user.organizationId
+  });
+  const minWork = settings?.minWorkHoursPerDay ?? 8;
+  const minHalf = settings?.minHalfDayHours ?? 4;
+
+  for (const entry of entries || []) {
+    const hours = Number(entry.hours || 0);
+    if (hours > 0 && hours < minHalf) {
+      throw new Error(`Minimum half day hours is ${minHalf}`);
+    }
+    if (hours >= minHalf && hours < minWork) {
+      // half day allowed
+      continue;
+    }
+  }
+};
 
 const getEmployeeFromReq = async (req) => {
   const employee = await Employee.findOne({
@@ -145,6 +251,15 @@ exports.checkOut = async (req) => {
   attendance.status = "checked_out";
   await attendance.save();
 
+  // Update weekly timesheet hours for today
+  const hoursWorked = Number((totalMinutes / 60).toFixed(2));
+  await upsertTimesheetHours({
+    organizationId: req.user.organizationId,
+    employeeId: employee._id,
+    dateValue: today,
+    hoursWorked
+  });
+
   await audit({
     req,
     module: "timesheets",
@@ -177,10 +292,34 @@ exports.getAttendance = async (req) => {
   const startDate = startOfDay(start);
   const endDate = endOfDay(end);
 
-  return Attendance.find({
+  const query = {
     organizationId: req.user.organizationId,
     date: { $gte: startDate, $lte: endDate }
-  })
+  };
+
+  if (req.user.activeRoleId) {
+    const role = await Role.findOne({
+      _id: req.user.activeRoleId,
+      organizationId: req.user.organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (managerEmployee) {
+        const reportIds = await Employee.find({
+          organizationId: req.user.organizationId,
+          managerId: managerEmployee._id
+        }).distinct("_id");
+        query.employeeId = { $in: reportIds };
+      }
+    }
+  }
+
+  return Attendance.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .sort({ date: -1, checkInAt: -1 });
 };
@@ -188,14 +327,77 @@ exports.getAttendance = async (req) => {
 exports.getOnline = async (req) => {
   const today = startOfDay(new Date());
 
-  return Attendance.find({
+  const query = {
     organizationId: req.user.organizationId,
     date: today,
     checkInAt: { $ne: null },
     checkOutAt: null
-  })
+  };
+
+  if (req.user.activeRoleId) {
+    const role = await Role.findOne({
+      _id: req.user.activeRoleId,
+      organizationId: req.user.organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (managerEmployee) {
+        const reportIds = await Employee.find({
+          organizationId: req.user.organizationId,
+          managerId: managerEmployee._id
+        }).distinct("_id");
+        query.employeeId = { $in: reportIds };
+      }
+    }
+  }
+
+  return Attendance.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .sort({ checkInAt: -1 });
+};
+
+exports.getOnLeave = async (req) => {
+  const todayStart = startOfDay(new Date());
+  const todayEnd = endOfDay(new Date());
+
+  const query = {
+    organizationId: req.user.organizationId,
+    status: "approved",
+    fromDate: { $lte: todayEnd },
+    toDate: { $gte: todayStart }
+  };
+
+  if (req.user.activeRoleId) {
+    const role = await Role.findOne({
+      _id: req.user.activeRoleId,
+      organizationId: req.user.organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (managerEmployee) {
+        const reportIds = await Employee.find({
+          organizationId: req.user.organizationId,
+          managerId: managerEmployee._id
+        }).distinct("_id");
+        query.employeeId = { $in: reportIds };
+      }
+    }
+  }
+
+  return Leave.find(query)
+    .populate("employeeId", "firstName lastName employeeCode")
+    .populate("leaveTypeId", "name code")
+    .sort({ fromDate: 1 });
 };
 
 exports.createWeekly = async (req) => {
@@ -215,8 +417,7 @@ exports.createWeekly = async (req) => {
   }
 
   const entries = sanitizeEntries(req.body.entries || [], weekStart);
-  const totalHours = calculateTotalHours(entries);
-
+  const totalHours = calculateTotalHours(entries);  
   const timesheet = await Timesheet.create({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
@@ -252,9 +453,13 @@ exports.updateWeekly = async (req) => {
     throw new Error("Timesheet is locked after submission");
   }
 
+  ensureEntriesInWeek(req.body.entries || [], timesheet.weekStart, timesheet.weekEnd);
   const entries = sanitizeEntries(req.body.entries || [], timesheet.weekStart);
+  await validateHours(req, entries);
   timesheet.entries = entries;
   timesheet.totalHours = calculateTotalHours(entries);
+console.log(timesheet,entries,"-----",req.body.entries);
+
   await timesheet.save();
 
   await audit({
@@ -278,10 +483,28 @@ exports.submitWeekly = async (req) => {
 
   if (!timesheet) throw new Error("Timesheet not found");
 
+  const now = new Date();
+  const tsStart = new Date(timesheet.weekStart);
+  if (
+    tsStart.getFullYear() !== now.getFullYear() ||
+    tsStart.getMonth() !== now.getMonth()
+  ) {
+    throw new Error("Timesheet submission allowed only for current month");
+  }
+
   if (!["draft", "rejected"].includes(timesheet.status)) {
     throw new Error("Timesheet already submitted");
   }
 
+  if (Array.isArray(req.body.entries)) {
+    ensureEntriesInWeek(req.body.entries, timesheet.weekStart, timesheet.weekEnd);
+    const entries = sanitizeEntries(req.body.entries, timesheet.weekStart);
+    await validateHours(req, entries);
+    timesheet.entries = entries;
+    timesheet.totalHours = calculateTotalHours(entries);
+  } else {
+    await validateHours(req, timesheet.entries);
+  }
   timesheet.status = "submitted";
   timesheet.submittedAt = new Date();
   await timesheet.save();
@@ -319,9 +542,31 @@ exports.getMyWeekly = async (req) => {
 };
 
 exports.getAllWeekly = async (req) => {
-  return Timesheet.find({
-    organizationId: req.user.organizationId
-  })
+  const query = { organizationId: req.user.organizationId };
+
+  if (req.user.activeRoleId) {
+    const role = await Role.findOne({
+      _id: req.user.activeRoleId,
+      organizationId: req.user.organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (managerEmployee) {
+        const reportIds = await Employee.find({
+          organizationId: req.user.organizationId,
+          managerId: managerEmployee._id
+        }).distinct("_id");
+        query.employeeId = { $in: reportIds };
+      }
+    }
+  }
+
+  return Timesheet.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .sort({ weekStart: -1 });
 };
@@ -336,6 +581,33 @@ exports.actionWeekly = async (req) => {
 
   if (timesheet.status !== "submitted") {
     throw new Error("Only submitted timesheets can be actioned");
+  }
+
+  if (req.user.activeRoleId) {
+    const role = await Role.findOne({
+      _id: req.user.activeRoleId,
+      organizationId: req.user.organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (managerEmployee) {
+        const reportIds = await Employee.find({
+          organizationId: req.user.organizationId,
+          managerId: managerEmployee._id
+        }).distinct("_id");
+        const isReport = reportIds.some(
+          (id) => id.toString() === timesheet.employeeId.toString()
+        );
+        if (!isReport) {
+          throw new Error("Access denied");
+        }
+      }
+    }
   }
 
   const actor = await Employee.findOne({
@@ -362,6 +634,42 @@ exports.actionWeekly = async (req) => {
     req,
     module: "timesheets",
     action: "ACTION",
+    entityId: timesheet._id,
+    after: timesheet.toObject()
+  });
+
+  return timesheet;
+};
+
+exports.recallWeekly = async (req) => {
+  const employee = await getEmployeeFromReq(req);
+  const timesheet = await Timesheet.findOne({
+    _id: req.params.id,
+    organizationId: req.user.organizationId,
+    employeeId: employee._id
+  });
+
+  if (!timesheet) throw new Error("Timesheet not found");
+
+  if (timesheet.status !== "approved") {
+    throw new Error("Only approved timesheets can be recalled");
+  }
+
+  const lastWeekStart = getWeekStart(new Date());
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  if (toDateKey(timesheet.weekStart) !== toDateKey(lastWeekStart)) {
+    throw new Error("Only last week timesheet can be recalled");
+  }
+
+  timesheet.status = "draft";
+  timesheet.actionBy = undefined;
+  timesheet.actionAt = undefined;
+  await timesheet.save();
+
+  await audit({
+    req,
+    module: "timesheets",
+    action: "RECALL",
     entityId: timesheet._id,
     after: timesheet.toObject()
   });

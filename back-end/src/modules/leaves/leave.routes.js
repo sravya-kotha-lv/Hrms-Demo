@@ -27,6 +27,13 @@ router.get(
   asyncHandler(controller.myLeaves)
 );
 
+router.get(
+  "/my-range",
+  auth,
+  authorize("LEAVE_VIEW_SELF"),
+  asyncHandler(controller.myLeavesRange)
+);
+
 // HR / Manager views all leaves
 router.get(
   "/",

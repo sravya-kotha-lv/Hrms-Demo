@@ -12,7 +12,13 @@ exports.createWeeklySchema = Joi.object({
 });
 
 exports.updateWeeklySchema = Joi.object({
-  entries: Joi.array().items(entrySchema).required()
+  entries: Joi.array().items(entrySchema).required(),
+  weekStart: Joi.date().optional()
+});
+
+exports.submitWeeklySchema = Joi.object({
+  weekStart: Joi.date().optional(),
+  entries: Joi.array().items(entrySchema).optional()
 });
 
 exports.actionWeeklySchema = Joi.object({
