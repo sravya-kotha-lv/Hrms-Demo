@@ -47,6 +47,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { deleteApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
+import { useAuth } from "@/context/AuthContext";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -63,6 +64,7 @@ const getStatusBadge = (status: string) => {
 
 const Employees = () => {
   const navigate = useNavigate();
+  const { hasAnyPermission } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
@@ -73,6 +75,10 @@ const Employees = () => {
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
+  const canView = hasAnyPermission(["EMP_VIEW"]);
+  const canEdit = hasAnyPermission(["EMP_UPDATE"]);
+  const canDelete = hasAnyPermission(["EMP_DELETE"]);
+  const canAnyAction = canView || canEdit || canDelete;
 
   const selectedOrgId = useMemo(
     () => searchParams.get("organizationId") || "",
@@ -80,7 +86,10 @@ const Employees = () => {
   );
 
   const fetchDepartments = async () => {
-    const res = await getApiWithToken("/departments");
+    const res = await getApiWithToken("/departments", null, {
+      requiredPermissions: ["DEPT_VIEW"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setDepartments(res.data || []);
     } else {
@@ -90,7 +99,10 @@ const Employees = () => {
 
   const fetchOrganizations = async () => {
     if (!isSuperAdmin) return;
-    const res = await getApiWithToken("/organizations");
+    const res = await getApiWithToken("/organizations", null, {
+      requiredPermissions: ["ORG_VIEW"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setOrganizations(res.data || []);
     }
@@ -99,6 +111,10 @@ const Employees = () => {
   const fetchEmployees = async () => {
     try {
       setLoading(true);
+      if (!canView) {
+        setEmployees([]);
+        return;
+      }
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
       if (departmentFilter !== "all") {
@@ -108,7 +124,12 @@ const Employees = () => {
         params.set("organizationId", selectedOrgId);
       }
       const query = params.toString();
-      const res = await getApiWithToken(`/employees${query ? `?${query}` : ""}`);
+      const res = await getApiWithToken(
+        `/employees${query ? `?${query}` : ""}`,
+        null,
+        { requiredPermissions: ["EMP_VIEW"] }
+      );
+      if (res?.skipped) return;
       if (res?.success) {
         setEmployees(res?.data?.items || []);
       } else {
@@ -138,6 +159,10 @@ const Employees = () => {
 
   const confirmDelete = async () => {
     if (!selectedEmployee?._id) return;
+    if (!canDelete) {
+      toast.error("You do not have permission to delete");
+      return;
+    }
 
     const res = await deleteApiWithToken(`/employees/${selectedEmployee._id}`);
     if (res?.success) {
@@ -236,7 +261,7 @@ const Employees = () => {
               <TableHead>Designation</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Join Date</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {canAnyAction && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -284,32 +309,34 @@ const Employees = () => {
                     ? new Date(employee.dateOfJoining).toLocaleDateString()
                     : "-"}
                 </TableCell>
-                <TableCell className="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <PermissionGate permissions={["EMP_VIEW"]}>
-                        <DropdownMenuItem onClick={() => navigate(`/employees/${employee._id}`)}>
-                          <Eye className="w-4 h-4 mr-2" /> View
-                        </DropdownMenuItem>
-                      </PermissionGate>
-                      <PermissionGate permissions={["EMP_UPDATE"]}>
-                        <DropdownMenuItem onClick={() => navigate(`/employees/edit/${employee._id}`)}>
-                          <Edit className="w-4 h-4 mr-2" /> Edit
-                        </DropdownMenuItem>
-                      </PermissionGate>
-                      <PermissionGate permissions={["EMP_DELETE"]}>
-                        <DropdownMenuItem onClick={() => handleDelete(employee)}>
-                          <Trash2 className="w-4 h-4 mr-2 text-red-500" /> Delete
-                        </DropdownMenuItem>
-                      </PermissionGate>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
+                {canAnyAction && (
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <PermissionGate permissions={["EMP_VIEW"]}>
+                          <DropdownMenuItem onClick={() => navigate(`/employees/${employee._id}`)}>
+                            <Eye className="w-4 h-4 mr-2" /> View
+                          </DropdownMenuItem>
+                        </PermissionGate>
+                        <PermissionGate permissions={["EMP_UPDATE"]}>
+                          <DropdownMenuItem onClick={() => navigate(`/employees/edit/${employee._id}`)}>
+                            <Edit className="w-4 h-4 mr-2" /> Edit
+                          </DropdownMenuItem>
+                        </PermissionGate>
+                        <PermissionGate permissions={["EMP_DELETE"]}>
+                          <DropdownMenuItem onClick={() => handleDelete(employee)}>
+                            <Trash2 className="w-4 h-4 mr-2 text-red-500" /> Delete
+                          </DropdownMenuItem>
+                        </PermissionGate>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

@@ -27,6 +27,7 @@ import {
   postApiWithToken,
   putApiWithToken
 } from "@/services/apiWrapper";
+import { useAuth } from "@/context/AuthContext";
 
 interface LeaveType {
   _id?: string;
@@ -50,13 +51,22 @@ const emptyLeaveType: LeaveType = {
 };
 
 const LeaveTypes = () => {
+  const { hasAnyPermission } = useAuth();
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<LeaveType>(emptyLeaveType);
+  const canView = hasAnyPermission(["LEAVE_TYPE_VIEW"]);
+  const canManage = hasAnyPermission(["LEAVE_TYPE_MANAGE"]);
 
   const fetchLeaveTypes = async () => {
-    const response = await getApiWithToken("/leave-types");
+    const response = await getApiWithToken("/leave-types", null, {
+      requiredPermissions: ["LEAVE_TYPE_VIEW"]
+    });
+    if (response?.skipped) {
+      setLeaveTypes([]);
+      return;
+    }
     if (response?.code === 200 || response?.success) {
       setLeaveTypes(response.data || []);
     } else {
@@ -70,6 +80,10 @@ const LeaveTypes = () => {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this leave type?")) return;
+    if (!canManage) {
+      toast.error("You do not have permission to delete");
+      return;
+    }
     const res = await deleteApiWithToken(`/leave-types/${id}`);
     if (res?.success) {
       toast.success("Leave type deleted");
@@ -80,6 +94,10 @@ const LeaveTypes = () => {
   };
 
   const handleSubmit = async () => {
+    if (!canManage) {
+      toast.error("You do not have permission to manage leave types");
+      return;
+    }
     const payload = {
       name: form.name,
       code: form.code,
@@ -94,10 +112,15 @@ const LeaveTypes = () => {
 
     let res;
     if (isEdit && form._id) {
-      res = await putApiWithToken(`/leave-types/${form._id}`, payload);
+      res = await putApiWithToken(`/leave-types/${form._id}`, payload, null, {
+        requiredPermissions: ["LEAVE_TYPE_MANAGE"]
+      });
     } else {
-      res = await postApiWithToken("/leave-types", payload);
+      res = await postApiWithToken("/leave-types", payload, null, {
+        requiredPermissions: ["LEAVE_TYPE_MANAGE"]
+      });
     }
+    if (res?.skipped) return;
 
     if (res?.success) {
       toast.success(isEdit ? "Leave type updated" : "Leave type created");
@@ -168,22 +191,36 @@ const LeaveTypes = () => {
       title="Leave Types"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Organization" }, { label: "Leave Types" }]}
     >
-      <div className="flex justify-end mb-6">
-        <PermissionGate permissions={["LEAVE_TYPE_MANAGE"]}>
-          <Button
-            onClick={() => {
-              setIsEdit(false);
-              setForm(emptyLeaveType);
-              setOpen(true);
-            }}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Leave Type
-          </Button>
-        </PermissionGate>
-      </div>
+      {!canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view leave types.
+        </div>
+      )}
+      {canView && (
+        <>
+          <div className="flex justify-end mb-6">
+            <PermissionGate permissions={["LEAVE_TYPE_MANAGE"]}>
+              <Button
+                onClick={() => {
+                  setIsEdit(false);
+                  setForm(emptyLeaveType);
+                  setOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Leave Type
+              </Button>
+            </PermissionGate>
+          </div>
 
-      <DataTable columns={columns} data={leaveTypes} rowKey="_id" searchKey="name" />
+          <DataTable
+            columns={canManage ? columns : columns.filter((c) => c.header !== "Actions")}
+            data={leaveTypes}
+            rowKey="_id"
+            searchKey="name"
+          />
+        </>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

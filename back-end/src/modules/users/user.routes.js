@@ -37,6 +37,12 @@ router.get(
   asyncHandler(controller.myPermissions)
 );
 
+router.get(
+  "/me/profile",
+  auth,
+  asyncHandler(controller.myProfile)
+);
+
 router.post("/send-otp", validate(validator.sendOTPUserSchema), asyncHandler(controller.sendOtp));
 router.post("/verify-otp", validate(validator.validateOTPSchema), asyncHandler(controller.verifyOtp));
 

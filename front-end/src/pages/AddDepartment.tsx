@@ -12,12 +12,16 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
+import { useAuth } from "@/context/AuthContext";
 
 
 const AddDepartment = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
+  const { hasAnyPermission } = useAuth();
+  const canCreate = hasAnyPermission(["DEPT_CREATE"]);
+  const canUpdate = hasAnyPermission(["DEPT_UPDATE"]);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -30,10 +34,12 @@ const AddDepartment = () => {
       const { data } = useQuery({
       queryKey: ["department", id],
       queryFn: async () => {
-        const res = await getApiWithToken(`/departments/${id}`);
+        const res = await getApiWithToken(`/departments/${id}`, null, {
+          requiredPermissions: ["DEPT_VIEW"]
+        });
         return res.data;
       },
-      enabled: !!id,
+      enabled: !!id && canUpdate,
     });
 
 
@@ -53,9 +59,13 @@ const AddDepartment = () => {
   const mutation = useMutation({
   mutationFn: async () => {
     if (isEdit) {
-      return await putApiWithToken(`/departments/${id}`, formData);
+      return await putApiWithToken(`/departments/${id}`, formData, null, {
+        requiredPermissions: ["DEPT_UPDATE"]
+      });
     } else {
-      return await postApiWithToken(`/departments`, formData);
+      return await postApiWithToken(`/departments`, formData, null, {
+        requiredPermissions: ["DEPT_CREATE"]
+      });
     }
   },
   onSuccess: () => {
@@ -78,6 +88,17 @@ const AddDepartment = () => {
         { label: isEdit ? "Edit" : "Add" },
       ]}
     >
+      {!isEdit && !canCreate && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to create departments.
+        </div>
+      )}
+      {isEdit && !canUpdate && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to update departments.
+        </div>
+      )}
+      {((!isEdit && canCreate) || (isEdit && canUpdate)) && (
       <div className="bg-white rounded-xl shadow-sm p-6 max-w-2xl">
         <form onSubmit={handleSubmit} className="space-y-5">
 
@@ -139,6 +160,7 @@ const AddDepartment = () => {
 
         </form>
       </div>
+      )}
     </MainLayout>
   );
 };

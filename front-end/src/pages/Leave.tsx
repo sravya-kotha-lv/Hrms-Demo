@@ -51,6 +51,7 @@ import { Label } from "@/components/ui/label";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
+import { useAuth } from "@/context/AuthContext";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -91,6 +92,7 @@ const getLeaveTypeIcon = (type: string) => {
 };
 
 const Leave = () => {
+  const { hasAnyPermission } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
@@ -108,19 +110,41 @@ const Leave = () => {
     toDate: "",
     reason: ""
   });
+  const canViewAll = hasAnyPermission(["LEAVE_VIEW_ALL"]);
+  const canViewSelf = hasAnyPermission(["LEAVE_VIEW_SELF"]);
+  const canViewAny = canViewAll || canViewSelf;
+  const canApply = hasAnyPermission(["LEAVE_APPLY"]);
+  const canAction = hasAnyPermission(["LEAVE_ACTION"]);
 
   const fetchLeaves = async () => {
     try {
       setLoading(true);
-      let res = await getApiWithToken("/leaves");
-      if (res?.success) {
+      if (!canViewAny) {
+        setLeaves([]);
+        setViewMode("my");
+        return;
+      }
+
+      let res = await getApiWithToken("/leaves", null, {
+        requiredPermissions: ["LEAVE_VIEW_ALL"]
+      });
+      if (res?.skipped) {
+        res = null;
+      } else if (res?.success) {
         setLeaves(res?.data || []);
         setViewMode("all");
         return;
       }
 
       // fallback to my leaves (for employee role)
-      res = await getApiWithToken("/leaves/my");
+      res = await getApiWithToken("/leaves/my", null, {
+        requiredPermissions: ["LEAVE_VIEW_SELF"]
+      });
+      if (res?.skipped) {
+        setLeaves([]);
+        setViewMode("my");
+        return;
+      }
       if (res?.success) {
         setLeaves(res?.data || []);
         setViewMode("my");
@@ -139,7 +163,9 @@ const Leave = () => {
   const fetchLeaveTypes = async () => {
     let res = await getApiWithToken("/employees/leave-types");
     if (!res?.success) {
-      res = await getApiWithToken("/leave-types");
+      res = await getApiWithToken("/leave-types", null, {
+        requiredPermissions: ["LEAVE_TYPE_VIEW"]
+      });
     }
     if (res?.success) {
       setLeaveTypes(res?.data || []);
@@ -156,7 +182,13 @@ const Leave = () => {
       return;
     }
 
-    const res = await postApiWithToken("/leaves/apply", applyForm);
+    const res = await postApiWithToken(
+      "/leaves/apply",
+      applyForm,
+      null,
+      { requiredPermissions: ["LEAVE_APPLY"] }
+    );
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success("Leave applied");
       setApplyOpen(false);
@@ -211,6 +243,10 @@ const Leave = () => {
 
   const confirmAction = async () => {
     if (!selectedLeave) return;
+    if (!canAction) {
+      toast.error("You do not have permission to take action");
+      return;
+    }
 
     const payload: any = {
       status: actionType === "approve" ? "approved" : "rejected",
@@ -219,7 +255,13 @@ const Leave = () => {
       payload.rejectionReason = comment || "Rejected";
     }
 
-    const res = await putApiWithToken(`/leaves/${selectedLeave._id}/action`, payload);
+    const res = await putApiWithToken(
+      `/leaves/${selectedLeave._id}/action`,
+      payload,
+      null,
+      { requiredPermissions: ["LEAVE_ACTION"] }
+    );
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success(`Leave ${payload.status}`);
       setActionDialogOpen(false);
@@ -236,8 +278,14 @@ const Leave = () => {
       title="Leave Management"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Leave" }]}
     >
+      {!canViewAny && !canApply && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view or apply leave.
+        </div>
+      )}
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      {canViewAny && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <motion.div
           className="stat-card"
           initial={{ opacity: 0, y: 20 }}
@@ -277,10 +325,12 @@ const Leave = () => {
           <p className="text-3xl font-bold text-primary">{stats.onLeaveToday}</p>
           <p className="text-sm text-muted-foreground mt-1">employees</p>
         </motion.div>
-      </div>
+        </div>
+      )}
 
       {/* Action Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+      {canViewAny && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -315,10 +365,12 @@ const Leave = () => {
             </Button>
           </PermissionGate>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Leave Table */}
-      <motion.div
+      {canViewAny && (
+        <motion.div
         className="bg-card rounded-xl card-shadow overflow-hidden"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -333,7 +385,7 @@ const Leave = () => {
               <TableHead>To</TableHead>
               <TableHead>Days</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {canAction && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -390,8 +442,9 @@ const Leave = () => {
                   </TableCell>
                   <TableCell>{leave.totalDays ?? "-"}</TableCell>
                   <TableCell>{getStatusBadge(leave.status)}</TableCell>
-                  <TableCell className="text-right">
-                    <PermissionGate permissions={["LEAVE_ACTION"]}>
+                  {canAction && (
+                    <TableCell className="text-right">
+                      <PermissionGate permissions={["LEAVE_ACTION"]}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -414,14 +467,16 @@ const Leave = () => {
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    </PermissionGate>
-                  </TableCell>
+                      </PermissionGate>
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
-      </motion.div>
+        </motion.div>
+      )}
 
       {/* Action Dialog */}
       <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>

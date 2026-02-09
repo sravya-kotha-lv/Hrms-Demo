@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import PermissionGate from "@/components/PermissionGate";
+import { useAuth } from "@/context/AuthContext";
 
 interface Organization {
   _id?: string;
@@ -51,13 +52,22 @@ const emptyOrg: Organization = {
 };
 
 const OrganizationPage = () => {
+  const { hasAnyPermission } = useAuth();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<Organization>(emptyOrg);
+  const canView = hasAnyPermission(["ORG_VIEW"]);
+  const canManage = hasAnyPermission(["ORG_MANAGE"]);
 
   const fetchOrganizations = async () => {
-    const response = await getApiWithToken("/organizations");
+    const response = await getApiWithToken("/organizations", null, {
+      requiredPermissions: ["ORG_VIEW"]
+    });
+    if (response?.skipped) {
+      setOrganizations([]);
+      return;
+    }
     console.log(response,"response");
     
     setOrganizations(response?.data || []);
@@ -70,6 +80,10 @@ const OrganizationPage = () => {
   // 🗑 Delete
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this organization?")) return;
+    if (!canManage) {
+      toast.error("You do not have permission to delete");
+      return;
+    }
 
     const res = await deleteApiWithToken(`/organizations/${id}`);
     if (res?.success) {
@@ -82,6 +96,10 @@ const OrganizationPage = () => {
 
   // 💾 Submit (ADD or EDIT)
   const handleSubmit = async () => {
+    if (!canManage) {
+      toast.error("You do not have permission to manage organizations");
+      return;
+    }
     // common fields
     const basePayload = {
       name: form.name,
@@ -96,15 +114,18 @@ const OrganizationPage = () => {
       // ❌ DO NOT SEND code while updating
       res = await postApiWithToken(
         `/organizations/${form._id}`,
-        basePayload
+        basePayload,
+        null,
+        { requiredPermissions: ["ORG_MANAGE"] }
       );
     } else {
       // ✅ SEND code only while creating
       res = await postApiWithToken("/organizations", {
         ...basePayload,
         code: form.code,
-      });
+      }, null, { requiredPermissions: ["ORG_MANAGE"] });
     }
+    if (res?.skipped) return;
 
     if (res?.success) {
       toast.success(
@@ -225,6 +246,11 @@ const OrganizationPage = () => {
       title="Organization"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Organization" }]}
     >
+      {!canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view organizations.
+        </div>
+      )}
       {/* ➕ Add Organization */}
       {/* <div className="flex justify-end mb-4">
         <Button
@@ -240,13 +266,15 @@ const OrganizationPage = () => {
         </Button>
       </div> */}
 
-      <DataTable
-        columns={columns}
-        data={organizations}
-        rowKey="_id"
-        searchKey="name"
-        selectable
-      />
+      {canView && (
+        <DataTable
+          columns={canManage ? columns : columns.filter((c) => c.header !== "Actions")}
+          data={organizations}
+          rowKey="_id"
+          searchKey="name"
+          selectable
+        />
+      )}
 
       {/* 📝 Add/Edit Modal */}
       <Dialog open={open} onOpenChange={setOpen}>

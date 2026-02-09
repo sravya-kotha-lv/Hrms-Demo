@@ -26,6 +26,7 @@ import {
   postApiWithToken,
   putApiWithToken,
 } from "@/services/apiWrapper";
+import { useAuth } from "@/context/AuthContext";
 
 /* ================= TYPES ================= */
 
@@ -47,15 +48,27 @@ const emptyDept: Department = {
 /* ================= COMPONENT ================= */
 
 const Departments = () => {
+  const { hasAnyPermission } = useAuth();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<Department>(emptyDept);
+  const canView = hasAnyPermission(["DEPT_VIEW"]);
+  const canCreate = hasAnyPermission(["DEPT_CREATE"]);
+  const canUpdate = hasAnyPermission(["DEPT_UPDATE"]);
+  const canDelete = hasAnyPermission(["DEPT_DELETE"]);
+  const canAnyAction = canUpdate || canDelete;
 
   /* ================= FETCH ================= */
 
   const fetchDepartments = async () => {
-    const response = await getApiWithToken("/departments");
+    const response = await getApiWithToken("/departments", null, {
+      requiredPermissions: ["DEPT_VIEW"]
+    });
+    if (response?.skipped) {
+      setDepartments([]);
+      return;
+    }
 
     if (response?.code === 200) {
       setDepartments(response.data || []);
@@ -72,6 +85,10 @@ const Departments = () => {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this department?")) return;
+    if (!canDelete) {
+      toast.error("You do not have permission to delete");
+      return;
+    }
 
     const res = await deleteApiWithToken(`/departments/${id}`);
 
@@ -96,14 +113,17 @@ const Departments = () => {
 
     if (isEdit && form._id) {
       // ❌ Do NOT send code on update
-      res = await putApiWithToken(`/departments/${form._id}`, payload);
+      res = await putApiWithToken(`/departments/${form._id}`, payload, null, {
+        requiredPermissions: ["DEPT_UPDATE"]
+      });
     } else {
       // ✅ Send code only while creating
       res = await postApiWithToken("/departments", {
         ...payload,
         code: form.code,
-      });
+      }, null, { requiredPermissions: ["DEPT_CREATE"] });
     }
+    if (res?.skipped) return;
 
     if (res?.success) {
       toast.success(isEdit ? "Department updated" : "Department created");
@@ -173,29 +193,38 @@ const Departments = () => {
       title="Departments"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Departments" }]}
     >
+      {!canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view departments.
+        </div>
+      )}
       {/* Action Bar */}
-      <div className="flex justify-end mb-6">
-        <PermissionGate permissions={["DEPT_CREATE"]}>
-          <Button
-            onClick={() => {
-              setIsEdit(false);
-              setForm(emptyDept);
-              setOpen(true);
-            }}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Department
-          </Button>
-        </PermissionGate>
-      </div>
+      {canView && (
+        <div className="flex justify-end mb-6">
+          <PermissionGate permissions={["DEPT_CREATE"]}>
+            <Button
+              onClick={() => {
+                setIsEdit(false);
+                setForm(emptyDept);
+                setOpen(true);
+              }}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Department
+            </Button>
+          </PermissionGate>
+        </div>
+      )}
 
       {/* DataTable */}
-      <DataTable
-        columns={columns}
-        data={departments}
-        rowKey="_id"
-        searchKey="name"
-      />
+      {canView && (
+        <DataTable
+          columns={canAnyAction ? columns : columns.filter((c) => c.header !== "Actions")}
+          data={departments}
+          rowKey="_id"
+          searchKey="name"
+        />
+      )}
 
       {/* Add / Edit Modal */}
       <Dialog open={open} onOpenChange={setOpen}>

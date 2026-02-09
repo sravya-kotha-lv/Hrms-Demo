@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
 import { getApiWithToken, postApiWithoutToken } from "@/services/apiWrapper";
-import { setPermissions } from "@/utils/auth";
+import { useAuth } from "@/context/AuthContext";
 const Login = () => {
   const navigate = useNavigate();
+  const { setProfile, setPermissions, loadProfile } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,16 +27,17 @@ const Login = () => {
     );
 
     if (response.code === 200) {
-      const { roles } = response.data;
+      const { roles, activeRole } = response.data;
+      const resolvedActiveRole = activeRole || roles?.[0] || null;
 
-      localStorage.setItem(
-        "userProfile",
-        JSON.stringify(response.data)
-      );
+      setProfile({
+        ...response.data,
+        activeRole: resolvedActiveRole
+      });
 
-      const isSuperAdmin = roles?.some(
-        (role: any) => role.slug === "superadmin"
-      );
+      const isSuperAdmin =
+        resolvedActiveRole?.slug === "superadmin" ||
+        roles?.some((role: any) => role.slug === "superadmin");
 
       try {
         const permRes = await getApiWithToken("/users/me/permissions");
@@ -47,6 +49,8 @@ const Login = () => {
       } catch {
         setPermissions([]);
       }
+
+      await loadProfile();
 
       toast.success("Logged in successfully!");
 

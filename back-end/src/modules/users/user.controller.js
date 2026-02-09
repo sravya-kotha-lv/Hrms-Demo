@@ -134,3 +134,12 @@ exports.myPermissions = async (req, res) => {
     })
   );
 };
+
+exports.myProfile = async (req, res) => {
+  const data = await userService.getMyProfile({ user: req.user });
+  return res.status(200).json(
+    buildSuccessResponse({
+      data
+    })
+  );
+};

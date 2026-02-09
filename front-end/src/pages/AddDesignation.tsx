@@ -12,11 +12,15 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 
 const AddDesignation = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
+  const { hasAnyPermission } = useAuth();
+  const canCreate = hasAnyPermission(["DESIG_CREATE"]);
+  const canUpdate = hasAnyPermission(["DESIG_UPDATE"]);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -27,7 +31,10 @@ const AddDesignation = () => {
   const [departments, setDepartments] = useState<any[]>([]);
 
   const fetchDepartments = async () => {
-    const res = await getApiWithToken("/departments");
+    const res = await getApiWithToken("/departments", null, {
+      requiredPermissions: ["DEPT_VIEW"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setDepartments(res.data || []);
     } else {
@@ -36,7 +43,10 @@ const AddDesignation = () => {
   };
 
   const fetchDesignationById = async (designationId: string) => {
-    const res = await getApiWithToken("/designations");
+    const res = await getApiWithToken("/designations", null, {
+      requiredPermissions: ["DESIG_VIEW"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       const found = (res.data || []).find((d: any) => d._id === designationId);
       if (found) {
@@ -75,15 +85,16 @@ const AddDesignation = () => {
         name: formData.name,
         departmentId: formData.departmentId,
         status: formData.status,
-      });
+      }, null, { requiredPermissions: ["DESIG_UPDATE"] });
     } else {
       res = await postApiWithToken("/designations", {
         name: formData.name,
         departmentId: formData.departmentId,
         status: formData.status,
-      });
+      }, null, { requiredPermissions: ["DESIG_CREATE"] });
     }
 
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success(isEdit ? "Designation updated" : "Designation created");
       navigate("/designations");
@@ -101,6 +112,17 @@ const AddDesignation = () => {
         { label: isEdit ? "Edit" : "Add" },
       ]}
     >
+      {!isEdit && !canCreate && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to create designations.
+        </div>
+      )}
+      {isEdit && !canUpdate && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to update designations.
+        </div>
+      )}
+      {((!isEdit && canCreate) || (isEdit && canUpdate)) && (
       <div className="bg-white rounded-xl shadow-sm p-6 max-w-2xl">
         <form onSubmit={handleSubmit} className="space-y-5">
 
@@ -163,6 +185,7 @@ const AddDesignation = () => {
 
         </form>
       </div>
+      )}
     </MainLayout>
   );
 };

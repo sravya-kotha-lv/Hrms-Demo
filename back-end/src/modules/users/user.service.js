@@ -48,12 +48,13 @@ exports.loginUser = async ({ email, password }) => {
   }
 
   const m = memberships[0];
+  const activeRole = m.roleIds[0] || null;
 
   const token = createJwtToken({
     userId: user._id,
     organizationId: m.organizationId._id,
     roleIds: m.roleIds.map(r => r._id),
-    activeRoleId: m.roleIds[0]?._id
+    activeRoleId: activeRole?._id
   });
 
   await rotateUserToken(User, user._id, token);
@@ -62,7 +63,8 @@ exports.loginUser = async ({ email, password }) => {
     token,
     userId: user._id,
     organization: m.organizationId,
-    roles: m.roleIds
+    roles: m.roleIds,
+    activeRole
   };
 };
 
@@ -429,6 +431,21 @@ exports.getActivePermissions = async ({ user }) => {
   }).select("code");
 
   return permissions.map((p) => p.code);
+};
+
+exports.getMyProfile = async ({ user }) => {
+  const userDoc = await User.findById(user.userId).select("email");
+  const employee = await Employee.findOne({
+    userId: user.userId,
+    organizationId: user.organizationId
+  }).select("firstName lastName");
+
+  return {
+    email: userDoc?.email || null,
+    firstName: employee?.firstName || null,
+    lastName: employee?.lastName || null,
+    profileImage: null
+  };
 };
 
 

@@ -26,6 +26,7 @@ import {
   putApiWithToken,
   deleteApiWithToken,
 } from "@/services/apiWrapper";
+import { useAuth } from "@/context/AuthContext";
 
 interface HolidayForm {
   _id?: string;
@@ -41,14 +42,23 @@ const emptyHoliday: HolidayForm = {
 };
 
 const Holidays = () => {
+  const { hasAnyPermission } = useAuth();
   const [holidays, setHolidays] = useState<any[]>([]);
   const [year, setYear] = useState<string>(new Date().getFullYear().toString());
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<HolidayForm>(emptyHoliday);
+  const canView = hasAnyPermission(["HOLIDAY_VIEW"]);
+  const canManage = hasAnyPermission(["HOLIDAY_MANAGE"]);
 
   const fetchHolidays = async () => {
-    const res = await getApiWithToken(`/holidays?year=${year}`);
+    const res = await getApiWithToken(`/holidays?year=${year}`, null, {
+      requiredPermissions: ["HOLIDAY_VIEW"]
+    });
+    if (res?.skipped) {
+      setHolidays([]);
+      return;
+    }
     if (res?.success) {
       setHolidays(res.data || []);
     } else {
@@ -65,6 +75,10 @@ const Holidays = () => {
       toast.error("Name and date are required");
       return;
     }
+    if (!canManage) {
+      toast.error("You do not have permission to manage holidays");
+      return;
+    }
 
     let res;
     if (isEdit && form._id) {
@@ -72,14 +86,15 @@ const Holidays = () => {
         name: form.name,
         date: form.date,
         status: form.status,
-      });
+      }, null, { requiredPermissions: ["HOLIDAY_MANAGE"] });
     } else {
       res = await postApiWithToken("/holidays", {
         name: form.name,
         date: form.date,
         status: form.status,
-      });
+      }, null, { requiredPermissions: ["HOLIDAY_MANAGE"] });
     }
+    if (res?.skipped) return;
 
     if (res?.success) {
       toast.success(isEdit ? "Holiday updated" : "Holiday created");
@@ -93,6 +108,10 @@ const Holidays = () => {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this holiday?")) return;
+    if (!canManage) {
+      toast.error("You do not have permission to delete holidays");
+      return;
+    }
 
     const res = await deleteApiWithToken(`/holidays/${id}`);
     if (res?.success) {
@@ -108,7 +127,14 @@ const Holidays = () => {
       title="Holidays"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Holidays" }]}
     >
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between mb-6">
+      {!canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view holidays.
+        </div>
+      )}
+      {canView && (
+        <>
+        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Input
             type="number"
@@ -142,7 +168,7 @@ const Holidays = () => {
               <TableHead>Name</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {canManage && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -167,8 +193,9 @@ const Holidays = () => {
                     {h.status}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right">
-                  <PermissionGate permissions={["HOLIDAY_MANAGE"]}>
+                {canManage && (
+                  <TableCell className="text-right">
+                    <PermissionGate permissions={["HOLIDAY_MANAGE"]}>
                     <div className="flex justify-end gap-3">
                       <Pencil
                         className="w-4 h-4 text-blue-600 cursor-pointer hover:scale-110"
@@ -188,8 +215,9 @@ const Holidays = () => {
                         onClick={() => handleDelete(h._id)}
                       />
                     </div>
-                  </PermissionGate>
-                </TableCell>
+                    </PermissionGate>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -231,6 +259,8 @@ const Holidays = () => {
           </div>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </MainLayout>
   );
 };

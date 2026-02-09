@@ -6,17 +6,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
-import { hasPermission } from "@/utils/auth";
+import { useAuth } from "@/context/AuthContext";
 
 const OrganizationSettings = () => {
+  const { hasAnyPermission } = useAuth();
   const [leaveCreditFrequency, setLeaveCreditFrequency] = useState("monthly");
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
   const [loading, setLoading] = useState(false);
-  const canManage = hasPermission("ORG_SETTINGS_MANAGE");
+  const canView = hasAnyPermission(["ORG_SETTINGS_VIEW"]);
+  const canManage = hasAnyPermission(["ORG_SETTINGS_MANAGE"]);
 
   const fetchSettings = async () => {
-    const res = await getApiWithToken("/org-settings");
+    const res = await getApiWithToken("/org-settings", null, {
+      requiredPermissions: ["ORG_SETTINGS_VIEW"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setLeaveCreditFrequency(res.data?.leaveCreditFrequency || "monthly");
       setMinWorkHoursPerDay(
@@ -41,7 +46,8 @@ const OrganizationSettings = () => {
         leaveCreditFrequency,
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours)
-      });
+      }, null, { requiredPermissions: ["ORG_SETTINGS_MANAGE"] });
+      if (res?.skipped) return;
       if (res?.success) {
         toast.success("Settings saved");
       } else {
@@ -57,6 +63,12 @@ const OrganizationSettings = () => {
       title="Organization Settings"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Organization" }, { label: "Settings" }]}
     >
+      {!canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view organization settings.
+        </div>
+      )}
+      {canView && (
       <div className="bg-card rounded-xl card-shadow p-6 max-w-2xl">
         <div className="space-y-2 mb-4">
           <h3 className="text-lg font-semibold">Leave Credit Settings</h3>
@@ -118,6 +130,7 @@ const OrganizationSettings = () => {
           <Button onClick={saveSettings} disabled={loading}>Save</Button>
         </PermissionGate>
       </div>
+      )}
     </MainLayout>
   );
 };

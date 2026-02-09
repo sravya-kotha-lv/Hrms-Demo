@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { hasAnyPermission } from "@/utils/auth";
+import { useAuth } from "@/context/AuthContext";
 
 interface PermissionGateProps {
   permissions: string[];
@@ -8,6 +8,7 @@ interface PermissionGateProps {
 }
 
 const PermissionGate = ({ permissions, children, fallback = null }: PermissionGateProps) => {
+  const { hasAnyPermission } = useAuth();
   if (!hasAnyPermission(permissions)) {
     return <>{fallback}</>;
   }

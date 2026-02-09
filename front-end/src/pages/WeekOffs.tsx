@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { Checkbox } from "@/components/ui/checkbox";
-import { hasPermission } from "@/utils/auth";
+import { useAuth } from "@/context/AuthContext";
 import PermissionGate from "@/components/PermissionGate";
 
 const DAYS = [
@@ -20,10 +20,15 @@ const DAYS = [
 const WeekOffs = () => {
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
-  const canManage = hasPermission("WEEK_OFF_MANAGE");
+  const { hasAnyPermission } = useAuth();
+  const canView = hasAnyPermission(["WEEK_OFF_VIEW"]);
+  const canManage = hasAnyPermission(["WEEK_OFF_MANAGE"]);
 
   const fetchConfig = async () => {
-    const res = await getApiWithToken("/week-offs");
+    const res = await getApiWithToken("/week-offs", null, {
+      requiredPermissions: ["WEEK_OFF_VIEW"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setWeekOffDays(res?.data?.weekOffDays || []);
     } else {
@@ -50,7 +55,10 @@ const WeekOffs = () => {
     }
     try {
       setLoading(true);
-      const res = await postApiWithToken("/week-offs", { weekOffDays });
+      const res = await postApiWithToken("/week-offs", { weekOffDays }, null, {
+        requiredPermissions: ["WEEK_OFF_MANAGE"]
+      });
+      if (res?.skipped) return;
       if (res?.success) {
         toast.success("Week off configuration saved");
       } else {
@@ -66,7 +74,13 @@ const WeekOffs = () => {
       title="Week Off Configuration"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Week Offs" }]}
     >
-      <div className="bg-card rounded-xl card-shadow p-6 max-w-3xl">
+      {!canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view week offs.
+        </div>
+      )}
+      {canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 max-w-3xl">
         <p className="text-sm text-muted-foreground mb-4">
           Select the weekly off days for your organization.
         </p>
@@ -95,6 +109,7 @@ const WeekOffs = () => {
           </PermissionGate>
         </div>
       </div>
+      )}
     </MainLayout>
   );
 };

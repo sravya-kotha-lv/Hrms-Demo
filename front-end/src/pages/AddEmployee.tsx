@@ -3,6 +3,16 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Select,
   SelectTrigger,
@@ -10,7 +20,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronDown } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -34,7 +44,7 @@ const emptyForm = {
   departmentId: "",
   designationId: "",
   managerId: "",
-  roleId: "",
+  roleIds: [] as string[],
   employmentType: "",
   dateOfJoining: "",
 };
@@ -80,7 +90,7 @@ const AddEmployee = () => {
         departmentId: employee.departmentId?._id || "",
         designationId: employee.designationId?._id || "",
         managerId: employee.managerId?._id || "",
-        roleId: employee.roleIds?.[0]?._id || "",
+        roleIds: (employee.roleIds || []).map((r: any) => r?._id).filter(Boolean),
         employmentType: employee.employmentType || "",
         dateOfJoining: employee.dateOfJoining
           ? new Date(employee.dateOfJoining).toISOString().slice(0, 10)
@@ -132,7 +142,7 @@ const AddEmployee = () => {
       !form.lastName ||
       !form.departmentId ||
       !form.designationId ||
-      !form.roleId ||
+      !form.roleIds?.length ||
       !form.employmentType ||
       !form.dateOfJoining
     ) {
@@ -142,7 +152,7 @@ const AddEmployee = () => {
 
     const payload = {
       email: form.email,
-      roleIds: [form.roleId],
+      roleIds: form.roleIds,
       firstName: form.firstName,
       lastName: form.lastName,
       departmentId: form.departmentId,
@@ -329,22 +339,56 @@ const AddEmployee = () => {
         </div>
 
         <div>
-          <Label>Role *</Label>
-          <Select
-            value={form.roleId}
-            onValueChange={(v) => setForm({ ...form, roleId: v })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select Role" />
-            </SelectTrigger>
-            <SelectContent>
-              {roles.map((r) => (
-                <SelectItem key={r._id} value={r._id}>
-                  {r.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label>Roles *</Label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                role="combobox"
+                className="mt-2 w-full justify-between"
+              >
+                {form.roleIds.length === 0
+                  ? "Select roles"
+                  : form.roleIds.length <= 2
+                    ? roles
+                        .filter((r) => form.roleIds.includes(r._id))
+                        .map((r) => r.name)
+                        .join(", ")
+                    : `${form.roleIds.length} roles selected`}
+                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="p-0 w-[320px]" align="start">
+              <Command>
+                <CommandInput placeholder="Search roles..." />
+                <CommandList>
+                  <CommandEmpty>No roles found.</CommandEmpty>
+                  <CommandGroup>
+                    {roles.map((r) => {
+                      const checked = form.roleIds.includes(r._id);
+                      return (
+                        <CommandItem
+                          key={r._id}
+                          onSelect={() => {
+                            setForm((prev) => ({
+                              ...prev,
+                              roleIds: checked
+                                ? (prev.roleIds || []).filter((id) => id !== r._id)
+                                : Array.from(new Set([...(prev.roleIds || []), r._id])),
+                            }));
+                          }}
+                        >
+                          <Checkbox checked={checked} className="mr-2" />
+                          <span>{r.name}</span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div>

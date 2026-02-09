@@ -41,7 +41,35 @@ export const setToken = (token: string) => {
 export const clearAuth = () => {
   localStorage.removeItem("profile");
   localStorage.removeItem("permissions");
+  localStorage.removeItem("userProfile");
   sessionStorage.removeItem("token");
+};
+
+/* ---------- LEGACY USER PROFILE (LOGIN RESPONSE) ---------- */
+
+export const getUserProfile = (): any | null => {
+  try {
+    const data = localStorage.getItem("userProfile");
+    return data ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setUserProfile = (profile: any) => {
+  localStorage.setItem("userProfile", JSON.stringify(profile));
+};
+
+export const getActiveRoleFromProfile = (): any | null => {
+  const profile = getUserProfile();
+  return profile?.activeRole || profile?.roles?.[0] || null;
+};
+
+export const updateActiveRoleInProfile = (role: any) => {
+  const profile = getUserProfile();
+  if (!profile) return;
+  profile.activeRole = role;
+  setUserProfile(profile);
 };
 
 /* ---------- ROLE HELPERS ---------- */
@@ -83,4 +111,9 @@ export const hasPermission = (code: string): boolean => {
 export const hasAnyPermission = (codes: string[]): boolean => {
   if (!codes || codes.length === 0) return true;
   return codes.some((code) => hasPermission(code));
+};
+
+export const getActiveRoleIdFromProfile = (): string | null => {
+  const active = getActiveRoleFromProfile();
+  return active?._id || null;
 };

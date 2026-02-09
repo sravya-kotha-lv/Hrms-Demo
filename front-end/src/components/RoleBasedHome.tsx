@@ -1,17 +1,21 @@
 import { Navigate } from "react-router-dom";
-import { hasAnyPermission } from "@/utils/auth";
+import { useAuth } from "@/context/AuthContext";
 
 const RoleBasedHome = () => {
   const token = sessionStorage.getItem("token");
+  const { hasAnyPermission, isSuperAdmin, profile } = useAuth();
 
   if (!token) {
     return <Navigate to="/login" replace />;
   }
 
-  const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
-
   if (isSuperAdmin) {
     return <Navigate to="/superadmin" replace />;
+  }
+
+  const activeRoleSlug = profile?.activeRole?.slug;
+  if (activeRoleSlug === "employee") {
+    return <Navigate to="/employee-dashboard" replace />;
   }
 
   const isAdmin = hasAnyPermission([

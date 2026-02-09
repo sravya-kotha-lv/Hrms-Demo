@@ -9,13 +9,23 @@ exports.switchRole = async (req, res) => {
   const user = req.user;
 
   console.log(user.activeRoleId?.toString(), roleId);
-  
+
   // 🛑 Same role check
   if (user.activeRoleId?.toString() === roleId) {
+    const existingRole = await Role.findOne({
+      _id: roleId,
+      organizationId: user.organizationId
+    }).select("name slug");
+
     return res.json(
       buildSuccessResponse({
         message: "Role already active",
-        data: { activeRoleId: roleId }
+        data: {
+          activeRoleId: roleId,
+          activeRole: existingRole
+            ? { _id: existingRole._id, name: existingRole.name, slug: existingRole.slug }
+            : null
+        }
       })
     );
   }
@@ -37,14 +47,14 @@ exports.switchRole = async (req, res) => {
 
   // 🔐 Issue NEW token
   const token = createJwtToken({
-    _id: user._id,
+    userId: user.userId,
     email: user.email,
     organizationId: user.organizationId,
     roleIds: user.roleIds,
     activeRoleId: role._id
   });
 
-  await rotateUserToken(UserModel, user._id, token);
+  await rotateUserToken(UserModel, user.userId, token);
   // ✅ Send token in header
   res.setHeader("Authorization", `Bearer ${token}`);
 
@@ -52,6 +62,8 @@ exports.switchRole = async (req, res) => {
     buildSuccessResponse({
       message: "Role switched successfully",
       data: {
+        token,
+        activeRoleId: role._id,
         activeRole: {
           _id: role._id,
           name: role.name,
@@ -61,4 +73,3 @@ exports.switchRole = async (req, res) => {
     })
   );
 };
-

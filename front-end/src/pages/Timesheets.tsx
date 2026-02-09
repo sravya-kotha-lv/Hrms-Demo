@@ -178,7 +178,12 @@ const Timesheets = () => {
   };
 
   const loadAttendanceToday = async () => {
-    const res = await getApiWithToken(`/timesheets/attendance/my?date=${selectedDate}`);
+    const res = await getApiWithToken(
+      `/timesheets/attendance/my?date=${selectedDate}`,
+      null,
+      { requiredPermissions: ["TIMESHEET_VIEW_SELF"] }
+    );
+    if (res?.skipped) return;
     if (res?.success) {
       const record = (res.data || [])[0];
       setAttendanceToday(record || null);
@@ -189,12 +194,23 @@ const Timesheets = () => {
     setWeekLoading(true);
     setTimesheet(null);
     setEntries(normalizeEntries(weekDates, []));
-    const resAll = await getApiWithToken("/timesheets/weekly");
+    const resAll = await getApiWithToken("/timesheets/weekly", null, {
+      requiredPermissions: ["TIMESHEET_VIEW_ALL"]
+    });
+    if (resAll?.skipped) {
+      setViewMode("my");
+    }
     if (resAll?.success) {
       setWeeklyList(resAll.data || []);
       setViewMode("all");
     } else {
-      const resMy = await getApiWithToken("/timesheets/weekly/my");
+      const resMy = await getApiWithToken("/timesheets/weekly/my", null, {
+        requiredPermissions: ["TIMESHEET_VIEW_SELF"]
+      });
+      if (resMy?.skipped) {
+        setWeekLoading(false);
+        return;
+      }
       if (resMy?.success) {
         setWeeklyList(resMy.data || []);
       }
@@ -202,7 +218,15 @@ const Timesheets = () => {
     }
 
     const weekStartIso = toDateInput(weekStart);
-    const resWeek = await getApiWithToken(`/timesheets/weekly/my?weekStart=${weekStartIso}`);
+    const resWeek = await getApiWithToken(
+      `/timesheets/weekly/my?weekStart=${weekStartIso}`,
+      null,
+      { requiredPermissions: ["TIMESHEET_VIEW_SELF"] }
+    );
+    if (resWeek?.skipped) {
+      setWeekLoading(false);
+      return;
+    }
     if (resWeek?.success && resWeek.data) {
       setTimesheet(resWeek.data);
       setEntries(normalizeEntries(weekDates, resWeek.data.entries || []));
@@ -214,14 +238,20 @@ const Timesheets = () => {
   };
 
   const loadOnline = async () => {
-    const res = await getApiWithToken("/timesheets/online");
+    const res = await getApiWithToken("/timesheets/online", null, {
+      requiredPermissions: ["TIMESHEET_VIEW_ONLINE"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setOnlineList(res.data || []);
     }
   };
 
   const loadOnLeave = async () => {
-    const res = await getApiWithToken("/timesheets/on-leave");
+    const res = await getApiWithToken("/timesheets/on-leave", null, {
+      requiredPermissions: ["TIMESHEET_VIEW_ALL"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setOnLeaveList(res.data || []);
     }
@@ -230,7 +260,12 @@ const Timesheets = () => {
   const loadMyLeavesForWeek = async () => {
     const start = toDateInput(weekStart);
     const end = toDateInput(weekDates[6]);
-    const res = await getApiWithToken(`/leaves/my-range?startDate=${start}&endDate=${end}`);
+    const res = await getApiWithToken(
+      `/leaves/my-range?startDate=${start}&endDate=${end}`,
+      null,
+      { requiredPermissions: ["LEAVE_VIEW_SELF"] }
+    );
+    if (res?.skipped) return;
     if (res?.success) {
       const dates: string[] = [];
       (res.data || []).forEach((leave: any) => {
@@ -249,14 +284,20 @@ const Timesheets = () => {
   };
 
   const loadWeekOffs = async () => {
-    const res = await getApiWithToken("/week-offs");
+    const res = await getApiWithToken("/week-offs", null, {
+      requiredPermissions: ["WEEK_OFF_VIEW"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setWeekOffDays(res.data?.weekOffDays || []);
     }
   };
 
   const loadOrgSettings = async () => {
-    const res = await getApiWithToken("/org-settings");
+    const res = await getApiWithToken("/org-settings", null, {
+      requiredPermissions: ["ORG_SETTINGS_VIEW"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setMinWorkHoursPerDay(
         typeof res.data?.minWorkHoursPerDay === "number" ? res.data.minWorkHoursPerDay : 8
@@ -281,7 +322,13 @@ const Timesheets = () => {
   }, [weekStart.getTime()]);
 
   const handleCheckIn = async () => {
-    const res = await postApiWithToken("/timesheets/check-in", {});
+    const res = await postApiWithToken(
+      "/timesheets/check-in",
+      {},
+      null,
+      { requiredPermissions: ["TIMESHEET_CHECKIN_SELF"] }
+    );
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success("Checked in");
       loadAttendanceToday();
@@ -292,7 +339,13 @@ const Timesheets = () => {
   };
 
   const handleCheckOut = async () => {
-    const res = await postApiWithToken("/timesheets/check-out", {});
+    const res = await postApiWithToken(
+      "/timesheets/check-out",
+      {},
+      null,
+      { requiredPermissions: ["TIMESHEET_CHECKOUT_SELF"] }
+    );
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success("Checked out");
       loadAttendanceToday();
@@ -320,8 +373,14 @@ const Timesheets = () => {
         notes: entry.notes || ""
       }))
     };
-    const res = await postApiWithToken("/timesheets/weekly", payload);
+    const res = await postApiWithToken(
+      "/timesheets/weekly",
+      payload,
+      null,
+      { requiredPermissions: ["TIMESHEET_CREATE_SELF"] }
+    );
     setSaving(false);
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success("Timesheet created");
       setTimesheet(res.data);
@@ -343,8 +402,14 @@ const Timesheets = () => {
       }))
     };
     
-    const res = await putApiWithToken(`/timesheets/weekly/${timesheet._id}`, payload);
+    const res = await putApiWithToken(
+      `/timesheets/weekly/${timesheet._id}`,
+      payload,
+      null,
+      { requiredPermissions: ["TIMESHEET_EDIT_SELF"] }
+    );
     setSaving(false);
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success("Timesheet updated");
       setTimesheet(res.data);
@@ -367,9 +432,12 @@ const Timesheets = () => {
     };
     const res = await postApiWithToken(
       `/timesheets/weekly/${timesheet._id}/submit`,
-      payload
+      payload,
+      null,
+      { requiredPermissions: ["TIMESHEET_SUBMIT_SELF"] }
     );
     setSaving(false);
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success("Timesheet submitted");
       setTimesheet(res.data);
@@ -382,8 +450,14 @@ const Timesheets = () => {
   const recallTimesheet = async () => {
     if (!timesheet?._id) return;
     setSaving(true);
-    const res = await postApiWithToken(`/timesheets/weekly/${timesheet._id}/recall`, {});
+    const res = await postApiWithToken(
+      `/timesheets/weekly/${timesheet._id}/recall`,
+      {},
+      null,
+      { requiredPermissions: ["TIMESHEET_RECALL_SELF"] }
+    );
     setSaving(false);
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success("Timesheet recalled");
       setTimesheet(res.data);
@@ -407,8 +481,11 @@ const Timesheets = () => {
 
     const res = await putApiWithToken(
       `/timesheets/weekly/${selectedTimesheet._id}/action`,
-      payload
+      payload,
+      null,
+      { requiredPermissions: ["TIMESHEET_ACTION"] }
     );
+    if (res?.skipped) return;
     if (res?.success) {
       toast.success(`Timesheet ${payload.status}`);
       setActionDialogOpen(false);
@@ -428,6 +505,8 @@ const Timesheets = () => {
   const canCreate = hasPermission("TIMESHEET_CREATE_SELF");
   const canAction = hasPermission("TIMESHEET_ACTION");
   const canRecall = hasPermission("TIMESHEET_RECALL_SELF");
+  const canViewOnline = hasPermission("TIMESHEET_VIEW_ONLINE");
+  const canViewAll = hasPermission("TIMESHEET_VIEW_ALL");
 
   const timesheetLocked =
     timesheet?.status && ["submitted", "approved"].includes(timesheet.status);
@@ -463,21 +542,23 @@ const Timesheets = () => {
           </div>
         </motion.div>
 
-        <motion.div
-          className="stat-card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <Users className="w-4 h-4" />
-            Online Now
-          </div>
-          <div className="text-2xl font-semibold">{onlineList.length}</div>
-          <div className="text-sm text-muted-foreground mt-1">
-            active employees
-          </div>
-        </motion.div>
+        {canViewOnline && (
+          <motion.div
+            className="stat-card"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Users className="w-4 h-4" />
+              Online Now
+            </div>
+            <div className="text-2xl font-semibold">{onlineList.length}</div>
+            <div className="text-sm text-muted-foreground mt-1">
+              active employees
+            </div>
+          </motion.div>
+        )}
 
         <motion.div
           className="stat-card"
@@ -500,21 +581,23 @@ const Timesheets = () => {
           </div>
         </motion.div>
 
-        <motion.div
-          className="stat-card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <Users className="w-4 h-4" />
-            On Leave Today
-          </div>
-          <div className="text-2xl font-semibold">{onLeaveList.length}</div>
-          <div className="text-sm text-muted-foreground mt-1">
-            approved leaves
-          </div>
-        </motion.div>
+        {canViewAll && (
+          <motion.div
+            className="stat-card"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+          >
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Users className="w-4 h-4" />
+              On Leave Today
+            </div>
+            <div className="text-2xl font-semibold">{onLeaveList.length}</div>
+            <div className="text-sm text-muted-foreground mt-1">
+              approved leaves
+            </div>
+          </motion.div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -529,7 +612,7 @@ const Timesheets = () => {
         </div>
       </div>
 
-      {viewMode === "all" && (
+      {canViewOnline && (
         <motion.div
           className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
           initial={{ opacity: 0, y: 20 }}
@@ -584,7 +667,7 @@ const Timesheets = () => {
         </motion.div>
       )}
 
-      {viewMode === "all" && (
+      {canViewAll && (
         <motion.div
           className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
           initial={{ opacity: 0, y: 20 }}

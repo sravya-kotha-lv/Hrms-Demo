@@ -45,7 +45,7 @@ router.get(
 router.get(
   "/online",
   auth,
-  authorize("TIMESHEET_VIEW_ALL"),
+  authorize("TIMESHEET_VIEW_ONLINE"),
   asyncHandler(controller.online)
 );
 

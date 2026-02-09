@@ -6,6 +6,7 @@ import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { TableCell, TableHead, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/context/AuthContext";
 
 type RoleRow = {
   _id: string;
@@ -23,7 +24,35 @@ type Permission = {
   module: string;
 };
 
+const ACCESS_GROUPS: { label: string; codes: string[] }[] = [
+  {
+    label: "Employee (Self)",
+    codes: [
+      "TIMESHEET_VIEW_SELF",
+      "TIMESHEET_CREATE_SELF",
+      "TIMESHEET_EDIT_SELF",
+      "TIMESHEET_SUBMIT_SELF",
+      "TIMESHEET_RECALL_SELF",
+      "TIMESHEET_CHECKIN_SELF",
+      "TIMESHEET_CHECKOUT_SELF",
+      "TIMESHEET_VIEW_ONLINE",
+      "LEAVE_VIEW_SELF",
+      "LEAVE_APPLY"
+    ]
+  },
+  {
+    label: "Manager (Approve)",
+    codes: [
+      "TIMESHEET_VIEW_ALL",
+      "TIMESHEET_ACTION",
+      "LEAVE_VIEW_ALL",
+      "LEAVE_ACTION"
+    ]
+  }
+];
+
 const Permissions = () => {
+  const { hasAnyPermission } = useAuth();
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [savingRoleIds, setSavingRoleIds] = useState<Set<string>>(new Set());
@@ -32,9 +61,15 @@ const Permissions = () => {
 
   const fetchData = async () => {
     const [rolesRes, permsRes] = await Promise.all([
-      getApiWithToken("/roles"),
-      getApiWithToken("/permissions"),
+      getApiWithToken("/roles", null, { requiredPermissions: ["ROLE_VIEW"] }),
+      getApiWithToken("/permissions", null, { requiredPermissions: ["PERMISSION_VIEW"] }),
     ]);
+
+    if (rolesRes?.skipped || permsRes?.skipped) {
+      setRoles([]);
+      setPermissions([]);
+      return;
+    }
 
     if (rolesRes?.success || rolesRes?.code === 200) {
       setRoles(rolesRes.data || []);
@@ -111,6 +146,10 @@ const Permissions = () => {
   };
 
   const handleSaveChanges = async () => {
+    if (!hasAnyPermission(["ROLE_UPDATE"])) {
+      toast.error("You do not have permission to update roles");
+      return;
+    }
     if (dirtyRoleIds.size === 0) {
       toast.message("No changes to save");
       return;
@@ -139,6 +178,62 @@ const Permissions = () => {
     fetchData();
   };
 
+  const handleGrantAllViewToManager = () => {
+    if (!hasAnyPermission(["ROLE_UPDATE"])) {
+      toast.error("You do not have permission to update roles");
+      return;
+    }
+    const managerRole = roles.find((r) => r.slug === "manager");
+    if (!managerRole) {
+      toast.error("Manager role not found");
+      return;
+    }
+    if (managerRole.isSystemRole) {
+      toast.warning("System roles cannot be edited");
+      return;
+    }
+
+    const viewPermIds = permissions
+      .filter((p) => /_VIEW(_|$)/.test(p.code))
+      .map((p) => p._id);
+
+    if (viewPermIds.length === 0) {
+      toast.message("No view permissions found");
+      return;
+    }
+
+    const current = rolePerms[managerRole._id] || [];
+    const merged = Array.from(new Set([...current, ...viewPermIds]));
+    updateRolePerms(managerRole._id, merged);
+    toast.success("View permissions added to Manager (pending save)");
+  };
+
+  const orderedPermissions = useMemo(() => {
+    const byCode = new Map(permissions.map((p) => [p.code, p]));
+    const selected = new Set<string>();
+    const ordered: Permission[] = [];
+
+    ACCESS_GROUPS.forEach((group) => {
+      group.codes.forEach((code) => {
+        const perm = byCode.get(code);
+        if (perm && !selected.has(perm._id)) {
+          ordered.push(perm);
+          selected.add(perm._id);
+        }
+      });
+    });
+
+    const remaining = permissions
+      .filter((p) => !selected.has(p._id))
+      .sort((a, b) => {
+        const mod = (a.module || "").localeCompare(b.module || "");
+        if (mod !== 0) return mod;
+        return a.code.localeCompare(b.code);
+      });
+
+    return [...ordered, ...remaining];
+  }, [permissions]);
+
   const columns: Column<RoleRow>[] = useMemo(() => {
     const roleColumn: Column<RoleRow> = {
       header: "Role",
@@ -153,27 +248,39 @@ const Permissions = () => {
       ),
     };
 
-    const permColumns: Column<RoleRow>[] = permissions.map((perm) => ({
+    const permColumns: Column<RoleRow>[] = orderedPermissions.map((perm) => ({
       header: perm.code,
       accessor: perm.code as any,
       className: "min-w-[160px] text-center",
     }));
 
     return [roleColumn, ...permColumns];
-  }, [permissions]);
+  }, [orderedPermissions]);
 
   const groupedPermissions = useMemo(() => {
     const groups: Record<string, Permission[]> = {};
-    permissions.forEach((p) => {
+
+    ACCESS_GROUPS.forEach((group) => {
+      const list = orderedPermissions.filter((p) =>
+        group.codes.includes(p.code)
+      );
+      if (list.length) {
+        groups[group.label] = list;
+      }
+    });
+
+    const remaining = orderedPermissions.filter(
+      (p) => !ACCESS_GROUPS.some((g) => g.codes.includes(p.code))
+    );
+
+    remaining.forEach((p) => {
       const key = p.module || "Other";
       if (!groups[key]) groups[key] = [];
       groups[key].push(p);
     });
-    Object.values(groups).forEach((list) =>
-      list.sort((a, b) => a.code.localeCompare(b.code))
-    );
+
     return groups;
-  }, [permissions]);
+  }, [orderedPermissions]);
 
   const allPermIds = useMemo(() => permissions.map((p) => p._id), [permissions]);
 
@@ -263,26 +370,41 @@ const Permissions = () => {
     );
   };
 
+  const canView = hasAnyPermission(["ROLE_VIEW", "PERMISSION_VIEW"]);
+  const canUpdate = hasAnyPermission(["ROLE_UPDATE"]);
+
   return (
     <MainLayout
       title="Permissions"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Permissions" }]}
     >
-      <div className="flex justify-end mb-4">
-        <Button onClick={handleSaveChanges} disabled={savingRoleIds.size > 0}>
-          Save Changes
-        </Button>
-      </div>
-      <DataTable
-        columns={columns}
-        data={roles}
-        rowKey="_id"
-        searchKey="name"
-        tableClassName="min-w-[1200px]"
-        renderHeader={renderHeader}
-        renderRow={renderRow}
-        columnsCountOverride={1 + permissions.length}
-      />
+      {!canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view permissions.
+        </div>
+      )}
+      {canView && (
+        <>
+          <div className="flex justify-between gap-2 mb-4">
+            <Button variant="outline" onClick={handleGrantAllViewToManager} disabled={!canUpdate}>
+              Grant all View to Manager
+            </Button>
+            <Button onClick={handleSaveChanges} disabled={savingRoleIds.size > 0 || !canUpdate}>
+              Save Changes
+            </Button>
+          </div>
+          <DataTable
+            columns={columns}
+            data={roles}
+            rowKey="_id"
+            searchKey="name"
+            tableClassName="min-w-[1200px]"
+            renderHeader={renderHeader}
+            renderRow={renderRow}
+            columnsCountOverride={1 + permissions.length}
+          />
+        </>
+      )}
     </MainLayout>
   );
 };

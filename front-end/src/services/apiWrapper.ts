@@ -1,6 +1,6 @@
 import axios from "axios";
 import { toast } from "sonner";
-import { getToken, setToken, clearAuth, getProfile, setProfile } from "../utils/auth";
+import { getToken, setToken, clearAuth, getProfile, setProfile, hasAnyPermission } from "../utils/auth";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
@@ -78,9 +78,13 @@ export const postApiWithoutToken = async (apiUrl: string, params: any) => {
 export const postApiWithToken = async (
   apiUrl: string,
   params: any,
-  _headers: any = null
+  _headers: any = null,
+  options: { requiredPermissions?: string[] } = {}
 ) => {
   try {
+    if (options.requiredPermissions && !hasAnyPermission(options.requiredPermissions)) {
+      return { success: false, code: 403, message: "Permission denied", skipped: true };
+    }
     const headers = _headers
       ? { "Content-Type": undefined }
       : { "Content-Type": "application/json" };
@@ -94,8 +98,15 @@ export const postApiWithToken = async (
 };
 
 // GET with token
-export const getApiWithToken = async (apiUrl: string, _headers: any = null) => {
+export const getApiWithToken = async (
+  apiUrl: string,
+  _headers: any = null,
+  options: { requiredPermissions?: string[] } = {}
+) => {
   try {
+    if (options.requiredPermissions && !hasAnyPermission(options.requiredPermissions)) {
+      return { success: false, code: 403, message: "Permission denied", skipped: true };
+    }
     const headers = _headers
       ? { "Content-Type": undefined }
       : { "Content-Type": "application/json" };
@@ -110,9 +121,13 @@ export const getApiWithToken = async (apiUrl: string, _headers: any = null) => {
 export const putApiWithToken = async (
   apiUrl: string,
   params: any,
-  _headers: any = null
+  _headers: any = null,
+  options: { requiredPermissions?: string[] } = {}
 ) => {
   try {
+    if (options.requiredPermissions && !hasAnyPermission(options.requiredPermissions)) {
+      return { success: false, code: 403, message: "Permission denied", skipped: true };
+    }
     const headers = _headers
       ? { "Content-Type": undefined }
       : { "Content-Type": "application/json" };

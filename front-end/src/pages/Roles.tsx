@@ -13,6 +13,7 @@ import {
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
+import { useAuth } from "@/context/AuthContext";
 import {
   getApiWithToken,
   postApiWithToken,
@@ -40,6 +41,7 @@ const emptyRole: Role = {
 /* ================= COMPONENT ================= */
 
 const Roles = () => {
+  const { hasAnyPermission } = useAuth();
   const [roles, setRoles] = useState<Role[]>([]);
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -48,7 +50,13 @@ const Roles = () => {
   /* ================= FETCH ================= */
 
   const fetchRoles = async () => {
-    const res = await getApiWithToken("/roles");
+    const res = await getApiWithToken("/roles", null, {
+      requiredPermissions: ["ROLE_VIEW"]
+    });
+    if (res?.skipped) {
+      setRoles([]);
+      return;
+    }
 
     if (res?.code === 200) {
       setRoles(res.data || []);
@@ -174,13 +182,21 @@ const Roles = () => {
 
   /* ================= UI ================= */
 
+  const canView = hasAnyPermission(["ROLE_VIEW"]);
+
   return (
     <MainLayout
       title="Roles"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Roles" }]}
     >
+      {!canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view roles.
+        </div>
+      )}
       {/* Action Bar */}
-      <div className="flex justify-end mb-6">
+      {canView && (
+        <div className="flex justify-end mb-6">
         <PermissionGate permissions={["ROLE_CREATE"]}>
           <Button
             onClick={() => {
@@ -193,15 +209,18 @@ const Roles = () => {
             Add Role
           </Button>
         </PermissionGate>
-      </div>
+        </div>
+      )}
 
       {/* DataTable */}
-      <DataTable
+      {canView && (
+        <DataTable
         columns={columns}
         data={roles}
         rowKey="_id"
         searchKey="name"
-      />
+        />
+      )}
 
       {/* Add / Edit Modal */}
       <Dialog open={open} onOpenChange={setOpen}>

@@ -34,6 +34,7 @@ const ROLE_RULES = {
       "TIMESHEET_RECALL_SELF",
       "WEEK_OFF_VIEW",
       "TIMESHEET_VIEW_ALL",
+      "TIMESHEET_VIEW_ONLINE",
       "TIMESHEET_ACTION",
     ]
   },
@@ -41,6 +42,7 @@ const ROLE_RULES = {
     type: "predicate",
     match: (code) =>
       code.includes("_SELF") ||
+      code === "TIMESHEET_VIEW_ONLINE" ||
       code === "LEAVE_APPLY" ||
       code === "WEEK_OFF_VIEW" ||
       code === "DEPT_VIEW" ||

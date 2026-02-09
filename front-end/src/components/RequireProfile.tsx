@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getApiWithToken } from "@/services/apiWrapper";
-import { hasAnyPermission } from "@/utils/auth";
+import { useAuth } from "@/context/AuthContext";
 
 interface RequireProfileProps {
   children: JSX.Element;
@@ -11,10 +11,10 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const { isSuperAdmin, hasAnyPermission, profile } = useAuth();
 
   useEffect(() => {
     const run = async () => {
-      const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
       if (isSuperAdmin) {
         setLoading(false);
         return;
@@ -22,8 +22,6 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
 
       let isManager = false;
       try {
-        const profileRaw = localStorage.getItem("userProfile");
-        const profile = profileRaw ? JSON.parse(profileRaw) : null;
         const roles = profile?.roles || [];
         isManager = roles.some((r: any) => r?.slug === "manager");
       } catch {
@@ -63,7 +61,7 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
     };
 
     run();
-  }, [location.pathname, navigate]);
+  }, [location.pathname, navigate, isSuperAdmin, hasAnyPermission, profile]);
 
   if (loading) return null;
 

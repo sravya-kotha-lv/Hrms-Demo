@@ -27,7 +27,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { hasAnyPermission } from "@/utils/auth";
+import { useAuth } from "@/context/AuthContext";
+import { clearAuth } from "@/utils/auth";
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -171,29 +172,44 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();   // 👈 add this
+  const { profile, hasAnyPermission, isSuperAdmin } = useAuth();
 
-  const dashboardPath = hasAnyPermission([
-    "EMP_VIEW",
-    "ROLE_VIEW",
-    "PERMISSION_VIEW",
-    "LEAVE_VIEW_ALL",
-    "TIMESHEET_VIEW_ALL",
-    "ORG_VIEW"
-  ])
-    ? "/dashboard"
-    : "/employee-dashboard";
+  const isEmployeeRole = profile?.activeRole?.slug === "employee";
+  const dashboardPath = isEmployeeRole
+    ? "/employee-dashboard"
+    : hasAnyPermission([
+        "EMP_VIEW",
+        "ROLE_VIEW",
+        "PERMISSION_VIEW",
+        "LEAVE_VIEW_ALL",
+        "TIMESHEET_VIEW_ALL",
+        "ORG_VIEW"
+      ])
+      ? "/dashboard"
+      : "/employee-dashboard";
 
-  const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
   const effectiveDashboardPath = isSuperAdmin ? "/superadmin" : dashboardPath;
+  const allowedPathsForEmployee = new Set([
+    "/",
+    "/employee-dashboard",
+    "/leave",
+    "/timesheets"
+  ]);
 
   const filteredMenuItems: MenuItem[] = menuItems(effectiveDashboardPath)
     .map((item) => {
       if (item.children) {
-        const filteredChildren = item.children.filter((child) =>
-          !child.permissions || hasAnyPermission(child.permissions)
-        );
+        const filteredChildren = item.children.filter((child) => {
+          if (isEmployeeRole && !allowedPathsForEmployee.has(child.to)) {
+            return false;
+          }
+          return !child.permissions || hasAnyPermission(child.permissions);
+        });
         if (filteredChildren.length === 0) return null;
         return { ...item, children: filteredChildren };
+      }
+      if (isEmployeeRole && !allowedPathsForEmployee.has(item.to)) {
+        return null;
       }
       return item;
     })
@@ -204,8 +220,7 @@ export const Sidebar = () => {
     );
 
   const handleLogout = () => {
-    localStorage.clear();           // remove token/user
-    sessionStorage.clear();
+    clearAuth();
     navigate("/login", { replace: true });
   };
 
@@ -286,7 +301,7 @@ export const Sidebar = () => {
         <div className="mt-4 pt-4 border-t border-white/10">
           <div className="flex items-center gap-3 px-2">
             <Avatar className="w-10 h-10 border-2 border-white/30">
-              <AvatarImage src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop" />
+              <AvatarImage src={profile?.profileImage || undefined} />
               <AvatarFallback className="bg-white/20 text-white">JD</AvatarFallback>
             </Avatar>
             <AnimatePresence>
@@ -297,8 +312,14 @@ export const Sidebar = () => {
                   exit={{ opacity: 0 }}
                   className="overflow-hidden"
                 >
-                  <p className="text-white font-medium text-sm truncate">John Doe</p>
-                  <p className="text-white/60 text-xs truncate">HR Manager</p>
+                  <p className="text-white font-medium text-sm truncate">
+                    {profile?.firstName || profile?.lastName
+                      ? `${profile?.firstName || ""} ${profile?.lastName || ""}`.trim()
+                      : profile?.email || "User"}
+                  </p>
+                  <p className="text-white/60 text-xs truncate">
+                    {profile?.activeRole?.name || "Role"}
+                  </p>
                 </motion.div>
               )}
             </AnimatePresence>

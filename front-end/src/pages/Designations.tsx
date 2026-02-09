@@ -35,6 +35,7 @@ import {
 } from "@/services/apiWrapper";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 
 /* ================= TYPES ================= */
 
@@ -54,6 +55,7 @@ const emptyDesignation: Designation = {
 /* ================= COMPONENT ================= */
 
 const Designations = () => {
+  const { hasAnyPermission } = useAuth();
   const [designations, setDesignations] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
 
@@ -61,11 +63,22 @@ const Designations = () => {
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<Designation>(emptyDesignation);
+  const canView = hasAnyPermission(["DESIG_VIEW"]);
+  const canCreate = hasAnyPermission(["DESIG_CREATE"]);
+  const canUpdate = hasAnyPermission(["DESIG_UPDATE"]);
+  const canDelete = hasAnyPermission(["DESIG_DELETE"]);
+  const canAnyAction = canUpdate || canDelete;
 
   /* ================= FETCH ================= */
 
   const fetchDesignations = async () => {
-    const res = await getApiWithToken("/designations");
+    const res = await getApiWithToken("/designations", null, {
+      requiredPermissions: ["DESIG_VIEW"]
+    });
+    if (res?.skipped) {
+      setDesignations([]);
+      return;
+    }
     if (res?.success) {
       setDesignations(res.data || []);
     } else {
@@ -74,7 +87,10 @@ const Designations = () => {
   };
 
   const fetchDepartments = async () => {
-    const res = await getApiWithToken("/departments");
+    const res = await getApiWithToken("/departments", null, {
+      requiredPermissions: ["DEPT_VIEW"]
+    });
+    if (res?.skipped) return;
     if (res?.success) {
       setDepartments(res.data || []);
     } else {
@@ -92,6 +108,10 @@ const Designations = () => {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this designation?")) return;
+    if (!canDelete) {
+      toast.error("You do not have permission to delete");
+      return;
+    }
 
     const res = await deleteApiWithToken(`/designations/${id}`);
     if (res?.success) {
@@ -114,10 +134,15 @@ const Designations = () => {
     let res;
 
     if (isEdit && form._id) {
-      res = await putApiWithToken(`/designations/${form._id}`, payload);
+      res = await putApiWithToken(`/designations/${form._id}`, payload, null, {
+        requiredPermissions: ["DESIG_UPDATE"]
+      });
     } else {
-      res = await postApiWithToken("/designations", payload);
+      res = await postApiWithToken("/designations", payload, null, {
+        requiredPermissions: ["DESIG_CREATE"]
+      });
     }
+    if (res?.skipped) return;
 
     if (res?.success) {
       toast.success(isEdit ? "Designation updated" : "Designation created");
@@ -195,99 +220,108 @@ const Designations = () => {
       title="Designations"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Designations" }]}
     >
-      {/* ---------- Action Bar ---------- */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="relative w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <Input
-            placeholder="Search designation..."
-            className="pl-10"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+      {!canView && (
+        <div className="bg-card rounded-xl card-shadow p-6 text-sm text-muted-foreground">
+          You do not have permission to view designations.
         </div>
+      )}
+      {/* ---------- Action Bar ---------- */}
+      {canView && (
+        <>
+          <div className="flex justify-between items-center mb-6">
+            <div className="relative w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search designation..."
+                className="pl-10"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
 
-        <PermissionGate permissions={["DESIG_CREATE"]}>
-          <Button
-            onClick={() => {
-              setIsEdit(false);
-              setForm(emptyDesignation);
-              setOpen(true);
-            }}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Designation
-          </Button>
-        </PermissionGate>
-      </div>
-
-      {/* ---------- Table ---------- */}
-      <DataTable
-        columns={columns}
-        data={filteredDesignations}
-        rowKey="_id"
-        searchKey="name"
-      />
-
-      {/* ---------- Modal ---------- */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {isEdit ? "Edit Designation" : "Add Designation"}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <Input
-              placeholder="Designation Name"
-              value={form.name}
-              onChange={(e) =>
-                setForm({ ...form, name: e.target.value })
-              }
-            />
-
-            {/* Department Dropdown */}
-            <Select
-              value={form.departmentId}
-              onValueChange={(v) =>
-                setForm({ ...form, departmentId: v })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select Department" />
-              </SelectTrigger>
-              <SelectContent>
-                {departments.map((d) => (
-                  <SelectItem key={d._id} value={d._id}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Status */}
-            <Select
-              value={form.status}
-              onValueChange={(v: "active" | "inactive") =>
-                setForm({ ...form, status: v })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Button onClick={handleSubmit} className="w-full">
-              {isEdit ? "Update Designation" : "Create Designation"}
-            </Button>
+            <PermissionGate permissions={["DESIG_CREATE"]}>
+              <Button
+                onClick={() => {
+                  setIsEdit(false);
+                  setForm(emptyDesignation);
+                  setOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Designation
+              </Button>
+            </PermissionGate>
           </div>
-        </DialogContent>
-      </Dialog>
+
+          {/* ---------- Table ---------- */}
+          <DataTable
+            columns={canAnyAction ? columns : columns.filter((c) => c.header !== "Actions")}
+            data={filteredDesignations}
+            rowKey="_id"
+            searchKey="name"
+          />
+
+          {/* ---------- Modal ---------- */}
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {isEdit ? "Edit Designation" : "Add Designation"}
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <Input
+                  placeholder="Designation Name"
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm({ ...form, name: e.target.value })
+                  }
+                />
+
+                {/* Department Dropdown */}
+                <Select
+                  value={form.departmentId}
+                  onValueChange={(v) =>
+                    setForm({ ...form, departmentId: v })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map((d) => (
+                      <SelectItem key={d._id} value={d._id}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Status */}
+                <Select
+                  value={form.status}
+                  onValueChange={(v: "active" | "inactive") =>
+                    setForm({ ...form, status: v })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Button onClick={handleSubmit} className="w-full">
+                  {isEdit ? "Update Designation" : "Create Designation"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
     </MainLayout>
   );
 };
