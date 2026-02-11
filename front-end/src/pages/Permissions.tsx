@@ -385,6 +385,8 @@ const Permissions = () => {
       )}
       {canView && (
         <>
+        <div className="flex flex-col h-[calc(100vh-120px)] overflow-hidden">
+
           <div className="flex justify-between gap-2 mb-4">
             <Button variant="outline" onClick={handleGrantAllViewToManager} disabled={!canUpdate}>
               Grant all View to Manager
@@ -393,16 +395,22 @@ const Permissions = () => {
               Save Changes
             </Button>
           </div>
-          <DataTable
-            columns={columns}
-            data={roles}
-            rowKey="_id"
-            searchKey="name"
-            tableClassName="min-w-[1200px]"
-            renderHeader={renderHeader}
-            renderRow={renderRow}
-            columnsCountOverride={1 + permissions.length}
-          />
+        
+         <div className="flex-1 rounded-xl border bg-white" style={{width:"1100px", overflowX:"auto", margin:"0 auto"}}>
+           
+              <DataTable
+                columns={columns}
+                data={roles}
+                rowKey="_id"
+                searchKey="name"
+                tableClassName="min-w-[1200px]"
+                renderHeader={renderHeader}
+                renderRow={renderRow}
+                columnsCountOverride={1 + permissions.length}
+                
+              />
+            </div>
+          </div>
         </>
       )}
     </MainLayout>
