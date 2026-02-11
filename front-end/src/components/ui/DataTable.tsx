@@ -83,10 +83,10 @@ export function DataTable<T>({
   };
 
   return (
-    <div className="bg-card rounded-xl border card-shadow">
+    <div className="bg-card rounded-xl border card-shadow flex flex-col h-full">
       {/* 🔍 Header */}
       {searchKey && (
-        <div className="p-4 border-b flex items-center">
+        <div className="p-4 border-b flex items-center shrink-0">
           <Input
             placeholder="Search..."
             value={search}
@@ -97,93 +97,96 @@ export function DataTable<T>({
       )}
 
       {/* 📋 Table */}
-      <Table className={tableClassName}>
-        <TableHeader>
-          {renderHeader ? (
-            renderHeader(columns, selectable)
-          ) : (
-            <TableRow className="bg-muted/40">
-              {selectable && (
-                <TableHead className="w-10">
-                  <Checkbox />
-                </TableHead>
+      <div className="flex-1 overflow-auto">
+        <div className="min-w-max">
+          <Table className={tableClassName || "overflow-x-auto w-full min-w-[600px] border-collapse"}>
+            <TableHeader>
+              {renderHeader ? (
+                renderHeader(columns, selectable)
+              ) : (
+                <TableRow className="bg-muted/40">
+                  {selectable && (
+                    <TableHead className="w-10">
+                      <Checkbox />
+                    </TableHead>
+                  )}
+
+                  {columns.map((col) => (
+                    <TableHead
+                      key={String(col.accessor)}
+                      className={`text-muted-foreground font-medium ${
+                        col.sortable ? "cursor-pointer" : ""
+                      } ${col.className || ""}`}
+                      onClick={() =>
+                        col.sortable && handleSort(col.accessor)
+                      }
+                    >
+                      <div className="flex items-center gap-1">
+                        {col.header}
+                        {col.sortable && (
+                          <ArrowUpDown className="w-4 h-4 opacity-60" />
+                        )}
+                      </div>
+                    </TableHead>
+                  ))}
+                </TableRow>
+              )}
+            </TableHeader>
+
+            <TableBody>
+              {filteredData.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={
+                      columnsCountOverride ??
+                      columns.length + (selectable ? 1 : 0)
+                    }
+                    className="text-center py-10 text-muted-foreground"
+                  >
+                    No data found
+                  </TableCell>
+                </TableRow>
               )}
 
-              {columns.map((col) => (
-                <TableHead
-                  key={String(col.accessor)}
-                  className={`text-muted-foreground font-medium ${
-                    col.sortable ? "cursor-pointer" : ""
-                  } ${col.className || ""}`}
-                  onClick={() =>
-                    col.sortable && handleSort(col.accessor)
-                  }
-                >
-                  <div className="flex items-center gap-1">
-                    {col.header}
-                    {col.sortable && (
-                      <ArrowUpDown className="w-4 h-4 opacity-60" />
-                    )}
-                  </div>
-                </TableHead>
-              ))}
-            </TableRow>
-          )}
-        </TableHeader>
-
-        <TableBody>
-          {filteredData.length === 0 && (
-            <TableRow>
-              <TableCell
-                colSpan={
-                  columnsCountOverride ??
-                  columns.length + (selectable ? 1 : 0)
-                }
-                className="text-center py-10 text-muted-foreground"
-              >
-                No data found
-              </TableCell>
-            </TableRow>
-          )}
-
-          {filteredData.map((row) =>
-            renderRow ? (
-              <TableRow
-                key={String(row[rowKey])}
-                className="hover:bg-muted/40 transition"
-              >
-                {renderRow(row)}
-              </TableRow>
-            ) : (
-              <TableRow
-                key={String(row[rowKey])}
-                className="hover:bg-muted/40 transition"
-              >
-                {selectable && (
-                  <TableCell>
-                    <Checkbox />
-                  </TableCell>
-                )}
-
-                {columns.map((col) => (
-                  <TableCell
-                    key={String(col.accessor)}
-                    className={`py-4 ${col.className || ""}`}
+              {filteredData.map((row) =>
+                renderRow ? (
+                  <TableRow
+                    key={String(row[rowKey])}
+                    className="hover:bg-muted/40 transition"
                   >
-                    {col.render
-                      ? col.render(row)
-                      : String(row[col.accessor])}
-                  </TableCell>
-                ))}
-              </TableRow>
-            )
-          )}
-        </TableBody>
-      </Table>
+                    {renderRow(row)}
+                  </TableRow>
+                ) : (
+                  <TableRow
+                    key={String(row[rowKey])}
+                    className="hover:bg-muted/40 transition"
+                  >
+                    {selectable && (
+                      <TableCell>
+                        <Checkbox />
+                      </TableCell>
+                    )}
 
+                    {columns.map((col) => (
+                      <TableCell
+                        key={String(col.accessor)}
+                        className={`py-4 ${col.className || ""}`}
+                      >
+                        {col.render
+                          ? col.render(row)
+                          : String(row[col.accessor])}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                )
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
       {/* 📌 Footer */}
       {!hideFooter && (
-        <div className="px-4 py-3 text-sm text-muted-foreground border-t">
+        <div className="px-4 py-3 text-sm text-muted-foreground border-t shrink-0">
           Showing {filteredData.length} of {data.length} records
         </div>
       )}
