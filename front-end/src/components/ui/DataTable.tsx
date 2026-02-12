@@ -97,8 +97,8 @@ export function DataTable<T>({
       )}
 
       {/* 📋 Table */}
-      <div className="flex-1 overflow-auto">
-        <div className="min-w-max">
+      <div className=" ">
+        <div className="">
           <Table className={tableClassName || "overflow-x-auto w-full min-w-[600px] border-collapse"}>
             <TableHeader>
               {renderHeader ? (
@@ -182,14 +182,16 @@ export function DataTable<T>({
               )}
             </TableBody>
           </Table>
-        </div>
-      </div>
-      {/* 📌 Footer */}
+
+          {/* 📌 Footer */}
       {!hideFooter && (
         <div className="px-4 py-3 text-sm text-muted-foreground border-t shrink-0">
           Showing {filteredData.length} of {data.length} records
         </div>
       )}
+        </div>
+      </div>
+      
     </div>
   );
 }

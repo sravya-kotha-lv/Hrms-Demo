@@ -195,7 +195,7 @@
   }
 
   .page-header {
-    @apply text-2xl font-semibold text-foreground;
+    @apply text-xl font-semibold text-foreground;
   }
 
   .breadcrumb {
