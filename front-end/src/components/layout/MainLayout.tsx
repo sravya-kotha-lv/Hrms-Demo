@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopNavbar } from "./TopNavbar";
 
@@ -8,16 +8,46 @@ interface MainLayoutProps {
   breadcrumb?: { label: string; href?: string }[];
 }
 
+type HeaderState = {
+  title?: string;
+  breadcrumb?: { label: string; href?: string }[];
+};
+
+type MainLayoutContextValue = {
+  setHeader: (header: HeaderState) => void;
+};
+
+const MainLayoutContext = createContext<MainLayoutContextValue | null>(null);
+
 export const MainLayout = ({ children, title, breadcrumb }: MainLayoutProps) => {
+  const parentLayout = useContext(MainLayoutContext);
+  const [header, setHeader] = useState<HeaderState>({ title, breadcrumb });
+
+  useEffect(() => {
+    if (!parentLayout) {
+      setHeader({ title, breadcrumb });
+      return;
+    }
+    parentLayout.setHeader({ title, breadcrumb });
+  }, [parentLayout, title, breadcrumb]);
+
+  const contextValue = useMemo<MainLayoutContextValue>(() => ({ setHeader }), []);
+
+  if (parentLayout) {
+    return <>{children}</>;
+  }
+
   return (
-    <div className="min-h-screen bg-background flex">
-      <Sidebar />
-      <div className="flex-1 ml-[260px] flex flex-col transition-all duration-300">
-        <TopNavbar title={title} breadcrumb={breadcrumb} />
-        <main className="flex-1 p-6 overflow-auto animate-fade-in">
-          {children}
-        </main>
+    <MainLayoutContext.Provider value={contextValue}>
+      <div className="min-h-screen bg-background flex">
+        <Sidebar />
+        <div className="flex-1 ml-[260px] min-w-0 flex flex-col transition-all duration-300">
+          <TopNavbar title={header.title} breadcrumb={header.breadcrumb} />
+          <main className="flex-1 min-w-0 p-6 overflow-y-auto overflow-x-hidden animate-fade-in">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </MainLayoutContext.Provider>
   );
 };
