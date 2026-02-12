@@ -147,7 +147,14 @@ export const TopNavbar = ({ title, breadcrumb }: TopNavbarProps) => {
           <DropdownMenuTrigger className="flex items-center gap-2 pl-4 border-l border-border">
             <Avatar className="w-9 h-9">
               <AvatarImage src={profile?.profileImage || undefined} />
-              <AvatarFallback>JD</AvatarFallback>
+              <AvatarFallback>
+               {profile?.firstName && profile?.lastName
+              ? `${profile.firstName[0]}${profile.lastName[0]}`
+              : profile?.firstName?.[0] ||
+                profile?.lastName?.[0] ||
+                profile?.email?.[0] ||
+                "U"}
+              </AvatarFallback>
             </Avatar>
             <div className="text-left hidden lg:block">
               <p className="text-sm font-medium">
