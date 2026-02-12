@@ -41,9 +41,9 @@ export const MainLayout = ({ children, title, breadcrumb }: MainLayoutProps) => 
     <MainLayoutContext.Provider value={contextValue}>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <div className="flex-1 ml-[260px] flex flex-col transition-all duration-300">
+        <div className="flex-1 ml-[260px] min-w-0 flex flex-col transition-all duration-300">
           <TopNavbar title={header.title} breadcrumb={header.breadcrumb} />
-          <main className="flex-1 p-6 overflow-auto animate-fade-in">
+          <main className="flex-1 min-w-0 p-6 overflow-y-auto overflow-x-hidden animate-fade-in">
             {children}
           </main>
         </div>

@@ -82,8 +82,13 @@ export function DataTable<T>({
     }));
   };
 
+  const getStickyLeftClass = (columnIndex: number) => {
+    if (columnIndex !== 0) return "";
+    return selectable ? "sticky left-10 z-10" : "sticky left-0 z-10";
+  };
+
   return (
-    <div className="bg-card rounded-xl border card-shadow flex flex-col h-full">
+    <div className="bg-card rounded-xl border card-shadow flex flex-col">
       {/* 🔍 Header */}
       {searchKey && (
         <div className="p-4 border-b flex items-center shrink-0">
@@ -111,12 +116,12 @@ export function DataTable<T>({
                     </TableHead>
                   )}
 
-                  {columns.map((col) => (
+                  {columns.map((col, columnIndex) => (
                     <TableHead
                       key={String(col.accessor)}
-                      className={`text-muted-foreground font-medium ${
+                      className={`text-muted-foreground font-medium bg-muted/40 ${
                         col.sortable ? "cursor-pointer" : ""
-                      } ${col.className || ""}`}
+                      } ${getStickyLeftClass(columnIndex)} ${col.className || ""}`}
                       onClick={() =>
                         col.sortable && handleSort(col.accessor)
                       }
@@ -167,10 +172,10 @@ export function DataTable<T>({
                       </TableCell>
                     )}
 
-                    {columns.map((col) => (
+                    {columns.map((col, columnIndex) => (
                       <TableCell
                         key={String(col.accessor)}
-                        className={`py-4 ${col.className || ""}`}
+                        className={`py-4 bg-card ${getStickyLeftClass(columnIndex)} ${col.className || ""}`}
                       >
                         {col.render
                           ? col.render(row)
