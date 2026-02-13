@@ -35,6 +35,8 @@ import RequireAuth from "./components/RequireAuth";
 import RoleBasedHome from "./components/RoleBasedHome";
 import RequireProfile from "./components/RequireProfile";
 import CompleteProfile from "./pages/CompleteProfile";
+import Inbox from "./pages/inbox";
+import ReportsPage from "./pages/ReportsPage";
 
 const queryClient = new QueryClient();
 const App = () => (
@@ -349,6 +351,26 @@ const App = () => (
               <RequireAuth permissions={["LEAVE_TYPE_VIEW"]}>
                 <RequireProfile>
                   <LeaveTypes />
+                </RequireProfile>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/inbox"
+            element={ 
+              <RequireAuth permissions={["INBOX_VIEW"]}>   
+                <RequireProfile>
+                  <Inbox />
+                </RequireProfile>     
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <RequireAuth permissions={["REPORT_VIEW"]}>
+                <RequireProfile>
+                  <ReportsPage />
                 </RequireProfile>
               </RequireAuth>
             }

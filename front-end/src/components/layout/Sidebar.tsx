@@ -157,7 +157,7 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
   // { icon: <DollarSign size={20} />, label: "Payroll", to: "/payroll" },
   { icon: <TrendingUp size={20} />, label: "Performance", to: "/performance" },
   { icon: <FileText size={20} />, label: "Reports", to: "/reports" },
-  { icon: <Inbox size={20} />, label: "Inbox", to: "/inbox" },
+  { icon: <Inbox size={20} />, label: "Inbox", to: "/Inbox" },
   // { icon: <Building2 size={20} />, label: "Organization", to: "/organization" },
   // { icon: <Shield size={20} />, label: "Roles", to: "/roles" },
   // { icon: <Shield size={20} />, label: "Permissions", to: "/permissions" },
@@ -173,7 +173,7 @@ export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();   // 👈 add this
   const { profile, hasAnyPermission, isSuperAdmin } = useAuth();
-
+   const [isExpanded, setIsExpanded] = useState(false)
   const isEmployeeRole = profile?.activeRole?.slug === "employee";
   const dashboardPath = isEmployeeRole
     ? "/employee-dashboard"
@@ -225,8 +225,20 @@ export const Sidebar = () => {
   };
 
   return (
+    <div
+      onMouseEnter={() => setIsExpanded(true)}
+      onMouseLeave={() => setIsExpanded(false)}
+      className={`
+        sidebar-gradient
+        h-screen
+        fixed left-0 top-0 z-50
+        flex flex-col
+        transition-all duration-300 ease-in-out
+        ${isExpanded ? "w-64" : "w-16"}
+      `}
+    >
     <motion.aside
-      className="sidebar-gradient h-screen fixed left-0 top-0 z-50 flex flex-col"
+      className="sidebar-gradient h-screen fixed left-0 top-0 z-50 flex flex-col mouse-hover:scrollbar-thin custom-scroll"
       initial={false}
       animate={{ width: collapsed ? 72 : 260 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
@@ -329,5 +341,6 @@ export const Sidebar = () => {
         </div>
       </div>
     </motion.aside>
+    </div>
   );
 };
