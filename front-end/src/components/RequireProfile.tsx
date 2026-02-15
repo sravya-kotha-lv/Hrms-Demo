@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
+import { PageLoader } from "@/components/ui/loaders";
 
 interface RequireProfileProps {
   children: JSX.Element;
@@ -63,7 +64,7 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
     run();
   }, [location.pathname, navigate, isSuperAdmin, hasAnyPermission, profile]);
 
-  if (loading) return null;
+  if (loading) return <PageLoader label="Preparing your workspace..." />;
 
   return children;
 };
