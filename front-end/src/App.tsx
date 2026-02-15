@@ -397,7 +397,7 @@ const App = () => (
             <Route
               path="/documentation"
               element={
-                <RequireAuth permissions={["EMP_CREATE", "EMP_UPDATE"]}>
+                <RequireAuth>
                   <RequireProfile>
                     <Documentation />
                   </RequireProfile>

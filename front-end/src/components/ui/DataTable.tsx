@@ -96,15 +96,15 @@ export function DataTable<T>({
             placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-72"
+            className="w-full sm:w-72"
           />
         </div>
       )}
 
       {/* 📋 Table */}
-      <div className=" ">
-        <div className="">
-          <Table className={tableClassName || "overflow-x-auto w-full min-w-[600px] border-collapse"}>
+      <div className="overflow-x-auto">
+        <div className="min-w-0">
+          <Table className={tableClassName || "w-full min-w-[600px] border-collapse"}>
             <TableHeader>
               {renderHeader ? (
                 renderHeader(columns, selectable)

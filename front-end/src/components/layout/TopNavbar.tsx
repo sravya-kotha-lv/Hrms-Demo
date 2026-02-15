@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Bell, Settings, ChevronDown } from "lucide-react";
+import { Search, Bell, Settings, ChevronDown, Menu } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,6 +23,7 @@ import { toast } from "sonner";
 interface TopNavbarProps {
   title?: string;
   breadcrumb?: { label: string; href?: string }[];
+  onOpenSidebar?: () => void;
 }
 
 interface NotificationItem {
@@ -33,7 +34,7 @@ interface NotificationItem {
   createdAt: string;
 }
 
-export const TopNavbar = ({ title, breadcrumb }: TopNavbarProps) => {
+export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) => {
   const navigate = useNavigate();
   const { profile, setProfile, setPermissions } = useAuth();
   const roles = useMemo(() => profile?.roles || [], [profile]);
@@ -133,11 +134,19 @@ export const TopNavbar = ({ title, breadcrumb }: TopNavbarProps) => {
   };
 
   return (
-    <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6 sticky top-0 z-40">
+    <header className="h-16 bg-card border-b border-border flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-40">
       {/* Left Section */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+        <button
+          type="button"
+          className="lg:hidden p-2 rounded-md hover:bg-muted"
+          aria-label="Open sidebar"
+          onClick={onOpenSidebar}
+        >
+          <Menu className="w-5 h-5 text-muted-foreground" />
+        </button>
         {breadcrumb && breadcrumb.length > 0 && (
-          <nav className="breadcrumb">
+          <nav className="breadcrumb hidden md:flex">
             {breadcrumb.map((item, index) => (
               <span key={index} className="flex items-center gap-2">
                 {index > 0 && <span>/</span>}
@@ -152,13 +161,13 @@ export const TopNavbar = ({ title, breadcrumb }: TopNavbarProps) => {
             ))}
           </nav>
         )}
-        {title && <h1 className="page-header">{title}</h1>}
+        {title && <h1 className="page-header truncate">{title}</h1>}
       </div>
 
       {/* Right Section */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
         {/* Search */}
-        <div className="relative w-64">
+        <div className="relative hidden xl:block w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search..."

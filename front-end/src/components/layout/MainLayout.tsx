@@ -22,6 +22,7 @@ const MainLayoutContext = createContext<MainLayoutContextValue | null>(null);
 export const MainLayout = ({ children, title, breadcrumb }: MainLayoutProps) => {
   const parentLayout = useContext(MainLayoutContext);
   const [header, setHeader] = useState<HeaderState>({ title, breadcrumb });
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (!parentLayout) {
@@ -40,10 +41,14 @@ export const MainLayout = ({ children, title, breadcrumb }: MainLayoutProps) => 
   return (
     <MainLayoutContext.Provider value={contextValue}>
       <div className="min-h-screen bg-background flex">
-        <Sidebar />
-        <div className="flex-1 ml-[260px] min-w-0 flex flex-col transition-all duration-300">
-          <TopNavbar title={header.title} breadcrumb={header.breadcrumb} />
-          <main className="flex-1 min-w-0 p-6 overflow-y-auto overflow-x-hidden animate-fade-in">
+        <Sidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
+        <div className="flex-1 min-w-0 flex flex-col lg:ml-[260px] transition-all duration-300">
+          <TopNavbar
+            title={header.title}
+            breadcrumb={header.breadcrumb}
+            onOpenSidebar={() => setMobileSidebarOpen(true)}
+          />
+          <main className="flex-1 min-w-0 p-3 sm:p-4 lg:p-6 overflow-y-auto overflow-x-hidden animate-fade-in">
             {children}
           </main>
         </div>

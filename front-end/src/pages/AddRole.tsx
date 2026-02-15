@@ -48,7 +48,7 @@ const AddRole = () => {
         { label: isEdit ? "Edit" : "Add" },
       ]}
     >
-      <div className="bg-card rounded-xl card-shadow p-6 max-w-3xl">
+      <div className="bg-card rounded-xl card-shadow p-4 sm:p-6 max-w-3xl">
         <form onSubmit={handleSubmit} className="space-y-6">
 
           {/* Role Info */}
@@ -74,7 +74,7 @@ const AddRole = () => {
           {/* Permission Matrix */}
           <div>
             <h3 className="font-semibold mb-3">Permissions</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {modules.map((module) => (
                 <div key={module} className="flex items-center gap-3">
                   <Checkbox

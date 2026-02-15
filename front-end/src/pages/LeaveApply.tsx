@@ -114,6 +114,7 @@ const LeaveApply = () => {
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
 
   const loadContext = async () => {
     try {
@@ -141,6 +142,13 @@ const LeaveApply = () => {
 
   useEffect(() => {
     loadContext();
+  }, []);
+
+  useEffect(() => {
+    const updateMobile = () => setIsMobile(window.innerWidth < 768);
+    updateMobile();
+    window.addEventListener("resize", updateMobile);
+    return () => window.removeEventListener("resize", updateMobile);
   }, []);
 
   const approvedDates = useMemo(() => {
@@ -260,10 +268,10 @@ const LeaveApply = () => {
                     mode="range"
                     selected={selectedRange}
                     onSelect={onRangeChange}
-                    numberOfMonths={2}
+                    numberOfMonths={isMobile ? 1 : 2}
                     disabled={disabledMatcher}
                     classNames={{
-                      months: "flex flex-row flex-wrap gap-4",
+                      months: "flex flex-col sm:flex-row flex-wrap gap-4",
                       month: "space-y-4 min-w-[270px]"
                     }}
                     modifiers={{
@@ -280,7 +288,7 @@ const LeaveApply = () => {
                     }}
                   />
                 </div>
-                <div className="flex items-center gap-4 text-xs mt-3">
+                <div className="flex flex-wrap items-center gap-3 text-xs mt-3">
                   <div className="flex items-center gap-2">
                     <span className="inline-block h-3 w-3 rounded bg-green-100 border border-green-300" />
                     Approved leave
@@ -364,7 +372,7 @@ const LeaveApply = () => {
               <span className="font-semibold">{applicableDays}</span>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-start sm:justify-end">
               <Button onClick={submit} disabled={submitting || loading}>
                 {submitting ? "Applying..." : "Apply Leave"}
               </Button>

@@ -1,178 +1,253 @@
+import { useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className="bg-card rounded-xl card-shadow p-6 mb-5">
-    <h3 className="text-lg font-semibold mb-3">{title}</h3>
-    <div className="text-sm text-muted-foreground space-y-2">{children}</div>
+type DocSection = {
+  id: string;
+  title: string;
+  description?: string;
+  points?: string[];
+  checklist?: string[];
+  warnings?: string[];
+};
+
+const administratorSections: DocSection[] = [
+  {
+    id: "administrator-overview",
+    title: "Platform Overview",
+    points: [
+      "Configure organizational master data before daily operations begin.",
+      "Use role and permission management to control data access and actions.",
+      "Use approval workflows for leave and attendance correction requests."
+    ]
+  },
+  {
+    id: "administrator-setup",
+    title: "Mandatory Setup Sequence",
+    checklist: [
+      "Create roles and assign the required permissions",
+      "Create departments and designations",
+      "Create shifts and assign employees to the correct shift",
+      "Configure weekly off policies (default and shift-specific)",
+      "Create the holiday calendar",
+      "Create leave types",
+      "Configure organization settings (sandwich rule, attendance lock)",
+      "Define approval workflows"
+    ]
+  },
+  {
+    id: "administrator-attendance",
+    title: "Attendance Administration",
+    points: [
+      "The attendance matrix displays present, absent, leave, holiday, and weekly off statuses.",
+      "An administrator can override attendance records when correction is required.",
+      "Attendance requests can be approved or rejected by reporting manager, Human Resources, or administrator roles."
+    ]
+  },
+  {
+    id: "administrator-leaves",
+    title: "Leave Administration",
+    points: [
+      "Leave calculation excludes holidays and weekly off days unless sandwich rule conditions apply.",
+      "Pending leave can reserve leave balance based on your organization policy.",
+      "Only reporting manager, Human Resources, or administrator roles can take approval actions on leave requests."
+    ]
+  },
+  {
+    id: "administrator-expenses",
+    title: "Expense Administration",
+    points: [
+      "Manage expenses through pending, approved, and rejected states.",
+      "Upload receipts through Cloudinary-based file storage.",
+      "Use vendor master data and vendor analytics for reporting and governance."
+    ]
+  },
+  {
+    id: "administrator-troubleshooting",
+    title: "Administrator Troubleshooting",
+    checklist: [
+      "If access is denied, verify active role and permission mapping",
+      "If approvals are not visible, verify pending approvals and workflow configuration",
+      "If leave day calculation is incorrect, verify holidays, weekly off policies, and sandwich rule settings",
+      "If receipt upload fails, verify Cloudinary credentials in environment configuration"
+    ]
+  }
+];
+
+const employeeSections: DocSection[] = [
+  {
+    id: "employee-overview",
+    title: "Employee Quick Start",
+    points: [
+      "Complete your profile before using core features.",
+      "Use the dashboard for attendance summary, leave summary, and notifications.",
+      "Use the side navigation menu for Attendance, Timesheets, Leave, Holidays, and Documentation."
+    ]
+  },
+  {
+    id: "employee-attendance",
+    title: "Attendance Guide",
+    points: [
+      "Record check-in at shift start and record check-out at shift end.",
+      "Late arrival and early activity indicators are calculated from shift timing and grace minutes.",
+      "If check-out is missed, submit an attendance correction request."
+    ],
+    warnings: [
+      "Employees cannot directly override attendance records."
+    ]
+  },
+  {
+    id: "employee-leave",
+    title: "Leave Guide",
+    points: [
+      "Select leave type and date range when submitting a leave request.",
+      "Holidays and weekly off days are excluded unless sandwich rule includes in-between non-working days.",
+      "Pending and approved leaves are visible in the leave calendar with distinct status colors."
+    ],
+    warnings: [
+      "Employees cannot approve their own leave requests."
+    ]
+  },
+  {
+    id: "employee-timesheet",
+    title: "Timesheet Guide",
+    points: [
+      "Submit weekly timesheet entries for approval.",
+      "Timesheets can be edited while in draft or rejected status.",
+      "Recall is available based on your permission set and timesheet status."
+    ]
+  },
+  {
+    id: "employee-support",
+    title: "Issue Resolution Guidance",
+    checklist: [
+      "For profile or access issues, contact Human Resources or an administrator",
+      "For leave delays, verify request status and approval chain",
+      "For attendance mismatches, submit an attendance correction request with detailed reason",
+      "For restricted menu access, confirm active role in the top navigation bar"
+    ]
+  }
+];
+
+const renderSection = (section: DocSection) => (
+  <div key={section.id} className="bg-card rounded-xl card-shadow p-6">
+    <h3 className="text-xl font-semibold mb-2">{section.title}</h3>
+
+    {section.description && (
+      <p className="text-sm text-muted-foreground mb-3">{section.description}</p>
+    )}
+
+    {section.points && section.points.length > 0 && (
+      <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1 mb-3">
+        {section.points.map((point) => (
+          <li key={point}>{point}</li>
+        ))}
+      </ul>
+    )}
+
+    {section.checklist && section.checklist.length > 0 && (
+      <div className="mb-3">
+        <p className="text-sm font-medium mb-2">Checklist</p>
+        <ul className="list-decimal pl-5 text-sm text-muted-foreground space-y-1">
+          {section.checklist.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </div>
+    )}
+
+    {section.warnings && section.warnings.length > 0 && (
+      <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 text-sm space-y-1">
+        {section.warnings.map((warn) => (
+          <p key={warn}>{warn}</p>
+        ))}
+      </div>
+    )}
   </div>
 );
 
 const Documentation = () => {
+  const { profile } = useAuth();
+  const isEmployeeRole = profile?.activeRole?.slug === "employee";
+
+  const [guideMode, setGuideMode] = useState<"administrator" | "employee">(
+    isEmployeeRole ? "employee" : "administrator"
+  );
+
+  const sections = useMemo(
+    () => (guideMode === "administrator" ? administratorSections : employeeSections),
+    [guideMode]
+  );
+
+  const [selectedId, setSelectedId] = useState(sections[0]?.id || "");
+  const selected = sections.find((s) => s.id === selectedId) || sections[0];
+
   return (
     <MainLayout
       title="Documentation"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Documentation" }]}
     >
-      <Section title="Purpose">
-        <p>
-          This page explains what is required before creating an employee, what fields are mandatory,
-          and common validation errors.
-        </p>
-      </Section>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <aside className="lg:col-span-4 xl:col-span-3">
+          <div className="bg-card rounded-xl card-shadow p-4 lg:sticky lg:top-20">
+            <div className="flex items-center gap-2 mb-4">
+              <Button
+                size="sm"
+                variant={guideMode === "administrator" ? "default" : "outline"}
+                onClick={() => {
+                  setGuideMode("administrator");
+                  setSelectedId(administratorSections[0].id);
+                }}
+                disabled={isEmployeeRole}
+              >
+                Administrator Guide
+              </Button>
+              <Button
+                size="sm"
+                variant={guideMode === "employee" ? "default" : "outline"}
+                onClick={() => {
+                  setGuideMode("employee");
+                  setSelectedId(employeeSections[0].id);
+                }}
+              >
+                Employee Guide
+              </Button>
+            </div>
 
-      <Section title="Mandatory Prerequisites (Before Add Employee)">
-        <p>These master records must exist in your organization first:</p>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>
-            <span className="font-medium text-foreground">At least one Role</span> (used in <code>roleIds</code>)
-          </li>
-          <li>
-            <span className="font-medium text-foreground">At least one Department</span> (used in <code>departmentId</code>)
-          </li>
-          <li>
-            <span className="font-medium text-foreground">At least one Designation</span> (used in <code>designationId</code>)
-          </li>
-        </ul>
-        <p className="pt-2">
-          Optional but recommended setup before onboarding at scale:
-        </p>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>Shifts (if attendance is shift-based)</li>
-          <li>Leave Types and leave settings</li>
-          <li>Reporting hierarchy (managers already present)</li>
-        </ul>
-      </Section>
+            {isEmployeeRole && (
+              <Badge variant="secondary" className="mb-3">
+                Employee view
+              </Badge>
+            )}
 
-      <Section title="Mandatory Employee Fields">
-        <p>Backend validation requires these fields when creating employee:</p>
-        <div className="flex flex-wrap gap-2 pt-1">
-          <Badge variant="secondary">email</Badge>
-          <Badge variant="secondary">roleIds (min 1)</Badge>
-          <Badge variant="secondary">firstName</Badge>
-          <Badge variant="secondary">lastName</Badge>
-          <Badge variant="secondary">departmentId</Badge>
-          <Badge variant="secondary">designationId</Badge>
-          <Badge variant="secondary">dateOfJoining</Badge>
-          <Badge variant="secondary">employmentType</Badge>
-        </div>
-        <p className="pt-2">Allowed employment types:</p>
-        <div className="flex flex-wrap gap-2">
-          <Badge>full_time</Badge>
-          <Badge>part_time</Badge>
-          <Badge>contract</Badge>
-        </div>
-      </Section>
+            <h3 className="text-base font-semibold mb-3">Sections</h3>
+            <div className="space-y-1 max-h-[65vh] overflow-auto pr-1">
+              {sections.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => setSelectedId(section.id)}
+                  className={cn(
+                    "w-full text-left px-3 py-2 rounded-md text-sm transition-colors",
+                    selectedId === section.id
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  )}
+                >
+                  {section.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
 
-      <Section title="Optional Employee Fields">
-        <ul className="list-disc pl-5 space-y-1">
-          <li><code>managerId</code> (recommended for approvals/reporting)</li>
-          <li><code>shiftId</code> (recommended for attendance logic)</li>
-          <li><code>employeeCode</code> (system auto-generates if not provided in form flow)</li>
-        </ul>
-      </Section>
-
-      <Section title="What Happens On Create">
-        <ol className="list-decimal pl-5 space-y-1">
-          <li>User account is created with email/password.</li>
-          <li>User is mapped to organization + selected role(s).</li>
-          <li>Employee record is created (with auto employee code in current service flow).</li>
-          <li>Initial leave balances are initialized.</li>
-          <li>Onboarding email is sent with login credentials.</li>
-        </ol>
-      </Section>
-
-      <Section title="Common Errors and Fixes">
-        <ul className="list-disc pl-5 space-y-1">
-          <li>
-            <span className="font-medium text-foreground">User already exists</span>:
-            email is already used. Use another email or update existing employee.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Validation failed for roleIds/departmentId/designationId</span>:
-            selected value is missing/invalid/deleted.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">No active organization selected</span>:
-            ensure logged-in context has active org.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Onboarding email failed</span>:
-            verify SMTP env config and sender credentials.
-          </li>
-        </ul>
-      </Section>
-
-      <Section title="Recommended Admin Checklist">
-        <ol className="list-decimal pl-5 space-y-1">
-          <li>Create Department(s)</li>
-          <li>Create Designation(s)</li>
-          <li>Create Role(s) and assign permissions</li>
-          <li>Configure Shifts and Organization Settings</li>
-          <li>Create Leave Types and leave rules</li>
-          <li>Add Manager employees first, then team members</li>
-        </ol>
-      </Section>
-
-      <Section title="Leave Setup Prerequisites">
-        <p>Before employees start applying leave, configure the following:</p>
-        <ol className="list-decimal pl-5 space-y-1">
-          <li>
-            <span className="font-medium text-foreground">Leave Types</span>:
-            create all leave categories (Casual, Sick, Earned, etc.) with days/year.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Org Leave Settings</span>:
-            configure credit mode (current month onwards/full year) and sandwich rule.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Week Offs and Holidays</span>:
-            maintain correct weekly offs and holiday calendar.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Approval Flows</span>:
-            create module <code>leave</code> flow if multi-step approval is required.
-          </li>
-        </ol>
-        <p className="pt-2">
-          Expected result: leave balance reservation on apply, approval workflow visibility, and correct exclusion/inclusion
-          of holidays/week-offs based on organization policy.
-        </p>
-      </Section>
-
-      <Section title="Attendance and Shift Setup Prerequisites">
-        <p>Before attendance goes live, configure these in order:</p>
-        <ol className="list-decimal pl-5 space-y-1">
-          <li>
-            <span className="font-medium text-foreground">Shifts</span>:
-            create day/night shifts with start/end and grace minutes.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Assign Shift to Employees</span>:
-            map each employee to a shift where applicable.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Week Offs and Holidays</span>:
-            these are needed for attendance matrix highlighting and leave interactions.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Attendance Lock Policy</span>:
-            configure edit-lock window or payroll cutoff mode in organization settings.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Attendance Request Flow</span>:
-            define module <code>attendance_request</code> flow for correction/missed checkout approvals.
-          </li>
-          <li>
-            <span className="font-medium text-foreground">Permissions</span>:
-            verify admin/manager/employee permissions for view/manage actions.
-          </li>
-        </ol>
-        <p className="pt-2">
-          Recommended operational policy: no auto logout. If checkout is missed, employee should raise attendance request
-          and approver acts through Pending Approvals.
-        </p>
-      </Section>
+        <section className="lg:col-span-8 xl:col-span-9 space-y-5">
+          {selected && renderSection(selected)}
+        </section>
+      </div>
     </MainLayout>
   );
 };

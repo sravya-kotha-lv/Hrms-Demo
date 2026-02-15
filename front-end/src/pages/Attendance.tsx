@@ -350,19 +350,19 @@ const Attendance = () => {
           <div className="text-xs text-muted-foreground mb-2">
             Tip: Hover any day cell to view check-in/out, shift, late/early, leave, holiday and override details.
           </div>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 mb-4">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto">
               <Input
                 type="month"
                 value={month}
                 onChange={(e) => setMonth(e.target.value)}
-                className="w-44"
+                className="w-full sm:w-44"
               />
               <Input
                 placeholder="Search employee..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-64"
+                className="w-full sm:w-64"
               />
               <Button variant="outline" onClick={fetchMatrix}>
                 Refresh
@@ -379,7 +379,7 @@ const Attendance = () => {
           </div>
 
           {canEdit && (
-            <div className="flex flex-wrap items-end gap-3 mb-4">
+            <div className="flex flex-wrap items-end gap-2 sm:gap-3 mb-4">
               <Button variant="outline" onClick={toggleSelectAllFiltered}>
                 Select/Unselect Filtered ({selectedEmployeeIds.length})
               </Button>
@@ -387,10 +387,10 @@ const Attendance = () => {
                 type="date"
                 value={bulkDate}
                 onChange={(e) => setBulkDate(e.target.value)}
-                className="w-48"
+                className="w-full sm:w-48"
               />
               <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as "present" | "absent")}>
-                <SelectTrigger className="w-40">
+                <SelectTrigger className="w-full sm:w-40">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -533,7 +533,7 @@ const Attendance = () => {
             </table>
           </div>
 
-          <div className="flex items-center gap-4 text-xs mt-3">
+          <div className="flex flex-wrap items-center gap-3 text-xs mt-3">
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded bg-emerald-100 border border-emerald-300" />
               Present
