@@ -67,7 +67,17 @@ exports.completeProfileSchema = Joi.object({
       relation: Joi.string().required(),
       phone: Joi.string().required()
     })
-  ).optional()
+  ).optional(),
+  profileImageUpload: Joi.object({
+    fileName: Joi.string().required(),
+    mimeType: Joi.string().required(),
+    base64Data: Joi.string().required()
+  }).optional(),
+  addressProofUpload: Joi.object({
+    fileName: Joi.string().required(),
+    mimeType: Joi.string().required(),
+    base64Data: Joi.string().required()
+  }).optional()
 });
 
 /* ------------------------------------------------------------------ */

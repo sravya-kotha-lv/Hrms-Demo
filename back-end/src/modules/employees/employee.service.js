@@ -8,6 +8,7 @@ const { genHashedPassword } = require("../../utils/bcryptUtils");
 const sendMail = require("../../utils/sendMail");
 const leaveBalanceService =
   require("../leaveBalances/leaveBalance.service");
+const { uploadDataUri } = require("../../config/cloudinary");
 
 
 /* ------------------------------------------------------------------ */
@@ -212,6 +213,28 @@ exports.completeMyProfile = async (req) => {
     address: req.body.address,
     emergencyContacts: req.body.emergencyContacts
   };
+
+  if (req.body.profileImageUpload?.base64Data && req.body.profileImageUpload?.mimeType) {
+    const imageDataUri = `data:${req.body.profileImageUpload.mimeType};base64,${req.body.profileImageUpload.base64Data}`;
+    const uploadedImage = await uploadDataUri(imageDataUri, {
+      folder: "hrms/employee-profile-images"
+    });
+    editableFields.profileImage = uploadedImage?.secure_url || null;
+  }
+
+  if (req.body.addressProofUpload?.base64Data && req.body.addressProofUpload?.mimeType) {
+    const proofDataUri = `data:${req.body.addressProofUpload.mimeType};base64,${req.body.addressProofUpload.base64Data}`;
+    const uploadedProof = await uploadDataUri(proofDataUri, {
+      folder: "hrms/employee-address-proofs"
+    });
+    editableFields.addressProof = {
+      fileName: req.body.addressProofUpload.fileName || "address-proof",
+      fileUrl: uploadedProof?.secure_url || "",
+      mimeType: req.body.addressProofUpload.mimeType || "",
+      uploadedAt: new Date()
+    };
+  }
+
   Object.assign(employee, editableFields);
   employee.profileCompleted = true;
 
@@ -389,6 +412,7 @@ exports.getMe = async (req) => {
     organizationId: req.user.organizationId,
     isDeleted: false
   })
+    .populate("userId", "email")
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
@@ -406,7 +430,9 @@ exports.getMe = async (req) => {
       dateOfJoining: null,
       managerId: null,
       shiftId: null,
-      profileCompleted: false
+      profileCompleted: false,
+      profileImage: null,
+      addressProof: null
     };
   }
 
