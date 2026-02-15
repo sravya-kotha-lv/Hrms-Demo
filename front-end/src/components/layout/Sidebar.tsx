@@ -123,7 +123,7 @@ const NavItem = ({ icon, label, to, collapsed ,children}: NavItemProps) => {
 };
 
 const menuItems = (dashboardPath: string): MenuItem[] => [
-  { icon: <Home size={20} />, label: "Home", to: "/" },
+  // { icon: <Home size={20} />, label: "Home", to: "/" },
   { icon: <LayoutDashboard size={20} />, label: "Dashboard", to: dashboardPath },
   {
     icon: <Users size={20} />,
@@ -155,9 +155,9 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
   },
   { icon: <CalendarOff size={20} />, label: "Week Offs", to: "/week-offs", permissions: ["WEEK_OFF_VIEW"] },
   // { icon: <DollarSign size={20} />, label: "Payroll", to: "/payroll" },
-  { icon: <TrendingUp size={20} />, label: "Performance", to: "/performance" },
+  // { icon: <TrendingUp size={20} />, label: "Performance", to: "/performance" },
   { icon: <FileText size={20} />, label: "Reports", to: "/reports" },
-  { icon: <Inbox size={20} />, label: "Inbox", to: "/inbox" },
+  // { icon: <Inbox size={20} />, label: "Inbox", to: "/inbox" },
   // { icon: <Building2 size={20} />, label: "Organization", to: "/organization" },
   // { icon: <Shield size={20} />, label: "Roles", to: "/roles" },
   // { icon: <Shield size={20} />, label: "Permissions", to: "/permissions" },
@@ -193,25 +193,32 @@ export const Sidebar = () => {
     "/",
     "/employee-dashboard",
     "/leave",
-    "/timesheets"
+    "/timesheets",
+    "/holidays"
   ]);
 
   const filteredMenuItems: MenuItem[] = menuItems(effectiveDashboardPath)
     .map((item) => {
       if (item.children) {
         const filteredChildren = item.children.filter((child) => {
-          if (isEmployeeRole && !allowedPathsForEmployee.has(child.to)) {
-            return false;
+          if (isEmployeeRole) {
+            return allowedPathsForEmployee.has(child.to);
           }
           return !child.permissions || hasAnyPermission(child.permissions);
         });
         if (filteredChildren.length === 0) return null;
-        return { ...item, children: filteredChildren };
+        return {
+          ...item,
+          permissions: isEmployeeRole ? undefined : item.permissions,
+          children: filteredChildren
+        };
       }
       if (isEmployeeRole && !allowedPathsForEmployee.has(item.to)) {
         return null;
       }
-      return item;
+      return isEmployeeRole
+        ? { ...item, permissions: undefined }
+        : item;
     })
     .filter(
       (item): item is MenuItem =>

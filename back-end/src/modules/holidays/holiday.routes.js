@@ -21,7 +21,7 @@ router.post(
 router.get(
   "/",
   auth,
-  authorize("HOLIDAY_VIEW"),
+  authorize(["HOLIDAY_VIEW", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]),
   asyncHandler(controller.list)
 );
 

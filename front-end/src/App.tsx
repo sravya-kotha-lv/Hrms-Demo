@@ -169,7 +169,7 @@ const App = () => (
             <Route
               path="/holidays"
               element={
-                <RequireAuth permissions={["HOLIDAY_VIEW"]}>
+                <RequireAuth permissions={["HOLIDAY_VIEW", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]}>
                   <RequireProfile>
                     <Holidays />
                   </RequireProfile>
