@@ -26,6 +26,7 @@ type LeaveBalance = {
   leaveTypeId: string;
   total: number;
   used: number;
+  pending?: number;
   remaining: number;
   cycleStartYear?: number;
 };
@@ -328,6 +329,13 @@ const LeaveApply = () => {
                 <p className="text-lg font-semibold">
                   {selectedBalance ? `${selectedBalance.remaining}/${selectedBalance.total}` : "-/-"}
                 </p>
+                {selectedBalance && (
+                  <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                    <p>Available: {selectedBalance.remaining}</p>
+                    <p>Pending: {selectedBalance.pending || 0}</p>
+                    <p>Used: {selectedBalance.used}</p>
+                  </div>
+                )}
               </div>
             </div>
 

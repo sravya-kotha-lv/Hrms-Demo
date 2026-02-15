@@ -10,6 +10,15 @@ const Organization =
   require("../organizations/organization.model");
 const Role = require("../roles/role.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
+const sendMail = require("../../utils/sendMail");
+const { createNotificationSafe } = require("../notifications/notification.service");
+const {
+  resolveApplicableFlow,
+  getActorApprovalContext,
+  canActorApproveStep,
+  resolveRecipientsForStep
+} = require("../../utils/approvalFlowEngine");
+const { advanceApprovalSteps, getCurrentPendingStep } = require("../../utils/approvalProgress");
 
 
 const calculateDays = (from, to) => {
@@ -72,6 +81,40 @@ const getApplicableLeaveDates = ({
       return index > firstWorkingIdx && index < lastWorkingIdx;
     })
     .map((d) => d.date);
+};
+
+const sendNotification = async ({ toEmail, toName, subject, message }) => {
+  if (!toEmail) return;
+  try {
+    await sendMail("notification", toName || "User", subject, message, toEmail);
+  } catch (_) {
+    // non-blocking notification
+  }
+};
+
+const notifyApprovalStepAssignees = async ({
+  organizationId,
+  step,
+  actorEmployeeId = null,
+  title,
+  message,
+  type,
+  meta = {}
+}) => {
+  if (!step) return;
+  const recipients = await resolveRecipientsForStep({ organizationId, step });
+  for (const recipient of recipients) {
+    await createNotificationSafe({
+      organizationId,
+      recipientUserId: recipient.userId,
+      recipientEmployeeId: recipient.employeeId,
+      actorEmployeeId,
+      type,
+      title,
+      message,
+      meta
+    });
+  }
 };
 
 exports.applyLeave = async (req) => {
@@ -191,6 +234,13 @@ exports.applyLeave = async (req) => {
 
   // 4. Create leave
   let leave;
+  const flowConfig = await resolveApplicableFlow({
+    organizationId: req.user.organizationId,
+    moduleKey: "leave",
+    subjectEmployee: employee,
+    totalDays
+  });
+  const initialPendingStep = (flowConfig?.steps || []).find((s) => s.status === "pending");
   try {
     leave = await Leave.create({
       organizationId: req.user.organizationId,
@@ -200,7 +250,10 @@ exports.applyLeave = async (req) => {
       toDate: req.body.toDate,
       totalDays,
       status: "pending",
-      reason: req.body.reason
+      reason: req.body.reason,
+      approvalFlowId: flowConfig?.flowId || null,
+      approvalSteps: flowConfig?.steps || [],
+      currentApprovalStep: initialPendingStep?.stepNumber || null
     });
   } catch (err) {
     await LeaveBalance.updateOne(
@@ -228,6 +281,37 @@ exports.applyLeave = async (req) => {
     entityId: leave._id,
     after: leave.toObject()
   });
+
+  const pendingStep = getCurrentPendingStep(leave.approvalSteps || []);
+  if (pendingStep) {
+    const employeeName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+    await notifyApprovalStepAssignees({
+      organizationId: req.user.organizationId,
+      step: pendingStep,
+      actorEmployeeId: employee._id,
+      type: "leave_pending_approval",
+      title: "Leave approval pending",
+      message: `${employeeName} applied leave from ${new Date(req.body.fromDate).toDateString()} to ${new Date(req.body.toDate).toDateString()}.`,
+      meta: {
+        leaveId: leave._id,
+        status: leave.status,
+        currentApprovalStep: leave.currentApprovalStep
+      }
+    });
+  } else {
+    const manager = employee.managerId
+      ? await Employee.findById(employee.managerId).populate("userId", "email")
+      : null;
+    if (manager?.userId?.email) {
+      const employeeName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+      await sendNotification({
+        toEmail: manager.userId.email,
+        toName: manager.firstName,
+        subject: "New Leave Request",
+        message: `${employeeName} applied leave from ${req.body.fromDate} to ${req.body.toDate}.`
+      });
+    }
+  }
 
   return leave;
 };
@@ -331,6 +415,8 @@ exports.getMyLeaves = async (req) => {
 
   return Leave.find({ employeeId: employee._id })
     .populate("leaveTypeId", "name code")
+    .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
+    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 };
 
@@ -362,7 +448,30 @@ exports.getAllLeaves = async (req) => {
   return Leave.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
+    .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
+    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
+};
+
+exports.getMyPendingApprovals = async (req) => {
+  const actorContext = await getActorApprovalContext(req);
+  const query = {
+    organizationId: req.user.organizationId,
+    status: "pending",
+    "approvalSteps.status": "pending"
+  };
+
+  const rows = await Leave.find(query)
+    .populate("employeeId", "firstName lastName employeeCode")
+    .populate("leaveTypeId", "name code")
+    .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
+    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
+    .sort({ createdAt: -1 });
+
+  return rows.filter((leave) => {
+    const step = getCurrentPendingStep(leave.approvalSteps || []);
+    return canActorApproveStep(step, actorContext);
+  });
 };
 
 exports.actionLeave = async (req) => {
@@ -417,7 +526,33 @@ exports.actionLeave = async (req) => {
     cycleStartYear
   });
 
-  if (req.body.status === "approved") {
+  const actorContext = await getActorApprovalContext(req);
+  let finalStatusToApply = req.body.status;
+  let isIntermediateApproval = false;
+
+  if (["approved", "rejected"].includes(req.body.status) && Array.isArray(leave.approvalSteps) && leave.approvalSteps.length) {
+    const currentStep = getCurrentPendingStep(leave.approvalSteps || []);
+    if (!currentStep) {
+      throw new Error("No pending approval step found");
+    }
+
+    if (!canActorApproveStep(currentStep, actorContext)) {
+      throw new Error("You are not allowed to action this approval step");
+    }
+
+    const progress = advanceApprovalSteps({
+      steps: leave.approvalSteps || [],
+      action: req.body.status,
+      actionBy: actor?._id || null,
+      remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : null
+    });
+    leave.approvalSteps = progress.steps;
+    leave.currentApprovalStep = progress.currentApprovalStep;
+    finalStatusToApply = progress.finalStatus;
+    isIntermediateApproval = progress.isIntermediateApproval;
+  }
+
+  if (finalStatusToApply === "approved" && !isIntermediateApproval) {
     if (leave.status === "approved") {
       throw new Error("Leave already approved");
     }
@@ -447,7 +582,7 @@ exports.actionLeave = async (req) => {
 
     await balance.save();
 
-  } else if (req.body.status === "rejected") {
+  } else if (finalStatusToApply === "rejected") {
     if (balance && previousStatus === "pending") {
       if ((balance.pending || 0) >= leave.totalDays) {
         balance.pending -= leave.totalDays;
@@ -460,13 +595,66 @@ exports.actionLeave = async (req) => {
       await balance.save();
     }
     leave.rejectionReason = req.body.rejectionReason;
+  } else if (isIntermediateApproval) {
+    // Approval progressed to next step; keep leave in pending state.
+    finalStatusToApply = "pending";
   } else {
     throw new Error("Invalid leave action");
   }
-  leave.status = req.body.status;
+  leave.status = finalStatusToApply;
   leave.actionBy = actor?._id;
   leave.actionAt = new Date();
 
   await leave.save();
+
+  if (isIntermediateApproval) {
+    const leaveEmployee = await Employee.findById(leave.employeeId).select("firstName lastName");
+    const pendingStep = getCurrentPendingStep(leave.approvalSteps || []);
+    await notifyApprovalStepAssignees({
+      organizationId: leave.organizationId,
+      step: pendingStep,
+      actorEmployeeId: actor?._id || null,
+      type: "leave_pending_approval",
+      title: "Leave approval pending",
+      message: `${leaveEmployee?.firstName || "Employee"} ${leaveEmployee?.lastName || ""}`.trim()
+        + ` leave is waiting for your approval.`,
+      meta: {
+        leaveId: leave._id,
+        status: leave.status,
+        currentApprovalStep: leave.currentApprovalStep
+      }
+    });
+  }
+
+  if (!isIntermediateApproval) {
+    const leaveEmployee = await Employee.findById(leave.employeeId).populate("userId", "email");
+    if (leaveEmployee?.userId?.email) {
+      await sendNotification({
+        toEmail: leaveEmployee.userId.email,
+        toName: leaveEmployee.firstName,
+        subject: `Leave ${leave.status}`,
+        message: `Your leave request from ${new Date(leave.fromDate).toDateString()} to ${new Date(leave.toDate).toDateString()} is ${leave.status}.`
+      });
+    }
+    if (leaveEmployee?.userId?._id) {
+      const actorName = actor
+        ? `${actor.firstName || ""} ${actor.lastName || ""}`.trim() || "Manager"
+        : "Manager";
+      await createNotificationSafe({
+        organizationId: leave.organizationId,
+        recipientUserId: leaveEmployee.userId._id,
+        recipientEmployeeId: leaveEmployee._id,
+        actorEmployeeId: actor?._id || null,
+        type: "leave_action",
+        title: `Leave ${leave.status}`,
+        message: `${actorName} marked your leave (${new Date(leave.fromDate).toDateString()} to ${new Date(leave.toDate).toDateString()}) as ${leave.status}.`,
+        meta: {
+          leaveId: leave._id,
+          status: leave.status
+        }
+      });
+    }
+  }
+
   return leave;
 };

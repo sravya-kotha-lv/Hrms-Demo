@@ -102,6 +102,11 @@ const employeeSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "employees"
     },
+    shiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "shifts",
+      default: null
+    },
 
     status: {
       type: String,

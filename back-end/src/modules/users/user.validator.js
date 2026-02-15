@@ -22,7 +22,8 @@ exports.createUserSchema = Joi.object({
   designationId: objectId.optional().allow(null,""),
   employmentType: Joi.string().valid("full_time", "part_time", "contract").required(),
   dateOfJoining: Joi.date().required(),
-  managerId: objectId.optional().allow(null,"")
+  managerId: objectId.optional().allow(null,""),
+  shiftId: objectId.optional().allow(null,"")
 });
 
 exports.switchOrgSchema = Joi.object({

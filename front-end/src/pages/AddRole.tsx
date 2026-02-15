@@ -36,15 +36,6 @@ const AddRole = () => {
 
   const handleSubmit = (e: any) => {
     e.preventDefault();
-
-    const roleData = {
-      roleName,
-      description,
-      permissions,
-    };
-
-    console.log(roleData);
-
     navigate("/roles");
   };
 

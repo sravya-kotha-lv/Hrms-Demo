@@ -14,6 +14,10 @@ const OrganizationSettings = () => {
   const [leaveCreditFrequency, setLeaveCreditFrequency] = useState("monthly");
   const [leaveTypeCreditMode, setLeaveTypeCreditMode] = useState("current_month_onwards");
   const [sandwichRuleEnabled, setSandwichRuleEnabled] = useState(false);
+  const [attendanceLockEnabled, setAttendanceLockEnabled] = useState(false);
+  const [attendanceLockAfterDays, setAttendanceLockAfterDays] = useState(7);
+  const [attendanceLockMode, setAttendanceLockMode] = useState("days_window");
+  const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
   const [loading, setLoading] = useState(false);
@@ -29,6 +33,14 @@ const OrganizationSettings = () => {
       setLeaveCreditFrequency(res.data?.leaveCreditFrequency || "monthly");
       setLeaveTypeCreditMode(res.data?.leaveTypeCreditMode || "current_month_onwards");
       setSandwichRuleEnabled(Boolean(res.data?.sandwichRuleEnabled));
+      setAttendanceLockEnabled(Boolean(res.data?.attendanceLockEnabled));
+      setAttendanceLockAfterDays(
+        typeof res.data?.attendanceLockAfterDays === "number" ? res.data.attendanceLockAfterDays : 7
+      );
+      setAttendanceLockMode(res.data?.attendanceLockMode || "days_window");
+      setPayrollCutoffDay(
+        typeof res.data?.payrollCutoffDay === "number" ? res.data.payrollCutoffDay : 25
+      );
       setMinWorkHoursPerDay(
         typeof res.data?.minWorkHoursPerDay === "number" ? res.data.minWorkHoursPerDay : 8
       );
@@ -51,6 +63,10 @@ const OrganizationSettings = () => {
         leaveCreditFrequency,
         leaveTypeCreditMode,
         sandwichRuleEnabled,
+        attendanceLockEnabled,
+        attendanceLockAfterDays: Number(attendanceLockAfterDays),
+        attendanceLockMode,
+        payrollCutoffDay: Number(payrollCutoffDay),
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours)
       }, null, { requiredPermissions: ["ORG_SETTINGS_MANAGE"] });
@@ -160,6 +176,54 @@ const OrganizationSettings = () => {
             />
             Enable sandwich rule (count week-offs/holidays between leave dates)
           </label>
+        </div>
+
+        <div className="space-y-2 mb-6">
+          <label className="text-sm font-medium">Attendance Edit Lock</label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={attendanceLockEnabled}
+              onCheckedChange={(value) => setAttendanceLockEnabled(Boolean(value))}
+              disabled={!canManage}
+            />
+            Lock attendance edits for older days
+          </label>
+          <Input
+            type="number"
+            min={0}
+            max={365}
+            value={attendanceLockAfterDays}
+            onChange={(e) => setAttendanceLockAfterDays(Number(e.target.value))}
+            disabled={!canManage || !attendanceLockEnabled || attendanceLockMode !== "days_window"}
+            className="w-64"
+            placeholder="Editable window (days)"
+          />
+          <Select
+            value={attendanceLockMode}
+            onValueChange={setAttendanceLockMode}
+            disabled={!canManage || !attendanceLockEnabled}
+          >
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="Lock mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="days_window">By days window</SelectItem>
+              <SelectItem value="payroll_cutoff">By payroll cutoff</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            type="number"
+            min={1}
+            max={31}
+            value={payrollCutoffDay}
+            onChange={(e) => setPayrollCutoffDay(Number(e.target.value))}
+            disabled={!canManage || !attendanceLockEnabled || attendanceLockMode !== "payroll_cutoff"}
+            className="w-64"
+            placeholder="Payroll cutoff day"
+          />
+          <p className="text-xs text-muted-foreground">
+            In payroll cutoff mode, editable attendance starts from cutoff+1 day of current cycle.
+          </p>
         </div>
 
         <PermissionGate permissions={["ORG_SETTINGS_MANAGE"]}>

@@ -44,6 +44,51 @@ const timesheetAttendanceSchema = new mongoose.Schema(
     overriddenAt: {
       type: Date,
       default: null
+    },
+    shiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "shifts",
+      default: null
+    },
+    shiftName: {
+      type: String,
+      default: null
+    },
+    shiftCode: {
+      type: String,
+      default: null
+    },
+    shiftStartTime: {
+      type: String,
+      default: null
+    },
+    shiftEndTime: {
+      type: String,
+      default: null
+    },
+    scheduledStartAt: {
+      type: Date,
+      default: null
+    },
+    scheduledEndAt: {
+      type: Date,
+      default: null
+    },
+    lateByMinutes: {
+      type: Number,
+      default: 0
+    },
+    earlyLoginByMinutes: {
+      type: Number,
+      default: 0
+    },
+    earlyCheckoutByMinutes: {
+      type: Number,
+      default: 0
+    },
+    overtimeMinutes: {
+      type: Number,
+      default: 0
     }
   },
   { timestamps: true }

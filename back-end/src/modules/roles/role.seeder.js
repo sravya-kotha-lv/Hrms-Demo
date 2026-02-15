@@ -37,6 +37,9 @@ const ROLE_RULES = {
       "TIMESHEET_VIEW_ALL",
       "TIMESHEET_VIEW_ONLINE",
       "TIMESHEET_ACTION",
+      "NOTIFICATION_VIEW_SELF",
+      "NOTIFICATION_MANAGE_SELF",
+      "SHIFT_VIEW_SELF",
     ]
   },
   employee: {

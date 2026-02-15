@@ -1,0 +1,78 @@
+const cloneSteps = (steps = []) =>
+  (steps || []).map((s) => ({
+    ...s,
+    approverEmployeeId: s.approverEmployeeId || null,
+    approverRoleSlug: s.approverRoleSlug || null,
+    actionBy: s.actionBy || null,
+    actionAt: s.actionAt || null,
+    remarks: s.remarks || null
+  }));
+
+const sortByStep = (steps = []) =>
+  [...steps].sort((a, b) => Number(a.stepNumber || 0) - Number(b.stepNumber || 0));
+
+const getCurrentPendingStep = (steps = []) =>
+  (steps || []).find((s) => s.status === "pending") || null;
+
+exports.getCurrentPendingStep = getCurrentPendingStep;
+
+exports.advanceApprovalSteps = ({
+  steps = [],
+  action,
+  actionBy = null,
+  remarks = null
+}) => {
+  const normalizedAction = String(action || "").toLowerCase();
+  if (!["approved", "rejected"].includes(normalizedAction)) {
+    throw new Error("Invalid approval action");
+  }
+
+  const nextSteps = sortByStep(cloneSteps(steps));
+  if (!nextSteps.length) {
+    return {
+      steps: [],
+      finalStatus: normalizedAction,
+      isIntermediateApproval: false,
+      currentApprovalStep: null
+    };
+  }
+
+  const pendingIndex = nextSteps.findIndex((s) => s.status === "pending");
+  if (pendingIndex === -1) {
+    throw new Error("No pending approval step found");
+  }
+
+  const pendingStep = nextSteps[pendingIndex];
+  pendingStep.actionBy = actionBy || null;
+  pendingStep.actionAt = new Date();
+  pendingStep.remarks = remarks || null;
+
+  if (normalizedAction === "rejected") {
+    pendingStep.status = "rejected";
+    return {
+      steps: nextSteps,
+      finalStatus: "rejected",
+      isIntermediateApproval: false,
+      currentApprovalStep: null
+    };
+  }
+
+  pendingStep.status = "approved";
+  const queuedIndex = nextSteps.findIndex((s) => s.status === "queued");
+  if (queuedIndex === -1) {
+    return {
+      steps: nextSteps,
+      finalStatus: "approved",
+      isIntermediateApproval: false,
+      currentApprovalStep: null
+    };
+  }
+
+  nextSteps[queuedIndex].status = "pending";
+  return {
+    steps: nextSteps,
+    finalStatus: "pending",
+    isIntermediateApproval: true,
+    currentApprovalStep: nextSteps[queuedIndex].stepNumber
+  };
+};

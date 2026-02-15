@@ -49,6 +49,13 @@ router.get(
   asyncHandler(controller.list)
 );
 
+router.get(
+  "/pending/my-approvals",
+  auth,
+  authorize("LEAVE_ACTION"),
+  asyncHandler(controller.pendingMyApprovals)
+);
+
 // Approve / Reject
 router.put(
   "/:id/action",

@@ -31,9 +31,49 @@ exports.myAttendanceMatrix = async (req, res) => {
   res.status(200).json(buildSuccessResponse({ data }));
 };
 
+exports.attendanceCellHistory = async (req, res) => {
+  const data = await service.getAttendanceCellHistory(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
+exports.myAttendanceCellHistory = async (req, res) => {
+  const data = await service.getMyAttendanceCellHistory(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
 exports.overrideAttendance = async (req, res) => {
   const data = await service.overrideAttendance(req);
   res.status(200).json(buildSuccessResponse({ message: "Attendance updated", data }));
+};
+
+exports.bulkOverrideAttendance = async (req, res) => {
+  const data = await service.bulkOverrideAttendance(req);
+  res.status(200).json(buildSuccessResponse({ message: "Attendance bulk updated", data }));
+};
+
+exports.raiseAttendanceRequest = async (req, res) => {
+  const data = await service.raiseAttendanceRequest(req);
+  res.status(201).json(buildSuccessResponse({ message: "Attendance request raised", data }));
+};
+
+exports.myAttendanceRequests = async (req, res) => {
+  const data = await service.getMyAttendanceRequests(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
+exports.attendanceRequests = async (req, res) => {
+  const data = await service.getAttendanceRequests(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
+exports.pendingMyAttendanceApprovals = async (req, res) => {
+  const data = await service.getMyPendingAttendanceApprovals(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
+exports.actionAttendanceRequest = async (req, res) => {
+  const data = await service.actionAttendanceRequest(req);
+  res.status(200).json(buildSuccessResponse({ message: `Attendance request ${req.body.status}`, data }));
 };
 
 exports.online = async (req, res) => {
