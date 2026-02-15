@@ -6,7 +6,7 @@ const Leave = require("../leaves/leave.model");
 const { audit } = require("../auditLogs/auditLogs.service");
 const Role = require("../roles/role.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
-const WeekOff = require("../weekOffs/weekOff.model");
+const WeekOffService = require("../weekOffs/weekOff.service");
 const Holiday = require("../holidays/holiday.model");
 const AuditLog = require("../auditLogs/auditLogs.model");
 const sendMail = require("../../utils/sendMail");
@@ -637,7 +637,7 @@ exports.getAttendanceMatrix = async (req) => {
   }
 
   const employees = await Employee.find(employeeQuery)
-    .select("_id firstName lastName employeeCode")
+    .select("_id firstName lastName employeeCode shiftId")
     .sort({ firstName: 1, lastName: 1 });
 
   if (!employees.length) {
@@ -645,7 +645,7 @@ exports.getAttendanceMatrix = async (req) => {
   }
 
   const employeeIds = employees.map((e) => e._id);
-  const [attendanceRows, weekOffConfig, holidays, approvedLeaves] = await Promise.all([
+  const [attendanceRows, holidays, approvedLeaves, weekOffMap] = await Promise.all([
     Attendance.find({
       organizationId: req.user.organizationId,
       employeeId: { $in: employeeIds },
@@ -653,7 +653,6 @@ exports.getAttendanceMatrix = async (req) => {
     })
       .select("employeeId date checkInAt checkOutAt overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes")
       .populate("overriddenBy", "firstName lastName"),
-    WeekOff.findOne({ organizationId: req.user.organizationId }).select("weekOffDays"),
     Holiday.find({
       organizationId: req.user.organizationId,
       status: "active",
@@ -665,10 +664,13 @@ exports.getAttendanceMatrix = async (req) => {
       status: "approved",
       fromDate: { $lte: end },
       toDate: { $gte: start }
-    }).populate("leaveTypeId", "name")
+    }).populate("leaveTypeId", "name"),
+    WeekOffService.resolveWeekOffMapForEmployees({
+      organizationId: req.user.organizationId,
+      employees
+    })
   ]);
 
-  const weekOffDays = weekOffConfig?.weekOffDays || [];
   const holidayByDay = new Map();
   holidays.forEach((h) => {
     holidayByDay.set(new Date(h.date).getDate(), h.name);
@@ -718,7 +720,8 @@ exports.getAttendanceMatrix = async (req) => {
       const base = attendanceMap.get(key);
       const leaveInfo = leaveMap.get(key) || { isOnLeave: false, leaveType: null };
       const dateForDay = new Date(year, month - 1, day);
-      const isWeekOff = weekOffDays.includes(dateForDay.getDay());
+      const employeeWeekOffDays = weekOffMap.employeeMap.get(String(emp._id)) || weekOffMap.defaultDays || [];
+      const isWeekOff = employeeWeekOffDays.includes(dateForDay.getDay());
       const holidayName = holidayByDay.get(day) || null;
       days[day] = base || {
         status: "absent",
@@ -756,7 +759,7 @@ exports.getMyAttendanceMatrix = async (req) => {
   const { year, month, start, end, daysInMonth } = parseMonthRange(req.query.month);
   const employee = await getEmployeeFromReq(req);
 
-  const [attendanceRows, weekOffConfig, holidays, approvedLeaves] = await Promise.all([
+  const [attendanceRows, holidays, approvedLeaves, weekOffDays] = await Promise.all([
     Attendance.find({
       organizationId: req.user.organizationId,
       employeeId: employee._id,
@@ -764,7 +767,6 @@ exports.getMyAttendanceMatrix = async (req) => {
     })
       .select("date checkInAt checkOutAt overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes")
       .populate("overriddenBy", "firstName lastName"),
-    WeekOff.findOne({ organizationId: req.user.organizationId }).select("weekOffDays"),
     Holiday.find({
       organizationId: req.user.organizationId,
       status: "active",
@@ -776,10 +778,13 @@ exports.getMyAttendanceMatrix = async (req) => {
       status: "approved",
       fromDate: { $lte: end },
       toDate: { $gte: start }
-    }).populate("leaveTypeId", "name")
+    }).populate("leaveTypeId", "name"),
+    WeekOffService.resolveWeekOffDays({
+      organizationId: req.user.organizationId,
+      shiftId: employee.shiftId
+    })
   ]);
 
-  const weekOffDays = weekOffConfig?.weekOffDays || [];
   const holidayByDay = new Map();
   holidays.forEach((h) => {
     holidayByDay.set(new Date(h.date).getDate(), h.name);

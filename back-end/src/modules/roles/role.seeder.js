@@ -40,6 +40,8 @@ const ROLE_RULES = {
       "NOTIFICATION_VIEW_SELF",
       "NOTIFICATION_MANAGE_SELF",
       "SHIFT_VIEW_SELF",
+      "EXPENSE_VIEW",
+      "EXPENSE_ACTION"
     ]
   },
   employee: {

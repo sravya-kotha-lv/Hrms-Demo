@@ -9,10 +9,12 @@
   "scripts": {
     "test": "node --test",
     "test:watch": "node --test --watch",
-    "start": "nodemon app.js"
+    "start": "nodemon app.js",
+    "migrate:weekoffs:rotational": "node src/script/migrate.weekoffs.rotational.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.9.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",

@@ -55,8 +55,12 @@ const Shifts = () => {
 
   const submit = async () => {
     const payload = {
-      ...form,
-      code: form.code.toUpperCase()
+      name: form.name,
+      code: form.code.toUpperCase(),
+      startTime: form.startTime,
+      endTime: form.endTime,
+      graceMinutes: Number(form.graceMinutes || 0),
+      status: form.status
     };
     const res = isEdit && form._id
       ? await putApiWithToken(`/shifts/${form._id}`, payload, null, { requiredPermissions: ["SHIFT_MANAGE"] })

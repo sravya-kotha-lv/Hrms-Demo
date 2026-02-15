@@ -4,6 +4,7 @@ const LeaveType = require("../leaveTypes/leaveType.model");
 const { audit } = require("../auditLogs/auditLogs.service");
 const Holiday = require("../holidays/holiday.model");
 const WeekOff = require("../weekOffs/weekOff.model");
+const WeekOffService = require("../weekOffs/weekOff.service");
 const LeaveBalance =
   require("../leaveBalances/leaveBalance.model");
 const Organization =
@@ -162,12 +163,11 @@ exports.applyLeave = async (req) => {
     OrgSettings.findOne({ organizationId: req.user.organizationId }).select("sandwichRuleEnabled")
   ]);
 
-  const weekOffConfig = await WeekOff.findOne({
-    organizationId: req.user.organizationId,
-  });
-
   const sandwichRuleEnabled = Boolean(settings?.sandwichRuleEnabled);
-  const weekOffDays = weekOffConfig?.weekOffDays || [];
+  const weekOffDays = await WeekOffService.resolveWeekOffDays({
+    organizationId: req.user.organizationId,
+    shiftId: employee.shiftId
+  });
   const holidaySet = new Set((holidays || []).map((h) => dateKey(h.date)));
 
   const validLeaveDates = getApplicableLeaveDates({
@@ -323,8 +323,7 @@ exports.getApplyContext = async (req) => {
   });
   if (!employee) throw new Error("Employee not found");
 
-  const [weekOffConfig, holidays, leaveTypes, balances, myLeaves, settings] = await Promise.all([
-    WeekOff.findOne({ organizationId: req.user.organizationId }),
+  const [holidays, leaveTypes, balances, myLeaves, settings, weekOffConfigs] = await Promise.all([
     Holiday.find({
       organizationId: req.user.organizationId,
       status: "active",
@@ -350,11 +349,32 @@ exports.getApplyContext = async (req) => {
     })
       .populate("leaveTypeId", "name code")
       .sort({ createdAt: -1 }),
-    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("sandwichRuleEnabled")
+    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("sandwichRuleEnabled"),
+    WeekOff.find({ organizationId: req.user.organizationId })
+      .populate("shiftId", "name code status")
+      .select("weekOffDays shiftId")
   ]);
 
+  const defaultWeekOffDays = weekOffConfigs.find((cfg) => !cfg.shiftId)?.weekOffDays || [];
+  const shiftWeekOffDays =
+    weekOffConfigs.find((cfg) => cfg.shiftId && String(cfg.shiftId._id || cfg.shiftId) === String(employee.shiftId))?.weekOffDays ||
+    defaultWeekOffDays;
+
   return {
-    weekOffDays: weekOffConfig?.weekOffDays || [],
+    weekOffDays: shiftWeekOffDays,
+    weekOffConfig: {
+      defaultWeekOffDays,
+      employeeShiftId: employee.shiftId || null,
+      employeeWeekOffDays: shiftWeekOffDays,
+      shiftConfigs: weekOffConfigs
+        .filter((cfg) => cfg.shiftId)
+        .map((cfg) => ({
+          shiftId: cfg.shiftId?._id || cfg.shiftId,
+          shiftName: cfg.shiftId?.name || "",
+          shiftCode: cfg.shiftId?.code || "",
+          weekOffDays: cfg.weekOffDays || []
+        }))
+    },
     sandwichRuleEnabled: Boolean(settings?.sandwichRuleEnabled),
     holidays: holidays.map((h) => ({ _id: h._id, name: h.name, date: h.date })),
     leaveTypes,

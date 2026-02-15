@@ -42,6 +42,7 @@ const ApprovalFlows = React.lazy(() => import("./pages/ApprovalFlows"));
 const PendingApprovals = React.lazy(() => import("./pages/PendingApprovals"));
 const CompleteProfile = React.lazy(() => import("./pages/CompleteProfile"));
 const Documentation = React.lazy(() => import("./pages/Documentation"));
+const Expenses = React.lazy(() => import("./pages/Expenses"));
 
 const queryClient = new QueryClient();
 const App = () => (
@@ -399,6 +400,16 @@ const App = () => (
                 <RequireAuth permissions={["EMP_CREATE", "EMP_UPDATE"]}>
                   <RequireProfile>
                     <Documentation />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/expenses"
+              element={
+                <RequireAuth permissions={["EXPENSE_VIEW", "EXPENSE_MANAGE"]}>
+                  <RequireProfile>
+                    <Expenses />
                   </RequireProfile>
                 </RequireAuth>
               }

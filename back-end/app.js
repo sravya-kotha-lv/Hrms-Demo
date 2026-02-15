@@ -102,6 +102,7 @@ app.use("/api/leave-balances", require("./src/modules/leaveBalances/leaveBalance
 app.use("/api/timesheets", require("./src/modules/timesheets/timesheet.routes"));
 app.use("/api/org-settings", require("./src/modules/orgSettings/orgSettings.routes"));
 app.use("/api/notifications", require("./src/modules/notifications/notification.routes"));
+app.use("/api/expenses", require("./src/modules/expenses/expense.routes"));
 
 /* ----------------------JOBS----------------*/
 require("./src/jobs/leaveCarryForward.job");
