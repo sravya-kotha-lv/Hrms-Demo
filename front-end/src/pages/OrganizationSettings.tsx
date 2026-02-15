@@ -3,6 +3,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
@@ -11,6 +12,8 @@ import { useAuth } from "@/context/AuthContext";
 const OrganizationSettings = () => {
   const { hasAnyPermission } = useAuth();
   const [leaveCreditFrequency, setLeaveCreditFrequency] = useState("monthly");
+  const [leaveTypeCreditMode, setLeaveTypeCreditMode] = useState("current_month_onwards");
+  const [sandwichRuleEnabled, setSandwichRuleEnabled] = useState(false);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
   const [loading, setLoading] = useState(false);
@@ -24,6 +27,8 @@ const OrganizationSettings = () => {
     if (res?.skipped) return;
     if (res?.success) {
       setLeaveCreditFrequency(res.data?.leaveCreditFrequency || "monthly");
+      setLeaveTypeCreditMode(res.data?.leaveTypeCreditMode || "current_month_onwards");
+      setSandwichRuleEnabled(Boolean(res.data?.sandwichRuleEnabled));
       setMinWorkHoursPerDay(
         typeof res.data?.minWorkHoursPerDay === "number" ? res.data.minWorkHoursPerDay : 8
       );
@@ -44,6 +49,8 @@ const OrganizationSettings = () => {
       setLoading(true);
       const res = await postApiWithToken("/org-settings", {
         leaveCreditFrequency,
+        leaveTypeCreditMode,
+        sandwichRuleEnabled,
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours)
       }, null, { requiredPermissions: ["ORG_SETTINGS_MANAGE"] });
@@ -96,6 +103,23 @@ const OrganizationSettings = () => {
         </div>
 
         <div className="space-y-2 mb-6">
+          <label className="text-sm font-medium">New Leave Type Credit</label>
+          <Select
+            value={leaveTypeCreditMode}
+            onValueChange={setLeaveTypeCreditMode}
+            disabled={!canManage}
+          >
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="Select mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="current_month_onwards">Current month onwards</SelectItem>
+              <SelectItem value="full_year">Full leaves for cycle</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2 mb-6">
           <label className="text-sm font-medium">Minimum Working Hours Per Day</label>
           <Input
             type="number"
@@ -124,6 +148,18 @@ const OrganizationSettings = () => {
           <p className="text-xs text-muted-foreground">
             Hours below this value will be treated as invalid on timesheet submission.
           </p>
+        </div>
+
+        <div className="space-y-2 mb-6">
+          <label className="text-sm font-medium">Sandwich Rule</label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={sandwichRuleEnabled}
+              onCheckedChange={(value) => setSandwichRuleEnabled(Boolean(value))}
+              disabled={!canManage}
+            />
+            Enable sandwich rule (count week-offs/holidays between leave dates)
+          </label>
         </div>
 
         <PermissionGate permissions={["ORG_SETTINGS_MANAGE"]}>

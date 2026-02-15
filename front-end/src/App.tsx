@@ -12,6 +12,7 @@ import Attendance from "./pages/Attendance";
 import EmployeeDashboard from "./pages/EmployeeDashboard";
 import Timesheets from "./pages/Timesheets";
 import Leave from "./pages/Leave";
+import LeaveApply from "./pages/LeaveApply";
 import Holidays from "./pages/Holidays";
 import WeekOffs from "./pages/WeekOffs";
 import Payroll from "./pages/Payroll";
@@ -151,6 +152,16 @@ const App = () => (
                 <RequireAuth permissions={["LEAVE_VIEW_ALL", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]}>
                   <RequireProfile>
                     <Leave />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/leave/apply"
+              element={
+                <RequireAuth permissions={["LEAVE_APPLY"]}>
+                  <RequireProfile>
+                    <LeaveApply />
                   </RequireProfile>
                 </RequireAuth>
               }

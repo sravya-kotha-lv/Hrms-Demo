@@ -99,6 +99,7 @@ exports.applyLeaveCreditsForOrg = async (organizationId, date = new Date()) => {
             $setOnInsert: {
               total: 0,
               used: 0,
+              pending: 0,
               remaining: 0
             },
             $inc: {

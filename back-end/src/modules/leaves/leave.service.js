@@ -9,6 +9,7 @@ const LeaveBalance =
 const Organization =
   require("../organizations/organization.model");
 const Role = require("../roles/role.model");
+const OrgSettings = require("../orgSettings/orgSettings.model");
 
 
 const calculateDays = (from, to) => {
@@ -21,6 +22,57 @@ const calculateDays = (from, to) => {
 
 const isSameDate = (d1, d2) =>
   new Date(d1).setHours(0, 0, 0, 0) === new Date(d2).setHours(0, 0, 0, 0);
+
+const dateKey = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getApplicableLeaveDates = ({
+  fromDate,
+  toDate,
+  weekOffDays,
+  holidaySet,
+  sandwichRuleEnabled
+}) => {
+  const dayMeta = [];
+  let cursor = new Date(fromDate);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(toDate);
+  end.setHours(0, 0, 0, 0);
+
+  while (cursor <= end) {
+    const key = dateKey(cursor);
+    const isWeekOff = weekOffDays.includes(cursor.getDay());
+    const isHoliday = holidaySet.has(key);
+    dayMeta.push({
+      date: new Date(cursor),
+      excluded: isWeekOff || isHoliday
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  if (!sandwichRuleEnabled) {
+    return dayMeta.filter((d) => !d.excluded).map((d) => d.date);
+  }
+
+  const firstWorkingIdx = dayMeta.findIndex((d) => !d.excluded);
+  const lastWorkingIdx = dayMeta.length - 1 - [...dayMeta].reverse().findIndex((d) => !d.excluded);
+
+  if (firstWorkingIdx === -1 || lastWorkingIdx === -1) {
+    return [];
+  }
+
+  return dayMeta
+    .filter((d, index) => {
+      if (!d.excluded) return true;
+      return index > firstWorkingIdx && index < lastWorkingIdx;
+    })
+    .map((d) => d.date);
+};
 
 exports.applyLeave = async (req) => {
 
@@ -55,39 +107,33 @@ exports.applyLeave = async (req) => {
     throw new Error("You already have a leave applied for these dates");
   }
 
-  const year = fromDate.getFullYear();
-
-  const holidays = await Holiday.find({
-    organizationId: req.user.organizationId,
-    year,
-    date: { $gte: fromDate, $lte: toDate },
-    status: "active"
-  });
+  const [holidays, settings] = await Promise.all([
+    Holiday.find({
+      organizationId: req.user.organizationId,
+      date: {
+        $gte: new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate()),
+        $lte: new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59, 999)
+      },
+      status: "active"
+    }),
+    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("sandwichRuleEnabled")
+  ]);
 
   const weekOffConfig = await WeekOff.findOne({
-    organizationId: req.user.organizationId
+    organizationId: req.user.organizationId,
   });
 
+  const sandwichRuleEnabled = Boolean(settings?.sandwichRuleEnabled);
   const weekOffDays = weekOffConfig?.weekOffDays || [];
+  const holidaySet = new Set((holidays || []).map((h) => dateKey(h.date)));
 
-  let validLeaveDates = [];
-  let currentDate = new Date(fromDate);
-
-  while (currentDate <= toDate) {
-    const dayOfWeek = currentDate.getDay();
-
-    const isWeekOff = weekOffDays.includes(dayOfWeek);
-
-    const isHoliday = holidays.some(h =>
-      isSameDate(h.date, currentDate)
-    );
-
-    if (!isWeekOff && !isHoliday) {
-      validLeaveDates.push(new Date(currentDate));
-    }
-
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
+  const validLeaveDates = getApplicableLeaveDates({
+    fromDate,
+    toDate,
+    weekOffDays,
+    holidaySet,
+    sandwichRuleEnabled
+  });
 
   if (
     fromDate.getTime() === toDate.getTime() &&
@@ -121,29 +167,58 @@ exports.applyLeave = async (req) => {
       ? fromDate.getFullYear() - 1
       : fromDate.getFullYear();
 
-  const balance = await LeaveBalance.findOne({
-    organizationId: req.user.organizationId,
-    employeeId: employee._id,
-    leaveTypeId: req.body.leaveTypeId,
-    cycleStartYear
-  });
+  const balance = await LeaveBalance.findOneAndUpdate(
+    {
+      organizationId: req.user.organizationId,
+      employeeId: employee._id,
+      leaveTypeId: req.body.leaveTypeId,
+      cycleStartYear,
+      remaining: { $gte: totalDays }
+    },
+    {
+      $inc: {
+        pending: totalDays,
+        remaining: -totalDays
+      }
+    },
+    { new: true }
+  );
 
-  if (!balance || balance.remaining < totalDays) {
+  if (!balance) {
     throw new Error("Insufficient leave balance");
   }
 
 
   // 4. Create leave
-  const leave = await Leave.create({
-    organizationId: req.user.organizationId,
-    employeeId: employee._id,
-    leaveTypeId: req.body.leaveTypeId,
-    fromDate: req.body.fromDate,
-    toDate: req.body.toDate,
-    totalDays,
-    status: "pending",
-    reason: req.body.reason
-  });
+  let leave;
+  try {
+    leave = await Leave.create({
+      organizationId: req.user.organizationId,
+      employeeId: employee._id,
+      leaveTypeId: req.body.leaveTypeId,
+      fromDate: req.body.fromDate,
+      toDate: req.body.toDate,
+      totalDays,
+      status: "pending",
+      reason: req.body.reason
+    });
+  } catch (err) {
+    await LeaveBalance.updateOne(
+      {
+        organizationId: req.user.organizationId,
+        employeeId: employee._id,
+        leaveTypeId: req.body.leaveTypeId,
+        cycleStartYear
+      },
+      {
+        $inc: {
+          pending: -totalDays,
+          remaining: totalDays
+        }
+      }
+    );
+    throw err;
+  }
 
   // 5. Audit
   await audit({
@@ -155,6 +230,70 @@ exports.applyLeave = async (req) => {
   });
 
   return leave;
+};
+
+exports.getApplyContext = async (req) => {
+  const employee = await Employee.findOne({
+    userId: req.user.userId,
+    organizationId: req.user.organizationId
+  });
+  if (!employee) throw new Error("Employee not found");
+
+  const [weekOffConfig, holidays, leaveTypes, balances, myLeaves, settings] = await Promise.all([
+    WeekOff.findOne({ organizationId: req.user.organizationId }),
+    Holiday.find({
+      organizationId: req.user.organizationId,
+      status: "active",
+      date: {
+        $gte: new Date(new Date().getFullYear(), 0, 1),
+        $lte: new Date(new Date().getFullYear() + 1, 11, 31, 23, 59, 59, 999)
+      }
+    }).sort({ date: 1 }),
+    LeaveType.find({
+      organizationId: req.user.organizationId,
+      status: "active"
+    }).select("_id name code"),
+    LeaveBalance.find({
+      organizationId: req.user.organizationId,
+      employeeId: employee._id
+    })
+      .populate("leaveTypeId", "name code")
+      .sort({ cycleStartYear: -1 }),
+    Leave.find({
+      organizationId: req.user.organizationId,
+      employeeId: employee._id,
+      status: { $in: ["pending", "approved"] }
+    })
+      .populate("leaveTypeId", "name code")
+      .sort({ createdAt: -1 }),
+    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("sandwichRuleEnabled")
+  ]);
+
+  return {
+    weekOffDays: weekOffConfig?.weekOffDays || [],
+    sandwichRuleEnabled: Boolean(settings?.sandwichRuleEnabled),
+    holidays: holidays.map((h) => ({ _id: h._id, name: h.name, date: h.date })),
+    leaveTypes,
+    balances: balances.map((b) => ({
+      leaveTypeId: b.leaveTypeId?._id || b.leaveTypeId,
+      leaveType: b.leaveTypeId?.name || "",
+      code: b.leaveTypeId?.code || "",
+      cycleStartYear: b.cycleStartYear,
+      total: b.total,
+      used: b.used,
+      pending: b.pending || 0,
+      remaining: b.remaining
+    })),
+    myLeaves: myLeaves.map((l) => ({
+      _id: l._id,
+      leaveTypeId: l.leaveTypeId?._id || l.leaveTypeId,
+      leaveType: l.leaveTypeId?.name || "",
+      fromDate: l.fromDate,
+      toDate: l.toDate,
+      status: l.status,
+      totalDays: l.totalDays
+    }))
+  };
 };
 
 exports.getMyLeavesRange = async (req) => {
@@ -265,57 +404,60 @@ exports.actionLeave = async (req) => {
     }
   }
 
+  const org = await Organization.findById(leave.organizationId);
+  const cycleStartYear =
+    new Date(leave.fromDate).getMonth() + 1 < org.leaveCycleStartMonth
+      ? new Date(leave.fromDate).getFullYear() - 1
+      : new Date(leave.fromDate).getFullYear();
+
+  const balance = await LeaveBalance.findOne({
+    organizationId: leave.organizationId,
+    employeeId: leave.employeeId,
+    leaveTypeId: leave.leaveTypeId,
+    cycleStartYear
+  });
+
   if (req.body.status === "approved") {
-    // 🔥 APPROVAL FLOW (deduct balance)
-    // ❌ Prevent double approval
     if (leave.status === "approved") {
       throw new Error("Leave already approved");
     }
-    const org = await Organization.findById(leave.organizationId);
-
-    const cycleStartYear =
-      new Date(leave.fromDate).getMonth() + 1 < org.leaveCycleStartMonth
-        ? new Date(leave.fromDate).getFullYear() - 1
-        : new Date(leave.fromDate).getFullYear();
-
-    const balance = await LeaveBalance.findOne({
-      organizationId: leave.organizationId,
-      employeeId: leave.employeeId,
-      leaveTypeId: leave.leaveTypeId,
-      cycleStartYear
-    });
-
-    if (!balance || balance.remaining < leave.totalDays) {
-      throw new Error("Insufficient leave balance to approve");
+    if (!balance) {
+      throw new Error("Leave balance not found");
     }
 
-    balance.used += leave.totalDays;
-    balance.remaining -= leave.totalDays;
+    if (previousStatus === "pending") {
+      if ((balance.pending || 0) >= leave.totalDays) {
+        balance.pending -= leave.totalDays;
+        balance.used += leave.totalDays;
+      } else {
+        // Backward compatibility: old pending leaves created before reservation logic
+        if (balance.remaining < leave.totalDays) {
+          throw new Error("Insufficient leave balance to approve");
+        }
+        balance.used += leave.totalDays;
+        balance.remaining -= leave.totalDays;
+      }
+    } else if (previousStatus === "rejected" || previousStatus === "cancelled") {
+      if (balance.remaining < leave.totalDays) {
+        throw new Error("Insufficient leave balance to approve");
+      }
+      balance.used += leave.totalDays;
+      balance.remaining -= leave.totalDays;
+    }
+
     await balance.save();
 
   } else if (req.body.status === "rejected") {
-    // 🔁 RESTORE BALANCE ONLY IF IT WAS APPROVED EARLIER
-    if (previousStatus === "approved") {
-
-      const org = await Organization.findById(leave.organizationId);
-
-      const cycleStartYear =
-        new Date(leave.fromDate).getMonth() + 1 < org.leaveCycleStartMonth
-          ? new Date(leave.fromDate).getFullYear() - 1
-          : new Date(leave.fromDate).getFullYear();
-
-      const balance = await LeaveBalance.findOne({
-        organizationId: leave.organizationId,
-        employeeId: leave.employeeId,
-        leaveTypeId: leave.leaveTypeId,
-        cycleStartYear
-      });
-
-      if (balance) {
-        balance.used -= leave.totalDays;
+    if (balance && previousStatus === "pending") {
+      if ((balance.pending || 0) >= leave.totalDays) {
+        balance.pending -= leave.totalDays;
         balance.remaining += leave.totalDays;
         await balance.save();
       }
+    } else if (balance && previousStatus === "approved") {
+      balance.used = Math.max(0, balance.used - leave.totalDays);
+      balance.remaining += leave.totalDays;
+      await balance.save();
     }
     leave.rejectionReason = req.body.rejectionReason;
   } else {
