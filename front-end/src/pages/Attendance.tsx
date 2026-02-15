@@ -54,7 +54,9 @@ const emptyCell: DayCell = {
   overriddenBy: null,
   overriddenAt: null,
   isWeekOff: false,
-  holidayName: null
+  holidayName: null,
+  isOnLeave: false,
+  leaveType: ""
 };
 
 const Attendance = () => {
