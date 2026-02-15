@@ -20,6 +20,14 @@ const {
 } = require("../../utils/approvalFlowEngine");
 const { advanceApprovalSteps, getCurrentPendingStep } = require("../../utils/approvalProgress");
 
+const REQUEST_APPROVER_ROLE_SLUGS = new Set([
+  "manager",
+  "hr",
+  "admin",
+  "org-admin",
+  "superadmin"
+]);
+
 const parseDateValue = (value) => {
   if (value instanceof Date) return new Date(value);
   if (typeof value === "string") {
@@ -345,6 +353,15 @@ const getScopedEmployeeIdsForViewer = async (req) => {
     organizationId: req.user.organizationId,
     managerId: managerEmployee._id
   }).distinct("_id");
+};
+
+const getActorRoleSlug = async (req) => {
+  if (!req.user.activeRoleId) return "";
+  const role = await Role.findOne({
+    _id: req.user.activeRoleId,
+    organizationId: req.user.organizationId
+  }).select("slug");
+  return role?.slug || "";
 };
 
 const assertManageAccessForEmployee = async (req, employeeId) => {
@@ -1033,22 +1050,41 @@ exports.getAttendanceRequests = async (req) => {
 };
 
 exports.getMyPendingAttendanceApprovals = async (req) => {
-  const actorContext = await getActorApprovalContext(req);
-  const rows = await AttendanceRequest.find({
+  const actorRoleSlug = await getActorRoleSlug(req);
+  if (!REQUEST_APPROVER_ROLE_SLUGS.has(actorRoleSlug)) {
+    return [];
+  }
+
+  const query = {
     organizationId: req.user.organizationId,
-    status: "pending",
-    "approvalSteps.status": "pending"
-  })
+    status: "pending"
+  };
+
+  if (actorRoleSlug === "manager") {
+    const managerEmployee = await Employee.findOne({
+      userId: req.user.userId,
+      organizationId: req.user.organizationId
+    }).select("_id");
+
+    if (!managerEmployee) {
+      return [];
+    }
+
+    const reportIds = await Employee.find({
+      organizationId: req.user.organizationId,
+      managerId: managerEmployee._id
+    }).distinct("_id");
+    query.employeeId = { $in: reportIds };
+  }
+
+  const rows = await AttendanceRequest.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("actionBy", "firstName lastName employeeCode")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 
-  return rows.filter((row) => {
-    const step = getCurrentPendingStep(row.approvalSteps || []);
-    return canActorApproveStep(step, actorContext);
-  });
+  return rows;
 };
 
 exports.actionAttendanceRequest = async (req) => {
@@ -1058,6 +1094,11 @@ exports.actionAttendanceRequest = async (req) => {
   });
   if (!request) throw new Error("Attendance request not found");
   if (request.status !== "pending") throw new Error("Attendance request already actioned");
+
+  const actorRoleSlug = await getActorRoleSlug(req);
+  if (!REQUEST_APPROVER_ROLE_SLUGS.has(actorRoleSlug)) {
+    throw new Error("Only reporting manager, HR, or admin can action requests");
+  }
 
   await assertManageAccessForEmployee(req, request.employeeId);
 
@@ -1079,20 +1120,36 @@ exports.actionAttendanceRequest = async (req) => {
       throw new Error("No pending approval step found");
     }
 
-    if (!canActorApproveStep(currentStep, actorContext)) {
-      throw new Error("You are not allowed to action this approval step");
+    const allowedByFlow = canActorApproveStep(currentStep, actorContext);
+    if (allowedByFlow) {
+      const progress = advanceApprovalSteps({
+        steps: request.approvalSteps || [],
+        action: req.body.status,
+        actionBy: actorEmployee?._id || null,
+        remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : null
+      });
+      request.approvalSteps = progress.steps;
+      request.currentApprovalStep = progress.currentApprovalStep;
+      finalStatusToApply = progress.finalStatus;
+      isIntermediateApproval = progress.isIntermediateApproval;
+    } else {
+      // Privileged override: reporting manager/HR/admin can finalize request even if flow step mismatches.
+      const overrideStatus = req.body.status === "approved" ? "approved" : "rejected";
+      const actionAt = new Date();
+      request.approvalSteps = (request.approvalSteps || []).map((step) => {
+        if (step.status === "approved" || step.status === "rejected") return step;
+        return {
+          ...step,
+          status: overrideStatus,
+          actionBy: actorEmployee?._id || null,
+          actionAt,
+          remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : "Approved by authorized approver"
+        };
+      });
+      request.currentApprovalStep = null;
+      finalStatusToApply = req.body.status;
+      isIntermediateApproval = false;
     }
-
-    const progress = advanceApprovalSteps({
-      steps: request.approvalSteps || [],
-      action: req.body.status,
-      actionBy: actorEmployee?._id || null,
-      remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : null
-    });
-    request.approvalSteps = progress.steps;
-    request.currentApprovalStep = progress.currentApprovalStep;
-    finalStatusToApply = progress.finalStatus;
-    isIntermediateApproval = progress.isIntermediateApproval;
   }
 
   if (finalStatusToApply === "rejected") {
