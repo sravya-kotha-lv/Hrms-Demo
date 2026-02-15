@@ -30,6 +30,11 @@ const PERMISSIONS = [
   { code: "ORG_UPDATE", name: "Update Organization", module: "Organizations" },
   { code: "ORG_VIEW", name: "View Organizations", module: "Organizations" },
 
+  // 📅 Attendance
+  { code: "ATTENDANCE_VIEW_ALL", name: "View Attendance All", module: "Attendance" },
+  { code: "ATTENDANCE_VIEW_SELF", name: "View Attendance Self", module: "Attendance" },
+  { code: "ATTENDANCE_MANAGE", name: "Manage Attendance", module: "Attendance" },
+
 ];
 
 exports.seedPermissions = async (organizationId) => {

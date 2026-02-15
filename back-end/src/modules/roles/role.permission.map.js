@@ -17,7 +17,10 @@ const ROLE_PERMISSION_MAP = {
     "DEPT_VIEW",
     "ROLE_CREATE",
     "ROLE_UPDATE",
-    "ROLE_VIEW"
+    "ROLE_VIEW",
+    "ATTENDANCE_VIEW_ALL",
+    "ATTENDANCE_VIEW_SELF",
+    "ATTENDANCE_MANAGE"
   ],
 
   hr: [
@@ -29,11 +32,13 @@ const ROLE_PERMISSION_MAP = {
 
   manager: [
     "EMP_VIEW",
-    "EMP_SELF_VIEW"
+    "EMP_SELF_VIEW",
+    "ATTENDANCE_VIEW_ALL"
   ],
 
   employee: [
-    "EMP_SELF_VIEW"
+    "EMP_SELF_VIEW",
+    "ATTENDANCE_VIEW_SELF"
   ]
 };
 

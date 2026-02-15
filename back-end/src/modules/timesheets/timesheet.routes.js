@@ -9,7 +9,8 @@ const {
   createWeeklySchema,
   updateWeeklySchema,
   submitWeeklySchema,
-  actionWeeklySchema
+  actionWeeklySchema,
+  overrideAttendanceSchema
 } = require("./timesheet.validation");
 
 // Check-in / Check-out
@@ -40,6 +41,28 @@ router.get(
   auth,
   authorize("TIMESHEET_VIEW_ALL"),
   asyncHandler(controller.attendanceList)
+);
+
+router.get(
+  "/attendance/matrix",
+  auth,
+  authorize("ATTENDANCE_VIEW_ALL"),
+  asyncHandler(controller.attendanceMatrix)
+);
+
+router.get(
+  "/attendance/matrix/my",
+  auth,
+  authorize("ATTENDANCE_VIEW_SELF"),
+  asyncHandler(controller.myAttendanceMatrix)
+);
+
+router.put(
+  "/attendance/matrix/:employeeId",
+  auth,
+  authorize("ATTENDANCE_MANAGE"),
+  validate(overrideAttendanceSchema),
+  asyncHandler(controller.overrideAttendance)
 );
 
 router.get(

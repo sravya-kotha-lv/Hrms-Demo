@@ -129,7 +129,7 @@ const App = () => (
             <Route
               path="/attendance"
               element={
-                <RequireAuth permissions={["TIMESHEET_VIEW_ALL"]}>
+                <RequireAuth permissions={["ATTENDANCE_VIEW_ALL", "ATTENDANCE_VIEW_SELF"]}>
                   <RequireProfile>
                     <Attendance />
                   </RequireProfile>

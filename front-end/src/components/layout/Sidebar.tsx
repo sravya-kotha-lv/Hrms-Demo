@@ -132,7 +132,7 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
     permissions: ["EMP_VIEW"],
     children: [
       { icon: <Users size={18} />, label: "Employee", to: "/employees", permissions: ["EMP_VIEW"] },
-      { icon: <Briefcase size={18} />, label: "Attendance", to: "/attendance", permissions: ["TIMESHEET_VIEW_ALL"] },
+      { icon: <Briefcase size={18} />, label: "Attendance", to: "/attendance", permissions: ["ATTENDANCE_VIEW_ALL", "ATTENDANCE_VIEW_SELF"] },
       { icon: <ClipboardCheck size={18} />, label: "Timesheets", to: "/timesheets", permissions: ["TIMESHEET_VIEW_SELF", "TIMESHEET_VIEW_ALL"] },
       { icon: <Briefcase size={18} />, label: "Leave", to: "/leave", permissions: ["LEAVE_VIEW_SELF", "LEAVE_VIEW_ALL", "LEAVE_APPLY"] },
       { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays", permissions: ["HOLIDAY_VIEW"] },
@@ -192,6 +192,7 @@ export const Sidebar = () => {
   const allowedPathsForEmployee = new Set([
     "/",
     "/employee-dashboard",
+    "/attendance",
     "/leave",
     "/timesheets",
     "/holidays"

@@ -21,6 +21,21 @@ exports.attendanceList = async (req, res) => {
   res.status(200).json(buildSuccessResponse({ data }));
 };
 
+exports.attendanceMatrix = async (req, res) => {
+  const data = await service.getAttendanceMatrix(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
+exports.myAttendanceMatrix = async (req, res) => {
+  const data = await service.getMyAttendanceMatrix(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
+exports.overrideAttendance = async (req, res) => {
+  const data = await service.overrideAttendance(req);
+  res.status(200).json(buildSuccessResponse({ message: "Attendance updated", data }));
+};
+
 exports.online = async (req, res) => {
   const data = await service.getOnline(req);
   res.status(200).json(buildSuccessResponse({ data }));

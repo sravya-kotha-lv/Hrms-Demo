@@ -1,169 +1,199 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
-import {
-  Search,
-  Download,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Timer
-} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
-import { getApiWithToken } from "@/services/apiWrapper";
-import { toast } from "sonner";
+import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
+import { toast } from "sonner";
 
-const getStatusBadge = (status: string) => {
-  switch (status) {
-    case "Present":
-      return (
-        <Badge className="status-badge status-active gap-1">
-          <CheckCircle className="w-3 h-3" /> Present
-        </Badge>
-      );
-    case "Working":
-      return (
-        <Badge className="status-badge status-pending gap-1">
-          <Clock className="w-3 h-3" /> Working
-        </Badge>
-      );
-    case "Week Off":
-      return (
-        <Badge variant="secondary" className="gap-1">
-          <Timer className="w-3 h-3" /> Week Off
-        </Badge>
-      );
-    default:
-      return (
-        <Badge className="status-badge status-rejected gap-1">
-          <XCircle className="w-3 h-3" /> Absent
-        </Badge>
-      );
-  }
+type DayCell = {
+  status: "present" | "absent";
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  overriddenBy: string | null;
+  overriddenAt: string | null;
+  isOnLeave: boolean;
+  leaveType: string | null;
+  isWeekOff: boolean;
+  holidayName: string | null;
 };
 
-const getRange = (filter: string) => {
+type EmployeeRow = {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  employeeCode: string;
+  days: Record<number, DayCell>;
+};
+
+const currentMonth = () => {
   const now = new Date();
-  const start = new Date(now);
-  const end = new Date(now);
+  const y = now.getFullYear();
+  const m = `${now.getMonth() + 1}`.padStart(2, "0");
+  return `${y}-${m}`;
+};
 
-  if (filter === "yesterday") {
-    start.setDate(start.getDate() - 1);
-    end.setDate(end.getDate() - 1);
-  } else if (filter === "this-week") {
-    const day = start.getDay();
-    const diff = (day + 6) % 7;
-    start.setDate(start.getDate() - diff);
-  } else if (filter === "this-month") {
-    start.setDate(1);
-  }
-
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
-
-  return { start, end };
+const emptyCell: DayCell = {
+  status: "absent",
+  checkInAt: null,
+  checkOutAt: null,
+  overriddenBy: null,
+  overriddenAt: null,
+  isWeekOff: false,
+  holidayName: null
 };
 
 const Attendance = () => {
   const { hasAnyPermission } = useAuth();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("today");
-  const [attendanceData, setAttendanceData] = useState<any[]>([]);
-  const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
+  const canViewAll = hasAnyPermission(["ATTENDANCE_VIEW_ALL"]);
+  const canViewSelf = hasAnyPermission(["ATTENDANCE_VIEW_SELF"]);
+  const canView = canViewAll || canViewSelf;
+  const canEdit = hasAnyPermission(["ATTENDANCE_MANAGE"]);
+
+  const [month, setMonth] = useState(currentMonth());
+  const [search, setSearch] = useState("");
+  const [rows, setRows] = useState<EmployeeRow[]>([]);
+  const [daysInMonth, setDaysInMonth] = useState(31);
   const [loading, setLoading] = useState(false);
-  const canView = hasAnyPermission(["TIMESHEET_VIEW_ALL"]);
 
-  const fetchWeekOffs = async () => {
-    const res = await getApiWithToken("/week-offs", null, {
-      requiredPermissions: ["WEEK_OFF_VIEW"]
-    });
-    if (res?.skipped) return;
-    if (res?.success) {
-      setWeekOffDays(res.data?.weekOffDays || []);
+  const [open, setOpen] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<"present" | "absent">("present");
+  const [saving, setSaving] = useState(false);
+
+  const fetchMatrix = async () => {
+    if (!canView) {
+      setRows([]);
+      return;
     }
-  };
-
-  const fetchAttendance = async () => {
     try {
       setLoading(true);
-      if (!canView) {
-        setAttendanceData([]);
+      const endpoint = canViewAll
+        ? `/timesheets/attendance/matrix?month=${month}`
+        : `/timesheets/attendance/matrix/my?month=${month}`;
+      const permission = canViewAll ? ["ATTENDANCE_VIEW_ALL"] : ["ATTENDANCE_VIEW_SELF"];
+
+      const res = await getApiWithToken(endpoint, null, {
+        requiredPermissions: permission
+      });
+      if (res?.skipped) return;
+      if (!res?.success) {
+        toast.error(res?.message || "Failed to load attendance");
         return;
       }
-      const range = getRange(dateFilter);
-      const startDate = range.start.toISOString();
-      const endDate = range.end.toISOString();
-      const res = await getApiWithToken(
-        `/timesheets/attendance?startDate=${startDate}&endDate=${endDate}`,
-        null,
-        { requiredPermissions: ["TIMESHEET_VIEW_ALL"] }
-      );
-      if (res?.skipped) return;
-      if (res?.success) {
-        setAttendanceData(res.data || []);
-      } else {
-        toast.error(res?.message || "Failed to load attendance");
-      }
+
+      setRows(res.data?.employees || []);
+      setDaysInMonth(res.data?.daysInMonth || 31);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchWeekOffs();
-  }, []);
+    fetchMatrix();
+  }, [month, canViewAll, canViewSelf]);
 
-  useEffect(() => {
-    fetchAttendance();
-  }, [dateFilter]);
-
-  const filteredAttendance = useMemo(() => {
-    return (attendanceData || []).filter((record) => {
-      const name = record.employeeId
-        ? `${record.employeeId.firstName || ""} ${record.employeeId.lastName || ""}`.trim()
-        : "-";
-      return name.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredRows = useMemo(() => {
+    return (rows || []).filter((r) => {
+      const name = `${r.firstName || ""} ${r.lastName || ""}`.trim().toLowerCase();
+      const code = (r.employeeCode || "").toLowerCase();
+      const q = search.toLowerCase();
+      return name.includes(q) || code.includes(q);
     });
-  }, [attendanceData, searchQuery]);
+  }, [rows, search]);
 
-  const stats = useMemo(() => {
-    let present = 0;
-    let working = 0;
-    let weekOff = 0;
+  const openOverride = (row: EmployeeRow, day: number) => {
+    if (!canEdit) return;
+    setSelectedEmployee(row);
+    setSelectedDay(day);
+    setSelectedStatus((row.days?.[day]?.status || "absent") as "present" | "absent");
+    setOpen(true);
+  };
 
-    attendanceData.forEach((record) => {
-      const day = new Date(record.date).getDay();
-      const isWeekOff = weekOffDays.includes(day);
-      if (isWeekOff) {
-        weekOff += 1;
-      } else if (record.checkInAt && record.checkOutAt) {
-        present += 1;
-      } else if (record.checkInAt && !record.checkOutAt) {
-        working += 1;
+  const saveOverride = async () => {
+    if (!selectedEmployee || !selectedDay) return;
+    const date = `${month}-${String(selectedDay).padStart(2, "0")}`;
+
+    try {
+      setSaving(true);
+      const res = await putApiWithToken(
+        `/timesheets/attendance/matrix/${selectedEmployee.employeeId}`,
+        { date, status: selectedStatus },
+        null,
+        { requiredPermissions: ["ATTENDANCE_MANAGE"] }
+      );
+      if (res?.skipped) return;
+      if (!res?.success) {
+        toast.error(res?.message || "Failed to update attendance");
+        return;
       }
-    });
 
-    return { present, working, weekOff };
-  }, [attendanceData, weekOffDays]);
+      toast.success("Attendance updated");
+      setOpen(false);
+      fetchMatrix();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const formatHoverInfo = (cell: DayCell) => {
+    const parts: string[] = [];
+    if (cell.isWeekOff) parts.push("Week Off");
+    if (cell.holidayName) parts.push(`Holiday: ${cell.holidayName}`);
+    if (cell.checkInAt) parts.push(`Check-in: ${new Date(cell.checkInAt).toLocaleTimeString()}`);
+    if (cell.checkOutAt) parts.push(`Check-out: ${new Date(cell.checkOutAt).toLocaleTimeString()}`);
+    if (cell.isOnLeave) parts.push(`Approved Leave: ${cell.leaveType || "Leave"}`);
+    if (cell.overriddenBy) parts.push(`Overridden by: ${cell.overriddenBy}`);
+    if (cell.overriddenAt) parts.push(`Overridden at: ${new Date(cell.overriddenAt).toLocaleString()}`);
+    return parts.join(" | ") || "No details";
+  };
+
+  const getEmployeeTotals = (row: EmployeeRow) => {
+    let presentDays = 0;
+    let absentDays = 0;
+    let onLeaveDays = 0;
+    let weekOffDays = 0;
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const cell = row.days?.[day] || emptyCell;
+      if (cell.status === "present") {
+        presentDays += 1;
+        continue;
+      }
+      if (cell.isOnLeave) {
+        onLeaveDays += 1;
+        continue;
+      }
+      if (cell.isWeekOff) {
+        weekOffDays += 1;
+        continue;
+      }
+      if (!cell.holidayName) {
+        absentDays += 1;
+      }
+    }
+    return {
+      presentDays,
+      absentDays,
+      onLeaveDays,
+      weekOffDays,
+      totalDays: daysInMonth
+    };
+  };
 
   return (
     <MainLayout
@@ -175,172 +205,209 @@ const Attendance = () => {
           You do not have permission to view attendance.
         </div>
       )}
-      {canView && (
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <motion.div
-          className="stat-card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <p className="text-sm text-muted-foreground mb-1">Present</p>
-          <p className="text-3xl font-bold text-success">{stats.present}</p>
-          <p className="text-sm text-muted-foreground mt-1">employees</p>
-        </motion.div>
-        <motion.div
-          className="stat-card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <p className="text-sm text-muted-foreground mb-1">Working</p>
-          <p className="text-3xl font-bold text-warning">{stats.working}</p>
-          <p className="text-sm text-muted-foreground mt-1">employees</p>
-        </motion.div>
-        <motion.div
-          className="stat-card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <p className="text-sm text-muted-foreground mb-1">Week Off</p>
-          <p className="text-3xl font-bold text-primary">{stats.weekOff}</p>
-          <p className="text-sm text-muted-foreground mt-1">records</p>
-        </motion.div>
-        <motion.div
-          className="stat-card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <p className="text-sm text-muted-foreground mb-1">Total Records</p>
-          <p className="text-3xl font-bold text-primary">{attendanceData.length}</p>
-          <p className="text-sm text-muted-foreground mt-1">this period</p>
-        </motion.div>
-      </div>
-      )}
 
       {canView && (
         <>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
               <Input
-                placeholder="Search employees..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="w-44"
               />
-            </div>
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <Select value={dateFilter} onValueChange={setDateFilter}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Filter by date" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="yesterday">Yesterday</SelectItem>
-                  <SelectItem value="this-week">This Week</SelectItem>
-                  <SelectItem value="this-month">This Month</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" className="gap-2">
-                <Download className="w-4 h-4" />
-                Export
+              <Input
+                placeholder="Search employee..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-64"
+              />
+              <Button variant="outline" onClick={fetchMatrix}>
+                Refresh
               </Button>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {canEdit
+                ? "Click any day cell to override attendance."
+                : "Read-only view."}
             </div>
           </div>
 
-          <motion.div
-            className="bg-card rounded-xl card-shadow overflow-hidden"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-          >
-            <Table>
-              <TableHeader>
-                <TableRow className="table-header">
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Check In</TableHead>
-                  <TableHead>Check Out</TableHead>
-                  <TableHead>Total Hours</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+          <div className="bg-card rounded-xl card-shadow overflow-auto">
+            <table className="w-full border-collapse min-w-[1100px]">
+              <thead>
+                <tr className="border-b">
+                  <th className="sticky left-0 bg-card text-left p-3 min-w-[220px] z-10">
+                    Employee
+                  </th>
+                  {Array.from({ length: daysInMonth }).map((_, idx) => (
+                    <th key={idx + 1} className="text-center p-2 text-sm text-muted-foreground min-w-[42px]">
+                      {idx + 1}
+                    </th>
+                  ))}
+                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                    Present
+                  </th>
+                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                    Absent
+                  </th>
+                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                    On Leave
+                  </th>
+                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                    Week Off
+                  </th>
+                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                    Total
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
                 {loading && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-muted-foreground">
-                      Loading...
-                    </TableCell>
-                  </TableRow>
+                  <tr>
+                    <td colSpan={daysInMonth + 6} className="p-4 text-muted-foreground">
+                      Loading attendance...
+                    </td>
+                  </tr>
                 )}
-                {!loading && filteredAttendance.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-muted-foreground">
-                      No attendance records found.
-                    </TableCell>
-                  </TableRow>
+                {!loading && filteredRows.length === 0 && (
+                  <tr>
+                    <td colSpan={daysInMonth + 6} className="p-4 text-muted-foreground">
+                      No employees found.
+                    </td>
+                  </tr>
                 )}
-                {filteredAttendance.map((record) => {
-                  const date = new Date(record.date);
-                  const isWeekOff = weekOffDays.includes(date.getDay());
-                  const status = isWeekOff
-                    ? "Week Off"
-                    : record.checkInAt && record.checkOutAt
-                      ? "Present"
-                      : record.checkInAt
-                        ? "Working"
-                        : "Absent";
+                {!loading && filteredRows.map((row) => (
+                  <tr key={row.employeeId} className="border-b">
+                    <td className="sticky left-0 bg-card p-3 z-10">
+                      <div className="font-medium">
+                        {`${row.firstName || ""} ${row.lastName || ""}`.trim() || "-"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{row.employeeCode || "-"}</div>
+                    </td>
+                    {Array.from({ length: daysInMonth }).map((_, idx) => {
+                      const day = idx + 1;
+                      const cell = row.days?.[day] || emptyCell;
+                      const isPresent = cell.status === "present";
+                      const isLeave = cell.isOnLeave;
+                      const isWeekOff = cell.isWeekOff;
+                      const isHoliday = Boolean(cell.holidayName);
+                      let colorClass = "";
+                      if (isLeave) {
+                        colorClass = "bg-violet-100 text-violet-700 border-violet-300";
+                      } else if (isHoliday) {
+                        colorClass = "bg-amber-100 text-amber-700 border-amber-300";
+                      } else if (isWeekOff) {
+                        colorClass = "bg-sky-100 text-sky-700 border-sky-300";
+                      } else if (isPresent) {
+                        colorClass = "bg-emerald-100 text-emerald-700 border-emerald-300";
+                      } else {
+                        colorClass = "bg-rose-100 text-rose-700 border-rose-300";
+                      }
 
-                  const totalHours = record.totalMinutes
-                    ? `${Math.floor(record.totalMinutes / 60)}h ${record.totalMinutes % 60}m`
-                    : "-";
+                      return (
+                        <td key={day} className="p-1">
+                          <button
+                            type="button"
+                            onClick={() => openOverride(row, day)}
+                            disabled={!canEdit}
+                            title={formatHoverInfo(cell)}
+                            className={`w-full h-8 rounded text-xs font-medium border ${colorClass} ${
+                              canEdit ? "cursor-pointer hover:opacity-90" : "cursor-default"
+                            }`}
+                          >
+                            {isLeave ? "L" : isHoliday ? "H" : isWeekOff ? "W" : isPresent ? "P" : "A"}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    {(() => {
+                      const totals = getEmployeeTotals(row);
+                      return (
+                        <>
+                          <td className="text-center text-sm font-medium text-emerald-700">
+                            {totals.presentDays}
+                          </td>
+                          <td className="text-center text-sm font-medium text-rose-700">
+                            {totals.absentDays}
+                          </td>
+                          <td className="text-center text-sm font-medium text-violet-700">
+                            {totals.onLeaveDays}
+                          </td>
+                          <td className="text-center text-sm font-medium text-sky-700">
+                            {totals.weekOffDays}
+                          </td>
+                          <td className="text-center text-sm font-medium">
+                            {totals.totalDays}
+                          </td>
+                        </>
+                      );
+                    })()}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-                  return (
-                    <TableRow
-                      key={record._id}
-                      className={`table-row-hover ${isWeekOff ? "opacity-60" : ""}`}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="w-10 h-10">
-                            <AvatarImage src={record.employeeId?.avatar} alt={record.employeeId?.firstName} />
-                            <AvatarFallback>
-                              {(record.employeeId?.firstName || "").charAt(0)}
-                              {(record.employeeId?.lastName || "").charAt(0)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium">
-                            {record.employeeId
-                              ? `${record.employeeId.firstName || ""} ${record.employeeId.lastName || ""}`.trim()
-                              : "-"}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {date.toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </TableCell>
-                      <TableCell className="font-mono">
-                        {record.checkInAt ? new Date(record.checkInAt).toLocaleTimeString() : "-"}
-                      </TableCell>
-                      <TableCell className="font-mono">
-                        {record.checkOutAt ? new Date(record.checkOutAt).toLocaleTimeString() : "-"}
-                      </TableCell>
-                      <TableCell className="font-medium">{totalHours}</TableCell>
-                      <TableCell>{getStatusBadge(status)}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </motion.div>
+          <div className="flex items-center gap-4 text-xs mt-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded bg-emerald-100 border border-emerald-300" />
+              Present
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded bg-rose-100 border border-rose-300" />
+              Absent
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded bg-sky-100 border border-sky-300" />
+              Week Off
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded bg-violet-100 border border-violet-300" />
+              Approved Leave
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded bg-amber-100 border border-amber-300" />
+              Holiday
+            </div>
+          </div>
         </>
       )}
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update Attendance</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {selectedEmployee
+                ? `${selectedEmployee.firstName} ${selectedEmployee.lastName} - ${month}-${String(selectedDay || 1).padStart(2, "0")}`
+                : ""}
+            </p>
+            <Select
+              value={selectedStatus}
+              onValueChange={(v) => setSelectedStatus(v as "present" | "absent")}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="present">Present</SelectItem>
+                <SelectItem value="absent">Absent</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveOverride} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 };
