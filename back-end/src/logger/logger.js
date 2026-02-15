@@ -15,7 +15,7 @@ const logger = winston.createLogger({
     logFormat
   ),
   transports: [
-    Console logs
+    // Console logs
     new winston.transports.Console({
       format: combine(colorize(), logFormat)
     }),

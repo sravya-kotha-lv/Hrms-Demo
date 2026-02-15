@@ -24,6 +24,23 @@ const orgSettingsSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    attendanceLockEnabled: {
+      type: Boolean,
+      default: false
+    },
+    attendanceLockAfterDays: {
+      type: Number,
+      default: 7
+    },
+    attendanceLockMode: {
+      type: String,
+      enum: ["days_window", "payroll_cutoff"],
+      default: "days_window"
+    },
+    payrollCutoffDay: {
+      type: Number,
+      default: 25
+    },
 
     minWorkHoursPerDay: {
       type: Number,

@@ -16,6 +16,13 @@ router.post(
   asyncHandler(controller.upsert)
 );
 
+router.get(
+  "/all",
+  auth,
+  authorize("WEEK_OFF_VIEW"),
+  asyncHandler(controller.getAll)
+);
+
 // Get week off
 router.get(
   "/",

@@ -46,6 +46,16 @@ exports.getEmployeeleaves = async (req, res) => {
   return res.status(200).json(buildSuccessResponse({ data }));
 }
 
+exports.upcomingEvents = async (req, res) => {
+  const data = await service.getUpcomingEvents(req);
+  return res.status(200).json(
+    buildSuccessResponse({
+      message: "Upcoming events fetched successfully",
+      data
+    })
+  );
+};
+
 exports.getById = async (req, res) => {
   const data = await service.getById(req);
 

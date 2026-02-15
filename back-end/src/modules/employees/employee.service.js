@@ -27,7 +27,8 @@ exports.createByHr = async (req) => {
       designationId,
       dateOfJoining,
       employmentType,
-      managerId
+      managerId,
+      shiftId
     } = req.body;
 
     const { organizationId } = req.user;
@@ -105,6 +106,7 @@ exports.createByHr = async (req) => {
               dateOfJoining,
               employmentType,
               managerId,
+              shiftId: shiftId || undefined,
               profileCompleted: false
             }
           ],
@@ -122,6 +124,7 @@ exports.createByHr = async (req) => {
             dateOfJoining,
             employmentType,
             managerId,
+            shiftId: shiftId || undefined,
             profileCompleted: false
           }
         ]);
@@ -304,8 +307,9 @@ exports.listByOrganization = async (req) => {
     Employee.find(query)
       .populate("departmentId", "name")
       .populate("designationId", "name")
-      .populate("managerId", "firstName lastName")
-      .populate("userId", "email")
+    .populate("managerId", "firstName lastName")
+    .populate("shiftId", "name code startTime endTime graceMinutes status")
+    .populate("userId", "email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit)),
@@ -336,6 +340,7 @@ exports.getById = async (req) => {
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
+    .populate("shiftId", "name code startTime endTime graceMinutes status")
     .populate("userId", "email");
 
   if (!employee) {
@@ -386,7 +391,8 @@ exports.getMe = async (req) => {
   })
     .populate("departmentId", "name")
     .populate("designationId", "name")
-    .populate("managerId", "firstName lastName");
+    .populate("managerId", "firstName lastName")
+    .populate("shiftId", "name code startTime endTime graceMinutes status");
 
   if (!employee) {
     const user = await User.findById(req.user.userId).select("email");
@@ -399,6 +405,7 @@ exports.getMe = async (req) => {
       employmentType: "",
       dateOfJoining: null,
       managerId: null,
+      shiftId: null,
       profileCompleted: false
     };
   }
@@ -436,6 +443,7 @@ exports.updateByHr = async (req) => {
     employmentType,
     status,
     managerId,
+    shiftId,
     dob,
     gender,
     address,
@@ -484,6 +492,7 @@ exports.updateByHr = async (req) => {
     employmentType,
     status,
     managerId,
+    shiftId,
     dob,
     gender,
     address,
@@ -514,6 +523,7 @@ exports.updateByHr = async (req) => {
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
+    .populate("shiftId", "name code startTime endTime graceMinutes status")
     .populate("userId", "email");
 
   const orgUser = await OrgUser.findOne({
@@ -549,4 +559,117 @@ exports.remove = async (req) => {
   employee.deletedBy = req.user.userId;
 
   await employee.save();
+};
+
+const isLeapYear = (year) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+const getNextOccurrence = (baseDate, fromDate) => {
+  const month = baseDate.getMonth();
+  const day = baseDate.getDate();
+  let year = fromDate.getFullYear();
+
+  // Handle Feb 29 birthdays/anniversaries in non-leap years as Feb 28
+  let targetDay = day;
+  if (month === 1 && day === 29 && !isLeapYear(year)) {
+    targetDay = 28;
+  }
+
+  let next = new Date(year, month, targetDay);
+  if (next < fromDate) {
+    year += 1;
+    targetDay = day;
+    if (month === 1 && day === 29 && !isLeapYear(year)) {
+      targetDay = 28;
+    }
+    next = new Date(year, month, targetDay);
+  }
+
+  return next;
+};
+
+exports.getUpcomingEvents = async (req) => {
+  const days = Math.min(31, Math.max(1, Number(req.query.days || 7)));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(today);
+  end.setDate(end.getDate() + days);
+
+  const query = {
+    organizationId: req.user.organizationId,
+    isDeleted: false,
+    status: { $ne: "resigned" }
+  };
+
+  if (req.user.activeRoleId) {
+    const role = await Role.findOne({
+      _id: req.user.activeRoleId,
+      organizationId: req.user.organizationId
+    }).select("slug");
+
+    if (role?.slug === "manager") {
+      const managerEmployee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (managerEmployee) {
+        query.managerId = managerEmployee._id;
+      }
+    }
+  }
+
+  const employees = await Employee.find(query)
+    .select("firstName lastName employeeCode dob dateOfJoining");
+
+  const birthdays = [];
+  const anniversaries = [];
+
+  for (const e of employees) {
+    const name = `${e.firstName || ""} ${e.lastName || ""}`.trim();
+
+    if (e.dob) {
+      const dob = new Date(e.dob);
+      const nextBirthday = getNextOccurrence(dob, today);
+      if (nextBirthday >= today && nextBirthday <= end) {
+        const diffDays = Math.floor((nextBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        birthdays.push({
+          employeeId: e._id,
+          employeeCode: e.employeeCode,
+          firstName: e.firstName,
+          lastName: e.lastName,
+          name,
+          eventDate: nextBirthday,
+          daysAway: diffDays
+        });
+      }
+    }
+
+    if (e.dateOfJoining) {
+      const doj = new Date(e.dateOfJoining);
+      const nextAnniversary = getNextOccurrence(doj, today);
+      if (nextAnniversary >= today && nextAnniversary <= end) {
+        const diffDays = Math.floor((nextAnniversary.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const years = nextAnniversary.getFullYear() - doj.getFullYear();
+        anniversaries.push({
+          employeeId: e._id,
+          employeeCode: e.employeeCode,
+          firstName: e.firstName,
+          lastName: e.lastName,
+          name,
+          eventDate: nextAnniversary,
+          daysAway: diffDays,
+          years
+        });
+      }
+    }
+  }
+
+  birthdays.sort((a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime());
+  anniversaries.sort((a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime());
+
+  return {
+    windowDays: days,
+    birthdays,
+    anniversaries
+  };
 };

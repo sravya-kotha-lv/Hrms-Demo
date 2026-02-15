@@ -45,6 +45,13 @@ router.get(
 router.get("/leave-types", auth, asyncHandler(controller.getEmployeeleaves));
 
 router.get(
+  "/upcoming-events",
+  auth,
+  authorize(["EMP_VIEW", "EMP_SELF_VIEW"]),
+  asyncHandler(controller.upcomingEvents)
+);
+
+router.get(
   "/me",
   auth,
   authorize("EMP_SELF_VIEW"),

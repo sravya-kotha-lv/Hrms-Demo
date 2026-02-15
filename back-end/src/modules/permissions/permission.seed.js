@@ -35,6 +35,13 @@ const PERMISSIONS = [
   { code: "ATTENDANCE_VIEW_SELF", name: "View Attendance Self", module: "Attendance" },
   { code: "ATTENDANCE_MANAGE", name: "Manage Attendance", module: "Attendance" },
 
+  // 🔔 Notifications
+  { code: "NOTIFICATION_VIEW_SELF", name: "View Notifications Self", module: "Notifications" },
+  { code: "NOTIFICATION_MANAGE_SELF", name: "Manage Notifications Self", module: "Notifications" },
+  { code: "SHIFT_VIEW", name: "View Shifts", module: "Shifts" },
+  { code: "SHIFT_MANAGE", name: "Manage Shifts", module: "Shifts" },
+  { code: "SHIFT_VIEW_SELF", name: "View Shift Self", module: "Shifts" },
+
 ];
 
 exports.seedPermissions = async (organizationId) => {

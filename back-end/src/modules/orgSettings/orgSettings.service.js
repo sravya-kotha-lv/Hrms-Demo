@@ -4,6 +4,10 @@ const DEFAULTS = {
   leaveCreditFrequency: "monthly",
   leaveTypeCreditMode: "current_month_onwards",
   sandwichRuleEnabled: false,
+  attendanceLockEnabled: false,
+  attendanceLockAfterDays: 7,
+  attendanceLockMode: "days_window",
+  payrollCutoffDay: 25,
   minWorkHoursPerDay: 8,
   minHalfDayHours: 4
 };
@@ -28,6 +32,10 @@ exports.upsert = async (req) => {
     leaveCreditFrequency,
     leaveTypeCreditMode,
     sandwichRuleEnabled,
+    attendanceLockEnabled,
+    attendanceLockAfterDays,
+    attendanceLockMode,
+    payrollCutoffDay,
     minWorkHoursPerDay,
     minHalfDayHours
   } = req.body;
@@ -38,6 +46,10 @@ exports.upsert = async (req) => {
       leaveCreditFrequency,
       leaveTypeCreditMode,
       sandwichRuleEnabled,
+      attendanceLockEnabled,
+      attendanceLockAfterDays,
+      attendanceLockMode,
+      payrollCutoffDay,
       minWorkHoursPerDay,
       minHalfDayHours
     },

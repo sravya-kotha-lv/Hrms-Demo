@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
-import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
+import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -26,6 +26,14 @@ type DayCell = {
   checkOutAt: string | null;
   overriddenBy: string | null;
   overriddenAt: string | null;
+  shiftName?: string | null;
+  shiftCode?: string | null;
+  shiftStartTime?: string | null;
+  shiftEndTime?: string | null;
+  lateByMinutes?: number;
+  earlyLoginByMinutes?: number;
+  earlyCheckoutByMinutes?: number;
+  overtimeMinutes?: number;
   isOnLeave: boolean;
   leaveType: string | null;
   isWeekOff: boolean;
@@ -38,6 +46,12 @@ type EmployeeRow = {
   lastName: string;
   employeeCode: string;
   days: Record<number, DayCell>;
+};
+
+type AttendanceHistoryItem = {
+  action: string;
+  createdAt: string;
+  actor: string;
 };
 
 const currentMonth = () => {
@@ -54,7 +68,9 @@ const emptyCell: DayCell = {
   overriddenBy: null,
   overriddenAt: null,
   isWeekOff: false,
-  holidayName: null
+  holidayName: null,
+  isOnLeave: false,
+  leaveType: ""
 };
 
 const Attendance = () => {
@@ -75,6 +91,12 @@ const Attendance = () => {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<"present" | "absent">("present");
   const [saving, setSaving] = useState(false);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  const [bulkDate, setBulkDate] = useState("");
+  const [bulkStatus, setBulkStatus] = useState<"present" | "absent">("present");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [history, setHistory] = useState<AttendanceHistoryItem[]>([]);
 
   const fetchMatrix = async () => {
     if (!canView) {
@@ -99,6 +121,10 @@ const Attendance = () => {
 
       setRows(res.data?.employees || []);
       setDaysInMonth(res.data?.daysInMonth || 31);
+      setSelectedEmployeeIds((prev) => {
+        const validIds = new Set((res.data?.employees || []).map((e: EmployeeRow) => e.employeeId));
+        return prev.filter((id) => validIds.has(id));
+      });
     } finally {
       setLoading(false);
     }
@@ -117,12 +143,28 @@ const Attendance = () => {
     });
   }, [rows, search]);
 
-  const openOverride = (row: EmployeeRow, day: number) => {
-    if (!canEdit) return;
+  const openCellDetails = async (row: EmployeeRow, day: number) => {
     setSelectedEmployee(row);
     setSelectedDay(day);
     setSelectedStatus((row.days?.[day]?.status || "absent") as "present" | "absent");
     setOpen(true);
+    setHistory([]);
+    try {
+      setHistoryLoading(true);
+      const date = `${month}-${String(day).padStart(2, "0")}`;
+      const endpoint = canViewAll
+        ? `/timesheets/attendance/matrix/history?employeeId=${row.employeeId}&date=${date}`
+        : `/timesheets/attendance/matrix/history/my?date=${date}`;
+      const requiredPermissions = canViewAll
+        ? ["ATTENDANCE_VIEW_ALL"]
+        : ["ATTENDANCE_VIEW_SELF"];
+      const res = await getApiWithToken(endpoint, null, { requiredPermissions });
+      if (res?.success) {
+        setHistory(res.data?.history || []);
+      }
+    } finally {
+      setHistoryLoading(false);
+    }
   };
 
   const saveOverride = async () => {
@@ -155,8 +197,18 @@ const Attendance = () => {
     const parts: string[] = [];
     if (cell.isWeekOff) parts.push("Week Off");
     if (cell.holidayName) parts.push(`Holiday: ${cell.holidayName}`);
-    if (cell.checkInAt) parts.push(`Check-in: ${new Date(cell.checkInAt).toLocaleTimeString()}`);
-    if (cell.checkOutAt) parts.push(`Check-out: ${new Date(cell.checkOutAt).toLocaleTimeString()}`);
+  if (cell.checkInAt) parts.push(`Check-in: ${new Date(cell.checkInAt).toLocaleTimeString()}`);
+  if (cell.checkOutAt) parts.push(`Check-out: ${new Date(cell.checkOutAt).toLocaleTimeString()}`);
+    if (cell.shiftName || cell.shiftCode) {
+      parts.push(`Shift: ${cell.shiftName || ""}${cell.shiftCode ? ` (${cell.shiftCode})` : ""}`);
+    }
+    if (cell.shiftStartTime && cell.shiftEndTime) {
+      parts.push(`Shift Time: ${cell.shiftStartTime} - ${cell.shiftEndTime}`);
+    }
+    if ((cell.lateByMinutes || 0) > 0) parts.push(`Late by: ${cell.lateByMinutes} min`);
+    if ((cell.earlyLoginByMinutes || 0) > 0) parts.push(`Early login by: ${cell.earlyLoginByMinutes} min`);
+    if ((cell.earlyCheckoutByMinutes || 0) > 0) parts.push(`Early checkout by: ${cell.earlyCheckoutByMinutes} min`);
+    if ((cell.overtimeMinutes || 0) > 0) parts.push(`Overtime: ${cell.overtimeMinutes} min`);
     if (cell.isOnLeave) parts.push(`Approved Leave: ${cell.leaveType || "Leave"}`);
     if (cell.overriddenBy) parts.push(`Overridden by: ${cell.overriddenBy}`);
     if (cell.overriddenAt) parts.push(`Overridden at: ${new Date(cell.overriddenAt).toLocaleString()}`);
@@ -168,6 +220,7 @@ const Attendance = () => {
     let absentDays = 0;
     let onLeaveDays = 0;
     let weekOffDays = 0;
+    let holidayDays = 0;
     for (let day = 1; day <= daysInMonth; day += 1) {
       const cell = row.days?.[day] || emptyCell;
       if (cell.status === "present") {
@@ -182,17 +235,103 @@ const Attendance = () => {
         weekOffDays += 1;
         continue;
       }
-      if (!cell.holidayName) {
-        absentDays += 1;
+      if (cell.holidayName) {
+        holidayDays += 1;
+        continue;
       }
+      absentDays += 1;
     }
     return {
       presentDays,
       absentDays,
       onLeaveDays,
       weekOffDays,
+      holidayDays,
       totalDays: daysInMonth
     };
+  };
+
+  const downloadCsv = () => {
+    const header = [
+      "Employee Code",
+      "Employee Name",
+      "Present",
+      "Absent",
+      "On Leave",
+      "Week Off",
+      "Holiday",
+      "Total Days"
+    ];
+    const lines = [header.join(",")];
+    filteredRows.forEach((row) => {
+      const t = getEmployeeTotals(row);
+      const name = `${row.firstName || ""} ${row.lastName || ""}`.trim();
+      lines.push([
+        row.employeeCode || "",
+        `"${name.replace(/"/g, '""')}"`,
+        t.presentDays,
+        t.absentDays,
+        t.onLeaveDays,
+        t.weekOffDays,
+        t.holidayDays,
+        t.totalDays
+      ].join(","));
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance-${month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const toggleEmployeeSelection = (employeeId: string) => {
+    setSelectedEmployeeIds((prev) =>
+      prev.includes(employeeId)
+        ? prev.filter((id) => id !== employeeId)
+        : [...prev, employeeId]
+    );
+  };
+
+  const toggleSelectAllFiltered = () => {
+    const filteredIds = filteredRows.map((r) => r.employeeId);
+    const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedEmployeeIds.includes(id));
+    if (allSelected) {
+      setSelectedEmployeeIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+    } else {
+      setSelectedEmployeeIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
+  const runBulkUpdate = async () => {
+    if (!canEdit) return;
+    if (!bulkDate || selectedEmployeeIds.length === 0) {
+      toast.error("Select employees and date for bulk update");
+      return;
+    }
+    try {
+      setBulkSaving(true);
+      const res = await postApiWithToken(
+        "/timesheets/attendance/matrix/bulk",
+        {
+          employeeIds: selectedEmployeeIds,
+          date: bulkDate,
+          status: bulkStatus
+        },
+        null,
+        { requiredPermissions: ["ATTENDANCE_MANAGE"] }
+      );
+      if (res?.skipped) return;
+      if (!res?.success) {
+        toast.error(res?.message || "Bulk update failed");
+        return;
+      }
+      toast.success(`Attendance updated for ${res.data?.updatedCount || 0} employees`);
+      fetchMatrix();
+    } finally {
+      setBulkSaving(false);
+    }
   };
 
   return (
@@ -208,22 +347,28 @@ const Attendance = () => {
 
       {canView && (
         <>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-3">
+          <div className="text-xs text-muted-foreground mb-2">
+            Tip: Hover any day cell to view check-in/out, shift, late/early, leave, holiday and override details.
+          </div>
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 mb-4">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto">
               <Input
                 type="month"
                 value={month}
                 onChange={(e) => setMonth(e.target.value)}
-                className="w-44"
+                className="w-full sm:w-44"
               />
               <Input
                 placeholder="Search employee..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-64"
+                className="w-full sm:w-64"
               />
               <Button variant="outline" onClick={fetchMatrix}>
                 Refresh
+              </Button>
+              <Button variant="outline" onClick={downloadCsv}>
+                Export CSV
               </Button>
             </div>
             <div className="text-sm text-muted-foreground">
@@ -233,11 +378,42 @@ const Attendance = () => {
             </div>
           </div>
 
+          {canEdit && (
+            <div className="flex flex-wrap items-end gap-2 sm:gap-3 mb-4">
+              <Button variant="outline" onClick={toggleSelectAllFiltered}>
+                Select/Unselect Filtered ({selectedEmployeeIds.length})
+              </Button>
+              <Input
+                type="date"
+                value={bulkDate}
+                onChange={(e) => setBulkDate(e.target.value)}
+                className="w-full sm:w-48"
+              />
+              <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as "present" | "absent")}>
+                <SelectTrigger className="w-full sm:w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="present">Present</SelectItem>
+                  <SelectItem value="absent">Absent</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={runBulkUpdate} disabled={bulkSaving}>
+                {bulkSaving ? "Updating..." : "Bulk Update"}
+              </Button>
+            </div>
+          )}
+
           <div className="bg-card rounded-xl card-shadow overflow-auto">
             <table className="w-full border-collapse min-w-[1100px]">
               <thead>
                 <tr className="border-b">
-                  <th className="sticky left-0 bg-card text-left p-3 min-w-[220px] z-10">
+                  {canEdit && (
+                    <th className="sticky left-0 bg-card text-left p-3 min-w-[48px] z-20">
+                      Sel
+                    </th>
+                  )}
+                  <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} bg-card text-left p-3 min-w-[220px] z-10`}>
                     Employee
                   </th>
                   {Array.from({ length: daysInMonth }).map((_, idx) => (
@@ -265,21 +441,30 @@ const Attendance = () => {
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={daysInMonth + 6} className="p-4 text-muted-foreground">
+                    <td colSpan={daysInMonth + 6 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
                       Loading attendance...
                     </td>
                   </tr>
                 )}
                 {!loading && filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={daysInMonth + 6} className="p-4 text-muted-foreground">
+                    <td colSpan={daysInMonth + 6 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
                       No employees found.
                     </td>
                   </tr>
                 )}
                 {!loading && filteredRows.map((row) => (
                   <tr key={row.employeeId} className="border-b">
-                    <td className="sticky left-0 bg-card p-3 z-10">
+                    {canEdit && (
+                      <td className="sticky left-0 bg-card p-2 z-20 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedEmployeeIds.includes(row.employeeId)}
+                          onChange={() => toggleEmployeeSelection(row.employeeId)}
+                        />
+                      </td>
+                    )}
+                    <td className={`sticky ${canEdit ? "left-[48px]" : "left-0"} bg-card p-3 z-10`}>
                       <div className="font-medium">
                         {`${row.firstName || ""} ${row.lastName || ""}`.trim() || "-"}
                       </div>
@@ -309,11 +494,10 @@ const Attendance = () => {
                         <td key={day} className="p-1">
                           <button
                             type="button"
-                            onClick={() => openOverride(row, day)}
-                            disabled={!canEdit}
+                            onClick={() => openCellDetails(row, day)}
                             title={formatHoverInfo(cell)}
                             className={`w-full h-8 rounded text-xs font-medium border ${colorClass} ${
-                              canEdit ? "cursor-pointer hover:opacity-90" : "cursor-default"
+                              "cursor-pointer hover:opacity-90"
                             }`}
                           >
                             {isLeave ? "L" : isHoliday ? "H" : isWeekOff ? "W" : isPresent ? "P" : "A"}
@@ -349,7 +533,7 @@ const Attendance = () => {
             </table>
           </div>
 
-          <div className="flex items-center gap-4 text-xs mt-3">
+          <div className="flex flex-wrap items-center gap-3 text-xs mt-3">
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded bg-emerald-100 border border-emerald-300" />
               Present
@@ -385,26 +569,42 @@ const Attendance = () => {
                 ? `${selectedEmployee.firstName} ${selectedEmployee.lastName} - ${month}-${String(selectedDay || 1).padStart(2, "0")}`
                 : ""}
             </p>
-            <Select
-              value={selectedStatus}
-              onValueChange={(v) => setSelectedStatus(v as "present" | "absent")}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="present">Present</SelectItem>
-                <SelectItem value="absent">Absent</SelectItem>
-              </SelectContent>
-            </Select>
+            {canEdit && (
+              <Select
+                value={selectedStatus}
+                onValueChange={(v) => setSelectedStatus(v as "present" | "absent")}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="present">Present</SelectItem>
+                  <SelectItem value="absent">Absent</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            <div className="rounded-md border p-3 max-h-40 overflow-auto">
+              <p className="text-xs font-medium mb-2">Activity Timeline</p>
+              {historyLoading && <p className="text-xs text-muted-foreground">Loading...</p>}
+              {!historyLoading && history.length === 0 && (
+                <p className="text-xs text-muted-foreground">No activity found.</p>
+              )}
+              {!historyLoading && history.map((h, idx) => (
+                <p key={`${h.createdAt}-${idx}`} className="text-xs mb-1">
+                  {new Date(h.createdAt).toLocaleString()} - {h.action} by {h.actor}
+                </p>
+              ))}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={saveOverride} disabled={saving}>
-              {saving ? "Saving..." : "Save"}
-            </Button>
+            {canEdit && (
+              <Button onClick={saveOverride} disabled={saving}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

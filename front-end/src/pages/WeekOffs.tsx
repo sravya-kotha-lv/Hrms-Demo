@@ -6,6 +6,13 @@ import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/context/AuthContext";
 import PermissionGate from "@/components/PermissionGate";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 
 const DAYS = [
   { label: "Sunday", value: 0 },
@@ -19,13 +26,42 @@ const DAYS = [
 
 const WeekOffs = () => {
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
+  const [configs, setConfigs] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
+  const [selectedShiftId, setSelectedShiftId] = useState<string>("default");
   const [loading, setLoading] = useState(false);
   const { hasAnyPermission } = useAuth();
   const canView = hasAnyPermission(["WEEK_OFF_VIEW"]);
   const canManage = hasAnyPermission(["WEEK_OFF_MANAGE"]);
 
-  const fetchConfig = async () => {
-    const res = await getApiWithToken("/week-offs", null, {
+  const fetchConfigs = async () => {
+    const res = await getApiWithToken("/week-offs/all", null, {
+      requiredPermissions: ["WEEK_OFF_VIEW"]
+    });
+    if (res?.skipped) return;
+    if (res?.success) {
+      const allConfigs = res?.data || [];
+      setConfigs(allConfigs);
+    } else {
+      toast.error(res?.message || "Failed to load week off config");
+    }
+  };
+
+  const fetchShifts = async () => {
+    const res = await getApiWithToken("/shifts", null, {
+      requiredPermissions: ["SHIFT_VIEW", "WEEK_OFF_VIEW"]
+    });
+    if (res?.success) {
+      setShifts((res?.data || []).filter((s: any) => s.status === "active"));
+    }
+  };
+
+  const fetchConfigForSelection = async (shiftId: string) => {
+    const params =
+      shiftId === "default"
+        ? ""
+        : `?shiftId=${encodeURIComponent(shiftId)}`;
+    const res = await getApiWithToken(`/week-offs${params}`, null, {
       requiredPermissions: ["WEEK_OFF_VIEW"]
     });
     if (res?.skipped) return;
@@ -37,8 +73,13 @@ const WeekOffs = () => {
   };
 
   useEffect(() => {
-    fetchConfig();
+    fetchConfigs();
+    fetchShifts();
   }, []);
+
+  useEffect(() => {
+    fetchConfigForSelection(selectedShiftId);
+  }, [selectedShiftId]);
 
   const toggleDay = (value: number) => {
     setWeekOffDays((prev) =>
@@ -55,12 +96,17 @@ const WeekOffs = () => {
     }
     try {
       setLoading(true);
-      const res = await postApiWithToken("/week-offs", { weekOffDays }, null, {
+      const payload: any = { weekOffDays };
+      if (selectedShiftId !== "default") {
+        payload.shiftId = selectedShiftId;
+      }
+      const res = await postApiWithToken("/week-offs", payload, null, {
         requiredPermissions: ["WEEK_OFF_MANAGE"]
       });
       if (res?.skipped) return;
       if (res?.success) {
         toast.success("Week off configuration saved");
+        fetchConfigs();
       } else {
         toast.error(res?.message || "Save failed");
       }
@@ -82,8 +128,25 @@ const WeekOffs = () => {
       {canView && (
         <div className="bg-card rounded-xl card-shadow p-6 max-w-3xl">
         <p className="text-sm text-muted-foreground mb-4">
-          Select the weekly off days for your organization.
+          Set week offs for default organization policy or for a specific shift.
         </p>
+
+        <div className="mb-5">
+          <label className="text-sm font-medium mb-2 block">Apply For</label>
+          <Select value={selectedShiftId} onValueChange={setSelectedShiftId}>
+            <SelectTrigger className="max-w-sm">
+              <SelectValue placeholder="Select target" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Default (All Shifts)</SelectItem>
+              {shifts.map((shift: any) => (
+                <SelectItem key={shift._id} value={shift._id}>
+                  {shift.name} ({shift.code})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           {DAYS.map((day) => (
@@ -99,7 +162,7 @@ const WeekOffs = () => {
         </div>
 
         <div className="flex gap-3 mt-6">
-          <Button variant="outline" onClick={fetchConfig}>
+          <Button variant="outline" onClick={() => fetchConfigForSelection(selectedShiftId)}>
             Refresh
           </Button>
           <PermissionGate permissions={["WEEK_OFF_MANAGE"]}>
@@ -107,6 +170,27 @@ const WeekOffs = () => {
               Save
             </Button>
           </PermissionGate>
+        </div>
+
+        <div className="mt-6 border-t pt-4">
+          <h4 className="font-medium mb-2">Configured Policies</h4>
+          <div className="space-y-2">
+            {configs.length === 0 && (
+              <p className="text-sm text-muted-foreground">No week off configuration yet.</p>
+            )}
+            {configs.map((cfg: any) => (
+              <div key={cfg._id} className="rounded-md border p-3 text-sm">
+                <p className="font-medium">
+                  {cfg.shiftId ? `${cfg.shiftId.name} (${cfg.shiftId.code})` : "Default (All Shifts)"}
+                </p>
+                <p className="text-muted-foreground">
+                  {(cfg.weekOffDays || [])
+                    .map((d: number) => DAYS.find((x) => x.value === d)?.label || d)
+                    .join(", ")}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
       )}

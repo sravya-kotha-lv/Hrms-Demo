@@ -7,8 +7,6 @@ const {
 exports.login = async (req, res) => {
   try {
     const result = await userService.loginUser(req.body);
-    console.log(result,"result");
-    
     res.setHeader("Authorization", result?.token);
     delete result.token;
     return res.status(200).json(
@@ -19,8 +17,6 @@ exports.login = async (req, res) => {
       })
     );
   } catch (err) {
-    console.log(err,"err");
-    
     return res.status(err.code || 500).json(
       buildFailureResponse({
         code: err.code || 500,

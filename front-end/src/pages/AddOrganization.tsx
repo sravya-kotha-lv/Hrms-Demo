@@ -38,7 +38,6 @@ const AddOrganization = () => {
 
   const handleSubmit = (e: any) => {
     e.preventDefault();
-    console.log(formData);
     navigate("/organization");
   };
 

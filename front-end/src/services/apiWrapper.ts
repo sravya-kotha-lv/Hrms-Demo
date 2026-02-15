@@ -1,6 +1,6 @@
 import axios from "axios";
 import { toast } from "sonner";
-import { getToken, setToken, clearAuth, getProfile, setProfile, hasAnyPermission } from "../utils/auth";
+import { getToken, setToken, hasAnyPermission } from "../utils/auth";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
@@ -18,8 +18,6 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => {
     // ✅ Capture token from ANY response (login / switch-role)
-    console.log(response,"----");
-    
     const authHeader = response.headers?.authorization;
     if (authHeader) {
       setToken(authHeader);
@@ -136,6 +134,26 @@ export const putApiWithToken = async (
   } catch (error: any) {
     return error.response?.data || error;
   }     
+};
+
+export const patchApiWithToken = async (
+  apiUrl: string,
+  params: any = {},
+  _headers: any = null,
+  options: { requiredPermissions?: string[] } = {}
+) => {
+  try {
+    if (options.requiredPermissions && !hasAnyPermission(options.requiredPermissions)) {
+      return { success: false, code: 403, message: "Permission denied", skipped: true };
+    }
+    const headers = _headers
+      ? { "Content-Type": undefined }
+      : { "Content-Type": "application/json" };
+    const response = await api.patch(apiUrl, params, { headers });
+    return response.data;
+  } catch (error: any) {
+    return error.response?.data || error;
+  }
 };
 
 

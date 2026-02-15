@@ -33,7 +33,8 @@ exports.createEmployeeByHrSchema = Joi.object({
 
   dateOfJoining: Joi.date().required(),
   employmentType: employmentType.required(),
-  managerId: objectId.optional()
+  managerId: objectId.optional(),
+  shiftId: objectId.optional().allow(null, "")
 });
 
 /* ------------------------------------------------------------------ */
@@ -87,6 +88,7 @@ exports.updateEmployeeSchema = Joi.object({
   employmentType: employmentType.optional(),
   status: status.optional(),
   managerId: objectId.optional(),
+  shiftId: objectId.optional().allow(null, ""),
 
   dob: Joi.date().optional(),
   gender: Joi.string().optional(),

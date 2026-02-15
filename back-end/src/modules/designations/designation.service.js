@@ -110,6 +110,6 @@ exports.list = async (req) => {
   
   return results;
 } catch(err){
-console.log(err,'erer')
+  throw err;
 }
 };
