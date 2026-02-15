@@ -5,6 +5,8 @@ const Leave = require("../leaves/leave.model");
 const { audit } = require("../auditLogs/auditLogs.service");
 const Role = require("../roles/role.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
+const WeekOff = require("../weekOffs/weekOff.model");
+const Holiday = require("../holidays/holiday.model");
 
 const parseDateValue = (value) => {
   if (value instanceof Date) return new Date(value);
@@ -62,6 +64,18 @@ const toDateKey = (value) => {
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const eachDateBetween = (from, to) => {
+  const dates = [];
+  const start = startOfDay(from);
+  const end = startOfDay(to);
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    dates.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
 };
 
 const sanitizeEntries = (entries, weekStart) => {
@@ -184,6 +198,46 @@ const getEmployeeFromReq = async (req) => {
   return employee;
 };
 
+const parseMonthRange = (monthValue) => {
+  const now = new Date();
+  let year = now.getFullYear();
+  let month = now.getMonth() + 1;
+
+  if (typeof monthValue === "string" && /^\d{4}-\d{2}$/.test(monthValue)) {
+    const [y, m] = monthValue.split("-").map(Number);
+    year = y;
+    month = m;
+  }
+
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0, 23, 59, 59, 999);
+  const daysInMonth = end.getDate();
+  return { year, month, start, end, daysInMonth };
+};
+
+const getScopedEmployeeIdsForViewer = async (req) => {
+  if (!req.user.activeRoleId) return null;
+
+  const role = await Role.findOne({
+    _id: req.user.activeRoleId,
+    organizationId: req.user.organizationId
+  }).select("slug");
+
+  if (role?.slug !== "manager") return null;
+
+  const managerEmployee = await Employee.findOne({
+    userId: req.user.userId,
+    organizationId: req.user.organizationId
+  }).select("_id");
+
+  if (!managerEmployee) return [];
+
+  return Employee.find({
+    organizationId: req.user.organizationId,
+    managerId: managerEmployee._id
+  }).distinct("_id");
+};
+
 exports.checkIn = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const now = new Date();
@@ -201,6 +255,16 @@ exports.checkIn = async (req) => {
 
   if (existing && existing.checkOutAt) {
     throw new Error("Already checked out for today");
+  }
+
+  if (existing && !existing.checkInAt && !existing.checkOutAt) {
+    existing.checkInAt = now;
+    existing.totalMinutes = 0;
+    existing.status = "checked_in";
+    existing.overriddenBy = null;
+    existing.overriddenAt = null;
+    await existing.save();
+    return existing;
   }
 
   const attendance = await Attendance.create({
@@ -249,6 +313,8 @@ exports.checkOut = async (req) => {
   attendance.checkOutAt = now;
   attendance.totalMinutes = totalMinutes;
   attendance.status = "checked_out";
+  attendance.overriddenBy = null;
+  attendance.overriddenAt = null;
   await attendance.save();
 
   // Update weekly timesheet hours for today
@@ -322,6 +388,277 @@ exports.getAttendance = async (req) => {
   return Attendance.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .sort({ date: -1, checkInAt: -1 });
+};
+
+exports.getAttendanceMatrix = async (req) => {
+  const { year, month, start, end, daysInMonth } = parseMonthRange(req.query.month);
+
+  const employeeQuery = {
+    organizationId: req.user.organizationId,
+    status: "active"
+  };
+
+  const scopedEmployeeIds = await getScopedEmployeeIdsForViewer(req);
+  if (Array.isArray(scopedEmployeeIds)) {
+    employeeQuery._id = { $in: scopedEmployeeIds };
+  }
+
+  const employees = await Employee.find(employeeQuery)
+    .select("_id firstName lastName employeeCode")
+    .sort({ firstName: 1, lastName: 1 });
+
+  if (!employees.length) {
+    return { year, month, daysInMonth, employees: [] };
+  }
+
+  const employeeIds = employees.map((e) => e._id);
+  const [attendanceRows, weekOffConfig, holidays, approvedLeaves] = await Promise.all([
+    Attendance.find({
+      organizationId: req.user.organizationId,
+      employeeId: { $in: employeeIds },
+      date: { $gte: start, $lte: end }
+    })
+      .select("employeeId date checkInAt checkOutAt overriddenBy overriddenAt")
+      .populate("overriddenBy", "firstName lastName"),
+    WeekOff.findOne({ organizationId: req.user.organizationId }).select("weekOffDays"),
+    Holiday.find({
+      organizationId: req.user.organizationId,
+      status: "active",
+      date: { $gte: start, $lte: end }
+    }).select("date name"),
+    Leave.find({
+      organizationId: req.user.organizationId,
+      employeeId: { $in: employeeIds },
+      status: "approved",
+      fromDate: { $lte: end },
+      toDate: { $gte: start }
+    }).populate("leaveTypeId", "name")
+  ]);
+
+  const weekOffDays = weekOffConfig?.weekOffDays || [];
+  const holidayByDay = new Map();
+  holidays.forEach((h) => {
+    holidayByDay.set(new Date(h.date).getDate(), h.name);
+  });
+
+  const attendanceMap = new Map();
+  attendanceRows.forEach((row) => {
+    const day = new Date(row.date).getDate();
+    const key = `${row.employeeId.toString()}-${day}`;
+    const overriddenByName = row.overriddenBy
+      ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
+      : null;
+    attendanceMap.set(key, {
+      status: row.checkInAt || row.checkOutAt ? "present" : "absent",
+      checkInAt: row.checkInAt || null,
+      checkOutAt: row.checkOutAt || null,
+      overriddenBy: overriddenByName || null,
+      overriddenAt: row.overriddenAt || null
+    });
+  });
+
+  const leaveMap = new Map();
+  approvedLeaves.forEach((leave) => {
+    const leaveStart = new Date(leave.fromDate) < start ? start : new Date(leave.fromDate);
+    const leaveEnd = new Date(leave.toDate) > end ? end : new Date(leave.toDate);
+    eachDateBetween(leaveStart, leaveEnd).forEach((d) => {
+      const key = `${leave.employeeId.toString()}-${d.getDate()}`;
+      leaveMap.set(key, {
+        isOnLeave: true,
+        leaveType: leave.leaveTypeId?.name || "Leave"
+      });
+    });
+  });
+
+  const data = employees.map((emp) => {
+    const days = {};
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const key = `${emp._id.toString()}-${day}`;
+      const base = attendanceMap.get(key);
+      const leaveInfo = leaveMap.get(key) || { isOnLeave: false, leaveType: null };
+      const dateForDay = new Date(year, month - 1, day);
+      const isWeekOff = weekOffDays.includes(dateForDay.getDay());
+      const holidayName = holidayByDay.get(day) || null;
+      days[day] = base || {
+        status: "absent",
+        checkInAt: null,
+        checkOutAt: null,
+        overriddenBy: null,
+        overriddenAt: null
+      };
+      days[day].isOnLeave = leaveInfo.isOnLeave;
+      days[day].leaveType = leaveInfo.leaveType;
+      days[day].isWeekOff = isWeekOff;
+      days[day].holidayName = holidayName;
+    }
+    return {
+      employeeId: emp._id,
+      firstName: emp.firstName,
+      lastName: emp.lastName,
+      employeeCode: emp.employeeCode,
+      days
+    };
+  });
+
+  return { year, month, daysInMonth, employees: data };
+};
+
+exports.getMyAttendanceMatrix = async (req) => {
+  const { year, month, start, end, daysInMonth } = parseMonthRange(req.query.month);
+  const employee = await getEmployeeFromReq(req);
+
+  const [attendanceRows, weekOffConfig, holidays, approvedLeaves] = await Promise.all([
+    Attendance.find({
+      organizationId: req.user.organizationId,
+      employeeId: employee._id,
+      date: { $gte: start, $lte: end }
+    })
+      .select("date checkInAt checkOutAt overriddenBy overriddenAt")
+      .populate("overriddenBy", "firstName lastName"),
+    WeekOff.findOne({ organizationId: req.user.organizationId }).select("weekOffDays"),
+    Holiday.find({
+      organizationId: req.user.organizationId,
+      status: "active",
+      date: { $gte: start, $lte: end }
+    }).select("date name"),
+    Leave.find({
+      organizationId: req.user.organizationId,
+      employeeId: employee._id,
+      status: "approved",
+      fromDate: { $lte: end },
+      toDate: { $gte: start }
+    }).populate("leaveTypeId", "name")
+  ]);
+
+  const weekOffDays = weekOffConfig?.weekOffDays || [];
+  const holidayByDay = new Map();
+  holidays.forEach((h) => {
+    holidayByDay.set(new Date(h.date).getDate(), h.name);
+  });
+
+  const days = {};
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateForDay = new Date(year, month - 1, day);
+    days[day] = {
+      status: "absent",
+      checkInAt: null,
+      checkOutAt: null,
+      overriddenBy: null,
+      overriddenAt: null,
+      isOnLeave: false,
+      leaveType: null,
+      isWeekOff: weekOffDays.includes(dateForDay.getDay()),
+      holidayName: holidayByDay.get(day) || null
+    };
+  }
+  attendanceRows.forEach((row) => {
+    const day = new Date(row.date).getDate();
+    const overriddenByName = row.overriddenBy
+      ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
+      : null;
+    days[day] = {
+      ...days[day],
+      status: row.checkInAt || row.checkOutAt ? "present" : "absent",
+      checkInAt: row.checkInAt || null,
+      checkOutAt: row.checkOutAt || null,
+      overriddenBy: overriddenByName || null,
+      overriddenAt: row.overriddenAt || null
+    };
+  });
+
+  approvedLeaves.forEach((leave) => {
+    const leaveStart = new Date(leave.fromDate) < start ? start : new Date(leave.fromDate);
+    const leaveEnd = new Date(leave.toDate) > end ? end : new Date(leave.toDate);
+    eachDateBetween(leaveStart, leaveEnd).forEach((d) => {
+      const day = d.getDate();
+      days[day] = {
+        ...days[day],
+        isOnLeave: true,
+        leaveType: leave.leaveTypeId?.name || "Leave"
+      };
+    });
+  });
+
+  return {
+    year,
+    month,
+    daysInMonth,
+    employees: [{
+      employeeId: employee._id,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      employeeCode: employee.employeeCode,
+      days
+    }]
+  };
+};
+
+exports.overrideAttendance = async (req) => {
+  const actorEmployee = await Employee.findOne({
+    userId: req.user.userId,
+    organizationId: req.user.organizationId
+  }).select("_id");
+
+  const employee = await Employee.findOne({
+    _id: req.params.employeeId,
+    organizationId: req.user.organizationId
+  }).select("_id");
+
+  if (!employee) {
+    throw new Error("Employee not found");
+  }
+
+  const date = startOfDay(req.body.date);
+  const status = req.body.status;
+  const defaultCheckIn = new Date(date);
+  defaultCheckIn.setHours(9, 0, 0, 0);
+  const defaultCheckOut = new Date(date);
+  defaultCheckOut.setHours(18, 0, 0, 0);
+
+  const update = status === "present"
+    ? {
+      checkInAt: defaultCheckIn,
+      checkOutAt: defaultCheckOut,
+      totalMinutes: 540,
+      status: "checked_out",
+      overriddenBy: actorEmployee?._id || null,
+      overriddenAt: new Date()
+    }
+    : {
+      checkInAt: null,
+      checkOutAt: null,
+      totalMinutes: 0,
+      status: "checked_out",
+      overriddenBy: actorEmployee?._id || null,
+      overriddenAt: new Date()
+    };
+
+  const attendance = await Attendance.findOneAndUpdate(
+    {
+      organizationId: req.user.organizationId,
+      employeeId: employee._id,
+      date
+    },
+    {
+      $set: update,
+      $setOnInsert: {
+        organizationId: req.user.organizationId,
+        employeeId: employee._id,
+        date
+      }
+    },
+    { upsert: true, new: true }
+  );
+
+  await audit({
+    req,
+    module: "timesheets",
+    action: "ATTENDANCE_OVERRIDE",
+    entityId: attendance._id,
+    after: attendance.toObject()
+  });
+
+  return attendance;
 };
 
 exports.getOnline = async (req) => {

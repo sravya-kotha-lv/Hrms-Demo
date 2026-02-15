@@ -52,6 +52,7 @@ import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/a
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -93,9 +94,11 @@ const getLeaveTypeIcon = (type: string) => {
 
 const Leave = () => {
   const { hasAnyPermission } = useAuth();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedLeave, setSelectedLeave] = useState<any | null>(null);
   const [actionType, setActionType] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
@@ -241,6 +244,11 @@ const Leave = () => {
     setActionDialogOpen(true);
   };
 
+  const handleView = (leave: any) => {
+    setSelectedLeave(leave);
+    setViewDialogOpen(true);
+  };
+
   const confirmAction = async () => {
     if (!selectedLeave) return;
     if (!canAction) {
@@ -352,15 +360,15 @@ const Leave = () => {
               <SelectItem value="rejected">Rejected</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" className="gap-2">
+          {/* <Button variant="outline" className="gap-2">
             <Download className="w-4 h-4" />
             Export
-          </Button>
+          </Button> */}
           <Button variant="outline" className="gap-2" onClick={fetchLeaves}>
             Refresh
           </Button>
           <PermissionGate permissions={["LEAVE_APPLY"]}>
-            <Button className="gap-2" onClick={() => setApplyOpen(true)}>
+            <Button className="gap-2" onClick={() => navigate("/leave/apply")}>
               Apply Leave
             </Button>
           </PermissionGate>
@@ -385,7 +393,7 @@ const Leave = () => {
               <TableHead>To</TableHead>
               <TableHead>Days</TableHead>
               <TableHead>Status</TableHead>
-              {canAction && <TableHead className="text-right">Actions</TableHead>}
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -442,9 +450,7 @@ const Leave = () => {
                   </TableCell>
                   <TableCell>{leave.totalDays ?? "-"}</TableCell>
                   <TableCell>{getStatusBadge(leave.status)}</TableCell>
-                  {canAction && (
-                    <TableCell className="text-right">
-                      <PermissionGate permissions={["LEAVE_ACTION"]}>
+                  <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -452,10 +458,10 @@ const Leave = () => {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleView(leave)}>
                             <Eye className="w-4 h-4 mr-2" /> View
                           </DropdownMenuItem>
-                          {viewMode === "all" && leave.status === "pending" && (
+                          {canAction && viewMode === "all" && leave.status === "pending" && (
                             <>
                               <DropdownMenuItem onClick={() => handleAction(leave, "approve")}>
                                 <CheckCircle className="w-4 h-4 mr-2 text-green-600" /> Approve
@@ -467,9 +473,7 @@ const Leave = () => {
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      </PermissionGate>
-                    </TableCell>
-                  )}
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -509,6 +513,35 @@ const Leave = () => {
             </Button>
             <Button onClick={confirmAction}>
               {actionType === "approve" ? "Approve" : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Leave Details</DialogTitle>
+          </DialogHeader>
+          {selectedLeave && (
+            <div className="space-y-2 text-sm">
+              <p><span className="font-medium">Employee:</span> {selectedLeave.employeeId
+                ? `${selectedLeave.employeeId.firstName || ""} ${selectedLeave.employeeId.lastName || ""}`.trim()
+                : "You"}</p>
+              <p><span className="font-medium">Leave Type:</span> {selectedLeave.leaveTypeId?.name || "-"}</p>
+              <p><span className="font-medium">From:</span> {selectedLeave.fromDate ? new Date(selectedLeave.fromDate).toLocaleDateString() : "-"}</p>
+              <p><span className="font-medium">To:</span> {selectedLeave.toDate ? new Date(selectedLeave.toDate).toLocaleDateString() : "-"}</p>
+              <p><span className="font-medium">Days:</span> {selectedLeave.totalDays ?? "-"}</p>
+              <p><span className="font-medium">Status:</span> {selectedLeave.status || "-"}</p>
+              <p><span className="font-medium">Reason:</span> {selectedLeave.reason || "-"}</p>
+              {selectedLeave.rejectionReason && (
+                <p><span className="font-medium">Rejection Reason:</span> {selectedLeave.rejectionReason}</p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

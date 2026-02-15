@@ -35,6 +35,15 @@ const timesheetAttendanceSchema = new mongoose.Schema(
       type: String,
       enum: ["checked_in", "checked_out"],
       default: "checked_in"
+    },
+    overriddenBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees",
+      default: null
+    },
+    overriddenAt: {
+      type: Date,
+      default: null
     }
   },
   { timestamps: true }

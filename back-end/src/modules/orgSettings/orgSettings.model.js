@@ -15,6 +15,15 @@ const orgSettingsSchema = new mongoose.Schema(
       enum: ["monthly", "quarterly", "yearly"],
       default: "monthly"
     },
+    leaveTypeCreditMode: {
+      type: String,
+      enum: ["current_month_onwards", "full_year"],
+      default: "current_month_onwards"
+    },
+    sandwichRuleEnabled: {
+      type: Boolean,
+      default: false
+    },
 
     minWorkHoursPerDay: {
       type: Number,

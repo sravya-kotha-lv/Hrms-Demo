@@ -29,6 +29,13 @@ exports.myLeavesRange = async (req, res) => {
   );
 };
 
+exports.applyContext = async (req, res) => {
+  const data = await service.getApplyContext(req);
+  res.status(200).json(
+    buildSuccessResponse({ data })
+  );
+};
+
 exports.action = async (req, res) => {
   const data = await service.actionLeave(req);
   res.status(200).json(

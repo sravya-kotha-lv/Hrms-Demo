@@ -62,11 +62,18 @@ module.exports = (requiredPermission) => {
 
       if (permissionCodes.includes("*")) return next();
 
-      if (!permissionCodes.includes(requiredPermission)) {
+      const requiredPermissions = Array.isArray(requiredPermission)
+        ? requiredPermission
+        : [requiredPermission];
+      const hasRequiredPermission = requiredPermissions.some((perm) =>
+        permissionCodes.includes(perm)
+      );
+
+      if (!hasRequiredPermission) {
         return res.status(403).json({
           success: false,
           code: 403,
-          message: `Permission denied: ${requiredPermission}`,
+          message: `Permission denied: ${requiredPermissions.join(" | ")}`,
           data: null,
           error: null
         });

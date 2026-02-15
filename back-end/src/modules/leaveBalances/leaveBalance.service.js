@@ -136,6 +136,7 @@ exports.initializeForEmployee = async (employee, organizationId) => {
           $setOnInsert: {
             total,
             used: 0,
+            pending: 0,
             remaining: total,
             lastCreditedAt: periodStart
           }
@@ -158,32 +159,37 @@ exports.initializeForNewLeaveType = async (leaveType, organizationId) => {
 
   const settings = await OrgSettings.findOne({ organizationId });
   const frequency = settings?.leaveCreditFrequency || "monthly";
+  const leaveTypeCreditMode = settings?.leaveTypeCreditMode || "current_month_onwards";
+  const now = new Date();
 
   const employees = await Employee.find({ organizationId });
   if (!employees.length) return;
 
   const bulkOps = employees.map((employee) => {
     const doj = new Date(employee.dateOfJoining || new Date());
-    const cycleStartYear = getCycleStartYear(doj, org.leaveCycleStartMonth);
+    const referenceDate =
+      leaveTypeCreditMode === "full_year"
+        ? now
+        : (doj > now ? doj : now);
+    const cycleStartYear = getCycleStartYear(referenceDate, org.leaveCycleStartMonth);
     const { periodStart, periodsPerYear } = getPeriodInfo(
-      doj,
+      referenceDate,
       frequency,
       org.leaveCycleStartMonth
     );
     const { remainingPeriods, totalPeriods } = getRemainingPeriods(
-      doj,
+      referenceDate,
       frequency,
       org.leaveCycleStartMonth
     );
 
     const creditPerPeriod = roundTwo(leaveType.daysPerYear / periodsPerYear);
-    let total = roundTwo(creditPerPeriod * remainingPeriods);
-    if (frequency === "yearly") {
-      total = roundTwo((leaveType.daysPerYear / totalPeriods) * remainingPeriods);
-    }
-    if (frequency === "monthly") {
-      const joinDay = doj.getDate();
-      if (joinDay > 15) total = roundTwo(total - creditPerPeriod / 2);
+    let total = roundTwo(leaveType.daysPerYear);
+    if (leaveTypeCreditMode === "current_month_onwards") {
+      total = roundTwo(creditPerPeriod * remainingPeriods);
+      if (frequency === "yearly") {
+        total = roundTwo((leaveType.daysPerYear / totalPeriods) * remainingPeriods);
+      }
     }
 
     return {
@@ -198,6 +204,7 @@ exports.initializeForNewLeaveType = async (leaveType, organizationId) => {
           $setOnInsert: {
             total,
             used: 0,
+            pending: 0,
             remaining: total,
             lastCreditedAt: periodStart
           }
@@ -240,6 +247,7 @@ exports.getEmployeeBalance = async (organizationId, id, type = "USER") => {
     code: b.leaveTypeId.code,
     total: b.total,
     used: b.used,
+    pending: b.pending || 0,
     remaining: b.remaining
   }));
 };

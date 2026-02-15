@@ -12,6 +12,7 @@ import Attendance from "./pages/Attendance";
 import EmployeeDashboard from "./pages/EmployeeDashboard";
 import Timesheets from "./pages/Timesheets";
 import Leave from "./pages/Leave";
+import LeaveApply from "./pages/LeaveApply";
 import Holidays from "./pages/Holidays";
 import WeekOffs from "./pages/WeekOffs";
 import Payroll from "./pages/Payroll";
@@ -128,7 +129,7 @@ const App = () => (
             <Route
               path="/attendance"
               element={
-                <RequireAuth permissions={["TIMESHEET_VIEW_ALL"]}>
+                <RequireAuth permissions={["ATTENDANCE_VIEW_ALL", "ATTENDANCE_VIEW_SELF"]}>
                   <RequireProfile>
                     <Attendance />
                   </RequireProfile>
@@ -156,9 +157,19 @@ const App = () => (
               }
             />
             <Route
+              path="/leave/apply"
+              element={
+                <RequireAuth permissions={["LEAVE_APPLY"]}>
+                  <RequireProfile>
+                    <LeaveApply />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/holidays"
               element={
-                <RequireAuth permissions={["HOLIDAY_VIEW"]}>
+                <RequireAuth permissions={["HOLIDAY_VIEW", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]}>
                   <RequireProfile>
                     <Holidays />
                   </RequireProfile>

@@ -29,3 +29,8 @@ exports.actionWeeklySchema = Joi.object({
     otherwise: Joi.optional()
   })
 });
+
+exports.overrideAttendanceSchema = Joi.object({
+  date: Joi.date().required(),
+  status: Joi.string().valid("present", "absent").required()
+});

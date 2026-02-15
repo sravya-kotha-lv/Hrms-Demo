@@ -36,6 +36,10 @@ const leaveBalanceSchema = new mongoose.Schema(
       type: Number,
       default: 0
     },
+    pending: {
+      type: Number,
+      default: 0
+    },
 
     remaining: {
       type: Number,
