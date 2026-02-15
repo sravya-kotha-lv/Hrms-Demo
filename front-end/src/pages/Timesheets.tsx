@@ -5,10 +5,8 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  CalendarDays,
   ClipboardCheck,
   Timer,
-  Users,
   ChevronLeft,
   ChevronRight,
   ChevronDown
@@ -698,7 +696,7 @@ const Timesheets = () => {
       title="Timesheets"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Timesheets" }]}
     >
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <motion.div className="stat-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <Timer className="w-4 h-4" />
@@ -717,24 +715,6 @@ const Timesheets = () => {
               : "-"}
           </div>
         </motion.div>
-
-        {canViewOnline && (
-          <motion.div
-            className="stat-card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-              <Users className="w-4 h-4" />
-              Online Now
-            </div>
-            <div className="text-2xl font-semibold">{onlineList.length}</div>
-            <div className="text-sm text-muted-foreground mt-1">
-              active employees
-            </div>
-          </motion.div>
-        )}
 
         <motion.div
           className="stat-card"
@@ -756,24 +736,6 @@ const Timesheets = () => {
             Week Total: {weekTotalHours}h · Min: {minWeeklyHours}h
           </div>
         </motion.div>
-
-        {canViewAll && (
-          <motion.div
-            className="stat-card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-          >
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-              <Users className="w-4 h-4" />
-              On Leave Today
-            </div>
-            <div className="text-2xl font-semibold">{onLeaveList.length}</div>
-            <div className="text-sm text-muted-foreground mt-1">
-              approved leaves
-            </div>
-          </motion.div>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -1026,19 +988,9 @@ const Timesheets = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border">
-          <div>
-            <h3 className="text-lg font-semibold">Weekly Timesheet</h3>
-            <p className="text-sm text-muted-foreground">
-              {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {timesheet?._id ? getStatusBadge(timesheet.status) : <Badge>Draft</Badge>}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-b border-border bg-muted/20">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border bg-muted/20">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-lg font-semibold mr-2">Weekly Timesheet</h3>
             <Button
               variant="outline"
               size="icon"
@@ -1058,14 +1010,20 @@ const Timesheets = () => {
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
-            <div className="ml-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-sm font-semibold">
+            <div className="ml-1 sm:ml-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-sm font-semibold">
               Worked hours: {weekTotalHours} / {minWeeklyHours}
             </div>
+            <div className="text-xs text-muted-foreground">
+              ({toDateInput(weekStart)} - {toDateInput(weekDates[6])})
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="flex items-center gap-3">
+            {timesheet?._id ? getStatusBadge(timesheet.status) : <Badge>Draft</Badge>}
+            <div className="text-xs text-muted-foreground">
             {timesheet?.status === "submitted" && "Waiting for approval"}
             {timesheet?.status === "approved" && "Approved"}
             {timesheet?.status === "rejected" && "Rejected - update and resubmit"}
+            </div>
           </div>
         </div>
         {weekLoading && (
@@ -1182,9 +1140,6 @@ const Timesheets = () => {
           Minimum weekly hours: {minWeeklyHours}h
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3 px-6 py-4 border-t border-border">
-          <div className="mr-auto text-xs text-muted-foreground">
-            Submitting for week: {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
-          </div>
           {!timesheet?._id && canCreate && (
             <Button onClick={createDraft} disabled={saving}>
               Create Draft

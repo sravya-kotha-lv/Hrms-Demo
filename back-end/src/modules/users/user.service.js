@@ -438,7 +438,7 @@ exports.getMyProfile = async ({ user }) => {
   const employee = await Employee.findOne({
     userId: user.userId,
     organizationId: user.organizationId
-  }).select("_id firstName lastName employeeCode managerId");
+  }).select("_id firstName lastName employeeCode managerId profileImage");
 
   return {
     email: userDoc?.email || null,
@@ -447,7 +447,7 @@ exports.getMyProfile = async ({ user }) => {
     lastName: employee?.lastName || null,
     employeeCode: employee?.employeeCode || null,
     managerId: employee?.managerId || null,
-    profileImage: null
+    profileImage: employee?.profileImage || null
   };
 };
 

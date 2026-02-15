@@ -284,7 +284,7 @@ const Employees = () => {
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <Avatar>
-                      <AvatarImage src="" />
+                      <AvatarImage src={employee.profileImage || ""} />
                       <AvatarFallback>
                         {`${employee.firstName?.[0] || ""}${employee.lastName?.[0] || ""}`}
                       </AvatarFallback>

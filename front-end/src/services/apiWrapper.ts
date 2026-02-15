@@ -1,10 +1,12 @@
 import axios from "axios";
 import { toast } from "sonner";
-import { getToken, setToken, hasAnyPermission } from "../utils/auth";
+import { getToken, setToken, hasAnyPermission, clearAuth } from "../utils/auth";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
 });
+
+let sessionExpiryHandled = false;
 /* ================= REQUEST ================= */
 api.interceptors.request.use((config) => {
   const token = getToken();
@@ -26,17 +28,28 @@ api.interceptors.response.use(
   },
   (error) => {
     const status = error?.response?.status;
+    const requestUrl = error?.config?.url || "";
 
     if (status === 403) {
       toast.error("You do not have access");
       // window.location.href = "/no-access";
     }
 
-    // if (status === 401) {
-    //   toast.error("Session expired. Please login again");
-    //   clearAuth();
-    //   window.location.href = "/login";
-    // }
+    if (
+      status === 401 &&
+      getToken() &&
+      !requestUrl.includes("/users/login") &&
+      !sessionExpiryHandled
+    ) {
+      sessionExpiryHandled = true;
+      toast.error("Session expired. Please login again");
+      clearAuth();
+      if (window.location.pathname !== "/login") {
+        window.location.replace("/login?reason=session_expired");
+      } else {
+        sessionExpiryHandled = false;
+      }
+    }
 
     return Promise.reject(error);
   }
