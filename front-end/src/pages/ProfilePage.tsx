@@ -7,6 +7,7 @@ import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
 import { useAuth } from "@/context/AuthContext";
+import { PageLoader } from "@/components/ui/loaders";
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const ADDRESS_PROOF_MAX_BYTES = 5 * 1024 * 1024;
@@ -18,6 +19,7 @@ const ProfilePage = () => {
   const [profile, setProfile] = useState<any>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
   const canEdit = hasPermission("EMP_SELF_EDIT");
   const [profilePreviewUrl, setProfilePreviewUrl] = useState("");
   const [profilePicInputKey, setProfilePicInputKey] = useState(0);
@@ -66,6 +68,7 @@ const ProfilePage = () => {
   };
 
   const fetchProfile = async () => {
+    setProfileLoading(true);
     const res = await getApiWithToken("/employees/me");
     if (res?.success) {
       setProfile(res.data);
@@ -90,11 +93,20 @@ const ProfilePage = () => {
       setProfilePreviewUrl("");
       setProfilePicInputKey((v) => v + 1);
     }
+    setProfileLoading(false);
   };
 
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  if (profileLoading) {
+    return (
+      <MainLayout title="My Profile" breadcrumb={[{ label: "Home" }, { label: "Profile" }]}>
+        <PageLoader label="Loading your profile..." />
+      </MainLayout>
+    );
+  }
 
   const handleSave = async () => {
     setLoading(true);

@@ -34,6 +34,7 @@ import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/a
 import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
 import { useAuth } from "@/context/AuthContext";
+import { InlineLoader } from "@/components/ui/loaders";
 
 const toDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -273,15 +274,16 @@ const Timesheets = () => {
     setWeekLoading(true);
     setTimesheet(null);
     setEntries(normalizeEntries(weekDates, []));
-    const resAll = await getApiWithToken("/timesheets/weekly", null, {
-      requiredPermissions: ["TIMESHEET_VIEW_ALL"]
-    });
-    if (resAll?.skipped) {
-      setViewMode("my");
-    }
-    if (resAll?.success) {
-      setWeeklyList(resAll.data || []);
-      setViewMode("all");
+    if (hasPermission("TIMESHEET_VIEW_ALL")) {
+      const resAll = await getApiWithToken("/timesheets/weekly", null, {
+        requiredPermissions: ["TIMESHEET_VIEW_ALL"]
+      });
+      if (resAll?.success) {
+        setWeeklyList(resAll.data || []);
+        setViewMode("all");
+      } else {
+        setWeeklyList([]);
+      }
     } else {
       const resMy = await getApiWithToken("/timesheets/weekly/my", null, {
         requiredPermissions: ["TIMESHEET_VIEW_SELF"]
@@ -405,11 +407,6 @@ const Timesheets = () => {
 
   useEffect(() => {
     loadAttendanceToday();
-    loadMyAttendanceRequests();
-    loadPendingAttendanceRequests();
-  }, []);
-
-  useEffect(() => {
     loadWeekly();
     loadOnline();
     loadOnLeave();
@@ -1027,8 +1024,8 @@ const Timesheets = () => {
           </div>
         </div>
         {weekLoading && (
-          <div className="px-6 py-2 text-xs text-muted-foreground">
-            Loading week data...
+          <div className="px-6 py-2">
+            <InlineLoader label="Loading week data..." className="text-xs" />
           </div>
         )}
         {!isWeekSynced && !weekLoading && (
@@ -1344,7 +1341,7 @@ const Timesheets = () => {
               Cancel
             </Button>
             <Button onClick={submitAttendanceRequest} disabled={attendanceRequestLoading}>
-              Submit Request
+              {attendanceRequestLoading ? <InlineLoader label="Submitting..." className="text-white" /> : "Submit Request"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ShieldCheck, Clock3, Users2, CalendarCheck2, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { InlineLoader } from "@/components/ui/loaders";
 
 const slides = [
   {
@@ -49,6 +50,7 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
   const searchParams = new URLSearchParams(location.search);
   const sessionExpired = searchParams.get("reason") === "session_expired";
@@ -70,6 +72,7 @@ const Login = () => {
     }
 
     try {
+      setSubmitting(true);
       const response: any = await postApiWithoutToken("/users/login", { email, password });
       if (response.code === 200) {
         const { roles, activeRole } = response.data;
@@ -85,7 +88,10 @@ const Login = () => {
           roles?.some((role: any) => role.slug === "superadmin");
 
         try {
-          const permRes = await getApiWithToken("/users/me/permissions");
+          const [permRes] = await Promise.all([
+            getApiWithToken("/users/me/permissions"),
+            loadProfile()
+          ]);
           if (permRes?.success) {
             setPermissions(permRes.data || []);
           } else {
@@ -94,25 +100,23 @@ const Login = () => {
         } catch {
           setPermissions([]);
         }
-
-        await loadProfile();
         toast.success("Logged in successfully!");
 
-        setTimeout(() => {
-          if (isSuperAdmin) {
-            localStorage.setItem("isSuperAdmin", "true");
-            localStorage.setItem("adminUserId", response.data.userId);
-            localStorage.setItem("adminRoleId", response.data.roles[0]._id);
-            navigate("/dashboard", { replace: true });
-          } else {
-            navigate("/", { replace: true });
-          }
-        }, 600);
+        if (isSuperAdmin) {
+          localStorage.setItem("isSuperAdmin", "true");
+          localStorage.setItem("adminUserId", response.data.userId);
+          localStorage.setItem("adminRoleId", response.data.roles[0]._id);
+          navigate("/dashboard", { replace: true });
+        } else {
+          navigate("/", { replace: true });
+        }
       } else {
         toast.warning(response.message || "Login failed");
       }
     } catch {
       toast.error("Login failed");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -214,8 +218,8 @@ const Login = () => {
               onChange={(e) => setPassword(e.target.value)}
               className="h-11"
             />
-            <Button type="submit" className="w-full h-11">
-              Login
+            <Button type="submit" className="w-full h-11" disabled={submitting}>
+              {submitting ? <InlineLoader label="Signing in..." className="text-white" /> : "Login"}
             </Button>
           </form>
 
