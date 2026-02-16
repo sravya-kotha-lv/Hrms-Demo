@@ -7,7 +7,7 @@ const path = require("path");
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || "smtp.gmail.com",
   port: process.env.SMTP_PORT || 587,
-  secure: false,
+  secure: true,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
@@ -85,7 +85,7 @@ module.exports = async (template, toName, subject, content, toEmail) => {
     }
 
     await transporter.sendMail({
-      from: process.env.SMTP_FROM || "HRMS <no-reply@hrms.com>",
+      from: process.env.SMTP_USER || "HRMS <no-reply@luvetha.com>",
       to: toEmail,
       subject,
       html,
