@@ -270,8 +270,8 @@ async function generateEmployeeCode(organizationId, session) {
 
 exports.listByOrganization = async (req) => {
   const {
-    page = 1,
-    limit = 10,
+    page,
+    limit,
     search,
     departmentId,
     designationId,
@@ -279,7 +279,7 @@ exports.listByOrganization = async (req) => {
     organizationId: orgIdOverride
   } = req.query;
 
-  const { organizationId, userId, roleIds, activeRoleId } = req.user;
+  const { organizationId, userId, activeRoleId } = req.user;
   const isSuperAdmin = await OrganizationService.isUserSuperAdmin(userId);
 
   let isManager = false;
@@ -296,14 +296,13 @@ exports.listByOrganization = async (req) => {
     isDeleted: false
   };
 
-  /**
-   * 👔 Manager scoping
-   */
+  /* 👔 Manager scoping */
   if (isManager) {
     const managerEmployee = await Employee.findOne({
       userId,
       organizationId
     }).select("_id");
+
     if (managerEmployee) {
       query.managerId = managerEmployee._id;
     }
@@ -324,30 +323,40 @@ exports.listByOrganization = async (req) => {
   if (designationId) query.designationId = designationId;
   if (status) query.status = status;
 
-  const skip = (Number(page) - 1) * Number(limit);
-
-  const [employees, total] = await Promise.all([
-    Employee.find(query)
-      .populate("departmentId", "name")
-      .populate("designationId", "name")
+  // Build query
+  let employeeQuery = Employee.find(query)
+    .populate("departmentId", "name")
+    .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
     .populate("shiftId", "name code startTime endTime graceMinutes status")
     .populate("userId", "email")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit)),
+    .sort({ createdAt: -1 });
 
-    Employee.countDocuments(query)
-  ]);
+  let total = await Employee.countDocuments(query);
+
+  let pagination = null;
+
+  // ✅ Apply pagination only if BOTH page and limit exist
+  if (page && limit) {
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    employeeQuery = employeeQuery.skip(skip).limit(limitNum);
+
+    pagination = {
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum)
+    };
+  }
+
+  const employees = await employeeQuery;
 
   return {
     items: employees,
-    pagination: {
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: Math.ceil(total / limit)
-    }
+    pagination // will be null if not paginated
   };
 };
 
