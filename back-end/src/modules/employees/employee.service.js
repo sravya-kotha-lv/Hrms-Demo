@@ -271,7 +271,7 @@ async function generateEmployeeCode(organizationId, session) {
 exports.listByOrganization = async (req) => {
   const {
     page = 1,
-    limit = 10,
+    limit = 100,
     search,
     departmentId,
     designationId,
