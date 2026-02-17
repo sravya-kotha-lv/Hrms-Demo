@@ -8,6 +8,21 @@ import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
+import { setOrgTimeZone } from "@/utils/timezone";
+
+const TIMEZONE_OPTIONS = [
+  "UTC",
+  "Asia/Kolkata",
+  "Asia/Dubai",
+  "Asia/Singapore",
+  "Europe/London",
+  "Europe/Berlin",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "Australia/Sydney"
+];
 
 const OrganizationSettings = () => {
   const { hasAnyPermission } = useAuth();
@@ -17,6 +32,7 @@ const OrganizationSettings = () => {
   const [attendanceLockEnabled, setAttendanceLockEnabled] = useState(false);
   const [attendanceLockAfterDays, setAttendanceLockAfterDays] = useState(7);
   const [attendanceLockMode, setAttendanceLockMode] = useState("days_window");
+  const [timezone, setTimezone] = useState("UTC");
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
@@ -38,6 +54,10 @@ const OrganizationSettings = () => {
         typeof res.data?.attendanceLockAfterDays === "number" ? res.data.attendanceLockAfterDays : 7
       );
       setAttendanceLockMode(res.data?.attendanceLockMode || "days_window");
+      setTimezone(res.data?.timezone || "UTC");
+      if (res.data?.timezone) {
+        setOrgTimeZone(res.data.timezone);
+      }
       setPayrollCutoffDay(
         typeof res.data?.payrollCutoffDay === "number" ? res.data.payrollCutoffDay : 25
       );
@@ -66,12 +86,16 @@ const OrganizationSettings = () => {
         attendanceLockEnabled,
         attendanceLockAfterDays: Number(attendanceLockAfterDays),
         attendanceLockMode,
+        timezone,
         payrollCutoffDay: Number(payrollCutoffDay),
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours)
       }, null, { requiredPermissions: ["ORG_SETTINGS_MANAGE"] });
       if (res?.skipped) return;
       if (res?.success) {
+        if (timezone) {
+          setOrgTimeZone(timezone);
+        }
         toast.success("Settings saved");
       } else {
         toast.error(res?.message || "Save failed");
@@ -176,6 +200,29 @@ const OrganizationSettings = () => {
             />
             Enable sandwich rule (count week-offs/holidays between leave dates)
           </label>
+        </div>
+
+        <div className="space-y-2 mb-6">
+          <label className="text-sm font-medium">Organization Timezone</label>
+          <Select
+            value={timezone}
+            onValueChange={setTimezone}
+            disabled={!canManage}
+          >
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="Select timezone" />
+            </SelectTrigger>
+            <SelectContent>
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <SelectItem key={tz} value={tz}>
+                  {tz}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Attendance day boundaries and shift calculations use this timezone. Timestamps are stored in UTC.
+          </p>
         </div>
 
         <div className="space-y-2 mb-6">

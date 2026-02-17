@@ -1,6 +1,7 @@
 import axios from "axios";
 import { toast } from "sonner";
 import { getToken, setToken, hasAnyPermission, clearAuth } from "../utils/auth";
+import { setOrgTimeZone } from "../utils/timezone";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
@@ -23,6 +24,13 @@ api.interceptors.response.use(
     const authHeader = response.headers?.authorization;
     if (authHeader) {
       setToken(authHeader);
+    }
+    const responseUrl = response?.config?.url || "";
+    if (responseUrl.includes("/org-settings")) {
+      const timeZone = response?.data?.data?.timezone;
+      if (typeof timeZone === "string" && timeZone) {
+        setOrgTimeZone(timeZone);
+      }
     }
     return response;
   },

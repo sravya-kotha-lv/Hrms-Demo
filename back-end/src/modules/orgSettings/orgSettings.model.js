@@ -37,6 +37,10 @@ const orgSettingsSchema = new mongoose.Schema(
       enum: ["days_window", "payroll_cutoff"],
       default: "days_window"
     },
+    timezone: {
+      type: String,
+      default: "UTC"
+    },
     payrollCutoffDay: {
       type: Number,
       default: 25

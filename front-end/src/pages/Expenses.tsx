@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table";
 import { getApiWithToken, postApiWithToken, putApiWithToken, deleteApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { toast } from "sonner";
 import { Pencil, Trash2, Plus, Link as LinkIcon } from "lucide-react";
 
@@ -633,7 +634,7 @@ const Expenses = () => {
                 )}
                 {visibleRows.map((row) => (
                   <TableRow key={row._id} className="table-row-hover">
-                    <TableCell>{row.expenseDate ? new Date(row.expenseDate).toLocaleDateString() : "-"}</TableCell>
+                    <TableCell>{row.expenseDate ? formatDateInOrgTimeZone(row.expenseDate) : "-"}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">
                         {categoryOptions.find((c) => c.value === row.category)?.label || row.category}

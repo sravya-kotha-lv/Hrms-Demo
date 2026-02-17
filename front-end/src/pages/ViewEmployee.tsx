@@ -15,6 +15,7 @@ import {
 import { ArrowLeft, Edit, Trash2 } from "lucide-react";
 import { deleteApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -30,7 +31,7 @@ const getStatusBadge = (status: string) => {
 };
 
 const formatDate = (value?: string) =>
-  value ? new Date(value).toLocaleDateString() : "-";
+  value ? formatDateInOrgTimeZone(value) : "-";
 
 const formatAddress = (address: any) => {
   if (!address) return "-";

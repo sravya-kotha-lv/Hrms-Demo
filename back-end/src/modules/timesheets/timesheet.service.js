@@ -6,6 +6,7 @@ const Leave = require("../leaves/leave.model");
 const { audit } = require("../auditLogs/auditLogs.service");
 const Role = require("../roles/role.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
+const Organization = require("../organizations/organization.model");
 const WeekOffService = require("../weekOffs/weekOff.service");
 const Holiday = require("../holidays/holiday.model");
 const AuditLog = require("../auditLogs/auditLogs.model");
@@ -19,6 +20,17 @@ const {
   resolveRecipientsForStep
 } = require("../../utils/approvalFlowEngine");
 const { advanceApprovalSteps, getCurrentPendingStep } = require("../../utils/approvalProgress");
+const {
+  isValidTimeZone,
+  toDateKeyInTimeZone,
+  addDaysToDateKey,
+  zonedDateTimeToUtc,
+  startOfDayInTimeZone,
+  endOfDayInTimeZone,
+  parseMonthRangeInTimeZone,
+  getDayInTimeZone,
+  getWeekdayForDateKey
+} = require("../../utils/timezone");
 
 const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "manager",
@@ -119,7 +131,17 @@ const getDefaultShift = () => ({
   graceMinutes: 0
 });
 
-const resolveShiftSchedule = async (organizationId, employeeId, dateValue) => {
+const getOrganizationTimeZone = async (organizationId) => {
+  const settings = await OrgSettings.findOne({ organizationId }).select("timezone");
+  if (isValidTimeZone(settings?.timezone)) return settings.timezone;
+
+  const organization = await Organization.findById(organizationId).select("timezone");
+  if (isValidTimeZone(organization?.timezone)) return organization.timezone;
+
+  return "UTC";
+};
+
+const resolveShiftSchedule = async (organizationId, employeeId, dateValue, timeZone = "UTC") => {
   const employee = await Employee.findOne({
     _id: employeeId,
     organizationId
@@ -135,15 +157,18 @@ const resolveShiftSchedule = async (organizationId, employeeId, dateValue) => {
   }
 
   const effectiveShift = shift || getDefaultShift();
+  const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))
+    ? String(dateValue)
+    : toDateKeyInTimeZone(dateValue, timeZone);
   const startMinutes = parseTimeToMinutes(effectiveShift.startTime);
   const endMinutes = parseTimeToMinutes(effectiveShift.endTime);
 
-  const scheduledStartAt = buildScheduledDateTime(dateValue, startMinutes);
-  let scheduledEndAt = buildScheduledDateTime(dateValue, endMinutes);
+  const scheduledStartAt = zonedDateTimeToUtc(dateKey, effectiveShift.startTime, timeZone);
+  let scheduledEndAt = zonedDateTimeToUtc(dateKey, effectiveShift.endTime, timeZone);
 
   // Overnight shift support, e.g. 22:00 -> 06:00
   if (endMinutes <= startMinutes) {
-    scheduledEndAt.setDate(scheduledEndAt.getDate() + 1);
+    scheduledEndAt = new Date(scheduledEndAt.getTime() + (24 * 60 * 60 * 1000));
   }
 
   return {
@@ -153,26 +178,26 @@ const resolveShiftSchedule = async (organizationId, employeeId, dateValue) => {
   };
 };
 
-const resolveCheckInSchedule = async (organizationId, employeeId, now) => {
-  const today = startOfDay(now);
-  const yesterday = startOfDay(today);
-  yesterday.setDate(yesterday.getDate() - 1);
+const resolveCheckInSchedule = async (organizationId, employeeId, now, timeZone) => {
+  const todayKey = toDateKeyInTimeZone(now, timeZone);
+  const yesterdayKey = addDaysToDateKey(todayKey, -1);
 
   const yesterdaySchedule = await resolveShiftSchedule(
     organizationId,
     employeeId,
-    yesterday
+    yesterdayKey,
+    timeZone
   );
 
-  const isYesterdayOvernight = toDateKey(yesterdaySchedule.scheduledStartAt)
-    !== toDateKey(yesterdaySchedule.scheduledEndAt);
+  const yesterdayStartMins = parseTimeToMinutes(yesterdaySchedule.shift.startTime);
+  const yesterdayEndMins = parseTimeToMinutes(yesterdaySchedule.shift.endTime);
+  const isYesterdayOvernight = yesterdayEndMins <= yesterdayStartMins;
   if (
     isYesterdayOvernight
-    && now >= today
     && now <= yesterdaySchedule.scheduledEndAt
   ) {
     return {
-      attendanceDate: yesterday,
+      attendanceDateKey: yesterdayKey,
       ...yesterdaySchedule
     };
   }
@@ -180,11 +205,12 @@ const resolveCheckInSchedule = async (organizationId, employeeId, now) => {
   const todaySchedule = await resolveShiftSchedule(
     organizationId,
     employeeId,
-    today
+    todayKey,
+    timeZone
   );
 
   return {
-    attendanceDate: today,
+    attendanceDateKey: todayKey,
     ...todaySchedule
   };
 };
@@ -430,14 +456,14 @@ const assertManageAccessForEmployee = async (req, employeeId) => {
   }
 };
 
-const validateAttendanceEditWindow = async (organizationId, dateValue) => {
+const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone = "UTC") => {
   const settings = await OrgSettings.findOne({ organizationId })
     .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay");
 
   if (!settings?.attendanceLockEnabled) return;
 
-  const target = startOfDay(dateValue);
-  const today = startOfDay(new Date());
+  const target = startOfDayInTimeZone(dateValue, timeZone);
+  const today = startOfDayInTimeZone(new Date(), timeZone);
   const mode = settings.attendanceLockMode || "days_window";
 
   if (mode === "days_window") {
@@ -457,7 +483,7 @@ const validateAttendanceEditWindow = async (organizationId, dateValue) => {
   } else {
     periodStart = new Date(today.getFullYear(), today.getMonth() - 1, cutoffDay + 1);
   }
-  periodStart = startOfDay(periodStart);
+  periodStart = startOfDayInTimeZone(periodStart, timeZone);
 
   if (target < periodStart) {
     throw new Error(`Attendance is locked before payroll period start ${periodStart.toDateString()}`);
@@ -467,16 +493,19 @@ const validateAttendanceEditWindow = async (organizationId, dateValue) => {
 exports.checkIn = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const now = new Date();
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const {
-    attendanceDate,
+    attendanceDateKey,
     shift,
     scheduledStartAt,
     scheduledEndAt
   } = await resolveCheckInSchedule(
     req.user.organizationId,
     employee._id,
-    now
+    now,
+    organizationTimeZone
   );
+  const attendanceDate = startOfDayInTimeZone(attendanceDateKey, organizationTimeZone);
 
   const graceMinutes = Number(shift.graceMinutes || 0);
   const lateDiff = Math.round((now.getTime() - scheduledStartAt.getTime()) / 60000) - graceMinutes;
@@ -494,7 +523,7 @@ exports.checkIn = async (req) => {
   }).sort({ date: -1, checkInAt: -1 });
 
   if (openAttendance) {
-    if (toDateKey(openAttendance.date) === toDateKey(attendanceDate)) {
+    if (toDateKeyInTimeZone(openAttendance.date, organizationTimeZone) === attendanceDateKey) {
       throw new Error("Already checked in for this shift");
     }
 
@@ -578,6 +607,7 @@ exports.checkIn = async (req) => {
 exports.checkOut = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const now = new Date();
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
 
   const attendance = await Attendance.findOne({
     organizationId: req.user.organizationId,
@@ -601,7 +631,14 @@ exports.checkOut = async (req) => {
 
   const scheduledEnd = attendance.scheduledEndAt
     ? new Date(attendance.scheduledEndAt)
-    : (await resolveShiftSchedule(req.user.organizationId, employee._id, today)).scheduledEndAt;
+    : (
+      await resolveShiftSchedule(
+        req.user.organizationId,
+        employee._id,
+        toDateKeyInTimeZone(attendance.date, organizationTimeZone),
+        organizationTimeZone
+      )
+    ).scheduledEndAt;
   const earlyCheckoutByMinutes = Math.max(
     0,
     Math.round((scheduledEnd.getTime() - now.getTime()) / 60000)
@@ -646,9 +683,10 @@ exports.checkOut = async (req) => {
 
 exports.getMyAttendance = async (req) => {
   const employee = await getEmployeeFromReq(req);
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const queryDate = req.query.date ? new Date(req.query.date) : new Date();
-  const dayStart = startOfDay(queryDate);
-  const dayEnd = endOfDay(queryDate);
+  const dayStart = startOfDayInTimeZone(queryDate, organizationTimeZone);
+  const dayEnd = endOfDayInTimeZone(queryDate, organizationTimeZone);
 
   return Attendance.find({
     organizationId: req.user.organizationId,
@@ -658,11 +696,12 @@ exports.getMyAttendance = async (req) => {
 };
 
 exports.getAttendance = async (req) => {
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const start = req.query.startDate ? new Date(req.query.startDate) : new Date();
   const end = req.query.endDate ? new Date(req.query.endDate) : start;
 
-  const startDate = startOfDay(start);
-  const endDate = endOfDay(end);
+  const startDate = startOfDayInTimeZone(start, organizationTimeZone);
+  const endDate = endOfDayInTimeZone(end, organizationTimeZone);
 
   const query = {
     organizationId: req.user.organizationId,
@@ -697,7 +736,11 @@ exports.getAttendance = async (req) => {
 };
 
 exports.getAttendanceMatrix = async (req) => {
-  const { year, month, start, end, daysInMonth } = parseMonthRange(req.query.month);
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const { year, month, start, end, daysInMonth } = parseMonthRangeInTimeZone(
+    req.query.month,
+    organizationTimeZone
+  );
 
   const employeeQuery = {
     organizationId: req.user.organizationId,
@@ -746,12 +789,12 @@ exports.getAttendanceMatrix = async (req) => {
 
   const holidayByDay = new Map();
   holidays.forEach((h) => {
-    holidayByDay.set(new Date(h.date).getDate(), h.name);
+    holidayByDay.set(getDayInTimeZone(h.date, organizationTimeZone), h.name);
   });
 
   const attendanceMap = new Map();
   attendanceRows.forEach((row) => {
-    const day = new Date(row.date).getDate();
+    const day = getDayInTimeZone(row.date, organizationTimeZone);
     const key = `${row.employeeId.toString()}-${day}`;
     const overriddenByName = row.overriddenBy
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
@@ -783,7 +826,7 @@ exports.getAttendanceMatrix = async (req) => {
     const leaveStart = new Date(leave.fromDate) < start ? start : new Date(leave.fromDate);
     const leaveEnd = new Date(leave.toDate) > end ? end : new Date(leave.toDate);
     eachDateBetween(leaveStart, leaveEnd).forEach((d) => {
-      const key = `${leave.employeeId.toString()}-${d.getDate()}`;
+      const key = `${leave.employeeId.toString()}-${getDayInTimeZone(d, organizationTimeZone)}`;
       leaveMap.set(key, {
         isOnLeave: true,
         leaveType: leave.leaveTypeId?.name || "Leave"
@@ -797,9 +840,10 @@ exports.getAttendanceMatrix = async (req) => {
       const key = `${emp._id.toString()}-${day}`;
       const base = attendanceMap.get(key);
       const leaveInfo = leaveMap.get(key) || { isOnLeave: false, leaveType: null };
-      const dateForDay = new Date(year, month - 1, day);
+      const dayKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const weekday = getWeekdayForDateKey(dayKey, organizationTimeZone);
       const employeeWeekOffDays = weekOffMap.employeeMap.get(String(emp._id)) || weekOffMap.defaultDays || [];
-      const isWeekOff = employeeWeekOffDays.includes(dateForDay.getDay());
+      const isWeekOff = employeeWeekOffDays.includes(weekday);
       const holidayName = holidayByDay.get(day) || null;
       days[day] = base || {
         status: "absent",
@@ -838,7 +882,11 @@ exports.getAttendanceMatrix = async (req) => {
 };
 
 exports.getMyAttendanceMatrix = async (req) => {
-  const { year, month, start, end, daysInMonth } = parseMonthRange(req.query.month);
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const { year, month, start, end, daysInMonth } = parseMonthRangeInTimeZone(
+    req.query.month,
+    organizationTimeZone
+  );
   const employee = await getEmployeeFromReq(req);
 
   const [attendanceRows, holidays, approvedLeaves, weekOffDays] = await Promise.all([
@@ -869,12 +917,12 @@ exports.getMyAttendanceMatrix = async (req) => {
 
   const holidayByDay = new Map();
   holidays.forEach((h) => {
-    holidayByDay.set(new Date(h.date).getDate(), h.name);
+    holidayByDay.set(getDayInTimeZone(h.date, organizationTimeZone), h.name);
   });
 
   const days = {};
   for (let day = 1; day <= daysInMonth; day += 1) {
-    const dateForDay = new Date(year, month - 1, day);
+    const dateKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     days[day] = {
       status: "absent",
       checkInAt: null,
@@ -895,12 +943,12 @@ exports.getMyAttendanceMatrix = async (req) => {
       overtimeMinutes: 0,
       isOnLeave: false,
       leaveType: null,
-      isWeekOff: weekOffDays.includes(dateForDay.getDay()),
+      isWeekOff: weekOffDays.includes(getWeekdayForDateKey(dateKey, organizationTimeZone)),
       holidayName: holidayByDay.get(day) || null
     };
   }
   attendanceRows.forEach((row) => {
-    const day = new Date(row.date).getDate();
+    const day = getDayInTimeZone(row.date, organizationTimeZone);
     const overriddenByName = row.overriddenBy
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
       : null;
@@ -931,7 +979,7 @@ exports.getMyAttendanceMatrix = async (req) => {
     const leaveStart = new Date(leave.fromDate) < start ? start : new Date(leave.fromDate);
     const leaveEnd = new Date(leave.toDate) > end ? end : new Date(leave.toDate);
     eachDateBetween(leaveStart, leaveEnd).forEach((d) => {
-      const day = d.getDate();
+      const day = getDayInTimeZone(d, organizationTimeZone);
       days[day] = {
         ...days[day],
         isOnLeave: true,
@@ -963,7 +1011,8 @@ exports.getAttendanceCellHistory = async (req) => {
 
   await assertManageAccessForEmployee(req, employeeId);
 
-  const day = startOfDay(date);
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const day = startOfDayInTimeZone(date, organizationTimeZone);
   const attendance = await Attendance.findOne({
     organizationId: req.user.organizationId,
     employeeId,
@@ -1004,8 +1053,9 @@ exports.getMyAttendanceCellHistory = async (req) => {
 
 exports.raiseAttendanceRequest = async (req) => {
   const employee = await getEmployeeFromReq(req);
-  const date = startOfDay(req.body.date);
-  const today = startOfDay(new Date());
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const date = startOfDayInTimeZone(req.body.date, organizationTimeZone);
+  const today = startOfDayInTimeZone(new Date(), organizationTimeZone);
   if (date > today) {
     throw new Error("Attendance request date cannot be in the future");
   }
@@ -1178,6 +1228,7 @@ exports.getMyPendingAttendanceApprovals = async (req) => {
 };
 
 exports.actionAttendanceRequest = async (req) => {
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const request = await AttendanceRequest.findOne({
     _id: req.params.id,
     organizationId: req.user.organizationId
@@ -1275,7 +1326,8 @@ exports.actionAttendanceRequest = async (req) => {
     return request;
   }
 
-  const attendanceDate = startOfDay(request.date);
+  const attendanceDate = startOfDayInTimeZone(request.date, organizationTimeZone);
+  const attendanceDateKey = toDateKeyInTimeZone(attendanceDate, organizationTimeZone);
   const attendance = await Attendance.findOneAndUpdate(
     {
       organizationId: req.user.organizationId,
@@ -1299,10 +1351,10 @@ exports.actionAttendanceRequest = async (req) => {
   let checkOutAt = existingCheckOut;
 
   if (request.requestedCheckInTime) {
-    checkInAt = combineDateAndTime(attendanceDate, request.requestedCheckInTime);
+    checkInAt = zonedDateTimeToUtc(attendanceDateKey, request.requestedCheckInTime, organizationTimeZone);
   }
   if (request.requestedCheckOutTime) {
-    checkOutAt = combineDateAndTime(attendanceDate, request.requestedCheckOutTime);
+    checkOutAt = zonedDateTimeToUtc(attendanceDateKey, request.requestedCheckOutTime, organizationTimeZone);
   }
 
   if (checkInAt && checkOutAt && checkOutAt <= checkInAt) {
@@ -1314,7 +1366,8 @@ exports.actionAttendanceRequest = async (req) => {
   const { shift, scheduledStartAt, scheduledEndAt } = await resolveShiftSchedule(
     req.user.organizationId,
     request.employeeId,
-    attendanceDate
+    attendanceDateKey,
+    organizationTimeZone
   );
 
   const lateByMinutes = checkInAt
@@ -1399,14 +1452,17 @@ exports.overrideAttendance = async (req) => {
     throw new Error("Employee not found");
   }
 
-  const date = startOfDay(req.body.date);
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const date = startOfDayInTimeZone(req.body.date, organizationTimeZone);
+  const dateKey = toDateKeyInTimeZone(date, organizationTimeZone);
   await assertManageAccessForEmployee(req, employee._id);
-  await validateAttendanceEditWindow(req.user.organizationId, date);
+  await validateAttendanceEditWindow(req.user.organizationId, date, organizationTimeZone);
   const status = req.body.status;
   const { shift, scheduledStartAt, scheduledEndAt } = await resolveShiftSchedule(
     req.user.organizationId,
     employee._id,
-    date
+    dateKey,
+    organizationTimeZone
   );
   const defaultCheckIn = new Date(scheduledStartAt);
   const defaultCheckOut = new Date(scheduledEndAt);
@@ -1504,8 +1560,8 @@ exports.overrideAttendance = async (req) => {
       type: "attendance_override",
       title: "Attendance updated",
       message: `Your attendance for ${date.toDateString()} was overridden to ${status}.`,
-      meta: {
-        date: toDateKey(date),
+        meta: {
+        date: dateKey,
         status
       }
     });
@@ -1520,8 +1576,10 @@ exports.bulkOverrideAttendance = async (req) => {
     organizationId: req.user.organizationId
   }).select("_id");
 
-  const date = startOfDay(req.body.date);
-  await validateAttendanceEditWindow(req.user.organizationId, date);
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const date = startOfDayInTimeZone(req.body.date, organizationTimeZone);
+  const dateKey = toDateKeyInTimeZone(date, organizationTimeZone);
+  await validateAttendanceEditWindow(req.user.organizationId, date, organizationTimeZone);
 
   const employeeIds = req.body.employeeIds || [];
   let updatedCount = 0;
@@ -1537,7 +1595,8 @@ exports.bulkOverrideAttendance = async (req) => {
     const { shift, scheduledStartAt, scheduledEndAt } = await resolveShiftSchedule(
       req.user.organizationId,
       employee._id,
-      date
+      dateKey,
+      organizationTimeZone
     );
     const defaultCheckIn = new Date(scheduledStartAt);
     const defaultCheckOut = new Date(scheduledEndAt);
@@ -1636,7 +1695,7 @@ exports.bulkOverrideAttendance = async (req) => {
         title: "Attendance updated",
         message: `Your attendance for ${date.toDateString()} was overridden to ${req.body.status}.`,
         meta: {
-          date: toDateKey(date),
+          date: dateKey,
           status: req.body.status
         }
       });
@@ -1652,11 +1711,8 @@ exports.bulkOverrideAttendance = async (req) => {
 };
 
 exports.getOnline = async (req) => {
-  const today = startOfDay(new Date());
-
   const query = {
     organizationId: req.user.organizationId,
-    date: today,
     checkInAt: { $ne: null },
     checkOutAt: null
   };
@@ -1689,8 +1745,9 @@ exports.getOnline = async (req) => {
 };
 
 exports.getOnLeave = async (req) => {
-  const todayStart = startOfDay(new Date());
-  const todayEnd = endOfDay(new Date());
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const todayStart = startOfDayInTimeZone(new Date(), organizationTimeZone);
+  const todayEnd = endOfDayInTimeZone(new Date(), organizationTimeZone);
 
   const query = {
     organizationId: req.user.organizationId,

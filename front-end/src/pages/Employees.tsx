@@ -49,6 +49,7 @@ import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
 import { TableLoaderRows } from "@/components/ui/loaders";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -303,7 +304,7 @@ const Employees = () => {
                 <TableCell>{getStatusBadge(employee.status)}</TableCell>
                 <TableCell>
                   {employee.dateOfJoining
-                    ? new Date(employee.dateOfJoining).toLocaleDateString()
+                    ? formatDateInOrgTimeZone(employee.dateOfJoining)
                     : "-"}
                 </TableCell>
                 {canAnyAction && (

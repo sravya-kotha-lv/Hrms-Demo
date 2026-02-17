@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { setPermissions } from "@/utils/auth";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -367,7 +368,7 @@ const Dashboard = () => {
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       return {
         key,
-        label: d.toLocaleDateString(undefined, { weekday: "short" }),
+        label: formatDateInOrgTimeZone(d, { weekday: "short" }),
         present: 0,
         absent: totalEmployees
       };
@@ -916,7 +917,7 @@ const Dashboard = () => {
             {upcomingHolidays.map((h: any) => (
               <div key={h._id} className="flex items-center justify-between p-2 rounded-lg border text-sm">
                 <span>{h.name}</span>
-                <span className="text-muted-foreground">{new Date(h.date).toLocaleDateString()}</span>
+                <span className="text-muted-foreground">{formatDateInOrgTimeZone(h.date)}</span>
               </div>
             ))}
           </div>
