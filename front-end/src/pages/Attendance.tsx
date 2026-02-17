@@ -21,9 +21,13 @@ import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 type DayCell = {
-  status: "present" | "absent";
+  status: "present" | "absent" | "pending_checkout";
   checkInAt: string | null;
   checkOutAt: string | null;
+  isOpenSession?: boolean;
+  excludeFromPayroll?: boolean;
+  missedCheckout?: boolean;
+  missedCheckoutMarkedAt?: string | null;
   overriddenBy: string | null;
   overriddenAt: string | null;
   shiftName?: string | null;
@@ -65,6 +69,10 @@ const emptyCell: DayCell = {
   status: "absent",
   checkInAt: null,
   checkOutAt: null,
+  isOpenSession: false,
+  excludeFromPayroll: false,
+  missedCheckout: false,
+  missedCheckoutMarkedAt: null,
   overriddenBy: null,
   overriddenAt: null,
   isWeekOff: false,
@@ -146,7 +154,8 @@ const Attendance = () => {
   const openCellDetails = async (row: EmployeeRow, day: number) => {
     setSelectedEmployee(row);
     setSelectedDay(day);
-    setSelectedStatus((row.days?.[day]?.status || "absent") as "present" | "absent");
+    const cellStatus = row.days?.[day]?.status || "absent";
+    setSelectedStatus(cellStatus === "pending_checkout" ? "present" : (cellStatus as "present" | "absent"));
     setOpen(true);
     setHistory([]);
     try {
@@ -195,10 +204,22 @@ const Attendance = () => {
 
   const formatHoverInfo = (cell: DayCell) => {
     const parts: string[] = [];
+    if (cell.status === "pending_checkout") {
+      parts.push("Status: Pending checkout");
+    }
+    if (cell.excludeFromPayroll) {
+      parts.push("Excluded from payroll until checkout is completed");
+    }
+    if (cell.missedCheckout) {
+      parts.push("Missed checkout flagged");
+    }
+    if (cell.missedCheckoutMarkedAt) {
+      parts.push(`Missed checkout marked at: ${new Date(cell.missedCheckoutMarkedAt).toLocaleString()}`);
+    }
     if (cell.isWeekOff) parts.push("Week Off");
     if (cell.holidayName) parts.push(`Holiday: ${cell.holidayName}`);
-  if (cell.checkInAt) parts.push(`Check-in: ${new Date(cell.checkInAt).toLocaleTimeString()}`);
-  if (cell.checkOutAt) parts.push(`Check-out: ${new Date(cell.checkOutAt).toLocaleTimeString()}`);
+    if (cell.checkInAt) parts.push(`Check-in: ${new Date(cell.checkInAt).toLocaleTimeString()}`);
+    if (cell.checkOutAt) parts.push(`Check-out: ${new Date(cell.checkOutAt).toLocaleTimeString()}`);
     if (cell.shiftName || cell.shiftCode) {
       parts.push(`Shift: ${cell.shiftName || ""}${cell.shiftCode ? ` (${cell.shiftCode})` : ""}`);
     }
@@ -217,12 +238,19 @@ const Attendance = () => {
 
   const getEmployeeTotals = (row: EmployeeRow) => {
     let presentDays = 0;
+    let pendingCheckoutDays = 0;
     let absentDays = 0;
     let onLeaveDays = 0;
     let weekOffDays = 0;
     let holidayDays = 0;
+    let payrollExcludedDays = 0;
     for (let day = 1; day <= daysInMonth; day += 1) {
       const cell = row.days?.[day] || emptyCell;
+      if (cell.status === "pending_checkout") {
+        pendingCheckoutDays += 1;
+        payrollExcludedDays += 1;
+        continue;
+      }
       if (cell.status === "present") {
         presentDays += 1;
         continue;
@@ -243,10 +271,12 @@ const Attendance = () => {
     }
     return {
       presentDays,
+      pendingCheckoutDays,
       absentDays,
       onLeaveDays,
       weekOffDays,
       holidayDays,
+      payrollExcludedDays,
       totalDays: daysInMonth
     };
   };
@@ -256,10 +286,12 @@ const Attendance = () => {
       "Employee Code",
       "Employee Name",
       "Present",
+      "Pending Checkout",
       "Absent",
       "On Leave",
       "Week Off",
       "Holiday",
+      "Excluded From Payroll",
       "Total Days"
     ];
     const lines = [header.join(",")];
@@ -270,10 +302,12 @@ const Attendance = () => {
         row.employeeCode || "",
         `"${name.replace(/"/g, '""')}"`,
         t.presentDays,
+        t.pendingCheckoutDays,
         t.absentDays,
         t.onLeaveDays,
         t.weekOffDays,
         t.holidayDays,
+        t.payrollExcludedDays,
         t.totalDays
       ].join(","));
     });
@@ -424,6 +458,9 @@ const Attendance = () => {
                   <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Present
                   </th>
+                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[120px]">
+                    Pending Checkout
+                  </th>
                   <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Absent
                   </th>
@@ -441,14 +478,14 @@ const Attendance = () => {
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={daysInMonth + 6 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
+                    <td colSpan={daysInMonth + 7 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
                       Loading attendance...
                     </td>
                   </tr>
                 )}
                 {!loading && filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={daysInMonth + 6 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
+                    <td colSpan={daysInMonth + 7 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
                       No employees found.
                     </td>
                   </tr>
@@ -474,6 +511,7 @@ const Attendance = () => {
                       const day = idx + 1;
                       const cell = row.days?.[day] || emptyCell;
                       const isPresent = cell.status === "present";
+                      const isPendingCheckout = cell.status === "pending_checkout";
                       const isLeave = cell.isOnLeave;
                       const isWeekOff = cell.isWeekOff;
                       const isHoliday = Boolean(cell.holidayName);
@@ -484,6 +522,8 @@ const Attendance = () => {
                         colorClass = "bg-amber-100 text-amber-700 border-amber-300";
                       } else if (isWeekOff) {
                         colorClass = "bg-sky-100 text-sky-700 border-sky-300";
+                      } else if (isPendingCheckout) {
+                        colorClass = "bg-orange-100 text-orange-700 border-orange-300";
                       } else if (isPresent) {
                         colorClass = "bg-emerald-100 text-emerald-700 border-emerald-300";
                       } else {
@@ -500,7 +540,7 @@ const Attendance = () => {
                               "cursor-pointer hover:opacity-90"
                             }`}
                           >
-                            {isLeave ? "L" : isHoliday ? "H" : isWeekOff ? "W" : isPresent ? "P" : "A"}
+                            {isLeave ? "L" : isHoliday ? "H" : isWeekOff ? "W" : isPendingCheckout ? "PC" : isPresent ? "P" : "A"}
                           </button>
                         </td>
                       );
@@ -511,6 +551,9 @@ const Attendance = () => {
                         <>
                           <td className="text-center text-sm font-medium text-emerald-700">
                             {totals.presentDays}
+                          </td>
+                          <td className="text-center text-sm font-medium text-orange-700">
+                            {totals.pendingCheckoutDays}
                           </td>
                           <td className="text-center text-sm font-medium text-rose-700">
                             {totals.absentDays}
@@ -537,6 +580,10 @@ const Attendance = () => {
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded bg-emerald-100 border border-emerald-300" />
               Present
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded bg-orange-100 border border-orange-300" />
+              Pending Checkout
             </div>
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded bg-rose-100 border border-rose-300" />

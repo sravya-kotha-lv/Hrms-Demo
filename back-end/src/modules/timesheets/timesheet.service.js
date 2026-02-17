@@ -454,7 +454,14 @@ exports.checkIn = async (req) => {
   }).sort({ date: -1, checkInAt: -1 });
 
   if (openAttendance) {
-    throw new Error("Already checked in. If you missed checkout, please raise an attendance request.");
+    if (toDateKey(openAttendance.date) === toDateKey(today)) {
+      throw new Error("Already checked in for today");
+    }
+
+    openAttendance.missedCheckout = true;
+    openAttendance.missedCheckoutMarkedAt = now;
+    openAttendance.missedCheckoutResolvedRequestId = null;
+    await openAttendance.save();
   }
 
   const existing = await Attendance.findOne({
@@ -488,6 +495,9 @@ exports.checkIn = async (req) => {
     existing.earlyLoginByMinutes = earlyLoginByMinutes;
     existing.earlyCheckoutByMinutes = 0;
     existing.overtimeMinutes = 0;
+    existing.missedCheckout = false;
+    existing.missedCheckoutMarkedAt = null;
+    existing.missedCheckoutResolvedRequestId = null;
     await existing.save();
     return existing;
   }
@@ -508,7 +518,10 @@ exports.checkIn = async (req) => {
     lateByMinutes,
     earlyLoginByMinutes,
     earlyCheckoutByMinutes: 0,
-    overtimeMinutes: 0
+    overtimeMinutes: 0,
+    missedCheckout: false,
+    missedCheckoutMarkedAt: null,
+    missedCheckoutResolvedRequestId: null
   });
 
   await audit({
@@ -565,6 +578,9 @@ exports.checkOut = async (req) => {
   attendance.overriddenAt = null;
   attendance.earlyCheckoutByMinutes = earlyCheckoutByMinutes;
   attendance.overtimeMinutes = overtimeMinutes;
+  attendance.missedCheckout = false;
+  attendance.missedCheckoutMarkedAt = null;
+  attendance.missedCheckoutResolvedRequestId = null;
   await attendance.save();
 
   // Update weekly timesheet hours for today
@@ -668,7 +684,7 @@ exports.getAttendanceMatrix = async (req) => {
       employeeId: { $in: employeeIds },
       date: { $gte: start, $lte: end }
     })
-      .select("employeeId date checkInAt checkOutAt overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes")
+      .select("employeeId date checkInAt checkOutAt overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
       .populate("overriddenBy", "firstName lastName"),
     Holiday.find({
       organizationId: req.user.organizationId,
@@ -700,10 +716,15 @@ exports.getAttendanceMatrix = async (req) => {
     const overriddenByName = row.overriddenBy
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
       : null;
+    const isOpenSession = Boolean(row.checkInAt && !row.checkOutAt);
     attendanceMap.set(key, {
-      status: row.checkInAt || row.checkOutAt ? "present" : "absent",
+      status: isOpenSession ? "pending_checkout" : (row.checkInAt || row.checkOutAt ? "present" : "absent"),
       checkInAt: row.checkInAt || null,
       checkOutAt: row.checkOutAt || null,
+      isOpenSession,
+      excludeFromPayroll: isOpenSession,
+      missedCheckout: Boolean(row.missedCheckout),
+      missedCheckoutMarkedAt: row.missedCheckoutMarkedAt || null,
       overriddenBy: overriddenByName || null,
       overriddenAt: row.overriddenAt || null,
       shiftName: row.shiftName || null,
@@ -744,6 +765,10 @@ exports.getAttendanceMatrix = async (req) => {
         status: "absent",
         checkInAt: null,
         checkOutAt: null,
+        isOpenSession: false,
+        excludeFromPayroll: false,
+        missedCheckout: false,
+        missedCheckoutMarkedAt: null,
         overriddenBy: null,
         overriddenAt: null,
         shiftName: null,
@@ -782,7 +807,7 @@ exports.getMyAttendanceMatrix = async (req) => {
       employeeId: employee._id,
       date: { $gte: start, $lte: end }
     })
-      .select("date checkInAt checkOutAt overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes")
+      .select("date checkInAt checkOutAt overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
       .populate("overriddenBy", "firstName lastName"),
     Holiday.find({
       organizationId: req.user.organizationId,
@@ -814,6 +839,10 @@ exports.getMyAttendanceMatrix = async (req) => {
       status: "absent",
       checkInAt: null,
       checkOutAt: null,
+      isOpenSession: false,
+      excludeFromPayroll: false,
+      missedCheckout: false,
+      missedCheckoutMarkedAt: null,
       overriddenBy: null,
       overriddenAt: null,
       shiftName: null,
@@ -835,11 +864,16 @@ exports.getMyAttendanceMatrix = async (req) => {
     const overriddenByName = row.overriddenBy
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
       : null;
+    const isOpenSession = Boolean(row.checkInAt && !row.checkOutAt);
     days[day] = {
       ...days[day],
-      status: row.checkInAt || row.checkOutAt ? "present" : "absent",
+      status: isOpenSession ? "pending_checkout" : (row.checkInAt || row.checkOutAt ? "present" : "absent"),
       checkInAt: row.checkInAt || null,
       checkOutAt: row.checkOutAt || null,
+      isOpenSession,
+      excludeFromPayroll: isOpenSession,
+      missedCheckout: Boolean(row.missedCheckout),
+      missedCheckoutMarkedAt: row.missedCheckoutMarkedAt || null,
       overriddenBy: overriddenByName || null,
       overriddenAt: row.overriddenAt || null,
       shiftName: row.shiftName || null,
@@ -945,6 +979,22 @@ exports.raiseAttendanceRequest = async (req) => {
   }
   if (requestType === "correction" && !requestedCheckInTime && !requestedCheckOutTime) {
     throw new Error("Provide requested check-in or check-out time");
+  }
+
+  if (requestType === "missed_checkout") {
+    const attendance = await Attendance.findOne({
+      organizationId: req.user.organizationId,
+      employeeId: employee._id,
+      date
+    }).select("checkInAt checkOutAt");
+
+    if (!attendance?.checkInAt) {
+      throw new Error("No check-in found for this date");
+    }
+
+    if (attendance.checkOutAt) {
+      throw new Error("Checkout already exists for this date");
+    }
   }
 
   const existingPending = await AttendanceRequest.findOne({
@@ -1265,6 +1315,13 @@ exports.actionAttendanceRequest = async (req) => {
   attendance.earlyLoginByMinutes = earlyLoginByMinutes;
   attendance.earlyCheckoutByMinutes = earlyCheckoutByMinutes;
   attendance.overtimeMinutes = overtimeMinutes;
+  attendance.missedCheckout = Boolean(checkInAt && !checkOutAt);
+  attendance.missedCheckoutMarkedAt = checkInAt && !checkOutAt ? (attendance.missedCheckoutMarkedAt || new Date()) : null;
+  if (request.requestType === "missed_checkout" && checkOutAt) {
+    attendance.missedCheckout = false;
+    attendance.missedCheckoutMarkedAt = null;
+    attendance.missedCheckoutResolvedRequestId = request._id;
+  }
   await attendance.save();
 
   if (checkInAt && checkOutAt) {
@@ -1336,7 +1393,10 @@ exports.overrideAttendance = async (req) => {
       lateByMinutes: 0,
       earlyLoginByMinutes: 0,
       earlyCheckoutByMinutes: 0,
-      overtimeMinutes: 0
+      overtimeMinutes: 0,
+      missedCheckout: false,
+      missedCheckoutMarkedAt: null,
+      missedCheckoutResolvedRequestId: null
     }
     : {
       checkInAt: null,
@@ -1355,7 +1415,10 @@ exports.overrideAttendance = async (req) => {
       lateByMinutes: 0,
       earlyLoginByMinutes: 0,
       earlyCheckoutByMinutes: 0,
-      overtimeMinutes: 0
+      overtimeMinutes: 0,
+      missedCheckout: false,
+      missedCheckoutMarkedAt: null,
+      missedCheckoutResolvedRequestId: null
     };
 
   const attendance = await Attendance.findOneAndUpdate(
@@ -1461,7 +1524,10 @@ exports.bulkOverrideAttendance = async (req) => {
         lateByMinutes: 0,
         earlyLoginByMinutes: 0,
         earlyCheckoutByMinutes: 0,
-        overtimeMinutes: 0
+        overtimeMinutes: 0,
+        missedCheckout: false,
+        missedCheckoutMarkedAt: null,
+        missedCheckoutResolvedRequestId: null
       }
       : {
         checkInAt: null,
@@ -1480,7 +1546,10 @@ exports.bulkOverrideAttendance = async (req) => {
         lateByMinutes: 0,
         earlyLoginByMinutes: 0,
         earlyCheckoutByMinutes: 0,
-        overtimeMinutes: 0
+        overtimeMinutes: 0,
+        missedCheckout: false,
+        missedCheckoutMarkedAt: null,
+        missedCheckoutResolvedRequestId: null
       };
 
     const attendance = await Attendance.findOneAndUpdate(

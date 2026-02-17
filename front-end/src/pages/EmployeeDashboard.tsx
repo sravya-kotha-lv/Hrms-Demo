@@ -42,9 +42,11 @@ const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padS
 const currentYear = today.getFullYear();
 
 type AttendanceDay = {
-  status: "present" | "absent";
+  status: "present" | "absent" | "pending_checkout";
   checkInAt: string | null;
   checkOutAt: string | null;
+  excludeFromPayroll?: boolean;
+  missedCheckout?: boolean;
   isOnLeave: boolean;
   leaveType: string | null;
   isWeekOff: boolean;
@@ -188,6 +190,7 @@ const EmployeeDashboard = () => {
 
   const monthlySummary = useMemo(() => {
     let present = 0;
+    let pendingCheckout = 0;
     let absent = 0;
     let onLeave = 0;
     let weekOff = 0;
@@ -203,10 +206,15 @@ const EmployeeDashboard = () => {
         onLeave += 1;
         continue;
       }
-      if (cell.status === "present") present += 1;
-      else absent += 1;
+      if (cell.status === "pending_checkout") {
+        pendingCheckout += 1;
+      } else if (cell.status === "present") {
+        present += 1;
+      } else {
+        absent += 1;
+      }
     }
-    return { present, absent, onLeave, weekOff, total: daysInMonth };
+    return { present, pendingCheckout, absent, onLeave, weekOff, total: daysInMonth };
   }, [matrixDays, daysInMonth]);
 
   const pendingLeaves = useMemo(
@@ -293,8 +301,13 @@ const EmployeeDashboard = () => {
             <span className="flex items-center gap-2"><CalendarCheck className="w-4 h-4" /> Today Status</span>
             {lateFlag && <Badge variant="destructive">Late</Badge>}
           </div>
-          <div className="text-lg font-semibold">{isCheckedOut ? "Checked Out" : isCheckedIn ? "Checked In" : "Not Marked"}</div>
+          <div className="text-lg font-semibold">{isCheckedOut ? "Checked Out" : isCheckedIn ? "Pending Checkout" : "Not Marked"}</div>
           <p className="text-sm text-muted-foreground mt-2">In: {checkInTimeText} | Out: {checkOutTimeText}</p>
+          {isCheckedIn && (
+            <p className="text-xs text-orange-700 mt-1">
+              Session is open and excluded from payroll until check-out.
+            </p>
+          )}
         </motion.div>
 
         <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
@@ -351,10 +364,10 @@ const EmployeeDashboard = () => {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-4 text-sm">
             <div className="p-2 rounded-lg bg-muted/40">Present: <span className="font-semibold">{monthlySummary.present}</span></div>
+            <div className="p-2 rounded-lg bg-muted/40">Pending: <span className="font-semibold">{monthlySummary.pendingCheckout}</span></div>
             <div className="p-2 rounded-lg bg-muted/40">Absent: <span className="font-semibold">{monthlySummary.absent}</span></div>
             <div className="p-2 rounded-lg bg-muted/40">On Leave: <span className="font-semibold">{monthlySummary.onLeave}</span></div>
             <div className="p-2 rounded-lg bg-muted/40">Week Off: <span className="font-semibold">{monthlySummary.weekOff}</span></div>
-            <div className="p-2 rounded-lg bg-muted/40">Total Days: <span className="font-semibold">{monthlySummary.total}</span></div>
           </div>
         </motion.div>
 
@@ -510,11 +523,14 @@ const EmployeeDashboard = () => {
             } else if (cell?.isOnLeave) {
               toneClass = "bg-emerald-100 border-emerald-300";
               label = "Leave";
+            } else if (cell?.status === "pending_checkout") {
+              toneClass = "bg-orange-100 border-orange-300";
+              label = "Pending";
             } else if (cell?.status === "present") {
               toneClass = "bg-blue-100 border-blue-300";
               label = "Present";
             } else if (!isFuture) {
-              toneClass = "bg-orange-100 border-orange-300";
+              toneClass = "bg-rose-100 border-rose-300";
               label = "Absent";
             }
             return (
@@ -527,7 +543,8 @@ const EmployeeDashboard = () => {
         </div>
         <div className="flex flex-wrap gap-2 mt-4 text-xs">
           <span className="px-2 py-1 rounded bg-blue-100 border border-blue-300">Present</span>
-          <span className="px-2 py-1 rounded bg-orange-100 border border-orange-300">Absent</span>
+          <span className="px-2 py-1 rounded bg-orange-100 border border-orange-300">Pending Checkout</span>
+          <span className="px-2 py-1 rounded bg-rose-100 border border-rose-300">Absent</span>
           <span className="px-2 py-1 rounded bg-emerald-100 border border-emerald-300">Leave</span>
           <span className="px-2 py-1 rounded bg-sky-100 border border-sky-300">Week Off</span>
           <span className="px-2 py-1 rounded bg-rose-100 border border-rose-300">Holiday</span>

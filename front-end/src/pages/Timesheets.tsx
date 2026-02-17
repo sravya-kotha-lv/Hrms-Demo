@@ -463,6 +463,19 @@ const Timesheets = () => {
     }
   };
 
+  const openAttendanceRequestDialog = () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    setAttendanceRequestForm({
+      date: toDateInput(yesterday),
+      requestType: "missed_checkout",
+      requestedCheckInTime: "",
+      requestedCheckOutTime: "",
+      reason: ""
+    });
+    setAttendanceRequestOpen(true);
+  };
+
   const actionAttendanceRequest = async (id: string, status: "approved" | "rejected") => {
     const request = pendingAttendanceRequests.find((r) => r._id === id);
     if (request && !canCurrentActorActionAttendanceRequest(request)) {
@@ -711,6 +724,11 @@ const Timesheets = () => {
               ? new Date(attendanceToday.checkInAt).toLocaleTimeString()
               : "-"}
           </div>
+          {isCheckedIn && (
+            <div className="text-xs text-orange-700 mt-2">
+              Pending checkout. This session stays excluded from payroll until checkout is completed.
+            </div>
+          )}
         </motion.div>
 
         <motion.div
@@ -744,7 +762,7 @@ const Timesheets = () => {
         </Button>
         <Button
           variant="outline"
-          onClick={() => setAttendanceRequestOpen(true)}
+          onClick={openAttendanceRequestDialog}
           disabled={!hasPermission("TIMESHEET_VIEW_SELF")}
         >
           Raise Attendance Request
@@ -1306,7 +1324,9 @@ const Timesheets = () => {
               onChange={(e) =>
                 setAttendanceRequestForm((prev) => ({
                   ...prev,
-                  requestType: e.target.value as "missed_checkout" | "correction"
+                  requestType: e.target.value as "missed_checkout" | "correction",
+                  requestedCheckInTime:
+                    e.target.value === "missed_checkout" ? "" : prev.requestedCheckInTime
                 }))
               }
             >
@@ -1320,6 +1340,7 @@ const Timesheets = () => {
                 setAttendanceRequestForm((prev) => ({ ...prev, requestedCheckInTime: e.target.value }))
               }
               placeholder="Requested check-in time"
+              disabled={attendanceRequestForm.requestType === "missed_checkout"}
             />
             <Input
               type="time"
@@ -1330,6 +1351,11 @@ const Timesheets = () => {
               placeholder="Requested check-out time"
             />
           </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            {attendanceRequestForm.requestType === "missed_checkout"
+              ? "Provide the missing check-out time. Check-in time is taken from existing attendance."
+              : "Provide one or both times to request correction."}
+          </p>
           <Textarea
             className="mt-3"
             placeholder="Reason"
