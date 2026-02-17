@@ -9,7 +9,8 @@ const {
   createEmployeeByHrSchema,
   completeProfileSchema,
   updateEmployeeSchema,
-  lifecycleActionSchema
+  lifecycleActionSchema,
+  bulkUpdateEmployeesSchema
 } = require("./employee.validation");
 
 const controller = require("./employee.controller");
@@ -57,6 +58,14 @@ router.get(
   auth,
   authorize("EMP_SELF_VIEW"),
   asyncHandler(controller.getMe)
+);
+
+router.put(
+  "/bulk-update",
+  auth,
+  authorize("EMP_UPDATE"),
+  validate(bulkUpdateEmployeesSchema),
+  asyncHandler(controller.bulkUpdate)
 );
 
 router.get(

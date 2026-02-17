@@ -22,6 +22,20 @@ const employmentLifecycleStatus = Joi.string().valid(
   "notice",
   "terminated"
 );
+const emergencyRelation = Joi.string().valid(
+  "father",
+  "mother",
+  "spouse",
+  "brother",
+  "sister",
+  "son",
+  "daughter",
+  "guardian",
+  "friend",
+  "other"
+);
+const emergencyName = Joi.string().trim().pattern(/^[A-Za-z ]{2,50}$/);
+const emergencyPhone = Joi.string().trim().pattern(/^\d{10}$/);
 
 /* ------------------------------------------------------------------ */
 /* HR CREATES EMPLOYEE (MINIMUM REQUIRED DATA)                         */
@@ -69,9 +83,9 @@ exports.completeProfileSchema = Joi.object({
 
   emergencyContacts: Joi.array().items(
     Joi.object({
-      name: Joi.string().required(),
-      relation: Joi.string().required(),
-      phone: Joi.string().required()
+      name: emergencyName.required(),
+      relation: emergencyRelation.required(),
+      phone: emergencyPhone.required()
     })
   ).optional(),
   profileImageUpload: Joi.object({
@@ -121,9 +135,9 @@ exports.updateEmployeeSchema = Joi.object({
 
   emergencyContacts: Joi.array().items(
     Joi.object({
-      name: Joi.string().required(),
-      relation: Joi.string().required(),
-      phone: Joi.string().required()
+      name: emergencyName.required(),
+      relation: emergencyRelation.required(),
+      phone: emergencyPhone.required()
     })
   ).optional()
 });
@@ -134,3 +148,20 @@ exports.lifecycleActionSchema = Joi.object({
     .required(),
   reason: Joi.string().trim().max(300).optional().allow("")
 });
+
+exports.bulkUpdateEmployeesSchema = Joi.object({
+  employeeIds: Joi.array().items(objectId).min(1).required(),
+  shiftId: objectId.optional().allow(null, ""),
+  managerId: objectId.optional().allow(null, ""),
+  departmentId: objectId.optional(),
+  designationId: objectId.optional(),
+  status: status.optional(),
+  employmentLifecycleStatus: employmentLifecycleStatus.optional()
+}).or(
+  "shiftId",
+  "managerId",
+  "departmentId",
+  "designationId",
+  "status",
+  "employmentLifecycleStatus"
+);

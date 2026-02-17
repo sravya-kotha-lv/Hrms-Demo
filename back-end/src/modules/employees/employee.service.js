@@ -433,7 +433,9 @@ exports.listByOrganization = async (req) => {
     departmentId,
     designationId,
     status,
-    organizationId: orgIdOverride
+    organizationId: orgIdOverride,
+    sortBy,
+    sortOrder
   } = req.query;
 
   const { organizationId, userId, activeRoleId } = req.user;
@@ -480,6 +482,18 @@ exports.listByOrganization = async (req) => {
   if (designationId) query.designationId = designationId;
   if (status) query.status = status;
 
+  const allowedSortFields = new Set([
+    "createdAt",
+    "firstName",
+    "lastName",
+    "employeeCode",
+    "dateOfJoining",
+    "status",
+    "employmentLifecycleStatus"
+  ]);
+  const sortField = allowedSortFields.has(String(sortBy)) ? String(sortBy) : "createdAt";
+  const sortDirection = String(sortOrder).toLowerCase() === "asc" ? 1 : -1;
+
   // Build query
   let employeeQuery = Employee.find(query)
     .populate("departmentId", "name")
@@ -487,7 +501,7 @@ exports.listByOrganization = async (req) => {
     .populate("managerId", "firstName lastName")
     .populate("shiftId", "name code startTime endTime graceMinutes status")
     .populate("userId", "email")
-    .sort({ createdAt: -1 });
+    .sort({ [sortField]: sortDirection, createdAt: -1 });
 
   let total = await Employee.countDocuments(query);
 
@@ -812,6 +826,65 @@ exports.lifecycleAction = async (req) => {
     employeeId: employee._id,
     organizationId
   });
+};
+
+exports.bulkUpdate = async (req) => {
+  const { organizationId } = req.user;
+  const {
+    employeeIds = [],
+    shiftId,
+    managerId,
+    departmentId,
+    designationId,
+    status,
+    employmentLifecycleStatus
+  } = req.body;
+
+  const employees = await Employee.find({
+    organizationId,
+    _id: { $in: employeeIds },
+    isDeleted: false
+  });
+
+  if (!employees.length) {
+    throw { code: 404, message: "No employees found for bulk update" };
+  }
+
+  for (const employee of employees) {
+    if (shiftId !== undefined) {
+      employee.shiftId = shiftId || null;
+    }
+    if (managerId !== undefined) {
+      employee.managerId = managerId || null;
+    }
+    if (departmentId !== undefined) {
+      employee.departmentId = departmentId;
+    }
+    if (designationId !== undefined) {
+      employee.designationId = designationId;
+    }
+    if (status !== undefined) {
+      employee.status = status;
+      if (status === "resigned") {
+        applyLifecycleChange(employee, "notice");
+      }
+    }
+    if (employmentLifecycleStatus !== undefined) {
+      applyLifecycleChange(employee, employmentLifecycleStatus);
+      if (employmentLifecycleStatus === "terminated") {
+        employee.status = "resigned";
+      } else if (employmentLifecycleStatus === "confirmed") {
+        employee.status = "active";
+      }
+    }
+  }
+
+  await Promise.all(employees.map((employee) => employee.save()));
+
+  return {
+    updatedCount: employees.length,
+    employeeIds: employees.map((employee) => employee._id)
+  };
 };
 
 /* ------------------------------------------------------------------ */
