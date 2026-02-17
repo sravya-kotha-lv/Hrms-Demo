@@ -167,13 +167,13 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
       {/* Right Section */}
       <div className="flex items-center gap-2 sm:gap-4">
         {/* Search */}
-        <div className="relative hidden xl:block w-64">
+        {/*<div className="relative hidden xl:block w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search..."
             className="pl-10 bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-primary"
           />
-        </div>
+        </div>*/}
 
         {/* Notifications */}
         <DropdownMenu onOpenChange={(open) => open && loadNotifications(true)}>
@@ -222,9 +222,9 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
         </DropdownMenu>
 
         {/* Settings */}
-        <button className="p-2 rounded-lg hover:bg-muted transition-colors">
+        {/* <button className="p-2 rounded-lg hover:bg-muted transition-colors">
           <Settings className="w-5 h-5 text-muted-foreground" />
-        </button>
+        </button> */}
 
         {/* User Menu */}
         <DropdownMenu>

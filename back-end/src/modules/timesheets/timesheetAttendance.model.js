@@ -89,6 +89,19 @@ const timesheetAttendanceSchema = new mongoose.Schema(
     overtimeMinutes: {
       type: Number,
       default: 0
+    },
+    missedCheckout: {
+      type: Boolean,
+      default: false
+    },
+    missedCheckoutMarkedAt: {
+      type: Date,
+      default: null
+    },
+    missedCheckoutResolvedRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "attendance_requests",
+      default: null
     }
   },
   { timestamps: true }

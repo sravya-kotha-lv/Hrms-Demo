@@ -295,6 +295,7 @@ const Dashboard = () => {
   const monthDaySummary = useMemo(() => {
     const day = today.getDate();
     let present = 0;
+    let pendingCheckout = 0;
     let absent = 0;
     let onLeave = 0;
     let weekOff = 0;
@@ -311,6 +312,8 @@ const Dashboard = () => {
         weekOff += 1;
       } else if (cell.isOnLeave) {
         onLeave += 1;
+      } else if (cell.status === "pending_checkout") {
+        pendingCheckout += 1;
       } else if (cell.status === "present") {
         present += 1;
       } else {
@@ -318,7 +321,7 @@ const Dashboard = () => {
       }
     });
 
-    return { present, absent, onLeave, weekOff, holiday, overridden };
+    return { present, pendingCheckout, absent, onLeave, weekOff, holiday, overridden };
   }, [attendanceMatrix]);
 
   const pendingApprovals = useMemo(() => {
@@ -345,7 +348,7 @@ const Dashboard = () => {
       const cell = row?.days?.[day];
       if (!cell) return;
       if (cell.isOnLeave) grouped[dept].onLeave += 1;
-      else if (cell.status === "present") grouped[dept].present += 1;
+      else if (cell.status === "present" || cell.status === "pending_checkout") grouped[dept].present += 1;
       else grouped[dept].absent += 1;
     });
 
@@ -852,6 +855,7 @@ const Dashboard = () => {
             <h3 className="font-semibold">Attendance Exceptions</h3>
           </div>
           <div className="space-y-2 text-sm">
+            <div className="p-2 rounded-lg bg-muted/40">Pending Checkout: <span className="font-semibold">{monthDaySummary.pendingCheckout}</span></div>
             <div className="p-2 rounded-lg bg-muted/40">Absent: <span className="font-semibold">{monthDaySummary.absent}</span></div>
             <div className="p-2 rounded-lg bg-muted/40">On Leave: <span className="font-semibold">{monthDaySummary.onLeave}</span></div>
             <div className="p-2 rounded-lg bg-muted/40">Week Off: <span className="font-semibold">{monthDaySummary.weekOff}</span></div>
