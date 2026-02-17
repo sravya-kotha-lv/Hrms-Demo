@@ -153,6 +153,42 @@ const resolveShiftSchedule = async (organizationId, employeeId, dateValue) => {
   };
 };
 
+const resolveCheckInSchedule = async (organizationId, employeeId, now) => {
+  const today = startOfDay(now);
+  const yesterday = startOfDay(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const yesterdaySchedule = await resolveShiftSchedule(
+    organizationId,
+    employeeId,
+    yesterday
+  );
+
+  const isYesterdayOvernight = toDateKey(yesterdaySchedule.scheduledStartAt)
+    !== toDateKey(yesterdaySchedule.scheduledEndAt);
+  if (
+    isYesterdayOvernight
+    && now >= today
+    && now <= yesterdaySchedule.scheduledEndAt
+  ) {
+    return {
+      attendanceDate: yesterday,
+      ...yesterdaySchedule
+    };
+  }
+
+  const todaySchedule = await resolveShiftSchedule(
+    organizationId,
+    employeeId,
+    today
+  );
+
+  return {
+    attendanceDate: today,
+    ...todaySchedule
+  };
+};
+
 const sendNotification = async ({ toEmail, toName, subject, message }) => {
   if (!toEmail) return;
   try {
@@ -431,11 +467,15 @@ const validateAttendanceEditWindow = async (organizationId, dateValue) => {
 exports.checkIn = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const now = new Date();
-  const today = startOfDay(now);
-  const { shift, scheduledStartAt, scheduledEndAt } = await resolveShiftSchedule(
+  const {
+    attendanceDate,
+    shift,
+    scheduledStartAt,
+    scheduledEndAt
+  } = await resolveCheckInSchedule(
     req.user.organizationId,
     employee._id,
-    today
+    now
   );
 
   const graceMinutes = Number(shift.graceMinutes || 0);
@@ -454,8 +494,8 @@ exports.checkIn = async (req) => {
   }).sort({ date: -1, checkInAt: -1 });
 
   if (openAttendance) {
-    if (toDateKey(openAttendance.date) === toDateKey(today)) {
-      throw new Error("Already checked in for today");
+    if (toDateKey(openAttendance.date) === toDateKey(attendanceDate)) {
+      throw new Error("Already checked in for this shift");
     }
 
     openAttendance.missedCheckout = true;
@@ -467,7 +507,7 @@ exports.checkIn = async (req) => {
   const existing = await Attendance.findOne({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date: today
+    date: attendanceDate
   });
 
   if (existing && existing.checkInAt && !existing.checkOutAt) {
@@ -505,7 +545,7 @@ exports.checkIn = async (req) => {
   const attendance = await Attendance.create({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date: today,
+    date: attendanceDate,
     checkInAt: now,
     status: "checked_in",
     shiftId: shift._id || null,
