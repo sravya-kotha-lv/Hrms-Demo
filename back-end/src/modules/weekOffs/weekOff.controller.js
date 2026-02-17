@@ -17,3 +17,10 @@ exports.get = async (req, res) => {
     buildSuccessResponse({ data })
   );
 };
+
+exports.getAll = async (req, res) => {
+  const data = await service.getAll(req);
+  res.status(200).json(
+    buildSuccessResponse({ data })
+  );
+};

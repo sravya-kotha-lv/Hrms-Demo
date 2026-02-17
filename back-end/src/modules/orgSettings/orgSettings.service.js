@@ -2,6 +2,12 @@ const OrgSettings = require("./orgSettings.model");
 
 const DEFAULTS = {
   leaveCreditFrequency: "monthly",
+  leaveTypeCreditMode: "current_month_onwards",
+  sandwichRuleEnabled: false,
+  attendanceLockEnabled: false,
+  attendanceLockAfterDays: 7,
+  attendanceLockMode: "days_window",
+  payrollCutoffDay: 25,
   minWorkHoursPerDay: 8,
   minHalfDayHours: 4
 };
@@ -22,11 +28,31 @@ exports.get = async (req) => {
 };
 
 exports.upsert = async (req) => {
-  const { leaveCreditFrequency, minWorkHoursPerDay, minHalfDayHours } = req.body;
+  const {
+    leaveCreditFrequency,
+    leaveTypeCreditMode,
+    sandwichRuleEnabled,
+    attendanceLockEnabled,
+    attendanceLockAfterDays,
+    attendanceLockMode,
+    payrollCutoffDay,
+    minWorkHoursPerDay,
+    minHalfDayHours
+  } = req.body;
 
   const settings = await OrgSettings.findOneAndUpdate(
     { organizationId: req.user.organizationId },
-    { leaveCreditFrequency, minWorkHoursPerDay, minHalfDayHours },
+    {
+      leaveCreditFrequency,
+      leaveTypeCreditMode,
+      sandwichRuleEnabled,
+      attendanceLockEnabled,
+      attendanceLockAfterDays,
+      attendanceLockMode,
+      payrollCutoffDay,
+      minWorkHoursPerDay,
+      minHalfDayHours
+    },
     { upsert: true, new: true }
   );
 

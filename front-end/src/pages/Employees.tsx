@@ -48,6 +48,7 @@ import { deleteApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
+import { TableLoaderRows } from "@/components/ui/loaders";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -266,11 +267,7 @@ const Employees = () => {
           </TableHeader>
           <TableBody>
             {loading && (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-10">
-                  Loading...
-                </TableCell>
-              </TableRow>
+              <TableLoaderRows rows={6} cols={canAnyAction ? 8 : 7} />
             )}
             {!loading && employees.length === 0 && (
               <TableRow>
@@ -284,7 +281,7 @@ const Employees = () => {
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <Avatar>
-                      <AvatarImage src="" />
+                      <AvatarImage src={employee.profileImage || ""} />
                       <AvatarFallback>
                         {`${employee.firstName?.[0] || ""}${employee.lastName?.[0] || ""}`}
                       </AvatarFallback>

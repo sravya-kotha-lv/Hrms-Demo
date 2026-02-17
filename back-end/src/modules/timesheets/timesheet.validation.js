@@ -29,3 +29,31 @@ exports.actionWeeklySchema = Joi.object({
     otherwise: Joi.optional()
   })
 });
+
+exports.overrideAttendanceSchema = Joi.object({
+  date: Joi.date().required(),
+  status: Joi.string().valid("present", "absent").required()
+});
+
+exports.bulkOverrideAttendanceSchema = Joi.object({
+  date: Joi.date().required(),
+  status: Joi.string().valid("present", "absent").required(),
+  employeeIds: Joi.array().items(Joi.string().required()).min(1).required()
+});
+
+exports.raiseAttendanceRequestSchema = Joi.object({
+  date: Joi.date().required(),
+  requestType: Joi.string().valid("missed_checkout", "correction").required(),
+  requestedCheckInTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).allow(null, ""),
+  requestedCheckOutTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).allow(null, ""),
+  reason: Joi.string().trim().min(3).max(500).required()
+});
+
+exports.attendanceRequestActionSchema = Joi.object({
+  status: Joi.string().valid("approved", "rejected").required(),
+  rejectionReason: Joi.when("status", {
+    is: "rejected",
+    then: Joi.string().trim().min(3).required(),
+    otherwise: Joi.optional()
+  })
+});

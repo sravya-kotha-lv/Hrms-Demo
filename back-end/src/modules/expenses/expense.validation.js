@@ -1,0 +1,73 @@
+const Joi = require("joi");
+const objectId = Joi.string().hex().length(24);
+
+const category = Joi.string().valid(
+  "assets",
+  "office_rent",
+  "utilities",
+  "software",
+  "travel",
+  "maintenance",
+  "salary",
+  "marketing",
+  "other"
+);
+
+const paymentMode = Joi.string().valid(
+  "cash",
+  "bank_transfer",
+  "card",
+  "upi",
+  "cheque",
+  "other"
+);
+
+exports.createExpenseSchema = Joi.object({
+  category: category.required(),
+  title: Joi.string().trim().min(2).max(120).required(),
+  vendorId: objectId.allow(null).optional(),
+  vendor: Joi.string().trim().allow("").max(120).optional(),
+  expenseDate: Joi.date().required(),
+  amount: Joi.number().min(0).required(),
+  taxAmount: Joi.number().min(0).optional(),
+  paymentMode: paymentMode.optional(),
+  notes: Joi.string().trim().allow("").max(1000).optional(),
+  receiptUrl: Joi.string().trim().allow("").max(500).optional()
+});
+
+exports.updateExpenseSchema = Joi.object({
+  category: category.optional(),
+  title: Joi.string().trim().min(2).max(120).optional(),
+  vendorId: objectId.allow(null).optional(),
+  vendor: Joi.string().trim().allow("").max(120).optional(),
+  expenseDate: Joi.date().optional(),
+  amount: Joi.number().min(0).optional(),
+  taxAmount: Joi.number().min(0).optional(),
+  paymentMode: paymentMode.optional(),
+  notes: Joi.string().trim().allow("").max(1000).optional(),
+  receiptUrl: Joi.string().trim().allow("").max(500).optional()
+});
+
+exports.actionExpenseSchema = Joi.object({
+  status: Joi.string().valid("approved", "rejected").required(),
+  rejectionReason: Joi.when("status", {
+    is: "rejected",
+    then: Joi.string().trim().min(3).max(500).required(),
+    otherwise: Joi.optional()
+  })
+});
+
+exports.uploadReceiptSchema = Joi.object({
+  fileName: Joi.string().trim().min(1).max(255).required(),
+  fileData: Joi.string().trim().min(10).required()
+});
+
+exports.createVendorSchema = Joi.object({
+  name: Joi.string().trim().min(2).max(120).required(),
+  isActive: Joi.boolean().optional()
+});
+
+exports.updateVendorSchema = Joi.object({
+  name: Joi.string().trim().min(2).max(120).optional(),
+  isActive: Joi.boolean().optional()
+});

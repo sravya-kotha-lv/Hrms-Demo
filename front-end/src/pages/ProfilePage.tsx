@@ -6,12 +6,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
+import { useAuth } from "@/context/AuthContext";
+import { PageLoader } from "@/components/ui/loaders";
+
+const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const ADDRESS_PROOF_MAX_BYTES = 5 * 1024 * 1024;
+const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ADDRESS_PROOF_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 
 const ProfilePage = () => {
+  const { loadProfile } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
   const canEdit = hasPermission("EMP_SELF_EDIT");
+  const [profilePreviewUrl, setProfilePreviewUrl] = useState("");
+  const [profilePicInputKey, setProfilePicInputKey] = useState(0);
 
   const [form, setForm] = useState({
     phone: "",
@@ -27,10 +38,37 @@ const ProfilePage = () => {
     },
     emergencyContacts: [
       { name: "", relation: "", phone: "" }
-    ]
+    ],
+    profileImageUpload: null as null | { fileName: string; mimeType: string; base64Data: string },
+    addressProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string }
   });
 
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || "");
+        const base64 = result.includes(",") ? result.split(",")[1] : result;
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const validateFile = (file: File, allowedTypes: string[], maxBytes: number, label: string) => {
+    if (!allowedTypes.includes(file.type)) {
+      toast.error(`Invalid ${label} format`);
+      return false;
+    }
+    if (file.size > maxBytes) {
+      toast.error(`${label} size should be under ${Math.floor(maxBytes / (1024 * 1024))}MB`);
+      return false;
+    }
+    return true;
+  };
+
   const fetchProfile = async () => {
+    setProfileLoading(true);
     const res = await getApiWithToken("/employees/me");
     if (res?.success) {
       setProfile(res.data);
@@ -48,14 +86,27 @@ const ProfilePage = () => {
         },
         emergencyContacts: res.data.emergencyContacts?.length
           ? res.data.emergencyContacts
-          : [{ name: "", relation: "", phone: "" }]
+          : [{ name: "", relation: "", phone: "" }],
+        profileImageUpload: null,
+        addressProofUpload: null
       });
+      setProfilePreviewUrl("");
+      setProfilePicInputKey((v) => v + 1);
     }
+    setProfileLoading(false);
   };
 
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  if (profileLoading) {
+    return (
+      <MainLayout title="My Profile" breadcrumb={[{ label: "Home" }, { label: "Profile" }]}>
+        <PageLoader label="Loading your profile..." />
+      </MainLayout>
+    );
+  }
 
   const handleSave = async () => {
     setLoading(true);
@@ -64,7 +115,9 @@ const ProfilePage = () => {
       dob: form.dob,
       gender: form.gender,
       address: form.address,
-      emergencyContacts: form.emergencyContacts.filter((c) => c.name && c.relation && c.phone)
+      emergencyContacts: form.emergencyContacts.filter((c) => c.name && c.relation && c.phone),
+      profileImageUpload: form.profileImageUpload || undefined,
+      addressProofUpload: form.addressProofUpload || undefined
     };
 
     const res = await putApiWithToken("/employees/me/profile", payload);
@@ -72,7 +125,8 @@ const ProfilePage = () => {
     if (res?.success) {
       toast.success("Profile updated");
       setOpen(false);
-      fetchProfile();
+      await fetchProfile();
+      await loadProfile();
     } else {
       toast.error(res?.message || "Update failed");
     }
@@ -86,6 +140,13 @@ const ProfilePage = () => {
             <h2 className="text-2xl font-bold">{profile?.firstName} {profile?.lastName}</h2>
             <p className="text-muted-foreground">{profile?.userId?.email}</p>
           </div>
+          {(profilePreviewUrl || profile?.profileImage) && (
+            <img
+              src={profilePreviewUrl || profile?.profileImage}
+              alt="Profile"
+              className="h-14 w-14 rounded-full object-cover border"
+            />
+          )}
           <Button onClick={() => setOpen(true)} disabled={!canEdit}>Edit Profile</Button>
         </div>
       </div>
@@ -106,20 +167,67 @@ const ProfilePage = () => {
         <div className="bg-card rounded-xl card-shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Personal Details</h3>
           <div className="space-y-2 text-sm">
+            <div><span className="text-muted-foreground">Work Email:</span> {profile?.userId?.email || "-"}</div>
             <div><span className="text-muted-foreground">Phone:</span> {profile?.phone || "-"}</div>
             <div><span className="text-muted-foreground">DOB:</span> {profile?.dob ? new Date(profile.dob).toLocaleDateString() : "-"}</div>
             <div><span className="text-muted-foreground">Gender:</span> {profile?.gender || "-"}</div>
             <div><span className="text-muted-foreground">Address:</span> {profile?.address?.line1 || "-"}</div>
+            <div>
+              <span className="text-muted-foreground">Address Proof:</span>{" "}
+              {profile?.addressProof?.fileUrl ? (
+                <a href={profile.addressProof.fileUrl} className="text-primary underline" target="_blank" rel="noreferrer">
+                  View
+                </a>
+              ) : "-"}
+            </div>
           </div>
         </div>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Profile</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="rounded-lg border p-3">
+              <p className="text-sm font-medium mb-2">Profile Picture</p>
+              <div className="flex items-center gap-3">
+                <img
+                  src={profilePreviewUrl || profile?.profileImage || "https://placehold.co/80x80?text=User"}
+                  alt="Profile preview"
+                  className="h-16 w-16 rounded-full object-cover border"
+                />
+                <div className="space-y-2">
+                  <Input
+                    key={profilePicInputKey}
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (!validateFile(file, PROFILE_IMAGE_TYPES, PROFILE_IMAGE_MAX_BYTES, "Profile image")) return;
+                      const base64Data = await fileToBase64(file);
+                      setProfilePreviewUrl(URL.createObjectURL(file));
+                      setForm({
+                        ...form,
+                        profileImageUpload: {
+                          fileName: file.name,
+                          mimeType: file.type,
+                          base64Data
+                        }
+                      });
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    JPG, PNG, WEBP up to 2MB
+                  </p>
+                  {form.profileImageUpload?.fileName && (
+                    <p className="text-xs text-muted-foreground">{form.profileImageUpload.fileName}</p>
+                  )}
+                </div>
+              </div>
+            </div>
             <Input
               placeholder="Phone"
               value={form.phone}
@@ -161,6 +269,27 @@ const ProfilePage = () => {
               value={form.address.zip}
               onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value } })}
             />
+            <Input
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.webp"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (!validateFile(file, ADDRESS_PROOF_TYPES, ADDRESS_PROOF_MAX_BYTES, "Address proof")) return;
+                const base64Data = await fileToBase64(file);
+                setForm({
+                  ...form,
+                  addressProofUpload: {
+                    fileName: file.name,
+                    mimeType: file.type,
+                    base64Data
+                  }
+                });
+              }}
+            />
+            {form.addressProofUpload?.fileName && (
+              <p className="text-xs text-muted-foreground">{form.addressProofUpload.fileName}</p>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <Input

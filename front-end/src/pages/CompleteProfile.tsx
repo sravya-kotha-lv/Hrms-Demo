@@ -6,10 +6,16 @@ import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
+const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const ADDRESS_PROOF_MAX_BYTES = 5 * 1024 * 1024;
+const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ADDRESS_PROOF_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+
 const CompleteProfile = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<any>(null);
+  const [profilePreviewUrl, setProfilePreviewUrl] = useState("");
 
   const [form, setForm] = useState({
     phone: "",
@@ -25,8 +31,34 @@ const CompleteProfile = () => {
     },
     emergencyContacts: [
       { name: "", relation: "", phone: "" }
-    ]
+    ],
+    profileImageUpload: null as null | { fileName: string; mimeType: string; base64Data: string },
+    addressProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string }
   });
+
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || "");
+        const base64 = result.includes(",") ? result.split(",")[1] : result;
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const validateFile = (file: File, allowedTypes: string[], maxBytes: number, label: string) => {
+    if (!allowedTypes.includes(file.type)) {
+      toast.error(`Invalid ${label} format`);
+      return false;
+    }
+    if (file.size > maxBytes) {
+      toast.error(`${label} size should be under ${Math.floor(maxBytes / (1024 * 1024))}MB`);
+      return false;
+    }
+    return true;
+  };
 
   const fetchProfile = async () => {
     const res = await getApiWithToken("/employees/me");
@@ -60,7 +92,9 @@ const CompleteProfile = () => {
       address: form.address.line1 || form.address.city || form.address.state || form.address.country || form.address.zip
         ? form.address
         : undefined,
-      emergencyContacts: form.emergencyContacts.filter((c) => c.name && c.relation && c.phone)
+      emergencyContacts: form.emergencyContacts.filter((c) => c.name && c.relation && c.phone),
+      profileImageUpload: form.profileImageUpload || undefined,
+      addressProofUpload: form.addressProofUpload || undefined
     };
 
     const res = await putApiWithToken("/employees/me/profile", payload);
@@ -81,6 +115,13 @@ const CompleteProfile = () => {
           <p className="text-sm text-muted-foreground">
             Please complete your profile to access the system.
           </p>
+          {(profilePreviewUrl || profile?.profileImage) && (
+            <img
+              src={profilePreviewUrl || profile?.profileImage}
+              alt="Profile preview"
+              className="mt-4 h-20 w-20 rounded-full object-cover border"
+            />
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -174,6 +215,52 @@ const CompleteProfile = () => {
             value={form.address.zip}
             onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value } })}
           />
+          <div className="space-y-1">
+            <label className="text-sm text-muted-foreground">Profile Picture</label>
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (!validateFile(file, PROFILE_IMAGE_TYPES, PROFILE_IMAGE_MAX_BYTES, "Profile image")) return;
+                const base64Data = await fileToBase64(file);
+                setProfilePreviewUrl(URL.createObjectURL(file));
+                setForm({
+                  ...form,
+                  profileImageUpload: {
+                    fileName: file.name,
+                    mimeType: file.type,
+                    base64Data
+                  }
+                });
+              }}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm text-muted-foreground">Address Proof (optional)</label>
+            <Input
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.webp"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (!validateFile(file, ADDRESS_PROOF_TYPES, ADDRESS_PROOF_MAX_BYTES, "Address proof")) return;
+                const base64Data = await fileToBase64(file);
+                setForm({
+                  ...form,
+                  addressProofUpload: {
+                    fileName: file.name,
+                    mimeType: file.type,
+                    base64Data
+                  }
+                });
+              }}
+            />
+            {form.addressProofUpload?.fileName && (
+              <p className="text-xs text-muted-foreground">{form.addressProofUpload.fileName}</p>
+            )}
+          </div>
         </div>
 
         <div className="mt-6">

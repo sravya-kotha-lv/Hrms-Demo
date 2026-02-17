@@ -20,7 +20,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ChevronDown } from "lucide-react";
+import { ArrowLeft, ChevronDown, Info } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -28,6 +28,7 @@ import {
   postApiWithToken,
   putApiWithToken,
 } from "@/services/apiWrapper";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /* ================= TYPES ================= */
 
@@ -44,6 +45,7 @@ const emptyForm = {
   departmentId: "",
   designationId: "",
   managerId: "",
+  shiftId: "",
   roleIds: [] as string[],
   employmentType: "",
   dateOfJoining: "",
@@ -61,6 +63,7 @@ const AddEmployee = () => {
   const [designations, setDesignations] = useState<Option[]>([]);
   const [roles, setRoles] = useState<Option[]>([]);
   const [managers, setManagers] = useState<Option[]>([]);
+  const [shifts, setShifts] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
   const employeeCodePrefix =
     (import.meta as any).env?.VITE_EMPLOYEE_CODE_PREFIX || "LV";
@@ -72,6 +75,7 @@ const AddEmployee = () => {
     fetchDesignations();
     fetchRoles();
     fetchManagers();
+    fetchShifts();
     if (isEdit) {
       fetchEmployee();
     }
@@ -90,6 +94,7 @@ const AddEmployee = () => {
         departmentId: employee.departmentId?._id || "",
         designationId: employee.designationId?._id || "",
         managerId: employee.managerId?._id || "",
+        shiftId: employee.shiftId?._id || "",
         roleIds: (employee.roleIds || []).map((r: any) => r?._id).filter(Boolean),
         employmentType: employee.employmentType || "",
         dateOfJoining: employee.dateOfJoining
@@ -103,20 +108,16 @@ const AddEmployee = () => {
 
   const fetchDepartments = async () => {
     const res = await getApiWithToken("/departments");
-    console.log(res,"dept");
-    
     if (res?.code == 200) setDepartments(res.data || []);
   };
 
   const fetchDesignations = async () => {
     const res = await getApiWithToken("/designations");
-    console.log(res,"Desi");
     if (res?.code == 200) setDesignations(res.data || []);
   };
 
   const fetchRoles = async () => {
     const res = await getApiWithToken("/roles");
-    console.log(res,"Role");
     if (res?.code == 200) setRoles(res.data || []);
   };
 
@@ -130,6 +131,15 @@ const AddEmployee = () => {
           name: `${e.firstName || ""} ${e.lastName || ""}`.trim()
         }))
       );
+    }
+  };
+
+  const fetchShifts = async () => {
+    const res = await getApiWithToken("/shifts", null, { requiredPermissions: ["SHIFT_VIEW"] });
+    if (res?.success) {
+      setShifts((res.data || []).map((s: any) => ({ _id: s._id, name: `${s.name} (${s.startTime}-${s.endTime})` })));
+    } else {
+      setShifts([]);
     }
   };
 
@@ -158,6 +168,7 @@ const AddEmployee = () => {
       departmentId: form.departmentId,
       designationId: form.designationId,
       managerId: form.managerId || undefined,
+      shiftId: form.shiftId || undefined,
       employmentType: form.employmentType,
       dateOfJoining: form.dateOfJoining,
     };
@@ -332,6 +343,43 @@ const AddEmployee = () => {
               {managers.map((m) => (
                 <SelectItem key={m._id} value={m._id}>
                   {m.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-1 mb-1">
+            <Label>Shift</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                Assign employee shift for late/early login calculations. If none selected, default 09:00-18:00 is used.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <Select
+            value={form.shiftId}
+            onValueChange={(v) => {
+              if (v === "__create__") {
+                navigate("/shifts");
+                return;
+              }
+              setForm({ ...form, shiftId: v === "none" ? "" : v });
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Shift" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None (General 09:00-18:00)</SelectItem>
+              <SelectItem value="__create__">+ Create Shift</SelectItem>
+              {shifts.map((s) => (
+                <SelectItem key={s._id} value={s._id}>
+                  {s.name}
                 </SelectItem>
               ))}
             </SelectContent>

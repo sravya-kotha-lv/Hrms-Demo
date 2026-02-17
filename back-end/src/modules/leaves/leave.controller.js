@@ -22,8 +22,22 @@ exports.list = async (req, res) => {
   );
 };
 
+exports.pendingMyApprovals = async (req, res) => {
+  const data = await service.getMyPendingApprovals(req);
+  res.status(200).json(
+    buildSuccessResponse({ data })
+  );
+};
+
 exports.myLeavesRange = async (req, res) => {
   const data = await service.getMyLeavesRange(req);
+  res.status(200).json(
+    buildSuccessResponse({ data })
+  );
+};
+
+exports.applyContext = async (req, res) => {
+  const data = await service.getApplyContext(req);
   res.status(200).json(
     buildSuccessResponse({ data })
   );

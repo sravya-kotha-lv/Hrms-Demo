@@ -52,6 +52,7 @@ import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/a
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -91,11 +92,46 @@ const getLeaveTypeIcon = (type: string) => {
   }
 };
 
+const toActorName = (employee: any) => {
+  if (!employee) return "-";
+  const full = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+  return employee.employeeCode ? `${full || "Employee"} (${employee.employeeCode})` : full || "Employee";
+};
+
+const getStepApproverLabel = (step: any) => {
+  if (!step) return "-";
+  if (step.approverType === "manager") return "Reporting Manager";
+  if (step.approverType === "role") return step.approverRoleSlug ? `Role: ${step.approverRoleSlug}` : "Role";
+  return step.approverEmployeeId ? `Employee: ${toActorName(step.approverEmployeeId)}` : "Employee";
+};
+
+const getApprovalProgressLabel = (record: any) => {
+  const steps = Array.isArray(record?.approvalSteps) ? record.approvalSteps : [];
+  if (!steps.length) return "Single-step";
+  const pending = steps.find((s: any) => s.status === "pending");
+  if (record?.status === "approved") return `Completed (${steps.length} steps)`;
+  if (record?.status === "rejected") {
+    const rejectedStep = steps.find((s: any) => s.status === "rejected");
+    return rejectedStep ? `Rejected at S${rejectedStep.stepNumber}` : "Rejected";
+  }
+  if (!pending) return "Pending";
+  return `S${pending.stepNumber}/${steps.length} • ${getStepApproverLabel(pending)}`;
+};
+
+const toIdString = (value: any) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value._id) return String(value._id);
+  return String(value);
+};
+
 const Leave = () => {
-  const { hasAnyPermission } = useAuth();
+  const { hasAnyPermission, profile } = useAuth();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedLeave, setSelectedLeave] = useState<any | null>(null);
   const [actionType, setActionType] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
@@ -115,6 +151,21 @@ const Leave = () => {
   const canViewAny = canViewAll || canViewSelf;
   const canApply = hasAnyPermission(["LEAVE_APPLY"]);
   const canAction = hasAnyPermission(["LEAVE_ACTION"]);
+  const currentEmployeeId = toIdString(profile?.employeeId);
+  const currentRoleSlug = profile?.activeRole?.slug || "";
+
+  const canCurrentActorActionLeave = (leave: any) => {
+    const steps = Array.isArray(leave?.approvalSteps) ? leave.approvalSteps : [];
+    if (!steps.length) return true;
+    const pendingStep = steps.find((s: any) => s.status === "pending");
+    if (!pendingStep) return false;
+
+    if (pendingStep.approverType === "role") {
+      return Boolean(pendingStep.approverRoleSlug && currentRoleSlug === pendingStep.approverRoleSlug);
+    }
+    const stepEmployeeId = toIdString(pendingStep.approverEmployeeId);
+    return Boolean(stepEmployeeId && currentEmployeeId && stepEmployeeId === currentEmployeeId);
+  };
 
   const fetchLeaves = async () => {
     try {
@@ -236,9 +287,18 @@ const Leave = () => {
   }, [leaves]);
 
   const handleAction = (leave: any, action: "approve" | "reject") => {
+    if (!canCurrentActorActionLeave(leave)) {
+      toast.error("You are not the current approver for this request");
+      return;
+    }
     setSelectedLeave(leave);
     setActionType(action);
     setActionDialogOpen(true);
+  };
+
+  const handleView = (leave: any) => {
+    setSelectedLeave(leave);
+    setViewDialogOpen(true);
   };
 
   const confirmAction = async () => {
@@ -352,15 +412,15 @@ const Leave = () => {
               <SelectItem value="rejected">Rejected</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" className="gap-2">
+          {/* <Button variant="outline" className="gap-2">
             <Download className="w-4 h-4" />
             Export
-          </Button>
+          </Button> */}
           <Button variant="outline" className="gap-2" onClick={fetchLeaves}>
             Refresh
           </Button>
           <PermissionGate permissions={["LEAVE_APPLY"]}>
-            <Button className="gap-2" onClick={() => setApplyOpen(true)}>
+            <Button className="gap-2" onClick={() => navigate("/leave/apply")}>
               Apply Leave
             </Button>
           </PermissionGate>
@@ -385,20 +445,21 @@ const Leave = () => {
               <TableHead>To</TableHead>
               <TableHead>Days</TableHead>
               <TableHead>Status</TableHead>
-              {canAction && <TableHead className="text-right">Actions</TableHead>}
+              <TableHead>Approval</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-10">
+                <TableCell colSpan={8} className="text-center py-10">
                   Loading...
                 </TableCell>
               </TableRow>
             )}
             {!loading && filteredLeaves.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-10">
+                <TableCell colSpan={8} className="text-center py-10">
                   No leave requests found
                 </TableCell>
               </TableRow>
@@ -442,9 +503,10 @@ const Leave = () => {
                   </TableCell>
                   <TableCell>{leave.totalDays ?? "-"}</TableCell>
                   <TableCell>{getStatusBadge(leave.status)}</TableCell>
-                  {canAction && (
-                    <TableCell className="text-right">
-                      <PermissionGate permissions={["LEAVE_ACTION"]}>
+                  <TableCell className="text-xs text-muted-foreground max-w-[280px]">
+                    {getApprovalProgressLabel(leave)}
+                  </TableCell>
+                  <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -452,10 +514,10 @@ const Leave = () => {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleView(leave)}>
                             <Eye className="w-4 h-4 mr-2" /> View
                           </DropdownMenuItem>
-                          {viewMode === "all" && leave.status === "pending" && (
+                          {canAction && viewMode === "all" && leave.status === "pending" && canCurrentActorActionLeave(leave) && (
                             <>
                               <DropdownMenuItem onClick={() => handleAction(leave, "approve")}>
                                 <CheckCircle className="w-4 h-4 mr-2 text-green-600" /> Approve
@@ -467,9 +529,7 @@ const Leave = () => {
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      </PermissionGate>
-                    </TableCell>
-                  )}
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -509,6 +569,50 @@ const Leave = () => {
             </Button>
             <Button onClick={confirmAction}>
               {actionType === "approve" ? "Approve" : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Leave Details</DialogTitle>
+          </DialogHeader>
+          {selectedLeave && (
+            <div className="space-y-2 text-sm">
+              <p><span className="font-medium">Employee:</span> {selectedLeave.employeeId
+                ? `${selectedLeave.employeeId.firstName || ""} ${selectedLeave.employeeId.lastName || ""}`.trim()
+                : "You"}</p>
+              <p><span className="font-medium">Leave Type:</span> {selectedLeave.leaveTypeId?.name || "-"}</p>
+              <p><span className="font-medium">From:</span> {selectedLeave.fromDate ? new Date(selectedLeave.fromDate).toLocaleDateString() : "-"}</p>
+              <p><span className="font-medium">To:</span> {selectedLeave.toDate ? new Date(selectedLeave.toDate).toLocaleDateString() : "-"}</p>
+              <p><span className="font-medium">Days:</span> {selectedLeave.totalDays ?? "-"}</p>
+              <p><span className="font-medium">Status:</span> {selectedLeave.status || "-"}</p>
+              <p><span className="font-medium">Approval:</span> {getApprovalProgressLabel(selectedLeave)}</p>
+              <p><span className="font-medium">Reason:</span> {selectedLeave.reason || "-"}</p>
+              {selectedLeave.rejectionReason && (
+                <p><span className="font-medium">Rejection Reason:</span> {selectedLeave.rejectionReason}</p>
+              )}
+              {Array.isArray(selectedLeave.approvalSteps) && selectedLeave.approvalSteps.length > 0 && (
+                <div className="pt-2">
+                  <p className="font-medium mb-1">Approval Steps</p>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    {[...selectedLeave.approvalSteps]
+                      .sort((a: any, b: any) => Number(a.stepNumber) - Number(b.stepNumber))
+                      .map((step: any) => (
+                        <div key={`leave-step-${selectedLeave._id}-${step.stepNumber}`}>
+                          {`S${step.stepNumber} • ${getStepApproverLabel(step)} • ${step.status}${step.actionBy ? ` • by ${toActorName(step.actionBy)}` : ""}`}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

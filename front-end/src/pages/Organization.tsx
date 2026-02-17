@@ -68,8 +68,6 @@ const OrganizationPage = () => {
       setOrganizations([]);
       return;
     }
-    console.log(response,"response");
-    
     setOrganizations(response?.data || []);
   };
 

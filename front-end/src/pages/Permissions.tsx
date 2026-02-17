@@ -239,7 +239,7 @@ const Permissions = () => {
       header: "Role",
       accessor: "name",
       sortable: true,
-      className: "sticky left-0 z-20 bg-card min-w-[240px] max-w-[260px]",
+      className: "sticky left-0 z-40 bg-card min-w-[240px] max-w-[260px] shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)]",
       render: (row) => (
         <div>
           <p className="font-medium">{row.name}</p>
@@ -290,7 +290,7 @@ const Permissions = () => {
         <TableRow className="bg-muted/40">
           <TableHead
             rowSpan={2}
-            className="sticky left-0 z-30 bg-muted/40 min-w-[240px] max-w-[260px]"
+            className="sticky left-0 z-50 bg-muted/40 min-w-[240px] max-w-[260px] shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)]"
           >
             Role
           </TableHead>
@@ -339,7 +339,7 @@ const Permissions = () => {
 
     return (
       <>
-        <TableCell className="sticky left-0 z-20 bg-card min-w-[240px] max-w-[260px]">
+        <TableCell className="sticky left-0 z-40 bg-card min-w-[240px] max-w-[260px] shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)]">
           <div className="flex items-center gap-3">
             <Checkbox
               checked={isIndeterminate ? "indeterminate" : isAll}
@@ -396,14 +396,14 @@ const Permissions = () => {
             </Button>
           </div>
         
-         <div className="flex-1 rounded-xl border bg-white" style={{width:"1100px", overflowX:"auto", margin:"0 auto"}}>
+         <div className="rounded-xl border bg-white max-w-full">
            
               <DataTable
                 columns={columns}
                 data={roles}
                 rowKey="_id"
                 searchKey="name"
-                tableClassName="min-w-[1200px]"
+                tableClassName="min-w-[1200px] border-separate border-spacing-0"
                 renderHeader={renderHeader}
                 renderRow={renderRow}
                 columnsCountOverride={1 + permissions.length}

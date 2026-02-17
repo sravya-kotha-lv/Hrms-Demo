@@ -9,7 +9,11 @@ const {
   createWeeklySchema,
   updateWeeklySchema,
   submitWeeklySchema,
-  actionWeeklySchema
+  actionWeeklySchema,
+  overrideAttendanceSchema,
+  bulkOverrideAttendanceSchema,
+  raiseAttendanceRequestSchema,
+  attendanceRequestActionSchema
 } = require("./timesheet.validation");
 
 // Check-in / Check-out
@@ -40,6 +44,87 @@ router.get(
   auth,
   authorize("TIMESHEET_VIEW_ALL"),
   asyncHandler(controller.attendanceList)
+);
+
+router.get(
+  "/attendance/matrix",
+  auth,
+  authorize("ATTENDANCE_VIEW_ALL"),
+  asyncHandler(controller.attendanceMatrix)
+);
+
+router.get(
+  "/attendance/matrix/my",
+  auth,
+  authorize("ATTENDANCE_VIEW_SELF"),
+  asyncHandler(controller.myAttendanceMatrix)
+);
+
+router.get(
+  "/attendance/matrix/history",
+  auth,
+  authorize("ATTENDANCE_VIEW_ALL"),
+  asyncHandler(controller.attendanceCellHistory)
+);
+
+router.get(
+  "/attendance/matrix/history/my",
+  auth,
+  authorize("ATTENDANCE_VIEW_SELF"),
+  asyncHandler(controller.myAttendanceCellHistory)
+);
+
+router.put(
+  "/attendance/matrix/:employeeId",
+  auth,
+  authorize("ATTENDANCE_MANAGE"),
+  validate(overrideAttendanceSchema),
+  asyncHandler(controller.overrideAttendance)
+);
+
+router.post(
+  "/attendance/matrix/bulk",
+  auth,
+  authorize("ATTENDANCE_MANAGE"),
+  validate(bulkOverrideAttendanceSchema),
+  asyncHandler(controller.bulkOverrideAttendance)
+);
+
+router.post(
+  "/attendance/requests/my",
+  auth,
+  authorize("TIMESHEET_VIEW_SELF"),
+  validate(raiseAttendanceRequestSchema),
+  asyncHandler(controller.raiseAttendanceRequest)
+);
+
+router.get(
+  "/attendance/requests/my",
+  auth,
+  authorize("TIMESHEET_VIEW_SELF"),
+  asyncHandler(controller.myAttendanceRequests)
+);
+
+router.get(
+  "/attendance/requests",
+  auth,
+  authorize("ATTENDANCE_MANAGE"),
+  asyncHandler(controller.attendanceRequests)
+);
+
+router.get(
+  "/attendance/requests/pending/my-approvals",
+  auth,
+  authorize("ATTENDANCE_MANAGE"),
+  asyncHandler(controller.pendingMyAttendanceApprovals)
+);
+
+router.put(
+  "/attendance/requests/:id/action",
+  auth,
+  authorize("ATTENDANCE_MANAGE"),
+  validate(attendanceRequestActionSchema),
+  asyncHandler(controller.actionAttendanceRequest)
 );
 
 router.get(

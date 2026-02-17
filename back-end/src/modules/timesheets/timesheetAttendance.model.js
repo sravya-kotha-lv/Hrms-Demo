@@ -35,6 +35,73 @@ const timesheetAttendanceSchema = new mongoose.Schema(
       type: String,
       enum: ["checked_in", "checked_out"],
       default: "checked_in"
+    },
+    overriddenBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees",
+      default: null
+    },
+    overriddenAt: {
+      type: Date,
+      default: null
+    },
+    shiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "shifts",
+      default: null
+    },
+    shiftName: {
+      type: String,
+      default: null
+    },
+    shiftCode: {
+      type: String,
+      default: null
+    },
+    shiftStartTime: {
+      type: String,
+      default: null
+    },
+    shiftEndTime: {
+      type: String,
+      default: null
+    },
+    scheduledStartAt: {
+      type: Date,
+      default: null
+    },
+    scheduledEndAt: {
+      type: Date,
+      default: null
+    },
+    lateByMinutes: {
+      type: Number,
+      default: 0
+    },
+    earlyLoginByMinutes: {
+      type: Number,
+      default: 0
+    },
+    earlyCheckoutByMinutes: {
+      type: Number,
+      default: 0
+    },
+    overtimeMinutes: {
+      type: Number,
+      default: 0
+    },
+    missedCheckout: {
+      type: Boolean,
+      default: false
+    },
+    missedCheckoutMarkedAt: {
+      type: Date,
+      default: null
+    },
+    missedCheckoutResolvedRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "attendance_requests",
+      default: null
     }
   },
   { timestamps: true }

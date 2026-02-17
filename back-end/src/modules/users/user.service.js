@@ -79,10 +79,9 @@ exports.createOrgUser = async ({
   employmentType,
   dateOfJoining,
   managerId,
+  shiftId,
   creator
 }) => {
-  console.log("hello");
-  
   const normalizedEmail = email.toLowerCase().trim();
 
   /**
@@ -155,6 +154,7 @@ exports.createOrgUser = async ({
     dateOfJoining,
     employmentType,
     managerId: managerId || undefined,
+    shiftId: shiftId || undefined,
     profileCompleted: false
   });
 
@@ -172,7 +172,7 @@ exports.createOrgUser = async ({
   },
   user.email
 ).catch((result) => {
-  console.log("Email sending failed: ", result);
+  return result;
 });
 
 
@@ -438,13 +438,16 @@ exports.getMyProfile = async ({ user }) => {
   const employee = await Employee.findOne({
     userId: user.userId,
     organizationId: user.organizationId
-  }).select("firstName lastName");
+  }).select("_id firstName lastName employeeCode managerId profileImage");
 
   return {
     email: userDoc?.email || null,
+    employeeId: employee?._id || null,
     firstName: employee?.firstName || null,
     lastName: employee?.lastName || null,
-    profileImage: null
+    employeeCode: employee?.employeeCode || null,
+    managerId: employee?.managerId || null,
+    profileImage: employee?.profileImage || null
   };
 };
 

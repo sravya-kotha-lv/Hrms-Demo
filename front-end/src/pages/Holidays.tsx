@@ -48,12 +48,12 @@ const Holidays = () => {
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<HolidayForm>(emptyHoliday);
-  const canView = hasAnyPermission(["HOLIDAY_VIEW"]);
+  const canView = hasAnyPermission(["HOLIDAY_VIEW", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]);
   const canManage = hasAnyPermission(["HOLIDAY_MANAGE"]);
 
   const fetchHolidays = async () => {
     const res = await getApiWithToken(`/holidays?year=${year}`, null, {
-      requiredPermissions: ["HOLIDAY_VIEW"]
+      requiredPermissions: ["HOLIDAY_VIEW", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]
     });
     if (res?.skipped) {
       setHolidays([]);

@@ -34,12 +34,26 @@ router.get(
   asyncHandler(controller.myLeavesRange)
 );
 
+router.get(
+  "/apply-context",
+  auth,
+  authorize("LEAVE_APPLY"),
+  asyncHandler(controller.applyContext)
+);
+
 // HR / Manager views all leaves
 router.get(
   "/",
   auth,
   authorize("LEAVE_VIEW_ALL"),
   asyncHandler(controller.list)
+);
+
+router.get(
+  "/pending/my-approvals",
+  auth,
+  authorize("LEAVE_ACTION"),
+  asyncHandler(controller.pendingMyApprovals)
 );
 
 // Approve / Reject

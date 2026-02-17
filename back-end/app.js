@@ -1,5 +1,4 @@
 const express = require("express");
-const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const morgan = require("morgan");
@@ -27,7 +26,7 @@ app.use(express.urlencoded({ extended: true }));
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:8080",
-  "http://localhost:8000",
+  "http://localhost:3002",
   "http://localhost:3001",
   "https://upanaya.vercel.app",
 ];
@@ -96,9 +95,13 @@ app.use("/api/leave-types", require("./src/modules/leaveTypes/leaveType.routes")
 app.use("/api/leaves", require("./src/modules/leaves/leave.routes"));
 app.use("/api/holidays", require("./src/modules/holidays/holiday.routes"));
 app.use("/api/week-offs", require("./src/modules/weekOffs/weekOff.routes"));
+app.use("/api/shifts", require("./src/modules/shifts/shift.routes"));
+app.use("/api/approval-flows", require("./src/modules/approvalFlows/approvalFlow.routes"));
 app.use("/api/leave-balances", require("./src/modules/leaveBalances/leaveBalance.routes"));
 app.use("/api/timesheets", require("./src/modules/timesheets/timesheet.routes"));
 app.use("/api/org-settings", require("./src/modules/orgSettings/orgSettings.routes"));
+app.use("/api/notifications", require("./src/modules/notifications/notification.routes"));
+app.use("/api/expenses", require("./src/modules/expenses/expense.routes"));
 
 /* ----------------------JOBS----------------*/
 require("./src/jobs/leaveCarryForward.job");
@@ -108,7 +111,6 @@ require("./src/jobs/leaveCarryForward.job");
 
 /* ----------------------JOBS----------------*/
 require("./src/jobs/leaveCredit.job");
-require("./src/jobs/attendanceAutoCheckout.job");
 /* ----------------------JOBS----------------*/
 
 /* -------------------------------------------------------------------------- */

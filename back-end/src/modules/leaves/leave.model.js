@@ -1,5 +1,43 @@
 const mongoose = require("mongoose");
 
+const approvalStepSchema = new mongoose.Schema(
+  {
+    stepNumber: Number,
+    approverType: {
+      type: String,
+      enum: ["manager", "role", "employee"]
+    },
+    approverEmployeeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees",
+      default: null
+    },
+    approverRoleSlug: {
+      type: String,
+      default: null
+    },
+    status: {
+      type: String,
+      enum: ["queued", "pending", "approved", "rejected"],
+      default: "queued"
+    },
+    actionBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees",
+      default: null
+    },
+    actionAt: {
+      type: Date,
+      default: null
+    },
+    remarks: {
+      type: String,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
 const leaveSchema = new mongoose.Schema(
   {
     organizationId: {
@@ -56,6 +94,19 @@ const leaveSchema = new mongoose.Schema(
     actionAt: Date,
 
     rejectionReason: String,
+    approvalFlowId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "approval_flows",
+      default: null
+    },
+    approvalSteps: {
+      type: [approvalStepSchema],
+      default: []
+    },
+    currentApprovalStep: {
+      type: Number,
+      default: null
+    },
 
     isDeleted: {
       type: Boolean,

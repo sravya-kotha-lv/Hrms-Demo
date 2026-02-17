@@ -5,10 +5,8 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  CalendarDays,
   ClipboardCheck,
   Timer,
-  Users,
   ChevronLeft,
   ChevronRight,
   ChevronDown
@@ -35,6 +33,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
+import { useAuth } from "@/context/AuthContext";
+import { InlineLoader } from "@/components/ui/loaders";
 
 const toDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -112,7 +112,62 @@ const getStatusBadge = (status: string) => {
   }
 };
 
+type AttendanceRequest = {
+  _id: string;
+  date: string;
+  requestType: "missed_checkout" | "correction";
+  requestedCheckInTime?: string | null;
+  requestedCheckOutTime?: string | null;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  rejectionReason?: string | null;
+  employeeId?: { firstName?: string; lastName?: string; employeeCode?: string };
+  approvalSteps?: {
+    stepNumber: number;
+    approverType: "manager" | "role" | "employee";
+    approverRoleSlug?: string | null;
+    approverEmployeeId?: { firstName?: string; lastName?: string; employeeCode?: string } | null;
+    status: "queued" | "pending" | "approved" | "rejected";
+    actionBy?: { firstName?: string; lastName?: string; employeeCode?: string } | null;
+  }[];
+  currentApprovalStep?: number | null;
+};
+
+const toPersonLabel = (employee: any) => {
+  if (!employee) return "-";
+  const name = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+  return employee.employeeCode ? `${name || "Employee"} (${employee.employeeCode})` : name || "Employee";
+};
+
+const approverLabel = (step: any) => {
+  if (!step) return "-";
+  if (step.approverType === "manager") return "Reporting Manager";
+  if (step.approverType === "role") return step.approverRoleSlug ? `Role: ${step.approverRoleSlug}` : "Role";
+  return step.approverEmployeeId ? `Employee: ${toPersonLabel(step.approverEmployeeId)}` : "Employee";
+};
+
+const approvalProgressLabel = (request: AttendanceRequest) => {
+  const steps = Array.isArray(request.approvalSteps) ? request.approvalSteps : [];
+  if (!steps.length) return "Single-step";
+  const pending = steps.find((s) => s.status === "pending");
+  if (request.status === "approved") return `Completed (${steps.length} steps)`;
+  if (request.status === "rejected") {
+    const rejectedStep = steps.find((s) => s.status === "rejected");
+    return rejectedStep ? `Rejected at S${rejectedStep.stepNumber}` : "Rejected";
+  }
+  if (!pending) return "Pending";
+  return `S${pending.stepNumber}/${steps.length} • ${approverLabel(pending)}`;
+};
+
+const toIdString = (value: any) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value._id) return String(value._id);
+  return String(value);
+};
+
 const Timesheets = () => {
+  const { profile } = useAuth();
   const [selectedDate] = useState(toDateInput(new Date()));
   const [weekStartDate, setWeekStartDate] = useState(getWeekStart(new Date()));
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
@@ -135,6 +190,31 @@ const Timesheets = () => {
   const [showOnlineCard, setShowOnlineCard] = useState(true);
   const [showOnLeaveCard, setShowOnLeaveCard] = useState(true);
   const [showTeamTimesheets, setShowTeamTimesheets] = useState(true);
+  const [attendanceRequestOpen, setAttendanceRequestOpen] = useState(false);
+  const [attendanceRequestLoading, setAttendanceRequestLoading] = useState(false);
+  const [attendanceRequestForm, setAttendanceRequestForm] = useState({
+    date: toDateInput(new Date()),
+    requestType: "missed_checkout" as "missed_checkout" | "correction",
+    requestedCheckInTime: "",
+    requestedCheckOutTime: "",
+    reason: ""
+  });
+  const [myAttendanceRequests, setMyAttendanceRequests] = useState<AttendanceRequest[]>([]);
+  const [pendingAttendanceRequests, setPendingAttendanceRequests] = useState<AttendanceRequest[]>([]);
+  const currentEmployeeId = toIdString(profile?.employeeId);
+  const currentRoleSlug = profile?.activeRole?.slug || "";
+
+  const canCurrentActorActionAttendanceRequest = (request: AttendanceRequest) => {
+    const steps = Array.isArray(request.approvalSteps) ? request.approvalSteps : [];
+    if (!steps.length) return true;
+    const pending = steps.find((s) => s.status === "pending");
+    if (!pending) return false;
+    if (pending.approverType === "role") {
+      return Boolean(pending.approverRoleSlug && pending.approverRoleSlug === currentRoleSlug);
+    }
+    const stepEmployeeId = toIdString(pending.approverEmployeeId);
+    return Boolean(stepEmployeeId && currentEmployeeId && stepEmployeeId === currentEmployeeId);
+  };
 
   const weekStart = useMemo(() => getWeekStart(weekStartDate), [weekStartDate]);
   const weekDates = useMemo(() => buildWeekDates(weekStart), [weekStart]);
@@ -194,15 +274,16 @@ const Timesheets = () => {
     setWeekLoading(true);
     setTimesheet(null);
     setEntries(normalizeEntries(weekDates, []));
-    const resAll = await getApiWithToken("/timesheets/weekly", null, {
-      requiredPermissions: ["TIMESHEET_VIEW_ALL"]
-    });
-    if (resAll?.skipped) {
-      setViewMode("my");
-    }
-    if (resAll?.success) {
-      setWeeklyList(resAll.data || []);
-      setViewMode("all");
+    if (hasPermission("TIMESHEET_VIEW_ALL")) {
+      const resAll = await getApiWithToken("/timesheets/weekly", null, {
+        requiredPermissions: ["TIMESHEET_VIEW_ALL"]
+      });
+      if (resAll?.success) {
+        setWeeklyList(resAll.data || []);
+        setViewMode("all");
+      } else {
+        setWeeklyList([]);
+      }
     } else {
       const resMy = await getApiWithToken("/timesheets/weekly/my", null, {
         requiredPermissions: ["TIMESHEET_VIEW_SELF"]
@@ -308,18 +389,121 @@ const Timesheets = () => {
     }
   };
 
-  useEffect(() => {
-    loadAttendanceToday();
-  }, []);
+  const loadMyAttendanceRequests = async () => {
+    const res = await getApiWithToken("/timesheets/attendance/requests/my", null, {
+      requiredPermissions: ["TIMESHEET_VIEW_SELF"]
+    });
+    if (res?.skipped) return;
+    if (res?.success) setMyAttendanceRequests(res.data || []);
+  };
+
+  const loadPendingAttendanceRequests = async () => {
+    const res = await getApiWithToken("/timesheets/attendance/requests?status=pending", null, {
+      requiredPermissions: ["ATTENDANCE_MANAGE"]
+    });
+    if (res?.skipped) return;
+    if (res?.success) setPendingAttendanceRequests(res.data || []);
+  };
 
   useEffect(() => {
+    loadAttendanceToday();
     loadWeekly();
     loadOnline();
     loadOnLeave();
     loadWeekOffs();
     loadOrgSettings();
     loadMyLeavesForWeek();
+    loadMyAttendanceRequests();
+    loadPendingAttendanceRequests();
   }, [weekStart.getTime()]);
+
+  const submitAttendanceRequest = async () => {
+    if (!attendanceRequestForm.reason.trim()) {
+      toast.error("Reason is required");
+      return;
+    }
+    if (
+      attendanceRequestForm.requestType === "missed_checkout" &&
+      !attendanceRequestForm.requestedCheckOutTime
+    ) {
+      toast.error("Requested checkout time is required");
+      return;
+    }
+    if (
+      attendanceRequestForm.requestType === "correction" &&
+      !attendanceRequestForm.requestedCheckInTime &&
+      !attendanceRequestForm.requestedCheckOutTime
+    ) {
+      toast.error("Provide check-in or check-out time");
+      return;
+    }
+    setAttendanceRequestLoading(true);
+    const res = await postApiWithToken(
+      "/timesheets/attendance/requests/my",
+      attendanceRequestForm,
+      null,
+      { requiredPermissions: ["TIMESHEET_VIEW_SELF"] }
+    );
+    setAttendanceRequestLoading(false);
+    if (res?.skipped) return;
+    if (res?.success) {
+      toast.success("Attendance request raised");
+      setAttendanceRequestOpen(false);
+      setAttendanceRequestForm({
+        date: toDateInput(new Date()),
+        requestType: "missed_checkout",
+        requestedCheckInTime: "",
+        requestedCheckOutTime: "",
+        reason: ""
+      });
+      loadMyAttendanceRequests();
+      loadPendingAttendanceRequests();
+    } else {
+      toast.error(res?.message || "Failed to raise attendance request");
+    }
+  };
+
+  const openAttendanceRequestDialog = () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    setAttendanceRequestForm({
+      date: toDateInput(yesterday),
+      requestType: "missed_checkout",
+      requestedCheckInTime: "",
+      requestedCheckOutTime: "",
+      reason: ""
+    });
+    setAttendanceRequestOpen(true);
+  };
+
+  const actionAttendanceRequest = async (id: string, status: "approved" | "rejected") => {
+    const request = pendingAttendanceRequests.find((r) => r._id === id);
+    if (request && !canCurrentActorActionAttendanceRequest(request)) {
+      toast.error("You are not the current approver for this request");
+      return;
+    }
+    let rejectionReason = "";
+    if (status === "rejected") {
+      rejectionReason = window.prompt("Enter rejection reason") || "";
+      if (!rejectionReason.trim()) return;
+    }
+    const res = await putApiWithToken(
+      `/timesheets/attendance/requests/${id}/action`,
+      { status, rejectionReason },
+      null,
+      { requiredPermissions: ["ATTENDANCE_MANAGE"] }
+    );
+    if (res?.skipped) return;
+    if (res?.success) {
+      toast.success(`Attendance request ${status}`);
+      loadAttendanceToday();
+      loadWeekly();
+      loadPendingAttendanceRequests();
+      loadMyAttendanceRequests();
+    } else {
+      toast.error(res?.message || "Failed to action request");
+    }
+  };
 
   const handleCheckIn = async () => {
     const res = await postApiWithToken(
@@ -522,7 +706,7 @@ const Timesheets = () => {
       title="Timesheets"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Timesheets" }]}
     >
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <motion.div className="stat-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <Timer className="w-4 h-4" />
@@ -540,25 +724,12 @@ const Timesheets = () => {
               ? new Date(attendanceToday.checkInAt).toLocaleTimeString()
               : "-"}
           </div>
+          {isCheckedIn && (
+            <div className="text-xs text-orange-700 mt-2">
+              Pending checkout. This session stays excluded from payroll until checkout is completed.
+            </div>
+          )}
         </motion.div>
-
-        {canViewOnline && (
-          <motion.div
-            className="stat-card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-              <Users className="w-4 h-4" />
-              Online Now
-            </div>
-            <div className="text-2xl font-semibold">{onlineList.length}</div>
-            <div className="text-sm text-muted-foreground mt-1">
-              active employees
-            </div>
-          </motion.div>
-        )}
 
         <motion.div
           className="stat-card"
@@ -580,24 +751,6 @@ const Timesheets = () => {
             Week Total: {weekTotalHours}h · Min: {minWeeklyHours}h
           </div>
         </motion.div>
-
-        {canViewAll && (
-          <motion.div
-            className="stat-card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-          >
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-              <Users className="w-4 h-4" />
-              On Leave Today
-            </div>
-            <div className="text-2xl font-semibold">{onLeaveList.length}</div>
-            <div className="text-sm text-muted-foreground mt-1">
-              approved leaves
-            </div>
-          </motion.div>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -607,10 +760,124 @@ const Timesheets = () => {
         <Button variant="outline" onClick={handleCheckOut} disabled={!canCheckOut || !isCheckedIn}>
           Check Out
         </Button>
+        <Button
+          variant="outline"
+          onClick={openAttendanceRequestDialog}
+          disabled={!hasPermission("TIMESHEET_VIEW_SELF")}
+        >
+          Raise Attendance Request
+        </Button>
         <div className="ml-auto text-xs text-muted-foreground">
           Today: {toDateInput(new Date())}
         </div>
       </div>
+
+      <motion.div
+        className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.22 }}
+      >
+        <div className="px-6 py-4 border-b border-border">
+          <h3 className="text-lg font-semibold">My Attendance Requests</h3>
+          <p className="text-sm text-muted-foreground">Raise request when missed checkout/check-in correction is needed.</p>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="table-header">
+              <TableHead>Date</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Requested Time</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Approval</TableHead>
+              <TableHead>Reason</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {myAttendanceRequests.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-muted-foreground">No attendance requests</TableCell>
+              </TableRow>
+            )}
+            {myAttendanceRequests.map((r) => (
+              <TableRow key={r._id} className="table-row-hover">
+                <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
+                <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
+                <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
+                <TableCell>{getStatusBadge(r.status)}</TableCell>
+                <TableCell className="max-w-[260px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
+                  {approvalProgressLabel(r)}
+                </TableCell>
+                <TableCell className="max-w-[260px] truncate" title={r.reason}>{r.reason}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </motion.div>
+
+      {canAction && (
+        <motion.div
+          className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.23 }}
+        >
+          <div className="px-6 py-4 border-b border-border">
+            <h3 className="text-lg font-semibold">Pending Attendance Requests</h3>
+            <p className="text-sm text-muted-foreground">Approve/reject employee attendance regularization requests.</p>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow className="table-header">
+                <TableHead>Employee</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Requested Time</TableHead>
+                <TableHead>Approval</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pendingAttendanceRequests.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-muted-foreground">No pending requests</TableCell>
+                </TableRow>
+              )}
+              {pendingAttendanceRequests.map((r) => (
+                <TableRow key={r._id} className="table-row-hover">
+                  <TableCell>
+                    {r.employeeId
+                      ? `${r.employeeId.firstName || ""} ${r.employeeId.lastName || ""}`.trim()
+                      : "-"}
+                  </TableCell>
+                  <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
+                  <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
+                  <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
+                  <TableCell className="max-w-[240px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
+                    {approvalProgressLabel(r)}
+                  </TableCell>
+                  <TableCell className="max-w-[220px] truncate" title={r.reason}>{r.reason}</TableCell>
+                  <TableCell>
+                    {canCurrentActorActionAttendanceRequest(r) ? (
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => actionAttendanceRequest(r._id, "approved")}>
+                          Approve
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => actionAttendanceRequest(r._id, "rejected")}>
+                          Reject
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Not your step</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </motion.div>
+      )}
 
       {canViewOnline && (
         <motion.div
@@ -736,19 +1003,9 @@ const Timesheets = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border">
-          <div>
-            <h3 className="text-lg font-semibold">Weekly Timesheet</h3>
-            <p className="text-sm text-muted-foreground">
-              {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {timesheet?._id ? getStatusBadge(timesheet.status) : <Badge>Draft</Badge>}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-b border-border bg-muted/20">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border bg-muted/20">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-lg font-semibold mr-2">Weekly Timesheet</h3>
             <Button
               variant="outline"
               size="icon"
@@ -768,19 +1025,25 @@ const Timesheets = () => {
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
-            <div className="ml-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-sm font-semibold">
+            <div className="ml-1 sm:ml-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-sm font-semibold">
               Worked hours: {weekTotalHours} / {minWeeklyHours}
             </div>
+            <div className="text-xs text-muted-foreground">
+              ({toDateInput(weekStart)} - {toDateInput(weekDates[6])})
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="flex items-center gap-3">
+            {timesheet?._id ? getStatusBadge(timesheet.status) : <Badge>Draft</Badge>}
+            <div className="text-xs text-muted-foreground">
             {timesheet?.status === "submitted" && "Waiting for approval"}
             {timesheet?.status === "approved" && "Approved"}
             {timesheet?.status === "rejected" && "Rejected - update and resubmit"}
+            </div>
           </div>
         </div>
         {weekLoading && (
-          <div className="px-6 py-2 text-xs text-muted-foreground">
-            Loading week data...
+          <div className="px-6 py-2">
+            <InlineLoader label="Loading week data..." className="text-xs" />
           </div>
         )}
         {!isWeekSynced && !weekLoading && (
@@ -892,9 +1155,6 @@ const Timesheets = () => {
           Minimum weekly hours: {minWeeklyHours}h
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3 px-6 py-4 border-t border-border">
-          <div className="mr-auto text-xs text-muted-foreground">
-            Submitting for week: {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
-          </div>
           {!timesheet?._id && canCreate && (
             <Button onClick={createDraft} disabled={saving}>
               Create Draft
@@ -1043,6 +1303,72 @@ const Timesheets = () => {
               Cancel
             </Button>
             <Button onClick={submitAction}>Confirm</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={attendanceRequestOpen} onOpenChange={setAttendanceRequestOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Raise Attendance Request</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input
+              type="date"
+              value={attendanceRequestForm.date}
+              onChange={(e) => setAttendanceRequestForm((prev) => ({ ...prev, date: e.target.value }))}
+            />
+            <select
+              className="form-input"
+              value={attendanceRequestForm.requestType}
+              onChange={(e) =>
+                setAttendanceRequestForm((prev) => ({
+                  ...prev,
+                  requestType: e.target.value as "missed_checkout" | "correction",
+                  requestedCheckInTime:
+                    e.target.value === "missed_checkout" ? "" : prev.requestedCheckInTime
+                }))
+              }
+            >
+              <option value="missed_checkout">Missed Checkout</option>
+              <option value="correction">Correction</option>
+            </select>
+            <Input
+              type="time"
+              value={attendanceRequestForm.requestedCheckInTime}
+              onChange={(e) =>
+                setAttendanceRequestForm((prev) => ({ ...prev, requestedCheckInTime: e.target.value }))
+              }
+              placeholder="Requested check-in time"
+              disabled={attendanceRequestForm.requestType === "missed_checkout"}
+            />
+            <Input
+              type="time"
+              value={attendanceRequestForm.requestedCheckOutTime}
+              onChange={(e) =>
+                setAttendanceRequestForm((prev) => ({ ...prev, requestedCheckOutTime: e.target.value }))
+              }
+              placeholder="Requested check-out time"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            {attendanceRequestForm.requestType === "missed_checkout"
+              ? "Provide the missing check-out time. Check-in time is taken from existing attendance."
+              : "Provide one or both times to request correction."}
+          </p>
+          <Textarea
+            className="mt-3"
+            placeholder="Reason"
+            value={attendanceRequestForm.reason}
+            onChange={(e) => setAttendanceRequestForm((prev) => ({ ...prev, reason: e.target.value }))}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAttendanceRequestOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitAttendanceRequest} disabled={attendanceRequestLoading}>
+              {attendanceRequestLoading ? <InlineLoader label="Submitting..." className="text-white" /> : "Submit Request"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

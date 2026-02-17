@@ -97,10 +97,25 @@ const employeeSchema = new mongoose.Schema(
       type: [emergencyContactSchema],
       default: []
     },
+    profileImage: {
+      type: String,
+      default: null
+    },
+    addressProof: {
+      fileName: String,
+      fileUrl: String,
+      mimeType: String,
+      uploadedAt: Date
+    },
 
     managerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "employees"
+    },
+    shiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "shifts",
+      default: null
     },
 
     status: {

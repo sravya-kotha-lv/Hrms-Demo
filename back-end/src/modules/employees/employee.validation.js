@@ -33,7 +33,8 @@ exports.createEmployeeByHrSchema = Joi.object({
 
   dateOfJoining: Joi.date().required(),
   employmentType: employmentType.required(),
-  managerId: objectId.optional()
+  managerId: objectId.optional(),
+  shiftId: objectId.optional().allow(null, "")
 });
 
 /* ------------------------------------------------------------------ */
@@ -66,7 +67,17 @@ exports.completeProfileSchema = Joi.object({
       relation: Joi.string().required(),
       phone: Joi.string().required()
     })
-  ).optional()
+  ).optional(),
+  profileImageUpload: Joi.object({
+    fileName: Joi.string().required(),
+    mimeType: Joi.string().required(),
+    base64Data: Joi.string().required()
+  }).optional(),
+  addressProofUpload: Joi.object({
+    fileName: Joi.string().required(),
+    mimeType: Joi.string().required(),
+    base64Data: Joi.string().required()
+  }).optional()
 });
 
 /* ------------------------------------------------------------------ */
@@ -87,6 +98,7 @@ exports.updateEmployeeSchema = Joi.object({
   employmentType: employmentType.optional(),
   status: status.optional(),
   managerId: objectId.optional(),
+  shiftId: objectId.optional().allow(null, ""),
 
   dob: Joi.date().optional(),
   gender: Joi.string().optional(),

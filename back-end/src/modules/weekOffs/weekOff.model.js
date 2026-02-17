@@ -5,8 +5,12 @@ const weekOffSchema = new mongoose.Schema(
     organizationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "organizations",
-      required: true,
-      unique: true
+      required: true
+    },
+    shiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "shifts",
+      default: null
     },
 
     weekOffDays: {
@@ -25,6 +29,8 @@ const weekOffSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+weekOffSchema.index({ organizationId: 1, shiftId: 1 }, { unique: true });
 
 // 👇 model name = weekOff, collection name = week_off
 module.exports = mongoose.model(
