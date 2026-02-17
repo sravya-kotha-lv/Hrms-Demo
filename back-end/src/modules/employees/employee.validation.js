@@ -16,6 +16,12 @@ const employmentType = Joi.string().valid(
   "contract"
 );
 const status = Joi.string().valid("active", "on_leave", "resigned");
+const employmentLifecycleStatus = Joi.string().valid(
+  "probation",
+  "confirmed",
+  "notice",
+  "terminated"
+);
 
 /* ------------------------------------------------------------------ */
 /* HR CREATES EMPLOYEE (MINIMUM REQUIRED DATA)                         */
@@ -97,6 +103,7 @@ exports.updateEmployeeSchema = Joi.object({
   dateOfJoining: Joi.date().optional(),
   employmentType: employmentType.optional(),
   status: status.optional(),
+  employmentLifecycleStatus: employmentLifecycleStatus.optional(),
   managerId: objectId.optional(),
   shiftId: objectId.optional().allow(null, ""),
 
@@ -119,4 +126,11 @@ exports.updateEmployeeSchema = Joi.object({
       phone: Joi.string().required()
     })
   ).optional()
+});
+
+exports.lifecycleActionSchema = Joi.object({
+  action: Joi.string()
+    .valid("confirm", "terminate_with_notice", "terminate_without_notice")
+    .required(),
+  reason: Joi.string().trim().max(300).optional().allow("")
 });

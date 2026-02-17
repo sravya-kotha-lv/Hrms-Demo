@@ -26,7 +26,16 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["leave_applied", "leave_action", "attendance_override", "general"],
+      enum: [
+        "leave_applied",
+        "leave_pending_approval",
+        "leave_action",
+        "attendance_request_pending_approval",
+        "attendance_override",
+        "probation_completed",
+        "employee_lifecycle",
+        "general"
+      ],
       default: "general"
     },
     title: {
@@ -62,4 +71,3 @@ notificationSchema.index({ organizationId: 1, recipientUserId: 1, createdAt: -1 
 notificationSchema.index({ recipientUserId: 1, isRead: 1, createdAt: -1 });
 
 module.exports = mongoose.model("notifications", notificationSchema);
-

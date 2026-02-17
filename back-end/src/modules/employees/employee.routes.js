@@ -8,7 +8,8 @@ const asyncHandler = require("../../middlewares/asyncHandler");
 const {
   createEmployeeByHrSchema,
   completeProfileSchema,
-  updateEmployeeSchema
+  updateEmployeeSchema,
+  lifecycleActionSchema
 } = require("./employee.validation");
 
 const controller = require("./employee.controller");
@@ -71,6 +72,14 @@ router.put(
   authorize("EMP_UPDATE"),
   validate(updateEmployeeSchema),
   asyncHandler(controller.updateByHr)
+);
+
+router.put(
+  "/:id/lifecycle-action",
+  auth,
+  authorize(["EMP_UPDATE", "EMP_VIEW"]),
+  validate(lifecycleActionSchema),
+  asyncHandler(controller.lifecycleAction)
 );
 
 router.delete(

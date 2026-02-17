@@ -10,5 +10,7 @@ exports.upsertOrgSettingsSchema = Joi.object({
   timezone: Joi.string().required(),
   payrollCutoffDay: Joi.number().integer().min(1).max(31).default(25),
   minWorkHoursPerDay: Joi.number().min(0).max(24).required(),
-  minHalfDayHours: Joi.number().min(0).max(24).max(Joi.ref("minWorkHoursPerDay")).required()
+  minHalfDayHours: Joi.number().min(0).max(24).max(Joi.ref("minWorkHoursPerDay")).required(),
+  probationPeriodDays: Joi.number().integer().min(0).max(3650).default(90),
+  noticePeriodDays: Joi.number().integer().min(0).max(3650).default(30)
 });

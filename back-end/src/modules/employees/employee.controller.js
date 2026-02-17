@@ -89,6 +89,17 @@ exports.updateByHr = async (req, res) => {
   );
 };
 
+exports.lifecycleAction = async (req, res) => {
+  const data = await service.lifecycleAction(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Employee lifecycle updated successfully",
+      data
+    })
+  );
+};
+
 exports.remove = async (req, res) => {
   await service.remove(req);
 

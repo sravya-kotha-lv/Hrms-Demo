@@ -12,7 +12,9 @@ const DEFAULTS = {
   timezone: "UTC",
   payrollCutoffDay: 25,
   minWorkHoursPerDay: 8,
-  minHalfDayHours: 4
+  minHalfDayHours: 4,
+  probationPeriodDays: 90,
+  noticePeriodDays: 30
 };
 
 exports.get = async (req) => {
@@ -48,7 +50,9 @@ exports.upsert = async (req) => {
     timezone,
     payrollCutoffDay,
     minWorkHoursPerDay,
-    minHalfDayHours
+    minHalfDayHours,
+    probationPeriodDays,
+    noticePeriodDays
   } = req.body;
 
   if (!isValidTimeZone(timezone)) {
@@ -67,7 +71,9 @@ exports.upsert = async (req) => {
       timezone,
       payrollCutoffDay,
       minWorkHoursPerDay,
-      minHalfDayHours
+      minHalfDayHours,
+      probationPeriodDays,
+      noticePeriodDays
     },
     { upsert: true, new: true }
   );

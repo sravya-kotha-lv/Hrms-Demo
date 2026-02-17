@@ -54,6 +54,16 @@ const orgSettingsSchema = new mongoose.Schema(
     minHalfDayHours: {
       type: Number,
       default: 4
+    },
+    probationPeriodDays: {
+      type: Number,
+      default: 90,
+      min: 0
+    },
+    noticePeriodDays: {
+      type: Number,
+      default: 30,
+      min: 0
     }
   },
   { timestamps: true }

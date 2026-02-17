@@ -49,6 +49,7 @@ const emptyForm = {
   roleIds: [] as string[],
   employmentType: "",
   dateOfJoining: "",
+  employmentLifecycleStatus: "confirmed",
 };
 
 /* ================= COMPONENT ================= */
@@ -64,6 +65,9 @@ const AddEmployee = () => {
   const [roles, setRoles] = useState<Option[]>([]);
   const [managers, setManagers] = useState<Option[]>([]);
   const [shifts, setShifts] = useState<Option[]>([]);
+  const [orgProbationDays, setOrgProbationDays] = useState(90);
+  const [orgNoticeDays, setOrgNoticeDays] = useState(30);
+  const [originalLifecycleStatus, setOriginalLifecycleStatus] = useState("confirmed");
   const [loading, setLoading] = useState(false);
   const employeeCodePrefix =
     (import.meta as any).env?.VITE_EMPLOYEE_CODE_PREFIX || "LV";
@@ -76,6 +80,7 @@ const AddEmployee = () => {
     fetchRoles();
     fetchManagers();
     fetchShifts();
+    fetchOrgSettings();
     if (isEdit) {
       fetchEmployee();
     }
@@ -100,7 +105,14 @@ const AddEmployee = () => {
         dateOfJoining: employee.dateOfJoining
           ? new Date(employee.dateOfJoining).toISOString().slice(0, 10)
           : "",
+        employmentLifecycleStatus:
+          employee.employmentLifecycleStatus ||
+          (employee.status === "resigned" ? "notice" : "confirmed"),
       });
+      setOriginalLifecycleStatus(
+        employee.employmentLifecycleStatus ||
+        (employee.status === "resigned" ? "notice" : "confirmed")
+      );
     } else {
       toast.error(res?.message || "Failed to load employee");
     }
@@ -143,7 +155,26 @@ const AddEmployee = () => {
     }
   };
 
+  const fetchOrgSettings = async () => {
+    const res = await getApiWithToken("/org-settings");
+    if (res?.success && res?.data) {
+      setOrgProbationDays(
+        typeof res.data.probationPeriodDays === "number" ? res.data.probationPeriodDays : 90
+      );
+      setOrgNoticeDays(
+        typeof res.data.noticePeriodDays === "number" ? res.data.noticePeriodDays : 30
+      );
+    }
+  };
+
   /* ================= SUBMIT ================= */
+
+  const getLifecycleAction = (status: string) => {
+    if (status === "confirmed") return "confirm";
+    if (status === "notice") return "terminate_with_notice";
+    if (status === "terminated") return "terminate_without_notice";
+    return "";
+  };
 
   const handleSubmit = async () => {
     if (
@@ -171,12 +202,34 @@ const AddEmployee = () => {
       shiftId: form.shiftId || undefined,
       employmentType: form.employmentType,
       dateOfJoining: form.dateOfJoining,
+      ...(isEdit && form.employmentLifecycleStatus === "probation"
+        ? { employmentLifecycleStatus: "probation" }
+        : {}),
     };
 
     setLoading(true);
     const res = isEdit
       ? await putApiWithToken(`/employees/${id}`, payload)
       : await postApiWithToken("/employees", payload);
+
+    if (
+      isEdit &&
+      res?.success &&
+      form.employmentLifecycleStatus !== originalLifecycleStatus
+    ) {
+      const action = getLifecycleAction(form.employmentLifecycleStatus);
+      if (action) {
+        const lifecycleRes = await putApiWithToken(
+          `/employees/${id}/lifecycle-action`,
+          { action }
+        );
+        if (!lifecycleRes?.success) {
+          setLoading(false);
+          toast.error(lifecycleRes?.message || "Employee updated but lifecycle action failed");
+          return;
+        }
+      }
+    }
     setLoading(false);
 
     if (res?.success) {
@@ -238,6 +291,11 @@ const AddEmployee = () => {
 
       {/* Form */}
       <div className="stat-card grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="md:col-span-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Organization policy: probation {orgProbationDays} days, notice {orgNoticeDays} days.
+          {!isEdit ? " New employees start in probation automatically." : ""}
+        </div>
+
         <div>
           <Label>Email *</Label>
           <Input
@@ -468,6 +526,60 @@ const AddEmployee = () => {
             }
           />
         </div>
+
+        {isEdit && (
+          <div className="md:col-span-2 space-y-3">
+            <Label>Employment Lifecycle Status *</Label>
+            <Select
+              value={form.employmentLifecycleStatus}
+              onValueChange={(v) =>
+                setForm({ ...form, employmentLifecycleStatus: v })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select lifecycle status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="probation">Probation</SelectItem>
+                <SelectItem value="confirmed">Confirmed</SelectItem>
+                <SelectItem value="notice">Notice</SelectItem>
+                <SelectItem value="terminated">Terminated</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={form.employmentLifecycleStatus === "confirmed" ? "default" : "outline"}
+                onClick={() =>
+                  setForm({ ...form, employmentLifecycleStatus: "confirmed" })
+                }
+              >
+                Confirm
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={form.employmentLifecycleStatus === "notice" ? "default" : "outline"}
+                onClick={() =>
+                  setForm({ ...form, employmentLifecycleStatus: "notice" })
+                }
+              >
+                Terminate with Notice
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={form.employmentLifecycleStatus === "terminated" ? "destructive" : "outline"}
+                onClick={() =>
+                  setForm({ ...form, employmentLifecycleStatus: "terminated" })
+                }
+              >
+                Terminate without Notice
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </MainLayout>
   );

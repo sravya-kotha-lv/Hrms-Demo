@@ -36,6 +36,8 @@ const OrganizationSettings = () => {
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
+  const [probationPeriodDays, setProbationPeriodDays] = useState(90);
+  const [noticePeriodDays, setNoticePeriodDays] = useState(30);
   const [loading, setLoading] = useState(false);
   const canView = hasAnyPermission(["ORG_SETTINGS_VIEW"]);
   const canManage = hasAnyPermission(["ORG_SETTINGS_MANAGE"]);
@@ -67,6 +69,12 @@ const OrganizationSettings = () => {
       setMinHalfDayHours(
         typeof res.data?.minHalfDayHours === "number" ? res.data.minHalfDayHours : 4
       );
+      setProbationPeriodDays(
+        typeof res.data?.probationPeriodDays === "number" ? res.data.probationPeriodDays : 90
+      );
+      setNoticePeriodDays(
+        typeof res.data?.noticePeriodDays === "number" ? res.data.noticePeriodDays : 30
+      );
     } else {
       toast.error(res?.message || "Failed to load settings");
     }
@@ -89,7 +97,9 @@ const OrganizationSettings = () => {
         timezone,
         payrollCutoffDay: Number(payrollCutoffDay),
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
-        minHalfDayHours: Number(minHalfDayHours)
+        minHalfDayHours: Number(minHalfDayHours),
+        probationPeriodDays: Number(probationPeriodDays),
+        noticePeriodDays: Number(noticePeriodDays)
       }, null, { requiredPermissions: ["ORG_SETTINGS_MANAGE"] });
       if (res?.skipped) return;
       if (res?.success) {
@@ -157,6 +167,38 @@ const OrganizationSettings = () => {
               <SelectItem value="full_year">Full leaves for cycle</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-2 mb-6">
+          <label className="text-sm font-medium">Probation Period (Days)</label>
+          <Input
+            type="number"
+            min={0}
+            max={3650}
+            value={probationPeriodDays}
+            onChange={(e) => setProbationPeriodDays(Number(e.target.value))}
+            disabled={!canManage}
+            className="w-64"
+          />
+          <p className="text-xs text-muted-foreground">
+            New employees are added in probation and auto-completed after these many days.
+          </p>
+        </div>
+
+        <div className="space-y-2 mb-6">
+          <label className="text-sm font-medium">Notice Period (Days)</label>
+          <Input
+            type="number"
+            min={0}
+            max={3650}
+            value={noticePeriodDays}
+            onChange={(e) => setNoticePeriodDays(Number(e.target.value))}
+            disabled={!canManage}
+            className="w-64"
+          />
+          <p className="text-xs text-muted-foreground">
+            Used when moving an employee to notice period.
+          </p>
         </div>
 
         <div className="space-y-2 mb-6">

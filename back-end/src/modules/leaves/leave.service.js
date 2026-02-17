@@ -177,6 +177,10 @@ exports.applyLeave = async (req) => {
   }
 
   if (!employee) throw new Error("Employee not found");
+  const lifecycleStatus = employee.employmentLifecycleStatus || "confirmed";
+  if (lifecycleStatus !== "confirmed") {
+    throw new Error("Only confirmed employees can apply leave");
+  }
 
   /* 🔒 STEP 4A: CHECK OVERLAPPING LEAVES */
   const overlappingLeave = await Leave.findOne({
@@ -365,6 +369,10 @@ exports.getApplyContext = async (req) => {
     organizationId: req.user.organizationId
   });
   if (!employee) throw new Error("Employee not found");
+  const lifecycleStatus = employee.employmentLifecycleStatus || "confirmed";
+  if (lifecycleStatus !== "confirmed") {
+    throw new Error("Only confirmed employees can apply leave");
+  }
 
   const [holidays, leaveTypes, balances, myLeaves, settings, weekOffConfigs] = await Promise.all([
     Holiday.find({
