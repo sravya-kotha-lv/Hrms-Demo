@@ -91,6 +91,13 @@ router.put(
   asyncHandler(controller.lifecycleAction)
 );
 
+router.put(
+  "/:id/reopen-profile",
+  auth,
+  authorize("EMP_UPDATE"),
+  asyncHandler(controller.reopenProfileCompletion)
+);
+
 router.delete(
   "/:id",
   auth,

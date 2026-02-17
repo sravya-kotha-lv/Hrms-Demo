@@ -645,6 +645,21 @@ const Employees = () => {
                             <Edit className="w-4 h-4 mr-2" /> Edit
                           </DropdownMenuItem>
                         </PermissionGate>
+                        <PermissionGate permissions={["EMP_UPDATE"]}>
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              const res = await putApiWithToken(`/employees/${employee._id}/reopen-profile`, {});
+                              if (res?.success) {
+                                toast.success("Profile form enabled for employee");
+                                fetchEmployees();
+                              } else {
+                                toast.error(res?.message || "Failed to enable profile form");
+                              }
+                            }}
+                          >
+                            <Edit className="w-4 h-4 mr-2" /> Enable Details Form
+                          </DropdownMenuItem>
+                        </PermissionGate>
                         <PermissionGate permissions={["EMP_DELETE"]}>
                           <DropdownMenuItem onClick={() => handleDelete(employee)}>
                             <Trash2 className="w-4 h-4 mr-2 text-red-500" /> Delete

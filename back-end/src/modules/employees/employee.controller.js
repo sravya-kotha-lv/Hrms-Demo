@@ -100,6 +100,17 @@ exports.lifecycleAction = async (req, res) => {
   );
 };
 
+exports.reopenProfileCompletion = async (req, res) => {
+  const data = await service.reopenProfileCompletion(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Employee profile form re-enabled successfully",
+      data
+    })
+  );
+};
+
 exports.bulkUpdate = async (req, res) => {
   const data = await service.bulkUpdate(req);
 

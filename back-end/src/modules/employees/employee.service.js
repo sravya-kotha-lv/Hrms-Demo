@@ -828,6 +828,29 @@ exports.lifecycleAction = async (req) => {
   });
 };
 
+exports.reopenProfileCompletion = async (req) => {
+  const { id } = req.params;
+  const { organizationId } = req.user;
+
+  const employee = await Employee.findOne({
+    _id: id,
+    organizationId,
+    isDeleted: false
+  });
+
+  if (!employee) {
+    throw { code: 404, message: "Employee not found" };
+  }
+
+  employee.profileCompleted = false;
+  await employee.save();
+
+  return buildEmployeeResponse({
+    employeeId: employee._id,
+    organizationId
+  });
+};
+
 exports.bulkUpdate = async (req) => {
   const { organizationId } = req.user;
   const {
