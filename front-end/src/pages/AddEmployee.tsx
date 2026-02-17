@@ -3,6 +3,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -67,6 +68,7 @@ const AddEmployee = () => {
   const [shifts, setShifts] = useState<Option[]>([]);
   const [orgProbationDays, setOrgProbationDays] = useState(90);
   const [orgNoticeDays, setOrgNoticeDays] = useState(30);
+  const [profileImageUrl, setProfileImageUrl] = useState("");
   const [originalLifecycleStatus, setOriginalLifecycleStatus] = useState("confirmed");
   const [loading, setLoading] = useState(false);
   const employeeCodePrefix =
@@ -113,6 +115,7 @@ const AddEmployee = () => {
         employee.employmentLifecycleStatus ||
         (employee.status === "resigned" ? "notice" : "confirmed")
       );
+      setProfileImageUrl(employee.profileImage || "");
     } else {
       toast.error(res?.message || "Failed to load employee");
     }
@@ -291,6 +294,23 @@ const AddEmployee = () => {
 
       {/* Form */}
       <div className="stat-card grid grid-cols-1 md:grid-cols-2 gap-4">
+        {isEdit && (
+          <div className="md:col-span-2 flex items-center gap-3 rounded-md border bg-muted/40 px-3 py-2">
+            <Avatar className="h-12 w-12">
+              <AvatarImage src={profileImageUrl || ""} />
+              <AvatarFallback>
+                {`${form.firstName?.[0] || ""}${form.lastName?.[0] || ""}`}
+              </AvatarFallback>
+            </Avatar>
+            <div className="text-sm">
+              <p className="font-medium">Profile Photo</p>
+              <p className="text-muted-foreground">
+                {profileImageUrl ? "Current profile image is shown." : "No profile image uploaded yet."}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="md:col-span-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
           Organization policy: probation {orgProbationDays} days, notice {orgNoticeDays} days.
           {!isEdit ? " New employees start in probation automatically." : ""}

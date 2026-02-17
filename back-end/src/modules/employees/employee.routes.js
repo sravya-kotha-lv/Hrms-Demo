@@ -9,7 +9,8 @@ const {
   createEmployeeByHrSchema,
   completeProfileSchema,
   updateEmployeeSchema,
-  lifecycleActionSchema
+  lifecycleActionSchema,
+  bulkUpdateEmployeesSchema
 } = require("./employee.validation");
 
 const controller = require("./employee.controller");
@@ -59,6 +60,14 @@ router.get(
   asyncHandler(controller.getMe)
 );
 
+router.put(
+  "/bulk-update",
+  auth,
+  authorize("EMP_UPDATE"),
+  validate(bulkUpdateEmployeesSchema),
+  asyncHandler(controller.bulkUpdate)
+);
+
 router.get(
   "/:id",
   auth,
@@ -80,6 +89,13 @@ router.put(
   authorize(["EMP_UPDATE", "EMP_VIEW"]),
   validate(lifecycleActionSchema),
   asyncHandler(controller.lifecycleAction)
+);
+
+router.put(
+  "/:id/reopen-profile",
+  auth,
+  authorize("EMP_UPDATE"),
+  asyncHandler(controller.reopenProfileCompletion)
 );
 
 router.delete(

@@ -146,7 +146,7 @@ const ViewEmployee = () => {
           <div className="bg-card rounded-xl card-shadow p-6 mb-6 flex flex-col sm:flex-row gap-4 sm:items-center justify-between">
             <div className="flex items-center gap-4">
               <Avatar className="h-14 w-14">
-                <AvatarImage src="" />
+                <AvatarImage src={employee.profileImage || ""} />
                 <AvatarFallback>
                   {`${employee.firstName?.[0] || ""}${employee.lastName?.[0] || ""}`}
                 </AvatarFallback>
