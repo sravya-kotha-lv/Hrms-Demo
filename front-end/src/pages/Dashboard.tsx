@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { setPermissions } from "@/utils/auth";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +92,10 @@ const Dashboard = () => {
   const [orgSettings, setOrgSettings] = useState<any>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [selectedKpiKey, setSelectedKpiKey] = useState<
+    "total" | "present" | "leave" | "late" | "missed" | null
+  >(null);
 
   /* ================= EFFECT ================= */
 
@@ -292,6 +297,102 @@ const Dashboard = () => {
     };
   }, [employeeList, attendanceToday, leaveList]);
 
+  const kpiEmployeeDetails = useMemo(() => {
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const employeeById = new Map(
+      employeeList.map((emp: any) => [String(emp._id), emp])
+    );
+
+    const toDisplayRow = (employee: any, extra: Record<string, any> = {}) => ({
+      id: String(employee?._id || employee?.employeeId || `${employee?.firstName || ""}-${employee?.lastName || ""}`),
+      name: `${employee?.firstName || ""} ${employee?.lastName || ""}`.trim() || "-",
+      employeeCode: employee?.employeeCode || "-",
+      department: employee?.departmentId?.name || "Unassigned",
+      designation: employee?.designationId?.name || "-",
+      ...extra
+    });
+
+    const uniqueByEmployeeId = (rows: any[]) => {
+      const map = new Map<string, any>();
+      rows.forEach((row) => {
+        const id = String(row.id || "");
+        if (!id) return;
+        if (!map.has(id)) map.set(id, row);
+      });
+      return Array.from(map.values());
+    };
+
+    const totalRows = employeeList.map((emp: any) => toDisplayRow(emp));
+
+    const presentRows = uniqueByEmployeeId(
+      (attendanceToday || [])
+        .filter((a: any) => a.checkInAt || a.checkOutAt)
+        .map((a: any) => {
+          const base = employeeById.get(String(a.employeeId?._id || a.employeeId)) || a.employeeId;
+          return toDisplayRow(base, {
+            id: String(base?._id || a.employeeId?._id || a.employeeId),
+            checkInAt: a.checkInAt ? formatDateInOrgTimeZone(a.checkInAt) : "-",
+            checkOutAt: a.checkOutAt ? formatDateInOrgTimeZone(a.checkOutAt) : "-"
+          });
+        })
+    );
+
+    const leaveRows = uniqueByEmployeeId(
+      (leaveList || [])
+        .filter((l: any) => {
+          const from = new Date(l.fromDate);
+          const to = new Date(l.toDate);
+          const fromDate = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+          const toDate = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+          return l.status === "approved" && todayStart >= fromDate && todayStart <= toDate;
+        })
+        .map((l: any) => {
+          const base = employeeById.get(String(l.employeeId?._id || l.employeeId)) || l.employeeId;
+          return toDisplayRow(base, {
+            id: String(base?._id || l.employeeId?._id || l.employeeId),
+            leaveType: l.leaveTypeId?.name || "-"
+          });
+        })
+    );
+
+    const lateRows = uniqueByEmployeeId(
+      (attendanceToday || [])
+        .filter((a: any) => Number(a.lateByMinutes || 0) > 0)
+        .map((a: any) => {
+          const base = employeeById.get(String(a.employeeId?._id || a.employeeId)) || a.employeeId;
+          return toDisplayRow(base, {
+            id: String(base?._id || a.employeeId?._id || a.employeeId),
+            lateByMinutes: Number(a.lateByMinutes || 0)
+          });
+        })
+    );
+
+    const missedRows = uniqueByEmployeeId(
+      (attendanceToday || [])
+        .filter((a: any) => a.checkInAt && !a.checkOutAt)
+        .map((a: any) => {
+          const base = employeeById.get(String(a.employeeId?._id || a.employeeId)) || a.employeeId;
+          return toDisplayRow(base, {
+            id: String(base?._id || a.employeeId?._id || a.employeeId),
+            checkInAt: a.checkInAt ? formatDateInOrgTimeZone(a.checkInAt) : "-"
+          });
+        })
+    );
+
+    return {
+      total: { title: "Total Employees", rows: totalRows },
+      present: { title: "Present Today", rows: presentRows },
+      leave: { title: "On Leave Today", rows: leaveRows },
+      late: { title: "Late Arrivals", rows: lateRows },
+      missed: { title: "Missed Checkout", rows: missedRows }
+    };
+  }, [employeeList, attendanceToday, leaveList, today]);
+
+  const openKpiDialog = (key: "total" | "present" | "leave" | "late" | "missed") => {
+    setSelectedKpiKey(key);
+    setDetailsDialogOpen(true);
+  };
+
   const monthDaySummary = useMemo(() => {
     const day = today.getDate();
     let present = 0;
@@ -367,7 +468,7 @@ const Dashboard = () => {
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       return {
         key,
-        label: d.toLocaleDateString(undefined, { weekday: "short" }),
+        label: formatDateInOrgTimeZone(d, { weekday: "short" }),
         present: 0,
         absent: totalEmployees
       };
@@ -518,6 +619,55 @@ const Dashboard = () => {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedKpiKey ? kpiEmployeeDetails[selectedKpiKey].title : "Employee Details"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[420px] overflow-auto space-y-2">
+            {(selectedKpiKey ? kpiEmployeeDetails[selectedKpiKey].rows : []).length === 0 && (
+              <p className="text-sm text-muted-foreground">No employees found.</p>
+            )}
+            {(selectedKpiKey ? kpiEmployeeDetails[selectedKpiKey].rows : []).map((row: any) => (
+              <div key={row.id} className="rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{row.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {row.employeeCode} • {row.department} • {row.designation}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setDetailsDialogOpen(false);
+                      navigate(`/employees/${row.id}`);
+                    }}
+                  >
+                    View
+                  </Button>
+                </div>
+                {"lateByMinutes" in row && (
+                  <p className="text-xs text-muted-foreground mt-2">Late by {row.lateByMinutes} mins</p>
+                )}
+                {"leaveType" in row && (
+                  <p className="text-xs text-muted-foreground mt-2">Leave type: {row.leaveType}</p>
+                )}
+                {"checkInAt" in row && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Check-in: {row.checkInAt}{" "}
+                    {"checkOutAt" in row ? `| Check-out: ${row.checkOutAt}` : ""}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -715,31 +865,46 @@ const Dashboard = () => {
       </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <div className="stat-card">
+        <div
+          className="stat-card cursor-pointer hover:ring-1 hover:ring-primary/20"
+          onClick={() => openKpiDialog("total")}
+        >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <Users className="w-4 h-4" /> Total Employees
           </div>
           <div className="text-2xl font-semibold">{kpis.totalEmployees}</div>
         </div>
-        <div className="stat-card">
+        <div
+          className="stat-card cursor-pointer hover:ring-1 hover:ring-primary/20"
+          onClick={() => openKpiDialog("present")}
+        >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <UserCheck className="w-4 h-4" /> Present Today
           </div>
           <div className="text-2xl font-semibold">{kpis.presentToday}</div>
         </div>
-        <div className="stat-card">
+        <div
+          className="stat-card cursor-pointer hover:ring-1 hover:ring-primary/20"
+          onClick={() => openKpiDialog("leave")}
+        >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <ClipboardCheck className="w-4 h-4" /> On Leave Today
           </div>
           <div className="text-2xl font-semibold">{kpis.onLeaveToday}</div>
         </div>
-        <div className="stat-card">
+        <div
+          className="stat-card cursor-pointer hover:ring-1 hover:ring-primary/20"
+          onClick={() => openKpiDialog("late")}
+        >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <AlertCircle className="w-4 h-4" /> Late Arrivals
           </div>
           <div className="text-2xl font-semibold">{kpis.lateArrivals}</div>
         </div>
-        <div className="stat-card">
+        <div
+          className="stat-card cursor-pointer hover:ring-1 hover:ring-primary/20"
+          onClick={() => openKpiDialog("missed")}
+        >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <FileClock className="w-4 h-4" /> Missed Checkout
           </div>
@@ -916,7 +1081,7 @@ const Dashboard = () => {
             {upcomingHolidays.map((h: any) => (
               <div key={h._id} className="flex items-center justify-between p-2 rounded-lg border text-sm">
                 <span>{h.name}</span>
-                <span className="text-muted-foreground">{new Date(h.date).toLocaleDateString()}</span>
+                <span className="text-muted-foreground">{formatDateInOrgTimeZone(h.date)}</span>
               </div>
             ))}
           </div>

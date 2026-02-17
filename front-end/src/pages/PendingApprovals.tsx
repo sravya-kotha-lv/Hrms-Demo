@@ -13,6 +13,7 @@ import {
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 const getStatusBadge = (status: string) => {
   if (status === "approved") return <Badge className="status-badge status-active">Approved</Badge>;
@@ -163,8 +164,8 @@ const PendingApprovals = () => {
                           : "-"}
                       </TableCell>
                       <TableCell>{row.leaveTypeId?.name || "-"}</TableCell>
-                      <TableCell>{row.fromDate ? new Date(row.fromDate).toLocaleDateString() : "-"}</TableCell>
-                      <TableCell>{row.toDate ? new Date(row.toDate).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>{row.fromDate ? formatDateInOrgTimeZone(row.fromDate) : "-"}</TableCell>
+                      <TableCell>{row.toDate ? formatDateInOrgTimeZone(row.toDate) : "-"}</TableCell>
                       <TableCell>{getStatusBadge(row.status)}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
@@ -210,7 +211,7 @@ const PendingApprovals = () => {
                           ? `${row.employeeId.firstName || ""} ${row.employeeId.lastName || ""}`.trim()
                           : "-"}
                       </TableCell>
-                      <TableCell>{new Date(row.date).toLocaleDateString()}</TableCell>
+                      <TableCell>{formatDateInOrgTimeZone(row.date)}</TableCell>
                       <TableCell className="capitalize">{String(row.requestType || "").replace("_", " ")}</TableCell>
                       <TableCell>{row.requestedCheckInTime || "-"} / {row.requestedCheckOutTime || "-"}</TableCell>
                       <TableCell>{getStatusBadge(row.status)}</TableCell>

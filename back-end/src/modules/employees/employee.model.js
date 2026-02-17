@@ -123,6 +123,45 @@ const employeeSchema = new mongoose.Schema(
       enum: ["active", "on_leave", "resigned"],
       default: "active"
     },
+    employmentLifecycleStatus: {
+      type: String,
+      enum: ["probation", "confirmed", "notice", "terminated"],
+      default: "probation"
+    },
+    probationPeriodDays: {
+      type: Number,
+      default: 90
+    },
+    probationStartDate: {
+      type: Date
+    },
+    probationEndDate: {
+      type: Date
+    },
+    probationCompletedAt: {
+      type: Date,
+      default: null
+    },
+    probationCompletionNotifiedAt: {
+      type: Date,
+      default: null
+    },
+    noticePeriodDays: {
+      type: Number,
+      default: 30
+    },
+    noticeStartDate: {
+      type: Date,
+      default: null
+    },
+    noticeEndDate: {
+      type: Date,
+      default: null
+    },
+    benefitsEligible: {
+      type: Boolean,
+      default: false
+    },
 
     // 🗑 Soft delete fields
     isDeleted: {

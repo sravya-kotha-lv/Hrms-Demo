@@ -20,6 +20,11 @@ import { useNavigate } from "react-router-dom";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import PermissionGate from "@/components/PermissionGate";
 import { toast } from "sonner";
+import {
+  formatDateInOrgTimeZone,
+  formatDateTimeInOrgTimeZone,
+  formatTimeInOrgTimeZone
+} from "@/utils/timezone";
 
 const toDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -249,10 +254,10 @@ const EmployeeDashboard = () => {
   const isCheckedOut = Boolean(attendanceToday?.checkInAt) && Boolean(attendanceToday?.checkOutAt);
 
   const checkInTimeText = attendanceToday?.checkInAt
-    ? new Date(attendanceToday.checkInAt).toLocaleTimeString()
+    ? formatTimeInOrgTimeZone(attendanceToday.checkInAt)
     : "-";
   const checkOutTimeText = attendanceToday?.checkOutAt
-    ? new Date(attendanceToday.checkOutAt).toLocaleTimeString()
+    ? formatTimeInOrgTimeZone(attendanceToday.checkOutAt)
     : "-";
 
   const lateFlag = useMemo(() => {
@@ -399,7 +404,7 @@ const EmployeeDashboard = () => {
             {upcomingHolidays.map((h: any) => (
               <div key={h._id} className="flex items-center justify-between text-sm p-2 rounded-lg bg-muted/40">
                 <span>{h.name}</span>
-                <span className="text-muted-foreground">{new Date(h.date).toLocaleDateString()}</span>
+                <span className="text-muted-foreground">{formatDateInOrgTimeZone(h.date)}</span>
               </div>
             ))}
           </div>
@@ -470,7 +475,7 @@ const EmployeeDashboard = () => {
                   <div key={`eb-${e.employeeId}-${e.eventDate}`} className="text-xs p-2 rounded bg-muted/40 flex items-center justify-between">
                     <span>{e.name}</span>
                     <span className="text-muted-foreground">
-                      {new Date(e.eventDate).toLocaleDateString()} ({e.daysAway === 0 ? "Today" : `${e.daysAway}d`})
+                      {formatDateInOrgTimeZone(e.eventDate)} ({e.daysAway === 0 ? "Today" : `${e.daysAway}d`})
                     </span>
                   </div>
                 ))}
@@ -486,7 +491,7 @@ const EmployeeDashboard = () => {
                   <div key={`ea-${e.employeeId}-${e.eventDate}`} className="text-xs p-2 rounded bg-muted/40 flex items-center justify-between">
                     <span>{e.name}</span>
                     <span className="text-muted-foreground">
-                      {new Date(e.eventDate).toLocaleDateString()} ({e.years}y)
+                      {formatDateInOrgTimeZone(e.eventDate)} ({e.years}y)
                     </span>
                   </div>
                 ))}
@@ -499,7 +504,7 @@ const EmployeeDashboard = () => {
       <motion.div className="stat-card mt-6" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">Monthly Attendance Calendar</h3>
-          <Badge variant="outline">{new Date().toLocaleString(undefined, { month: "long", year: "numeric" })}</Badge>
+          <Badge variant="outline">{formatDateTimeInOrgTimeZone(new Date(), { month: "long", year: "numeric" })}</Badge>
         </div>
         <div className="grid grid-cols-7 gap-2 mb-2">
           {dayNames.map((d) => (

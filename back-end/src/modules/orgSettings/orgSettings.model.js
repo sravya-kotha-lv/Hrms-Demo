@@ -37,6 +37,10 @@ const orgSettingsSchema = new mongoose.Schema(
       enum: ["days_window", "payroll_cutoff"],
       default: "days_window"
     },
+    timezone: {
+      type: String,
+      default: "UTC"
+    },
     payrollCutoffDay: {
       type: Number,
       default: 25
@@ -50,6 +54,16 @@ const orgSettingsSchema = new mongoose.Schema(
     minHalfDayHours: {
       type: Number,
       default: 4
+    },
+    probationPeriodDays: {
+      type: Number,
+      default: 90,
+      min: 0
+    },
+    noticePeriodDays: {
+      type: Number,
+      default: 30,
+      min: 0
     }
   },
   { timestamps: true }

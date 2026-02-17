@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
 import { useAuth } from "@/context/AuthContext";
 import { PageLoader } from "@/components/ui/loaders";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const ADDRESS_PROOF_MAX_BYTES = 5 * 1024 * 1024;
@@ -159,7 +160,7 @@ const ProfilePage = () => {
             <div><span className="text-muted-foreground">Department:</span> {profile?.departmentId?.name || "-"}</div>
             <div><span className="text-muted-foreground">Designation:</span> {profile?.designationId?.name || "-"}</div>
             <div><span className="text-muted-foreground">Employment Type:</span> {profile?.employmentType || "-"}</div>
-            <div><span className="text-muted-foreground">Date Of Joining:</span> {profile?.dateOfJoining ? new Date(profile.dateOfJoining).toLocaleDateString() : "-"}</div>
+            <div><span className="text-muted-foreground">Date Of Joining:</span> {profile?.dateOfJoining ? formatDateInOrgTimeZone(profile.dateOfJoining) : "-"}</div>
             <div><span className="text-muted-foreground">Reporting Manager:</span> {profile?.managerId ? `${profile.managerId.firstName || ""} ${profile.managerId.lastName || ""}`.trim() : "-"}</div>
           </div>
         </div>
@@ -169,7 +170,7 @@ const ProfilePage = () => {
           <div className="space-y-2 text-sm">
             <div><span className="text-muted-foreground">Work Email:</span> {profile?.userId?.email || "-"}</div>
             <div><span className="text-muted-foreground">Phone:</span> {profile?.phone || "-"}</div>
-            <div><span className="text-muted-foreground">DOB:</span> {profile?.dob ? new Date(profile.dob).toLocaleDateString() : "-"}</div>
+            <div><span className="text-muted-foreground">DOB:</span> {profile?.dob ? formatDateInOrgTimeZone(profile.dob) : "-"}</div>
             <div><span className="text-muted-foreground">Gender:</span> {profile?.gender || "-"}</div>
             <div><span className="text-muted-foreground">Address:</span> {profile?.address?.line1 || "-"}</div>
             <div>

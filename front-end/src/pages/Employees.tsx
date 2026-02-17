@@ -49,6 +49,7 @@ import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
 import { TableLoaderRows } from "@/components/ui/loaders";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -60,6 +61,22 @@ const getStatusBadge = (status: string) => {
       return <Badge className="status-badge status-inactive">Resigned</Badge>;
     default:
       return <Badge variant="secondary">{status || "-"}</Badge>;
+  }
+};
+
+const getLifecycleBadge = (status: string) => {
+  const normalizedStatus = status || "confirmed";
+  switch (normalizedStatus) {
+    case "probation":
+      return <Badge className="status-badge status-pending">Probation</Badge>;
+    case "confirmed":
+      return <Badge className="status-badge status-active">Confirmed</Badge>;
+    case "notice":
+      return <Badge className="status-badge status-inactive">Notice</Badge>;
+    case "terminated":
+      return <Badge className="status-badge status-inactive">Terminated</Badge>;
+    default:
+      return <Badge variant="secondary">{normalizedStatus}</Badge>;
   }
 };
 
@@ -261,17 +278,18 @@ const Employees = () => {
               <TableHead>Department</TableHead>
               <TableHead>Designation</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Lifecycle</TableHead>
               <TableHead>Join Date</TableHead>
               {canAnyAction && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && (
-              <TableLoaderRows rows={6} cols={canAnyAction ? 8 : 7} />
+              <TableLoaderRows rows={6} cols={canAnyAction ? 9 : 8} />
             )}
             {!loading && employees.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-10">
+                <TableCell colSpan={canAnyAction ? 9 : 8} className="text-center py-10">
                   No employees found
                 </TableCell>
               </TableRow>
@@ -301,9 +319,10 @@ const Employees = () => {
                 <TableCell>{employee.departmentId?.name || "-"}</TableCell>
                 <TableCell>{employee.designationId?.name || "-"}</TableCell>
                 <TableCell>{getStatusBadge(employee.status)}</TableCell>
+                <TableCell>{getLifecycleBadge(employee.employmentLifecycleStatus)}</TableCell>
                 <TableCell>
                   {employee.dateOfJoining
-                    ? new Date(employee.dateOfJoining).toLocaleDateString()
+                    ? formatDateInOrgTimeZone(employee.dateOfJoining)
                     : "-"}
                 </TableCell>
                 {canAnyAction && (
