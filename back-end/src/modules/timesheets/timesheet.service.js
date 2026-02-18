@@ -806,6 +806,7 @@ exports.getAttendanceMatrix = async (req) => {
       checkOutAt: row.checkOutAt || null,
       isOpenSession,
       excludeFromPayroll: isOpenSession,
+      payrollReconciledByLeave: false,
       missedCheckout: Boolean(row.missedCheckout),
       missedCheckoutMarkedAt: row.missedCheckoutMarkedAt || null,
       overriddenBy: overriddenByName || null,
@@ -829,7 +830,10 @@ exports.getAttendanceMatrix = async (req) => {
       const key = `${leave.employeeId.toString()}-${getDayInTimeZone(d, organizationTimeZone)}`;
       leaveMap.set(key, {
         isOnLeave: true,
-        leaveType: leave.leaveTypeId?.name || "Leave"
+        leaveType: leave.leaveTypeId?.name || "Leave",
+        leaveDuration: leave.duration || "full_day",
+        leaveHalfDaySession: leave.halfDaySession || null,
+        leaveUnits: leave.duration === "half_day" ? 0.5 : 1
       });
     });
   });
@@ -839,7 +843,13 @@ exports.getAttendanceMatrix = async (req) => {
     for (let day = 1; day <= daysInMonth; day += 1) {
       const key = `${emp._id.toString()}-${day}`;
       const base = attendanceMap.get(key);
-      const leaveInfo = leaveMap.get(key) || { isOnLeave: false, leaveType: null };
+      const leaveInfo = leaveMap.get(key) || {
+        isOnLeave: false,
+        leaveType: null,
+        leaveDuration: null,
+        leaveHalfDaySession: null,
+        leaveUnits: 0
+      };
       const dayKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const weekday = getWeekdayForDateKey(dayKey, organizationTimeZone);
       const employeeWeekOffDays = weekOffMap.employeeMap.get(String(emp._id)) || weekOffMap.defaultDays || [];
@@ -851,6 +861,7 @@ exports.getAttendanceMatrix = async (req) => {
         checkOutAt: null,
         isOpenSession: false,
         excludeFromPayroll: false,
+        payrollReconciledByLeave: false,
         missedCheckout: false,
         missedCheckoutMarkedAt: null,
         overriddenBy: null,
@@ -866,6 +877,17 @@ exports.getAttendanceMatrix = async (req) => {
       };
       days[day].isOnLeave = leaveInfo.isOnLeave;
       days[day].leaveType = leaveInfo.leaveType;
+      days[day].leaveDuration = leaveInfo.leaveDuration;
+      days[day].leaveHalfDaySession = leaveInfo.leaveHalfDaySession;
+      days[day].leaveUnits = leaveInfo.leaveUnits;
+      if (
+        leaveInfo.isOnLeave
+        && leaveInfo.leaveDuration === "half_day"
+        && days[day].status === "pending_checkout"
+      ) {
+        days[day].excludeFromPayroll = false;
+        days[day].payrollReconciledByLeave = true;
+      }
       days[day].isWeekOff = isWeekOff;
       days[day].holidayName = holidayName;
     }
@@ -929,6 +951,7 @@ exports.getMyAttendanceMatrix = async (req) => {
       checkOutAt: null,
       isOpenSession: false,
       excludeFromPayroll: false,
+      payrollReconciledByLeave: false,
       missedCheckout: false,
       missedCheckoutMarkedAt: null,
       overriddenBy: null,
@@ -943,6 +966,9 @@ exports.getMyAttendanceMatrix = async (req) => {
       overtimeMinutes: 0,
       isOnLeave: false,
       leaveType: null,
+      leaveDuration: null,
+      leaveHalfDaySession: null,
+      leaveUnits: 0,
       isWeekOff: weekOffDays.includes(getWeekdayForDateKey(dateKey, organizationTimeZone)),
       holidayName: holidayByDay.get(day) || null
     };
@@ -960,6 +986,7 @@ exports.getMyAttendanceMatrix = async (req) => {
       checkOutAt: row.checkOutAt || null,
       isOpenSession,
       excludeFromPayroll: isOpenSession,
+      payrollReconciledByLeave: false,
       missedCheckout: Boolean(row.missedCheckout),
       missedCheckoutMarkedAt: row.missedCheckoutMarkedAt || null,
       overriddenBy: overriddenByName || null,
@@ -983,8 +1010,18 @@ exports.getMyAttendanceMatrix = async (req) => {
       days[day] = {
         ...days[day],
         isOnLeave: true,
-        leaveType: leave.leaveTypeId?.name || "Leave"
+        leaveType: leave.leaveTypeId?.name || "Leave",
+        leaveDuration: leave.duration || "full_day",
+        leaveHalfDaySession: leave.halfDaySession || null,
+        leaveUnits: leave.duration === "half_day" ? 0.5 : 1
       };
+      if (
+        days[day].leaveDuration === "half_day"
+        && days[day].status === "pending_checkout"
+      ) {
+        days[day].excludeFromPayroll = false;
+        days[day].payrollReconciledByLeave = true;
+      }
     });
   });
 

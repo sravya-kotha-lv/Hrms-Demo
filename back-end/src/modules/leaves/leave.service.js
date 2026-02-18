@@ -29,14 +29,6 @@ const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "superadmin"
 ]);
 
-const calculateDays = (from, to) => {
-  const diff =
-    (new Date(to).setHours(0, 0, 0, 0) -
-      new Date(from).setHours(0, 0, 0, 0))
-    / (1000 * 60 * 60 * 24);
-  return diff + 1;
-};
-
 const isSameDate = (d1, d2) =>
   new Date(d1).setHours(0, 0, 0, 0) === new Date(d2).setHours(0, 0, 0, 0);
 
@@ -171,9 +163,14 @@ exports.applyLeave = async (req) => {
 
   const fromDate = new Date(req.body.fromDate);
   const toDate = new Date(req.body.toDate);
+  const duration = req.body.duration || "full_day";
+  const halfDaySession = duration === "half_day" ? req.body.halfDaySession : null;
 
   if (fromDate > toDate) {
     throw new Error("From date cannot be greater than to date");
+  }
+  if (duration === "half_day" && fromDate.getTime() !== toDate.getTime()) {
+    throw new Error("Half-day leave must be applied for a single date");
   }
 
   if (!employee) throw new Error("Employee not found");
@@ -247,8 +244,13 @@ exports.applyLeave = async (req) => {
   if (!leaveType) throw new Error("Invalid leave type");
 
   // 3. Calculate days
-  // const totalDays = calculateDays(req.body.fromDate, req.body.toDate);
-  const totalDays = validLeaveDates.length;
+  let totalDays = validLeaveDates.length;
+  if (duration === "half_day") {
+    if (validLeaveDates.length !== 1 || !isSameDate(validLeaveDates[0], fromDate)) {
+      throw new Error("Half-day leave is not allowed on holidays or week offs");
+    }
+    totalDays = 0.5;
+  }
 
   const org = await Organization.findById(req.user.organizationId);
 
@@ -295,6 +297,8 @@ exports.applyLeave = async (req) => {
       leaveTypeId: req.body.leaveTypeId,
       fromDate: req.body.fromDate,
       toDate: req.body.toDate,
+      duration,
+      halfDaySession,
       totalDays,
       status: "pending",
       reason: req.body.reason,
@@ -445,6 +449,8 @@ exports.getApplyContext = async (req) => {
       leaveType: l.leaveTypeId?.name || "",
       fromDate: l.fromDate,
       toDate: l.toDate,
+      duration: l.duration || "full_day",
+      halfDaySession: l.halfDaySession || null,
       status: l.status,
       totalDays: l.totalDays
     }))

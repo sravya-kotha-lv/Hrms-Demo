@@ -43,6 +43,8 @@ const administratorSections: DocSection[] = [
     title: "Attendance Administration",
     points: [
       "The attendance matrix displays present, absent, leave, holiday, and weekly off statuses.",
+      "When approved half-day leave and attendance exist on the same date, matrix shows a combined Present + Leave state (PL).",
+      "Pending checkout remains visible as an attendance exception, but approved half-day leave can reconcile payroll exclusion for that date.",
       "An administrator can override attendance records when correction is required.",
       "Attendance requests can be approved or rejected by reporting manager, Human Resources, or administrator roles."
     ]
@@ -52,6 +54,9 @@ const administratorSections: DocSection[] = [
     title: "Leave Administration",
     points: [
       "Leave calculation excludes holidays and weekly off days unless sandwich rule conditions apply.",
+      "Leave requests support Full Day and Half Day durations.",
+      "Half-day leave requires a single date and session selection (First Half or Second Half).",
+      "Half-day leave is not allowed on holidays or weekly off days.",
       "Pending leave can reserve leave balance based on your organization policy.",
       "Only reporting manager, Human Resources, or administrator roles can take approval actions on leave requests."
     ]
@@ -72,6 +77,7 @@ const administratorSections: DocSection[] = [
       "If access is denied, verify active role and permission mapping",
       "If approvals are not visible, verify pending approvals and workflow configuration",
       "If leave day calculation is incorrect, verify holidays, weekly off policies, and sandwich rule settings",
+      "If attendance shows pending checkout with approved half-day leave, check for PL state and reconciliation note in hover details",
       "If receipt upload fails, verify Cloudinary credentials in environment configuration"
     ]
   }
@@ -93,7 +99,8 @@ const employeeSections: DocSection[] = [
     points: [
       "Record check-in at shift start and record check-out at shift end.",
       "Late arrival and early activity indicators are calculated from shift timing and grace minutes.",
-      "If check-out is missed, submit an attendance correction request."
+      "If check-out is missed, submit an attendance correction request.",
+      "The Attendance page can show PL when attendance and approved half-day leave exist on the same date."
     ],
     warnings: [
       "Employees cannot directly override attendance records."
@@ -103,7 +110,8 @@ const employeeSections: DocSection[] = [
     id: "employee-leave",
     title: "Leave Guide",
     points: [
-      "Select leave type and date range when submitting a leave request.",
+      "Select leave type, duration, and date range when submitting a leave request.",
+      "For half-day leave, choose the session (First Half or Second Half).",
       "Holidays and weekly off days are excluded unless sandwich rule includes in-between non-working days.",
       "Pending and approved leaves are visible in the leave calendar with distinct status colors."
     ],
@@ -126,6 +134,7 @@ const employeeSections: DocSection[] = [
     checklist: [
       "For profile or access issues, contact Human Resources or an administrator",
       "For leave delays, verify request status and approval chain",
+      "For half-day leave errors, verify selected date is a working day and from/to date are the same",
       "For attendance mismatches, submit an attendance correction request with detailed reason",
       "For restricted menu access, confirm active role in the top navigation bar"
     ]

@@ -27,6 +27,7 @@ type DayCell = {
   checkOutAt: string | null;
   isOpenSession?: boolean;
   excludeFromPayroll?: boolean;
+  payrollReconciledByLeave?: boolean;
   missedCheckout?: boolean;
   missedCheckoutMarkedAt?: string | null;
   overriddenBy: string | null;
@@ -41,6 +42,9 @@ type DayCell = {
   overtimeMinutes?: number;
   isOnLeave: boolean;
   leaveType: string | null;
+  leaveDuration?: "full_day" | "half_day" | null;
+  leaveHalfDaySession?: "first_half" | "second_half" | null;
+  leaveUnits?: number;
   isWeekOff: boolean;
   holidayName: string | null;
 };
@@ -72,6 +76,7 @@ const emptyCell: DayCell = {
   checkOutAt: null,
   isOpenSession: false,
   excludeFromPayroll: false,
+  payrollReconciledByLeave: false,
   missedCheckout: false,
   missedCheckoutMarkedAt: null,
   overriddenBy: null,
@@ -79,7 +84,10 @@ const emptyCell: DayCell = {
   isWeekOff: false,
   holidayName: null,
   isOnLeave: false,
-  leaveType: ""
+  leaveType: "",
+  leaveDuration: null,
+  leaveHalfDaySession: null,
+  leaveUnits: 0
 };
 
 const Attendance = () => {
@@ -211,6 +219,9 @@ const Attendance = () => {
     if (cell.excludeFromPayroll) {
       parts.push("Excluded from payroll until checkout is completed");
     }
+    if (cell.payrollReconciledByLeave) {
+      parts.push("Payroll inclusion reconciled by approved half-day leave");
+    }
     if (cell.missedCheckout) {
       parts.push("Missed checkout flagged");
     }
@@ -231,7 +242,13 @@ const Attendance = () => {
     if ((cell.earlyLoginByMinutes || 0) > 0) parts.push(`Early login by: ${cell.earlyLoginByMinutes} min`);
     if ((cell.earlyCheckoutByMinutes || 0) > 0) parts.push(`Early checkout by: ${cell.earlyCheckoutByMinutes} min`);
     if ((cell.overtimeMinutes || 0) > 0) parts.push(`Overtime: ${cell.overtimeMinutes} min`);
-    if (cell.isOnLeave) parts.push(`Approved Leave: ${cell.leaveType || "Leave"}`);
+    if (cell.isOnLeave) {
+      const sessionLabel = cell.leaveHalfDaySession === "second_half" ? "Second Half" : "First Half";
+      const leaveLabel = cell.leaveDuration === "half_day"
+        ? `${cell.leaveType || "Leave"} (${sessionLabel})`
+        : (cell.leaveType || "Leave");
+      parts.push(`Approved Leave: ${leaveLabel}`);
+    }
     if (cell.overriddenBy) parts.push(`Overridden by: ${cell.overriddenBy}`);
     if (cell.overriddenAt) parts.push(`Overridden at: ${formatDateTimeInOrgTimeZone(cell.overriddenAt)}`);
     return parts.join(" | ") || "No details";
@@ -249,7 +266,9 @@ const Attendance = () => {
       const cell = row.days?.[day] || emptyCell;
       if (cell.status === "pending_checkout") {
         pendingCheckoutDays += 1;
-        payrollExcludedDays += 1;
+        if (cell.excludeFromPayroll) {
+          payrollExcludedDays += 1;
+        }
         continue;
       }
       if (cell.status === "present") {
@@ -444,34 +463,34 @@ const Attendance = () => {
               <thead>
                 <tr className="border-b">
                   {canEdit && (
-                    <th className="sticky left-0 bg-card text-left p-3 min-w-[48px] z-20">
+                    <th className="sticky left-0 top-0 bg-card text-left p-3 min-w-[48px] z-20">
                       Sel
                     </th>
                   )}
-                  <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} bg-card text-left p-3 min-w-[220px] z-10`}>
+                  <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-card text-left p-3 min-w-[220px] z-10`}>
                     Employee
                   </th>
                   {Array.from({ length: daysInMonth }).map((_, idx) => (
-                    <th key={idx + 1} className="text-center p-2 text-sm text-muted-foreground min-w-[42px]">
+                    <th key={idx + 1} className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[42px]">
                       {idx + 1}
                     </th>
                   ))}
-                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Present
                   </th>
-                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[120px]">
+                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[120px]">
                     Pending Checkout
                   </th>
-                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Absent
                   </th>
-                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     On Leave
                   </th>
-                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Week Off
                   </th>
-                  <th className="text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Total
                   </th>
                 </tr>
@@ -514,10 +533,13 @@ const Attendance = () => {
                       const isPresent = cell.status === "present";
                       const isPendingCheckout = cell.status === "pending_checkout";
                       const isLeave = cell.isOnLeave;
+                      const isPartialLeaveWithAttendance = isLeave && (isPresent || isPendingCheckout);
                       const isWeekOff = cell.isWeekOff;
                       const isHoliday = Boolean(cell.holidayName);
                       let colorClass = "";
-                      if (isLeave) {
+                      if (isPartialLeaveWithAttendance) {
+                        colorClass = "bg-indigo-100 text-indigo-700 border-indigo-300";
+                      } else if (isLeave) {
                         colorClass = "bg-violet-100 text-violet-700 border-violet-300";
                       } else if (isHoliday) {
                         colorClass = "bg-amber-100 text-amber-700 border-amber-300";
@@ -541,7 +563,7 @@ const Attendance = () => {
                               "cursor-pointer hover:opacity-90"
                             }`}
                           >
-                            {isLeave ? "L" : isHoliday ? "H" : isWeekOff ? "W" : isPendingCheckout ? "PC" : isPresent ? "P" : "A"}
+                            {isPartialLeaveWithAttendance ? "PL" : isLeave ? "L" : isHoliday ? "H" : isWeekOff ? "W" : isPendingCheckout ? "PC" : isPresent ? "P" : "A"}
                           </button>
                         </td>
                       );
@@ -597,6 +619,10 @@ const Attendance = () => {
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded bg-violet-100 border border-violet-300" />
               Approved Leave
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded bg-indigo-100 border border-indigo-300" />
+              Present + Leave
             </div>
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded bg-amber-100 border border-amber-300" />
