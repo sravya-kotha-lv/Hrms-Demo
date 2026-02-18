@@ -27,6 +27,7 @@ import {
   deleteApiWithToken,
 } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 interface HolidayForm {
   _id?: string;
@@ -183,7 +184,7 @@ const Holidays = () => {
               <TableRow key={h._id}>
                 <TableCell>{h.name}</TableCell>
                 <TableCell>
-                  {h.date ? new Date(h.date).toLocaleDateString() : "-"}
+                  {h.date ? formatDateInOrgTimeZone(h.date) : "-"}
                 </TableCell>
                 <TableCell>
                   <Badge

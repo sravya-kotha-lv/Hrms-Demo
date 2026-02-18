@@ -19,6 +19,7 @@ import {
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
 
 type DayCell = {
   status: "present" | "absent" | "pending_checkout";
@@ -214,12 +215,12 @@ const Attendance = () => {
       parts.push("Missed checkout flagged");
     }
     if (cell.missedCheckoutMarkedAt) {
-      parts.push(`Missed checkout marked at: ${new Date(cell.missedCheckoutMarkedAt).toLocaleString()}`);
+      parts.push(`Missed checkout marked at: ${formatDateTimeInOrgTimeZone(cell.missedCheckoutMarkedAt)}`);
     }
     if (cell.isWeekOff) parts.push("Week Off");
     if (cell.holidayName) parts.push(`Holiday: ${cell.holidayName}`);
-    if (cell.checkInAt) parts.push(`Check-in: ${new Date(cell.checkInAt).toLocaleTimeString()}`);
-    if (cell.checkOutAt) parts.push(`Check-out: ${new Date(cell.checkOutAt).toLocaleTimeString()}`);
+    if (cell.checkInAt) parts.push(`Check-in: ${formatTimeInOrgTimeZone(cell.checkInAt)}`);
+    if (cell.checkOutAt) parts.push(`Check-out: ${formatTimeInOrgTimeZone(cell.checkOutAt)}`);
     if (cell.shiftName || cell.shiftCode) {
       parts.push(`Shift: ${cell.shiftName || ""}${cell.shiftCode ? ` (${cell.shiftCode})` : ""}`);
     }
@@ -232,7 +233,7 @@ const Attendance = () => {
     if ((cell.overtimeMinutes || 0) > 0) parts.push(`Overtime: ${cell.overtimeMinutes} min`);
     if (cell.isOnLeave) parts.push(`Approved Leave: ${cell.leaveType || "Leave"}`);
     if (cell.overriddenBy) parts.push(`Overridden by: ${cell.overriddenBy}`);
-    if (cell.overriddenAt) parts.push(`Overridden at: ${new Date(cell.overriddenAt).toLocaleString()}`);
+    if (cell.overriddenAt) parts.push(`Overridden at: ${formatDateTimeInOrgTimeZone(cell.overriddenAt)}`);
     return parts.join(" | ") || "No details";
   };
 
@@ -638,7 +639,7 @@ const Attendance = () => {
               )}
               {!historyLoading && history.map((h, idx) => (
                 <p key={`${h.createdAt}-${idx}`} className="text-xs mb-1">
-                  {new Date(h.createdAt).toLocaleString()} - {h.action} by {h.actor}
+                  {formatDateTimeInOrgTimeZone(h.createdAt)} - {h.action} by {h.actor}
                 </p>
               ))}
             </div>

@@ -3,16 +3,30 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
 import { useAuth } from "@/context/AuthContext";
 import { PageLoader } from "@/components/ui/loaders";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const ADDRESS_PROOF_MAX_BYTES = 5 * 1024 * 1024;
 const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const ADDRESS_PROOF_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+const RELATION_OPTIONS = [
+  { label: "Father", value: "father" },
+  { label: "Mother", value: "mother" },
+  { label: "Spouse", value: "spouse" },
+  { label: "Brother", value: "brother" },
+  { label: "Sister", value: "sister" },
+  { label: "Son", value: "son" },
+  { label: "Daughter", value: "daughter" },
+  { label: "Guardian", value: "guardian" },
+  { label: "Friend", value: "friend" },
+  { label: "Other", value: "other" }
+];
 
 const ProfilePage = () => {
   const { loadProfile } = useAuth();
@@ -109,6 +123,23 @@ const ProfilePage = () => {
   }
 
   const handleSave = async () => {
+    const emergency = form.emergencyContacts[0];
+    const hasEmergencyValue = Boolean(emergency?.name || emergency?.relation || emergency?.phone);
+    if (hasEmergencyValue) {
+      if (!emergency?.name || !emergency?.relation || !emergency?.phone) {
+        toast.error("Complete all emergency contact fields");
+        return;
+      }
+      if (!/^[A-Za-z ]{2,50}$/.test(emergency.name.trim())) {
+        toast.error("Emergency contact name should contain only letters (2-50 chars)");
+        return;
+      }
+      if (!/^\d{10}$/.test(emergency.phone.trim())) {
+        toast.error("Emergency contact mobile number must be 10 digits");
+        return;
+      }
+    }
+
     setLoading(true);
     const payload = {
       phone: form.phone,
@@ -159,7 +190,7 @@ const ProfilePage = () => {
             <div><span className="text-muted-foreground">Department:</span> {profile?.departmentId?.name || "-"}</div>
             <div><span className="text-muted-foreground">Designation:</span> {profile?.designationId?.name || "-"}</div>
             <div><span className="text-muted-foreground">Employment Type:</span> {profile?.employmentType || "-"}</div>
-            <div><span className="text-muted-foreground">Date Of Joining:</span> {profile?.dateOfJoining ? new Date(profile.dateOfJoining).toLocaleDateString() : "-"}</div>
+            <div><span className="text-muted-foreground">Date Of Joining:</span> {profile?.dateOfJoining ? formatDateInOrgTimeZone(profile.dateOfJoining) : "-"}</div>
             <div><span className="text-muted-foreground">Reporting Manager:</span> {profile?.managerId ? `${profile.managerId.firstName || ""} ${profile.managerId.lastName || ""}`.trim() : "-"}</div>
           </div>
         </div>
@@ -169,7 +200,7 @@ const ProfilePage = () => {
           <div className="space-y-2 text-sm">
             <div><span className="text-muted-foreground">Work Email:</span> {profile?.userId?.email || "-"}</div>
             <div><span className="text-muted-foreground">Phone:</span> {profile?.phone || "-"}</div>
-            <div><span className="text-muted-foreground">DOB:</span> {profile?.dob ? new Date(profile.dob).toLocaleDateString() : "-"}</div>
+            <div><span className="text-muted-foreground">DOB:</span> {profile?.dob ? formatDateInOrgTimeZone(profile.dob) : "-"}</div>
             <div><span className="text-muted-foreground">Gender:</span> {profile?.gender || "-"}</div>
             <div><span className="text-muted-foreground">Address:</span> {profile?.address?.line1 || "-"}</div>
             <div>
@@ -300,16 +331,26 @@ const ProfilePage = () => {
                   emergencyContacts: [{ ...form.emergencyContacts[0], name: e.target.value }]
                 })}
               />
-              <Input
-                placeholder="Relation"
+              <Select
                 value={form.emergencyContacts[0]?.relation || ""}
-                onChange={(e) => setForm({
+                onValueChange={(value) => setForm({
                   ...form,
-                  emergencyContacts: [{ ...form.emergencyContacts[0], relation: e.target.value }]
+                  emergencyContacts: [{ ...form.emergencyContacts[0], relation: value }]
                 })}
-              />
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Relationship" />
+                </SelectTrigger>
+                <SelectContent>
+                  {RELATION_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Input
-                placeholder="Phone"
+                placeholder="Mobile Number"
                 value={form.emergencyContacts[0]?.phone || ""}
                 onChange={(e) => setForm({
                   ...form,

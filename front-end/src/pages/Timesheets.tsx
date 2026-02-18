@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
 import { useAuth } from "@/context/AuthContext";
 import { InlineLoader } from "@/components/ui/loaders";
+import { formatDateInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
 
 const toDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -721,7 +722,7 @@ const Timesheets = () => {
           </div>
           <div className="text-sm text-muted-foreground mt-1">
             {attendanceToday?.checkInAt
-              ? new Date(attendanceToday.checkInAt).toLocaleTimeString()
+              ? formatTimeInOrgTimeZone(attendanceToday.checkInAt)
               : "-"}
           </div>
           {isCheckedIn && (
@@ -801,7 +802,7 @@ const Timesheets = () => {
             )}
             {myAttendanceRequests.map((r) => (
               <TableRow key={r._id} className="table-row-hover">
-                <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
+                <TableCell>{formatDateInOrgTimeZone(r.date)}</TableCell>
                 <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
                 <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
                 <TableCell>{getStatusBadge(r.status)}</TableCell>
@@ -851,7 +852,7 @@ const Timesheets = () => {
                       ? `${r.employeeId.firstName || ""} ${r.employeeId.lastName || ""}`.trim()
                       : "-"}
                   </TableCell>
-                  <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
+                  <TableCell>{formatDateInOrgTimeZone(r.date)}</TableCell>
                   <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
                   <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
                   <TableCell className="max-w-[240px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
@@ -924,7 +925,7 @@ const Timesheets = () => {
                         : "-"}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {item.checkInAt ? new Date(item.checkInAt).toLocaleTimeString() : "-"}
+                      {item.checkInAt ? formatTimeInOrgTimeZone(item.checkInAt) : "-"}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1072,7 +1073,7 @@ const Timesheets = () => {
                     <TableHead key={date.toISOString()} className={isWeekOff ? "opacity-60" : ""}>
                       <div className="flex flex-col">
                         <span>
-                          {date.toLocaleDateString("en-US", {
+                          {formatDateInOrgTimeZone(date, {
                             weekday: "short",
                             month: "short",
                             day: "numeric"
@@ -1237,7 +1238,7 @@ const Timesheets = () => {
                                   ? "bg-red-50 text-red-700 border-red-200"
                                   : "bg-muted text-muted-foreground";
 
-                          const label = new Date(entry.date).toLocaleDateString("en-US", {
+                          const label = formatDateInOrgTimeZone(entry.date, {
                             weekday: "short"
                           });
 

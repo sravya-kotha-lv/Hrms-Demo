@@ -89,6 +89,39 @@ exports.updateByHr = async (req, res) => {
   );
 };
 
+exports.lifecycleAction = async (req, res) => {
+  const data = await service.lifecycleAction(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Employee lifecycle updated successfully",
+      data
+    })
+  );
+};
+
+exports.reopenProfileCompletion = async (req, res) => {
+  const data = await service.reopenProfileCompletion(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Employee profile form re-enabled successfully",
+      data
+    })
+  );
+};
+
+exports.bulkUpdate = async (req, res) => {
+  const data = await service.bulkUpdate(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Employees updated successfully",
+      data
+    })
+  );
+};
+
 exports.remove = async (req, res) => {
   await service.remove(req);
 

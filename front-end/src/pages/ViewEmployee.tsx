@@ -15,6 +15,7 @@ import {
 import { ArrowLeft, Edit, Trash2 } from "lucide-react";
 import { deleteApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -29,8 +30,24 @@ const getStatusBadge = (status: string) => {
   }
 };
 
+const getLifecycleBadge = (status: string) => {
+  const normalizedStatus = status || "confirmed";
+  switch (normalizedStatus) {
+    case "probation":
+      return <Badge className="status-badge status-pending">Probation</Badge>;
+    case "confirmed":
+      return <Badge className="status-badge status-active">Confirmed</Badge>;
+    case "notice":
+      return <Badge className="status-badge status-inactive">Notice</Badge>;
+    case "terminated":
+      return <Badge className="status-badge status-inactive">Terminated</Badge>;
+    default:
+      return <Badge variant="secondary">{normalizedStatus}</Badge>;
+  }
+};
+
 const formatDate = (value?: string) =>
-  value ? new Date(value).toLocaleDateString() : "-";
+  value ? formatDateInOrgTimeZone(value) : "-";
 
 const formatAddress = (address: any) => {
   if (!address) return "-";
@@ -129,7 +146,7 @@ const ViewEmployee = () => {
           <div className="bg-card rounded-xl card-shadow p-6 mb-6 flex flex-col sm:flex-row gap-4 sm:items-center justify-between">
             <div className="flex items-center gap-4">
               <Avatar className="h-14 w-14">
-                <AvatarImage src="" />
+                <AvatarImage src={employee.profileImage || ""} />
                 <AvatarFallback>
                   {`${employee.firstName?.[0] || ""}${employee.lastName?.[0] || ""}`}
                 </AvatarFallback>
@@ -195,6 +212,22 @@ const ViewEmployee = () => {
                 <div>
                   <p className="text-muted-foreground">Status</p>
                   <p>{employee.status || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Lifecycle</p>
+                  <div className="mt-1">{getLifecycleBadge(employee.employmentLifecycleStatus)}</div>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Benefits Eligible</p>
+                  <p>{employee.benefitsEligible ? "Yes" : "No"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Probation End Date</p>
+                  <p>{formatDate(employee.probationEndDate)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Notice End Date</p>
+                  <p>{formatDate(employee.noticeEndDate)}</p>
                 </div>
               </div>
             </div>

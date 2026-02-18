@@ -53,6 +53,7 @@ import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -496,10 +497,10 @@ const Leave = () => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {leave.fromDate ? new Date(leave.fromDate).toLocaleDateString() : "-"}
+                    {leave.fromDate ? formatDateInOrgTimeZone(leave.fromDate) : "-"}
                   </TableCell>
                   <TableCell>
-                    {leave.toDate ? new Date(leave.toDate).toLocaleDateString() : "-"}
+                    {leave.toDate ? formatDateInOrgTimeZone(leave.toDate) : "-"}
                   </TableCell>
                   <TableCell>{leave.totalDays ?? "-"}</TableCell>
                   <TableCell>{getStatusBadge(leave.status)}</TableCell>
@@ -585,8 +586,8 @@ const Leave = () => {
                 ? `${selectedLeave.employeeId.firstName || ""} ${selectedLeave.employeeId.lastName || ""}`.trim()
                 : "You"}</p>
               <p><span className="font-medium">Leave Type:</span> {selectedLeave.leaveTypeId?.name || "-"}</p>
-              <p><span className="font-medium">From:</span> {selectedLeave.fromDate ? new Date(selectedLeave.fromDate).toLocaleDateString() : "-"}</p>
-              <p><span className="font-medium">To:</span> {selectedLeave.toDate ? new Date(selectedLeave.toDate).toLocaleDateString() : "-"}</p>
+              <p><span className="font-medium">From:</span> {selectedLeave.fromDate ? formatDateInOrgTimeZone(selectedLeave.fromDate) : "-"}</p>
+              <p><span className="font-medium">To:</span> {selectedLeave.toDate ? formatDateInOrgTimeZone(selectedLeave.toDate) : "-"}</p>
               <p><span className="font-medium">Days:</span> {selectedLeave.totalDays ?? "-"}</p>
               <p><span className="font-medium">Status:</span> {selectedLeave.status || "-"}</p>
               <p><span className="font-medium">Approval:</span> {getApprovalProgressLabel(selectedLeave)}</p>

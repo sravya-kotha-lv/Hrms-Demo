@@ -4,12 +4,28 @@ const OrgUser = require("../organizations/org-user.model");
 const Employee = require("./employee.model");
 const OrganizationService = require('../organizations/organization.service');
 const Role = require("../roles/role.model");
+const OrgSettings = require("../orgSettings/orgSettings.model");
 const { genHashedPassword } = require("../../utils/bcryptUtils");
 const sendMail = require("../../utils/sendMail");
 const leaveBalanceService =
   require("../leaveBalances/leaveBalance.service");
+const { createNotificationSafe } = require("../notifications/notification.service");
 const { uploadDataUri } = require("../../config/cloudinary");
 
+const DEFAULT_PROBATION_DAYS = 90;
+const DEFAULT_NOTICE_DAYS = 30;
+const LIFECYCLE_ACTION_ROLE_SLUGS = new Set([
+  "teamlead",
+  "team-lead",
+  "team_lead",
+  "lead",
+  "manager",
+  "hr",
+  "admin",
+  "org-admin",
+  "super_admin",
+  "superadmin"
+]);
 
 /* ------------------------------------------------------------------ */
 /* HR / ADMIN CREATES EMPLOYEE                                         */
@@ -92,6 +108,14 @@ exports.createByHr = async (req) => {
       organizationId,
       useSession ? session : undefined
     );
+    const orgSettings = useSession
+      ? await OrgSettings.findOne({ organizationId }, null, { session })
+      : await OrgSettings.findOne({ organizationId });
+    const lifecyclePayload = buildProbationLifecyclePayload({
+      dateOfJoining,
+      probationPeriodDays: orgSettings?.probationPeriodDays,
+      noticePeriodDays: orgSettings?.noticePeriodDays
+    });
 
     const [employee] = useSession
       ? await Employee.create(
@@ -108,7 +132,8 @@ exports.createByHr = async (req) => {
               employmentType,
               managerId,
               shiftId: shiftId || undefined,
-              profileCompleted: false
+              profileCompleted: false,
+              ...lifecyclePayload
             }
           ],
           { session }
@@ -126,7 +151,8 @@ exports.createByHr = async (req) => {
             employmentType,
             managerId,
             shiftId: shiftId || undefined,
-            profileCompleted: false
+            profileCompleted: false,
+            ...lifecyclePayload
           }
         ]);
 
@@ -249,6 +275,137 @@ function generatePassword() {
   return Math.random().toString(36).slice(-10);
 }
 
+const addDays = (value, days) => {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + Number(days || 0));
+  return date;
+};
+
+const normalizeNonNegativeNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
+const buildProbationLifecyclePayload = ({
+  dateOfJoining,
+  probationPeriodDays,
+  noticePeriodDays
+}) => {
+  const joiningDate = new Date(dateOfJoining);
+  const probationDays = normalizeNonNegativeNumber(
+    probationPeriodDays,
+    DEFAULT_PROBATION_DAYS
+  );
+  const noticeDays = normalizeNonNegativeNumber(
+    noticePeriodDays,
+    DEFAULT_NOTICE_DAYS
+  );
+
+  return {
+    employmentLifecycleStatus: "probation",
+    probationPeriodDays: probationDays,
+    probationStartDate: joiningDate,
+    probationEndDate: addDays(joiningDate, probationDays),
+    probationCompletedAt: null,
+    probationCompletionNotifiedAt: null,
+    noticePeriodDays: noticeDays,
+    noticeStartDate: null,
+    noticeEndDate: null,
+    benefitsEligible: false
+  };
+};
+
+const applyLifecycleChange = (employee, nextLifecycleStatus) => {
+  if (!nextLifecycleStatus) return;
+
+  const now = new Date();
+  const noticeDays = normalizeNonNegativeNumber(
+    employee.noticePeriodDays,
+    DEFAULT_NOTICE_DAYS
+  );
+
+  if (nextLifecycleStatus === "probation") {
+    const probationDays = normalizeNonNegativeNumber(
+      employee.probationPeriodDays,
+      DEFAULT_PROBATION_DAYS
+    );
+    const baseStartDate = employee.probationStartDate || employee.dateOfJoining || now;
+    employee.employmentLifecycleStatus = "probation";
+    employee.probationPeriodDays = probationDays;
+    employee.probationStartDate = new Date(baseStartDate);
+    employee.probationEndDate = addDays(baseStartDate, probationDays);
+    employee.probationCompletedAt = null;
+    employee.probationCompletionNotifiedAt = null;
+    employee.noticeStartDate = null;
+    employee.noticeEndDate = null;
+    employee.benefitsEligible = false;
+    return;
+  }
+
+  if (nextLifecycleStatus === "confirmed") {
+    employee.employmentLifecycleStatus = "confirmed";
+    employee.probationCompletedAt = employee.probationCompletedAt || now;
+    employee.noticeStartDate = null;
+    employee.noticeEndDate = null;
+    employee.benefitsEligible = true;
+    return;
+  }
+
+  if (nextLifecycleStatus === "notice") {
+    employee.employmentLifecycleStatus = "notice";
+    employee.noticePeriodDays = noticeDays;
+    employee.noticeStartDate = now;
+    employee.noticeEndDate = addDays(now, noticeDays);
+    employee.benefitsEligible = false;
+    return;
+  }
+
+  if (nextLifecycleStatus === "terminated") {
+    employee.employmentLifecycleStatus = "terminated";
+    employee.noticeStartDate = null;
+    employee.noticeEndDate = null;
+    employee.benefitsEligible = false;
+  }
+};
+
+const getActorRoleSlug = async (req) => {
+  if (!req.user.activeRoleId) return "";
+
+  const scopedRole = await Role.findOne({
+    _id: req.user.activeRoleId,
+    organizationId: req.user.organizationId
+  }).select("slug");
+
+  if (scopedRole?.slug) return scopedRole.slug;
+
+  const fallbackRole = await Role.findById(req.user.activeRoleId).select("slug");
+  return fallbackRole?.slug || "";
+};
+
+const buildEmployeeResponse = async ({ employeeId, organizationId }) => {
+  const populatedEmployee = await Employee.findOne({
+    _id: employeeId,
+    organizationId,
+    isDeleted: false
+  })
+    .populate("departmentId", "name")
+    .populate("designationId", "name")
+    .populate("managerId", "firstName lastName")
+    .populate("shiftId", "name code startTime endTime graceMinutes status")
+    .populate("userId", "email");
+
+  const orgUser = await OrgUser.findOne({
+    userId: populatedEmployee.userId?._id || populatedEmployee.userId,
+    organizationId
+  }).populate("roleIds", "name");
+
+  return {
+    ...populatedEmployee.toObject(),
+    roleIds: orgUser?.roleIds || []
+  };
+};
+
 async function generateEmployeeCode(organizationId, session) {
   const prefix = (process.env.EMPLOYEE_CODE_PREFIX || "LV").trim() || "LV";
   let sequence = await Employee.countDocuments(
@@ -276,7 +433,9 @@ exports.listByOrganization = async (req) => {
     departmentId,
     designationId,
     status,
-    organizationId: orgIdOverride
+    organizationId: orgIdOverride,
+    sortBy,
+    sortOrder
   } = req.query;
 
   const { organizationId, userId, activeRoleId } = req.user;
@@ -323,6 +482,18 @@ exports.listByOrganization = async (req) => {
   if (designationId) query.designationId = designationId;
   if (status) query.status = status;
 
+  const allowedSortFields = new Set([
+    "createdAt",
+    "firstName",
+    "lastName",
+    "employeeCode",
+    "dateOfJoining",
+    "status",
+    "employmentLifecycleStatus"
+  ]);
+  const sortField = allowedSortFields.has(String(sortBy)) ? String(sortBy) : "createdAt";
+  const sortDirection = String(sortOrder).toLowerCase() === "asc" ? 1 : -1;
+
   // Build query
   let employeeQuery = Employee.find(query)
     .populate("departmentId", "name")
@@ -330,7 +501,7 @@ exports.listByOrganization = async (req) => {
     .populate("managerId", "firstName lastName")
     .populate("shiftId", "name code startTime endTime graceMinutes status")
     .populate("userId", "email")
-    .sort({ createdAt: -1 });
+    .sort({ [sortField]: sortDirection, createdAt: -1 });
 
   let total = await Employee.countDocuments(query);
 
@@ -477,6 +648,7 @@ exports.updateByHr = async (req) => {
     dateOfJoining,
     employmentType,
     status,
+    employmentLifecycleStatus,
     managerId,
     shiftId,
     dob,
@@ -516,6 +688,15 @@ exports.updateByHr = async (req) => {
     }
   }
 
+  if (dateOfJoining !== undefined && employee.employmentLifecycleStatus === "probation") {
+    const probationDays = normalizeNonNegativeNumber(
+      employee.probationPeriodDays,
+      DEFAULT_PROBATION_DAYS
+    );
+    employee.probationStartDate = new Date(dateOfJoining);
+    employee.probationEndDate = addDays(dateOfJoining, probationDays);
+  }
+
   const updates = {
     firstName,
     lastName,
@@ -540,6 +721,18 @@ exports.updateByHr = async (req) => {
     }
   });
 
+  if (employmentLifecycleStatus !== undefined) {
+    applyLifecycleChange(employee, employmentLifecycleStatus);
+  }
+
+  if (status === "resigned") {
+    applyLifecycleChange(employee, "notice");
+  }
+
+  if (employee.employmentLifecycleStatus === "terminated") {
+    employee.status = "resigned";
+  }
+
   await employee.save();
 
   if (roleIds?.length) {
@@ -550,25 +743,170 @@ exports.updateByHr = async (req) => {
     );
   }
 
-  const populatedEmployee = await Employee.findOne({
-    _id: employee._id,
+  return buildEmployeeResponse({
+    employeeId: employee._id,
+    organizationId
+  });
+};
+
+exports.lifecycleAction = async (req) => {
+  const { id } = req.params;
+  const { organizationId, userId } = req.user;
+  const { action, reason } = req.body;
+
+  const employee = await Employee.findOne({
+    _id: id,
     organizationId,
     isDeleted: false
-  })
-    .populate("departmentId", "name")
-    .populate("designationId", "name")
-    .populate("managerId", "firstName lastName")
-    .populate("shiftId", "name code startTime endTime graceMinutes status")
-    .populate("userId", "email");
+  });
 
-  const orgUser = await OrgUser.findOne({
-    userId: employee.userId,
+  if (!employee) {
+    throw { code: 404, message: "Employee not found" };
+  }
+
+  const actorRoleSlug = await getActorRoleSlug(req);
+  if (!LIFECYCLE_ACTION_ROLE_SLUGS.has(actorRoleSlug)) {
+    throw { code: 403, message: "Only team lead, manager, HR, or admin can update employee lifecycle" };
+  }
+
+  if (actorRoleSlug === "manager") {
+    const managerEmployee = await Employee.findOne({
+      userId,
+      organizationId,
+      isDeleted: false
+    }).select("_id");
+
+    if (!managerEmployee) {
+      throw { code: 403, message: "Access denied" };
+    }
+
+    if (String(employee.managerId || "") !== String(managerEmployee._id)) {
+      throw { code: 403, message: "Managers can only action direct reports" };
+    }
+  }
+
+  if (action === "confirm") {
+    applyLifecycleChange(employee, "confirmed");
+    employee.status = "active";
+  } else if (action === "terminate_with_notice") {
+    applyLifecycleChange(employee, "notice");
+    employee.status = "resigned";
+  } else {
+    applyLifecycleChange(employee, "terminated");
+    employee.status = "resigned";
+  }
+
+  await employee.save();
+
+  const actorEmployee = await Employee.findOne({
+    userId,
+    organizationId,
+    isDeleted: false
+  }).select("firstName lastName");
+  const actorName = actorEmployee
+    ? `${actorEmployee.firstName || ""} ${actorEmployee.lastName || ""}`.trim() || "Management"
+    : "Management";
+
+  await createNotificationSafe({
+    organizationId,
+    recipientUserId: employee.userId,
+    recipientEmployeeId: employee._id,
+    actorEmployeeId: actorEmployee?._id || null,
+    type: "employee_lifecycle",
+    title: "Employment lifecycle updated",
+    message: `${actorName} marked your employment status as ${employee.employmentLifecycleStatus}.`,
+    meta: {
+      action,
+      reason: reason || "",
+      employmentLifecycleStatus: employee.employmentLifecycleStatus
+    }
+  });
+
+  return buildEmployeeResponse({
+    employeeId: employee._id,
     organizationId
-  }).populate("roleIds", "name");
+  });
+};
+
+exports.reopenProfileCompletion = async (req) => {
+  const { id } = req.params;
+  const { organizationId } = req.user;
+
+  const employee = await Employee.findOne({
+    _id: id,
+    organizationId,
+    isDeleted: false
+  });
+
+  if (!employee) {
+    throw { code: 404, message: "Employee not found" };
+  }
+
+  employee.profileCompleted = false;
+  await employee.save();
+
+  return buildEmployeeResponse({
+    employeeId: employee._id,
+    organizationId
+  });
+};
+
+exports.bulkUpdate = async (req) => {
+  const { organizationId } = req.user;
+  const {
+    employeeIds = [],
+    shiftId,
+    managerId,
+    departmentId,
+    designationId,
+    status,
+    employmentLifecycleStatus
+  } = req.body;
+
+  const employees = await Employee.find({
+    organizationId,
+    _id: { $in: employeeIds },
+    isDeleted: false
+  });
+
+  if (!employees.length) {
+    throw { code: 404, message: "No employees found for bulk update" };
+  }
+
+  for (const employee of employees) {
+    if (shiftId !== undefined) {
+      employee.shiftId = shiftId || null;
+    }
+    if (managerId !== undefined) {
+      employee.managerId = managerId || null;
+    }
+    if (departmentId !== undefined) {
+      employee.departmentId = departmentId;
+    }
+    if (designationId !== undefined) {
+      employee.designationId = designationId;
+    }
+    if (status !== undefined) {
+      employee.status = status;
+      if (status === "resigned") {
+        applyLifecycleChange(employee, "notice");
+      }
+    }
+    if (employmentLifecycleStatus !== undefined) {
+      applyLifecycleChange(employee, employmentLifecycleStatus);
+      if (employmentLifecycleStatus === "terminated") {
+        employee.status = "resigned";
+      } else if (employmentLifecycleStatus === "confirmed") {
+        employee.status = "active";
+      }
+    }
+  }
+
+  await Promise.all(employees.map((employee) => employee.save()));
 
   return {
-    ...populatedEmployee.toObject(),
-    roleIds: orgUser?.roleIds || []
+    updatedCount: employees.length,
+    employeeIds: employees.map((employee) => employee._id)
   };
 };
 

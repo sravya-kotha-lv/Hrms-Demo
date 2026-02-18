@@ -112,6 +112,7 @@ require("./src/jobs/leaveCarryForward.job");
 /* ----------------------JOBS----------------*/
 require("./src/jobs/leaveCredit.job");
 /* ----------------------JOBS----------------*/
+require("./src/jobs/probationCompletion.job");
 
 /* -------------------------------------------------------------------------- */
 /*                         GLOBAL ERROR HANDLER                                */

@@ -8,7 +8,9 @@ const asyncHandler = require("../../middlewares/asyncHandler");
 const {
   createEmployeeByHrSchema,
   completeProfileSchema,
-  updateEmployeeSchema
+  updateEmployeeSchema,
+  lifecycleActionSchema,
+  bulkUpdateEmployeesSchema
 } = require("./employee.validation");
 
 const controller = require("./employee.controller");
@@ -58,6 +60,14 @@ router.get(
   asyncHandler(controller.getMe)
 );
 
+router.put(
+  "/bulk-update",
+  auth,
+  authorize("EMP_UPDATE"),
+  validate(bulkUpdateEmployeesSchema),
+  asyncHandler(controller.bulkUpdate)
+);
+
 router.get(
   "/:id",
   auth,
@@ -71,6 +81,21 @@ router.put(
   authorize("EMP_UPDATE"),
   validate(updateEmployeeSchema),
   asyncHandler(controller.updateByHr)
+);
+
+router.put(
+  "/:id/lifecycle-action",
+  auth,
+  authorize(["EMP_UPDATE", "EMP_VIEW"]),
+  validate(lifecycleActionSchema),
+  asyncHandler(controller.lifecycleAction)
+);
+
+router.put(
+  "/:id/reopen-profile",
+  auth,
+  authorize("EMP_UPDATE"),
+  asyncHandler(controller.reopenProfileCompletion)
 );
 
 router.delete(
