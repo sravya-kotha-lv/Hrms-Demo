@@ -52,6 +52,8 @@ interface MenuItem {
 interface SidebarProps {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
 const NavItem = ({ icon, label, to, collapsed, children, onNavigate }: NavItemProps) => {
@@ -132,10 +134,10 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
     permissions: ["EMP_VIEW"],
     children: [
       { icon: <Users size={18} />, label: "Employee", to: "/employees", permissions: ["EMP_VIEW"] },
-      { icon: <Briefcase size={18} />, label: "Attendance", to: "/attendance", permissions: ["ATTENDANCE_VIEW_ALL", "ATTENDANCE_VIEW_SELF"] },
-      { icon: <ClipboardCheck size={18} />, label: "Timesheets", to: "/timesheets", permissions: ["TIMESHEET_VIEW_SELF", "TIMESHEET_VIEW_ALL"] },
-      { icon: <Briefcase size={18} />, label: "Leave", to: "/leave", permissions: ["LEAVE_VIEW_SELF", "LEAVE_VIEW_ALL", "LEAVE_APPLY"] },
-      { icon: <ClipboardCheck size={18} />, label: "Approvals", to: "/approvals", permissions: ["LEAVE_ACTION", "ATTENDANCE_MANAGE"] },
+      { icon: <ClipboardCheck size={18} />, label: "Attendance", to: "/attendance", permissions: ["ATTENDANCE_VIEW_ALL", "ATTENDANCE_VIEW_SELF"] },
+      { icon: <FileText size={18} />, label: "Timesheets", to: "/timesheets", permissions: ["TIMESHEET_VIEW_SELF", "TIMESHEET_VIEW_ALL"] },
+      { icon: <CalendarOff size={18} />, label: "Leave", to: "/leave", permissions: ["LEAVE_VIEW_SELF", "LEAVE_VIEW_ALL", "LEAVE_APPLY"] },
+      { icon: <Shield size={18} />, label: "Approvals", to: "/approvals", permissions: ["LEAVE_ACTION", "ATTENDANCE_MANAGE"] },
       { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays", permissions: ["HOLIDAY_VIEW"] }
     ]
   },
@@ -145,26 +147,45 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
     to: "/organization",
     permissions: ["ORG_VIEW", "ROLE_VIEW", "PERMISSION_VIEW", "DEPT_VIEW", "DESIG_VIEW", "LEAVE_TYPE_VIEW"],
     children: [
-      { icon: <Briefcase size={18} />, label: "Roles", to: "/roles", permissions: ["ROLE_VIEW"] },
-      { icon: <Shield size={18} />, label: "Departments", to: "/departments", permissions: ["DEPT_VIEW"] },
+      { icon: <Shield size={18} />, label: "Roles", to: "/roles", permissions: ["ROLE_VIEW"] },
+      { icon: <Building2 size={18} />, label: "Departments", to: "/departments", permissions: ["DEPT_VIEW"] },
       { icon: <Briefcase size={18} />, label: "Designations", to: "/designations", permissions: ["DESIG_VIEW"] },
-      { icon: <ClipboardCheck size={18} />, label: "Leave Types", to: "/leave-types", permissions: ["LEAVE_TYPE_VIEW"] },
+      { icon: <FileText size={18} />, label: "Leave Types", to: "/leave-types", permissions: ["LEAVE_TYPE_VIEW"] },
       { icon: <ClipboardCheck size={18} />, label: "Approval Flows", to: "/approval-flows", permissions: ["APPROVAL_FLOW_VIEW"] },
       { icon: <CalendarOff size={18} />, label: "Week Offs", to: "/week-offs", permissions: ["WEEK_OFF_VIEW"] },
       { icon: <CalendarDays size={18} />, label: "Shifts", to: "/shifts", permissions: ["SHIFT_VIEW"] },
       { icon: <DollarSign size={18} />, label: "Expenses", to: "/expenses", permissions: ["EXPENSE_VIEW", "EXPENSE_MANAGE"] },
       { icon: <Settings size={18} />, label: "Settings", to: "/organization/settings", permissions: ["ORG_SETTINGS_VIEW"] },
-      { icon: <Building2 size={18} />, label: "Payroll", to: "/payroll" },
+      { icon: <DollarSign size={18} />, label: "Payroll", to: "/payroll" },
       { icon: <Shield size={18} />, label: "Permissions", to: "/permissions", permissions: ["PERMISSION_VIEW"] }
     ]
+  },
+  {
+    icon: <DollarSign size={20} />,
+    label: "Business",
+    to: "/business-development",
+    permissions: ["PROJECT_VIEW", "PROJECT_MANAGE"]
   },
   { icon: <FileText size={20} />, label: "Documentation", to: "/documentation", permissions: ["EMP_VIEW", "EMP_SELF_VIEW", "EMP_CREATE", "EMP_UPDATE"] }
 ];
 
-export const Sidebar = ({ mobileOpen = false, onMobileClose }: SidebarProps) => {
-  const [collapsed, setCollapsed] = useState(false);
+export const Sidebar = ({
+  mobileOpen = false,
+  onMobileClose,
+  collapsed: controlledCollapsed,
+  onCollapsedChange
+}: SidebarProps) => {
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const { profile, hasAnyPermission, isSuperAdmin } = useAuth();
+  const collapsed = controlledCollapsed ?? internalCollapsed;
+
+  const setCollapsed = (next: boolean) => {
+    if (controlledCollapsed === undefined) {
+      setInternalCollapsed(next);
+    }
+    onCollapsedChange?.(next);
+  };
 
   useEffect(() => {
     const updateMobile = () => setIsMobile(window.innerWidth < 1024);

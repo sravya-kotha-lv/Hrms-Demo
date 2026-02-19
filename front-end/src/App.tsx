@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom";
 import React from "react";
 import RequireAuth from "./components/RequireAuth";
 import RoleBasedHome from "./components/RoleBasedHome";
@@ -43,6 +43,7 @@ const PendingApprovals = React.lazy(() => import("./pages/PendingApprovals"));
 const CompleteProfile = React.lazy(() => import("./pages/CompleteProfile"));
 const Documentation = React.lazy(() => import("./pages/Documentation"));
 const Expenses = React.lazy(() => import("./pages/Expenses"));
+const Projects = React.lazy(() => import("./pages/Projects"));
 
 const queryClient = new QueryClient();
 const App = () => (
@@ -414,6 +415,17 @@ const App = () => (
                 </RequireAuth>
               }
             />
+            <Route
+              path="/business-development"
+              element={
+                <RequireAuth permissions={["PROJECT_VIEW", "PROJECT_MANAGE"]}>
+                  <RequireProfile>
+                    <Projects />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route path="/projects" element={<Navigate to="/business-development" replace />} />
             <Route
               path="/approvals"
               element={

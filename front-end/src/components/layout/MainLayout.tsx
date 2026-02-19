@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopNavbar } from "./TopNavbar";
+import { cn } from "@/lib/utils";
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -23,6 +24,7 @@ export const MainLayout = ({ children, title, breadcrumb }: MainLayoutProps) => 
   const parentLayout = useContext(MainLayoutContext);
   const [header, setHeader] = useState<HeaderState>({ title, breadcrumb });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     if (!parentLayout) {
@@ -41,8 +43,16 @@ export const MainLayout = ({ children, title, breadcrumb }: MainLayoutProps) => 
   return (
     <MainLayoutContext.Provider value={contextValue}>
       <div className="min-h-screen bg-background flex">
-        <Sidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
-        <div className="flex-1 min-w-0 flex flex-col lg:ml-[260px] transition-all duration-300">
+        <Sidebar
+          mobileOpen={mobileSidebarOpen}
+          onMobileClose={() => setMobileSidebarOpen(false)}
+          collapsed={sidebarCollapsed}
+          onCollapsedChange={setSidebarCollapsed}
+        />
+        <div className={cn(
+          "flex-1 min-w-0 flex flex-col transition-all duration-300",
+          sidebarCollapsed ? "lg:ml-[72px]" : "lg:ml-[260px]"
+        )}>
           <TopNavbar
             title={header.title}
             breadcrumb={header.breadcrumb}

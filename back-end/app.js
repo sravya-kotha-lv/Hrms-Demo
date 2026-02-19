@@ -143,6 +143,7 @@ app.use("/api/timesheets", require("./src/modules/timesheets/timesheet.routes"))
 app.use("/api/org-settings", require("./src/modules/orgSettings/orgSettings.routes"));
 app.use("/api/notifications", require("./src/modules/notifications/notification.routes"));
 app.use("/api/expenses", require("./src/modules/expenses/expense.routes"));
+app.use("/api/projects", require("./src/modules/projects/project.routes"));
 
 const shouldRunSchedulerInApi = process.env.ENABLE_JOB_SCHEDULER === "true";
 

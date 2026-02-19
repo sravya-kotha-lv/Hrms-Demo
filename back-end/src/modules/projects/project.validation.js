@@ -1,0 +1,43 @@
+const Joi = require("joi");
+const objectId = Joi.string().hex().length(24);
+
+exports.createProjectSchema = Joi.object({
+  projectName: Joi.string().trim().min(2).max(120).required(),
+  logoUrl: Joi.string().uri().allow("").optional(),
+  clientName: Joi.string().trim().min(2).max(120).required(),
+  clientCompany: Joi.string().trim().min(2).max(120).required(),
+  clientEmail: Joi.string().email().allow("").optional(),
+  clientPhone: Joi.string().trim().max(30).allow("").optional(),
+  clientAddress: Joi.string().trim().max(500).allow("").optional(),
+  actualAmount: Joi.number().min(0).required(),
+  discountedAmount: Joi.number().min(0).required(),
+  paidAmount: Joi.number().min(0).optional(),
+  paidTo: objectId.allow(null, "").optional(),
+  status: Joi.string().valid("active", "on_hold", "completed", "cancelled").optional(),
+  startDate: Joi.date().allow(null).optional(),
+  expectedEndDate: Joi.date().allow(null).optional(),
+  notes: Joi.string().trim().max(1000).allow("").optional()
+});
+
+exports.updateProjectSchema = Joi.object({
+  projectName: Joi.string().trim().min(2).max(120).optional(),
+  logoUrl: Joi.string().uri().allow("").optional(),
+  clientName: Joi.string().trim().min(2).max(120).optional(),
+  clientCompany: Joi.string().trim().min(2).max(120).optional(),
+  clientEmail: Joi.string().email().allow("").optional(),
+  clientPhone: Joi.string().trim().max(30).allow("").optional(),
+  clientAddress: Joi.string().trim().max(500).allow("").optional(),
+  actualAmount: Joi.number().min(0).optional(),
+  discountedAmount: Joi.number().min(0).optional(),
+  paidAmount: Joi.number().min(0).optional(),
+  paidTo: objectId.allow(null, "").optional(),
+  status: Joi.string().valid("active", "on_hold", "completed", "cancelled").optional(),
+  startDate: Joi.date().allow(null).optional(),
+  expectedEndDate: Joi.date().allow(null).optional(),
+  notes: Joi.string().trim().max(1000).allow("").optional()
+});
+
+exports.listProjectsQuerySchema = Joi.object({
+  status: Joi.string().valid("active", "on_hold", "completed", "cancelled", "all").optional(),
+  search: Joi.string().trim().allow("").optional()
+});

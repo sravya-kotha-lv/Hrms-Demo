@@ -458,39 +458,40 @@ const Attendance = () => {
             </div>
           )}
 
-          <div className="bg-card rounded-xl card-shadow overflow-auto">
-            <table className="w-full border-collapse min-w-[1100px]">
+          <div className="bg-card rounded-xl card-shadow overflow-hidden">
+            <div className="max-h-[72vh] overflow-auto">
+              <table className="w-full border-collapse min-w-[1100px]">
               <thead>
                 <tr className="border-b">
                   {canEdit && (
-                    <th className="sticky left-0 top-0 bg-card text-left p-3 min-w-[48px] z-20">
+                    <th className="sticky left-0 top-0 bg-card text-left p-3 min-w-[48px] z-30">
                       Sel
                     </th>
                   )}
-                  <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-card text-left p-3 min-w-[220px] z-10`}>
+                  <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-card text-left p-3 min-w-[220px] z-30`}>
                     Employee
                   </th>
                   {Array.from({ length: daysInMonth }).map((_, idx) => (
-                    <th key={idx + 1} className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[42px]">
+                    <th key={idx + 1} className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[42px]">
                       {idx + 1}
                     </th>
                   ))}
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Present
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[120px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[120px]">
                     Pending Checkout
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Absent
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     On Leave
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Week Off
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Total
                   </th>
                 </tr>
@@ -596,7 +597,8 @@ const Attendance = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-xs mt-3">
