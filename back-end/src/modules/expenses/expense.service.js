@@ -114,6 +114,19 @@ exports.createExpense = async (req) => {
     vendorId: req.body.vendorId,
     vendorName: req.body.vendor || ""
   });
+  const reimbursementMethod = req.body.reimbursementMethod || "none";
+  const reimbursementAmount =
+    req.body.reimbursementAmount !== undefined
+      ? Number(req.body.reimbursementAmount || 0)
+      : Number(req.body.amount || 0) + Number(req.body.taxAmount || 0);
+  const purchasedBy =
+    reimbursementMethod === "payroll"
+      ? (req.body.purchasedBy || actorEmployeeId || null)
+      : null;
+  if (reimbursementMethod === "payroll" && !purchasedBy) {
+    throw new Error("Purchased by employee is required for payroll reimbursement");
+  }
+
   const payload = {
     organizationId: req.user.organizationId,
     category: req.body.category,
@@ -126,6 +139,12 @@ exports.createExpense = async (req) => {
     amount: Number(req.body.amount || 0),
     taxAmount: Number(req.body.taxAmount || 0),
     paymentMode: req.body.paymentMode || "bank_transfer",
+    reimbursementMethod,
+    purchasedBy,
+    reimbursementStatus: reimbursementMethod === "payroll" ? "pending" : "not_applicable",
+    reimbursementAmount: reimbursementMethod === "payroll" ? reimbursementAmount : 0,
+    reimbursementPayrollMonth: req.body.reimbursementPayrollMonth || "",
+    reimbursementNote: req.body.reimbursementNote || "",
     notes: req.body.notes || "",
     receiptUrl: req.body.receiptUrl || "",
     status: "pending",
@@ -183,15 +202,30 @@ exports.listExpenses = async (req) => {
       query.expenseDate.$lte = dayEnd(req.query.endDate);
     }
   }
+  if (req.query.employeeId) {
+    query.$or = [{ purchasedBy: req.query.employeeId }, { createdBy: req.query.employeeId }];
+  }
+  if (req.query.reimbursementStatus) {
+    query.reimbursementStatus = req.query.reimbursementStatus;
+  }
+
+  const pageNum = Math.max(1, Number(req.query.page || 1));
+  const limitNum = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+  const skip = (pageNum - 1) * limitNum;
 
   return Expense.find(query)
+    .populate("purchasedBy", "firstName lastName employeeCode")
     .populate("createdBy", "firstName lastName employeeCode")
     .populate("updatedBy", "firstName lastName employeeCode")
     .populate("actionBy", "firstName lastName employeeCode")
     .populate("deletedBy", "firstName lastName employeeCode")
     .populate("restoredBy", "firstName lastName employeeCode")
+    .populate("reimbursedBy", "firstName lastName employeeCode")
     .populate("vendorId", "name isActive")
-    .sort({ expenseDate: -1, createdAt: -1 });
+    .sort({ expenseDate: -1, createdAt: -1 })
+    .skip(skip)
+    .limit(limitNum)
+    .lean();
 };
 
 exports.getSummary = async (req) => {
@@ -215,6 +249,12 @@ exports.getSummary = async (req) => {
     if (req.query.endDate) {
       query.expenseDate.$lte = dayEnd(req.query.endDate);
     }
+  }
+  if (req.query.employeeId) {
+    query.$or = [{ purchasedBy: req.query.employeeId }, { createdBy: req.query.employeeId }];
+  }
+  if (req.query.reimbursementStatus) {
+    query.reimbursementStatus = req.query.reimbursementStatus;
   }
 
   const [totals] = await Expense.aggregate([
@@ -246,6 +286,12 @@ exports.getSummary = async (req) => {
   }
   if (req.query.status && req.query.status !== "all") {
     monthQuery.status = req.query.status;
+  }
+  if (req.query.employeeId) {
+    monthQuery.$or = [{ purchasedBy: req.query.employeeId }, { createdBy: req.query.employeeId }];
+  }
+  if (req.query.reimbursementStatus) {
+    monthQuery.reimbursementStatus = req.query.reimbursementStatus;
   }
 
   const [thisMonth] = await Expense.aggregate([
@@ -376,8 +422,42 @@ exports.updateExpense = async (req) => {
   if (req.body.amount !== undefined) existing.amount = Number(req.body.amount || 0);
   if (req.body.taxAmount !== undefined) existing.taxAmount = Number(req.body.taxAmount || 0);
   if (req.body.paymentMode !== undefined) existing.paymentMode = req.body.paymentMode;
+  if (req.body.reimbursementMethod !== undefined) {
+    existing.reimbursementMethod = req.body.reimbursementMethod;
+  }
+  if (req.body.purchasedBy !== undefined) {
+    existing.purchasedBy = req.body.purchasedBy || null;
+  }
+  if (req.body.reimbursementAmount !== undefined) {
+    existing.reimbursementAmount = Number(req.body.reimbursementAmount || 0);
+  }
+  if (req.body.reimbursementPayrollMonth !== undefined) {
+    existing.reimbursementPayrollMonth = req.body.reimbursementPayrollMonth || "";
+  }
+  if (req.body.reimbursementNote !== undefined) {
+    existing.reimbursementNote = req.body.reimbursementNote || "";
+  }
   if (req.body.notes !== undefined) existing.notes = req.body.notes || "";
   if (req.body.receiptUrl !== undefined) existing.receiptUrl = req.body.receiptUrl || "";
+
+  if (existing.reimbursementMethod === "payroll") {
+    if (!existing.purchasedBy) {
+      existing.purchasedBy = actorEmployeeId || null;
+    }
+    existing.reimbursementStatus =
+      existing.reimbursementStatus === "not_applicable" ? "pending" : existing.reimbursementStatus;
+    if (!Number(existing.reimbursementAmount || 0)) {
+      existing.reimbursementAmount = Number(existing.amount || 0) + Number(existing.taxAmount || 0);
+    }
+  } else {
+    existing.purchasedBy = null;
+    existing.reimbursementStatus = "not_applicable";
+    existing.reimbursementAmount = 0;
+    existing.reimbursementPayrollMonth = "";
+    existing.reimbursementNote = "";
+    existing.reimbursedBy = null;
+    existing.reimbursedAt = null;
+  }
   existing.updatedBy = actorEmployeeId;
 
   await existing.save();
@@ -416,6 +496,60 @@ exports.removeExpense = async (req) => {
     entityId: expense._id,
     before: expense.toObject()
   });
+  return expense;
+};
+
+exports.listExpenseEmployees = async (req) => {
+  return Employee.find({
+    organizationId: req.user.organizationId,
+    isDeleted: false
+  })
+    .select("firstName lastName employeeCode")
+    .sort({ firstName: 1, lastName: 1 });
+};
+
+exports.updateReimbursement = async (req) => {
+  const expense = await Expense.findOne({
+    _id: req.params.id,
+    organizationId: req.user.organizationId,
+    isDeleted: false
+  });
+  if (!expense) throw new Error("Expense not found");
+
+  const actorEmployeeId = await getActorEmployeeId(req);
+  const before = expense.toObject();
+
+  if (expense.reimbursementMethod !== "payroll") {
+    throw new Error("This expense is not marked for payroll reimbursement");
+  }
+  if (!expense.purchasedBy) {
+    throw new Error("Purchased by employee is required");
+  }
+
+  const nextStatus = req.body.reimbursementStatus;
+  expense.reimbursementStatus = nextStatus;
+  if (req.body.reimbursementPayrollMonth !== undefined) {
+    expense.reimbursementPayrollMonth = req.body.reimbursementPayrollMonth || "";
+  }
+  if (req.body.reimbursementNote !== undefined) {
+    expense.reimbursementNote = req.body.reimbursementNote || "";
+  }
+  if (nextStatus === "paid") {
+    expense.reimbursedBy = actorEmployeeId;
+    expense.reimbursedAt = new Date();
+  }
+  expense.updatedBy = actorEmployeeId;
+  await expense.save();
+
+  await audit({
+    req,
+    module: "expenses",
+    action: "REIMBURSEMENT_UPDATE",
+    entityId: expense._id,
+    before,
+    after: expense.toObject()
+  });
+
   return expense;
 };
 

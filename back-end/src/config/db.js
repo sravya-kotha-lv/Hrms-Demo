@@ -10,7 +10,20 @@ const connectDB = async () => {
 
     mongoose.set("strictQuery", true);
 
-    await mongoose.connect(mongoUri);
+    const maxPoolSize = Number(process.env.MONGO_MAX_POOL_SIZE || 100);
+    const minPoolSize = Number(process.env.MONGO_MIN_POOL_SIZE || 10);
+    const serverSelectionTimeoutMS = Number(
+      process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS || 10000
+    );
+    const socketTimeoutMS = Number(process.env.MONGO_SOCKET_TIMEOUT_MS || 45000);
+
+    await mongoose.connect(mongoUri, {
+      maxPoolSize,
+      minPoolSize,
+      serverSelectionTimeoutMS,
+      socketTimeoutMS,
+      autoIndex: process.env.NODE_ENV !== "production"
+    });
 
     console.log("✅ MongoDB connected");
   } catch (err) {

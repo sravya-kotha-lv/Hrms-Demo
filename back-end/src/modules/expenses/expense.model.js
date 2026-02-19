@@ -76,6 +76,49 @@ const expenseSchema = new mongoose.Schema(
       enum: ["cash", "bank_transfer", "card", "upi", "cheque", "other"],
       default: "bank_transfer"
     },
+    reimbursementMethod: {
+      type: String,
+      enum: ["none", "payroll"],
+      default: "none",
+      index: true
+    },
+    purchasedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees",
+      default: null,
+      index: true
+    },
+    reimbursementStatus: {
+      type: String,
+      enum: ["not_applicable", "pending", "queued", "paid"],
+      default: "not_applicable",
+      index: true
+    },
+    reimbursementAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    reimbursementPayrollMonth: {
+      type: String,
+      default: "",
+      trim: true
+    },
+    reimbursementNote: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 500
+    },
+    reimbursedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees",
+      default: null
+    },
+    reimbursedAt: {
+      type: Date,
+      default: null
+    },
     notes: {
       type: String,
       default: "",

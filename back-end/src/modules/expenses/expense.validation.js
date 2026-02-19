@@ -21,6 +21,8 @@ const paymentMode = Joi.string().valid(
   "cheque",
   "other"
 );
+const reimbursementMethod = Joi.string().valid("none", "payroll");
+const reimbursementStatus = Joi.string().valid("not_applicable", "pending", "queued", "paid");
 
 exports.createExpenseSchema = Joi.object({
   category: category.required(),
@@ -31,6 +33,11 @@ exports.createExpenseSchema = Joi.object({
   amount: Joi.number().min(0).required(),
   taxAmount: Joi.number().min(0).optional(),
   paymentMode: paymentMode.optional(),
+  reimbursementMethod: reimbursementMethod.optional(),
+  purchasedBy: objectId.allow(null).optional(),
+  reimbursementAmount: Joi.number().min(0).optional(),
+  reimbursementPayrollMonth: Joi.string().trim().max(20).allow("").optional(),
+  reimbursementNote: Joi.string().trim().max(500).allow("").optional(),
   notes: Joi.string().trim().allow("").max(1000).optional(),
   receiptUrl: Joi.string().trim().allow("").max(500).optional()
 });
@@ -44,6 +51,11 @@ exports.updateExpenseSchema = Joi.object({
   amount: Joi.number().min(0).optional(),
   taxAmount: Joi.number().min(0).optional(),
   paymentMode: paymentMode.optional(),
+  reimbursementMethod: reimbursementMethod.optional(),
+  purchasedBy: objectId.allow(null).optional(),
+  reimbursementAmount: Joi.number().min(0).optional(),
+  reimbursementPayrollMonth: Joi.string().trim().max(20).allow("").optional(),
+  reimbursementNote: Joi.string().trim().max(500).allow("").optional(),
   notes: Joi.string().trim().allow("").max(1000).optional(),
   receiptUrl: Joi.string().trim().allow("").max(500).optional()
 });
@@ -70,4 +82,22 @@ exports.createVendorSchema = Joi.object({
 exports.updateVendorSchema = Joi.object({
   name: Joi.string().trim().min(2).max(120).optional(),
   isActive: Joi.boolean().optional()
+});
+
+exports.listExpensesQuerySchema = Joi.object({
+  category: Joi.string().optional(),
+  status: Joi.string().optional(),
+  includeDeleted: Joi.string().valid("true", "false").optional(),
+  startDate: Joi.date().optional(),
+  endDate: Joi.date().optional(),
+  employeeId: objectId.optional(),
+  reimbursementStatus: reimbursementStatus.optional(),
+  page: Joi.number().integer().min(1).optional(),
+  limit: Joi.number().integer().min(1).max(200).optional()
+});
+
+exports.updateReimbursementSchema = Joi.object({
+  reimbursementStatus: Joi.string().valid("pending", "queued", "paid").required(),
+  reimbursementPayrollMonth: Joi.string().trim().max(20).allow("").optional(),
+  reimbursementNote: Joi.string().trim().max(500).allow("").optional()
 });

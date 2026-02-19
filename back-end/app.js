@@ -2,6 +2,7 @@ const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const morgan = require("morgan");
+const { authLimiter } = require("./src/middlewares/rateLimiter");
 
 // Load env variables
 dotenv.config({ quiet: true });
@@ -51,16 +52,17 @@ app.use(
     credentials: true,
   })
 );
-// HTTP request logging (dev)
-app.use(morgan("dev"));
+if (process.env.NODE_ENV !== "production") {
+  app.use(morgan("dev"));
+}
 
 // Custom request logger (audit / tracing)
 // const requestLogger = require("./src/middlewares/requestLogger");
 // app.use(requestLogger);
 
-// Rate limiting
-// const rateLimiter = require("./src/middlewares/rateLimiter");
-// app.use(rateLimiter);
+if (process.env.ENABLE_RATE_LIMIT !== "false") {
+  app.use("/api", authLimiter);
+}
 
 /* -------------------------------------------------------------------------- */
 /*                               SWAGGER                                      */

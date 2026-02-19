@@ -1,5 +1,6 @@
 const Department = require("./department.model");
 const Employee = require("../employees/employee.model");
+const OrganizationService = require("../organizations/organization.service");
 const { audit } = require("../auditLogs/auditLogs.service");
 
 exports.create = async (req) => {
@@ -101,7 +102,10 @@ exports.remove = async (req) => {
 };
 
 exports.list = async (req) => {
+  const isSuperAdmin = await OrganizationService.isUserSuperAdmin(req.user.userId);
+  const requestedOrgId = req.query.organizationId;
+
   return Department.find({
-    organizationId: req.user.organizationId
+    organizationId: isSuperAdmin && requestedOrgId ? requestedOrgId : req.user.organizationId
   }).sort({ name: 1 });
 };

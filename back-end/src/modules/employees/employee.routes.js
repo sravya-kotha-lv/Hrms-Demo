@@ -8,6 +8,7 @@ const asyncHandler = require("../../middlewares/asyncHandler");
 const {
   createEmployeeByHrSchema,
   completeProfileSchema,
+  listEmployeesQuerySchema,
   updateEmployeeSchema,
   lifecycleActionSchema,
   bulkUpdateEmployeesSchema
@@ -41,6 +42,7 @@ router.get(
   "/",
   auth,
   authorize("EMP_VIEW"),
+  validate(listEmployeesQuerySchema, "query"),
   asyncHandler(controller.listByOrganization)
 );
 

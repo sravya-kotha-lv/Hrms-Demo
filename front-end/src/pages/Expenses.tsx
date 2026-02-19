@@ -63,6 +63,11 @@ const emptyForm = {
   amount: "",
   taxAmount: "0",
   paymentMode: "bank_transfer",
+  reimbursementMethod: "none",
+  purchasedBy: "none",
+  reimbursementAmount: "",
+  reimbursementPayrollMonth: "",
+  reimbursementNote: "",
   notes: "",
   receiptUrl: ""
 };
@@ -97,12 +102,15 @@ const Expenses = () => {
   const canAction = hasAnyPermission(["EXPENSE_ACTION"]);
 
   const [rows, setRows] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [vendors, setVendors] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [employeeFilter, setEmployeeFilter] = useState("all");
+  const [reimbursementStatusFilter, setReimbursementStatusFilter] = useState("all");
   const [recordFilter, setRecordFilter] = useState<"active" | "deleted" | "all">("active");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -124,18 +132,43 @@ const Expenses = () => {
     const params = new URLSearchParams();
     if (categoryFilter !== "all") params.set("category", categoryFilter);
     if (statusFilter !== "all") params.set("status", statusFilter);
+    if (employeeFilter !== "all") params.set("employeeId", employeeFilter);
+    if (reimbursementStatusFilter !== "all") params.set("reimbursementStatus", reimbursementStatusFilter);
     if (recordFilter !== "active") params.set("includeDeleted", "true");
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
     const q = params.toString();
     return q ? `?${q}` : "";
-  }, [categoryFilter, statusFilter, recordFilter, startDate, endDate]);
+  }, [categoryFilter, statusFilter, employeeFilter, reimbursementStatusFilter, recordFilter, startDate, endDate]);
+
+  const employeeOptions = useMemo(
+    () =>
+      (employees || []).map((emp) => ({
+        id: String(emp._id),
+        name: `${emp.firstName || ""} ${emp.lastName || ""}`.trim() || emp.employeeCode || "Unknown"
+      })),
+    [employees]
+  );
 
   const visibleRows = useMemo(() => {
-    if (recordFilter === "all") return rows;
-    if (recordFilter === "deleted") return rows.filter((r) => Boolean(r.isDeleted));
-    return rows.filter((r) => !r.isDeleted);
-  }, [rows, recordFilter]);
+    const byRecord =
+      recordFilter === "all"
+        ? rows
+        : recordFilter === "deleted"
+          ? rows.filter((r) => Boolean(r.isDeleted))
+          : rows.filter((r) => !r.isDeleted);
+
+    if (employeeFilter === "all") return byRecord;
+    return byRecord.filter((row) => String(row.purchasedBy?._id || row.createdBy?._id || "") === employeeFilter);
+  }, [rows, recordFilter, employeeFilter]);
+
+  useEffect(() => {
+    if (employeeFilter === "all") return;
+    const stillExists = employeeOptions.some((emp) => emp.id === employeeFilter);
+    if (!stillExists) {
+      setEmployeeFilter("all");
+    }
+  }, [employeeFilter, employeeOptions]);
 
   const computedSummary = useMemo(() => {
     const totals = (visibleRows || []).reduce(
@@ -185,6 +218,18 @@ const Expenses = () => {
     }
   };
 
+  const fetchEmployees = async () => {
+    const res = await getApiWithToken("/expenses/employees", null, {
+      requiredPermissions: ["EXPENSE_VIEW", "EXPENSE_MANAGE"]
+    });
+    if (res?.success) {
+      setEmployees(res.data || []);
+    } else if (res && !res.skipped) {
+      setEmployees([]);
+      toast.error(res?.message || "Failed to load employees");
+    }
+  };
+
   const fetchData = async () => {
     if (!canView) return;
     setLoading(true);
@@ -217,8 +262,13 @@ const Expenses = () => {
 
   useEffect(() => {
     fetchData();
-    fetchVendors();
   }, [queryString, canView]);
+
+  useEffect(() => {
+    if (!canView) return;
+    fetchVendors();
+    fetchEmployees();
+  }, [canView]);
 
   const openCreate = () => {
     setIsEdit(false);
@@ -239,6 +289,11 @@ const Expenses = () => {
       amount: String(row.amount ?? ""),
       taxAmount: String(row.taxAmount ?? 0),
       paymentMode: row.paymentMode || "bank_transfer",
+      reimbursementMethod: row.reimbursementMethod || "none",
+      purchasedBy: row.purchasedBy?._id || "none",
+      reimbursementAmount: String(row.reimbursementAmount ?? ""),
+      reimbursementPayrollMonth: row.reimbursementPayrollMonth || "",
+      reimbursementNote: row.reimbursementNote || "",
       notes: row.notes || "",
       receiptUrl: row.receiptUrl || ""
     });
@@ -258,6 +313,10 @@ const Expenses = () => {
       toast.error("Amount must be positive");
       return;
     }
+    if (form.reimbursementMethod === "payroll" && form.purchasedBy === "none") {
+      toast.error("Select employee for payroll reimbursement");
+      return;
+    }
 
     const payload: any = {
       category: form.category,
@@ -267,6 +326,14 @@ const Expenses = () => {
       amount: Number(form.amount || 0),
       taxAmount: Number(form.taxAmount || 0),
       paymentMode: form.paymentMode,
+      reimbursementMethod: form.reimbursementMethod,
+      purchasedBy: form.reimbursementMethod === "payroll" && form.purchasedBy !== "none" ? form.purchasedBy : null,
+      reimbursementAmount:
+        form.reimbursementMethod === "payroll"
+          ? Number(form.reimbursementAmount || Number(form.amount || 0) + Number(form.taxAmount || 0))
+          : 0,
+      reimbursementPayrollMonth: form.reimbursementMethod === "payroll" ? form.reimbursementPayrollMonth : "",
+      reimbursementNote: form.reimbursementMethod === "payroll" ? form.reimbursementNote : "",
       notes: form.notes,
       receiptUrl: form.receiptUrl
     };
@@ -318,6 +385,26 @@ const Expenses = () => {
       fetchData();
     } else if (!res?.skipped) {
       toast.error(res?.message || "Action failed");
+    }
+  };
+
+  const handleReimbursementUpdate = async (
+    id: string,
+    reimbursementStatus: "pending" | "queued" | "paid",
+    reimbursementPayrollMonth = "",
+    reimbursementNote = ""
+  ) => {
+    const res = await putApiWithToken(
+      `/expenses/${id}/reimbursement`,
+      { reimbursementStatus, reimbursementPayrollMonth, reimbursementNote },
+      null,
+      { requiredPermissions: ["EXPENSE_MANAGE"] }
+    );
+    if (res?.success) {
+      toast.success("Reimbursement status updated");
+      fetchData();
+    } else if (!res?.skipped) {
+      toast.error(res?.message || "Failed to update reimbursement");
     }
   };
 
@@ -575,6 +662,35 @@ const Expenses = () => {
               </Select>
             </div>
             <div>
+              <Label>Employee</Label>
+              <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
+                <SelectTrigger className="w-56">
+                  <SelectValue placeholder="All Employees" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Employees</SelectItem>
+                  {employeeOptions.map((emp) => (
+                    <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Reimbursement</Label>
+              <Select value={reimbursementStatusFilter} onValueChange={setReimbursementStatusFilter}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="not_applicable">Not Applicable</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="queued">Queued Payroll</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>To</Label>
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
@@ -591,7 +707,7 @@ const Expenses = () => {
                 </SelectContent>
               </Select>
             </div>
-            <Button variant="outline" onClick={() => { setStartDate(""); setEndDate(""); setCategoryFilter("all"); setStatusFilter("all"); setRecordFilter("active"); }}>
+            <Button variant="outline" onClick={() => { setStartDate(""); setEndDate(""); setCategoryFilter("all"); setStatusFilter("all"); setEmployeeFilter("all"); setReimbursementStatusFilter("all"); setRecordFilter("active"); }}>
               Reset
             </Button>
             <Button variant="outline" onClick={fetchData}>
@@ -617,19 +733,20 @@ const Expenses = () => {
                   <TableHead>Status</TableHead>
                   <TableHead>Payment</TableHead>
                   <TableHead>Receipt</TableHead>
-                  <TableHead>Created By</TableHead>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Reimbursement</TableHead>
                   {(canManage || canAction) && <TableHead>Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading && (
                   <TableRow>
-                    <TableCell colSpan={(canManage || canAction) ? 11 : 10}>Loading...</TableCell>
+                    <TableCell colSpan={(canManage || canAction) ? 12 : 11}>Loading...</TableCell>
                   </TableRow>
                 )}
                 {!loading && visibleRows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={(canManage || canAction) ? 11 : 10} className="text-muted-foreground">No expenses found</TableCell>
+                    <TableCell colSpan={(canManage || canAction) ? 12 : 11} className="text-muted-foreground">No expenses found</TableCell>
                   </TableRow>
                 )}
                 {visibleRows.map((row) => (
@@ -668,9 +785,26 @@ const Expenses = () => {
                       ) : "-"}
                     </TableCell>
                     <TableCell>
-                      {row.createdBy
-                        ? `${row.createdBy.firstName || ""} ${row.createdBy.lastName || ""}`.trim()
+                      {(row.purchasedBy || row.createdBy)
+                        ? `${row.purchasedBy?.firstName || row.createdBy?.firstName || ""} ${row.purchasedBy?.lastName || row.createdBy?.lastName || ""}`.trim()
                         : "-"}
+                    </TableCell>
+                    <TableCell>
+                      {row.reimbursementMethod === "payroll" ? (
+                        <Badge
+                          className={
+                            row.reimbursementStatus === "paid"
+                              ? "status-badge status-active"
+                              : row.reimbursementStatus === "queued"
+                                ? "status-badge status-pending"
+                                : "status-badge status-inactive"
+                          }
+                        >
+                          {row.reimbursementStatus || "pending"}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary">Not Applicable</Badge>
+                      )}
                     </TableCell>
                     {(canManage || canAction) && (
                       <TableCell>
@@ -702,6 +836,29 @@ const Expenses = () => {
                               </Button>
                             </>
                           )}
+                          {canManage && !row.isDeleted && row.status === "approved" && row.reimbursementMethod === "payroll" && row.reimbursementStatus !== "paid" && (
+                            <>
+                              {row.reimbursementStatus !== "queued" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const month = new Date().toISOString().slice(0, 7);
+                                    handleReimbursementUpdate(row._id, "queued", month, "Queued for payroll release");
+                                  }}
+                                >
+                                  Queue Payroll
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleReimbursementUpdate(row._id, "paid", row.reimbursementPayrollMonth || new Date().toISOString().slice(0, 7), "Released via payroll")}
+                              >
+                                Mark Paid
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     )}
@@ -714,11 +871,11 @@ const Expenses = () => {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>{isEdit ? "Edit Expense" : "Add Expense"}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto pr-1 flex-1 min-h-0">
             <div>
               <Label>Category</Label>
               <Select value={form.category} onValueChange={(value) => setForm((p) => ({ ...p, category: value }))}>
@@ -771,6 +928,67 @@ const Expenses = () => {
               </Select>
             </div>
             <div>
+              <Label>Reimbursement Method</Label>
+              <Select
+                value={form.reimbursementMethod}
+                onValueChange={(value) =>
+                  setForm((p) => ({
+                    ...p,
+                    reimbursementMethod: value,
+                    purchasedBy: value === "payroll" ? (p.purchasedBy === "none" ? "none" : p.purchasedBy) : "none"
+                  }))
+                }
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not Applicable</SelectItem>
+                  <SelectItem value="payroll">Payroll Reimbursement</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {form.reimbursementMethod === "payroll" && (
+              <>
+                <div>
+                  <Label>Purchased By</Label>
+                  <Select value={form.purchasedBy} onValueChange={(value) => setForm((p) => ({ ...p, purchasedBy: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Select employee</SelectItem>
+                      {employeeOptions.map((emp) => (
+                        <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Reimbursement Amount</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={form.reimbursementAmount}
+                    onChange={(e) => setForm((p) => ({ ...p, reimbursementAmount: e.target.value }))}
+                    placeholder="Defaults to Amount + Tax"
+                  />
+                </div>
+                <div>
+                  <Label>Payroll Month (YYYY-MM)</Label>
+                  <Input
+                    value={form.reimbursementPayrollMonth}
+                    onChange={(e) => setForm((p) => ({ ...p, reimbursementPayrollMonth: e.target.value }))}
+                    placeholder="2026-02"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Reimbursement Note</Label>
+                  <Textarea
+                    value={form.reimbursementNote}
+                    onChange={(e) => setForm((p) => ({ ...p, reimbursementNote: e.target.value }))}
+                    placeholder="Will be released via payroll"
+                  />
+                </div>
+              </>
+            )}
+            <div>
               <Label>Amount</Label>
               <Input type="number" min={0} value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
             </div>
@@ -795,7 +1013,7 @@ const Expenses = () => {
               <Textarea value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t pt-3 bg-background">
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={handleSubmit}>{isEdit ? "Update" : "Create"}</Button>
           </DialogFooter>
