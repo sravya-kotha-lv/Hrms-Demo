@@ -209,6 +209,10 @@ exports.listExpenses = async (req) => {
     query.reimbursementStatus = req.query.reimbursementStatus;
   }
 
+  const pageNum = Math.max(1, Number(req.query.page || 1));
+  const limitNum = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+  const skip = (pageNum - 1) * limitNum;
+
   return Expense.find(query)
     .populate("purchasedBy", "firstName lastName employeeCode")
     .populate("createdBy", "firstName lastName employeeCode")
@@ -218,7 +222,10 @@ exports.listExpenses = async (req) => {
     .populate("restoredBy", "firstName lastName employeeCode")
     .populate("reimbursedBy", "firstName lastName employeeCode")
     .populate("vendorId", "name isActive")
-    .sort({ expenseDate: -1, createdAt: -1 });
+    .sort({ expenseDate: -1, createdAt: -1 })
+    .skip(skip)
+    .limit(limitNum)
+    .lean();
 };
 
 exports.getSummary = async (req) => {

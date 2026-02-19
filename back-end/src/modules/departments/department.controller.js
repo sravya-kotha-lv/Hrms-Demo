@@ -1,9 +1,17 @@
 const departmentService = require("./department.service");
 const { buildSuccessResponse } = require("../../utils/responseBuilder");
+const {
+  withCache,
+  buildRequestCacheKey,
+  invalidateCacheNamespace
+} = require("../../utils/cache");
+
+const DEPT_NAMESPACE = "departments";
 
 exports.create = async (req, res) => {
   try {
   const data = await departmentService.create(req);
+  await invalidateCacheNamespace(DEPT_NAMESPACE);
   res.status(201).json(
     buildSuccessResponse({
       message: "Department created successfully",
@@ -22,6 +30,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   const data = await departmentService.update(req);
+  await invalidateCacheNamespace(DEPT_NAMESPACE);
   res.json(
     buildSuccessResponse({
       message: "Department updated successfully",
@@ -32,6 +41,7 @@ exports.update = async (req, res) => {
 
 exports.remove = async (req, res) => {
   await departmentService.remove(req);
+  await invalidateCacheNamespace(DEPT_NAMESPACE);
   res.json(
     buildSuccessResponse({
       message: "Department deleted successfully"
@@ -40,7 +50,13 @@ exports.remove = async (req, res) => {
 };
 
 exports.list = async (req, res) => {
-  const data = await departmentService.list(req);
+  const key = buildRequestCacheKey(req);
+  const data = await withCache({
+    namespace: DEPT_NAMESPACE,
+    key,
+    ttlSeconds: Number(process.env.CACHE_TTL_DEPARTMENTS || 300),
+    producer: () => departmentService.list(req)
+  });
   res.json(
     buildSuccessResponse({
       message: "Departments fetched successfully",

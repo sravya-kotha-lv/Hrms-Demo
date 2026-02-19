@@ -91,7 +91,9 @@ exports.listExpensesQuerySchema = Joi.object({
   startDate: Joi.date().optional(),
   endDate: Joi.date().optional(),
   employeeId: objectId.optional(),
-  reimbursementStatus: reimbursementStatus.optional()
+  reimbursementStatus: reimbursementStatus.optional(),
+  page: Joi.number().integer().min(1).optional(),
+  limit: Joi.number().integer().min(1).max(200).optional()
 });
 
 exports.updateReimbursementSchema = Joi.object({

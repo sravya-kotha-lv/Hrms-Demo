@@ -1,4 +1,39 @@
 const rateLimit = require("express-rate-limit");
+const { getRedisClient, isRedisEnabled } = require("../config/redis");
+
+let RedisStore = null;
+try {
+  ({ RedisStore } = require("rate-limit-redis"));
+} catch (_) {
+  RedisStore = null;
+}
+
+const createRedisStore = () => {
+  if (
+    !RedisStore ||
+    process.env.ENABLE_REDIS_RATE_LIMIT === "false" ||
+    !isRedisEnabled()
+  ) {
+    return undefined;
+  }
+
+  return new RedisStore({
+    sendCommand: async (...args) => {
+      const client = await getRedisClient();
+      if (!client) {
+        throw new Error("Redis unavailable");
+      }
+      return client.call(...args);
+    }
+  });
+};
+
+const sharedLimiterOptions = {
+  standardHeaders: true,
+  legacyHeaders: false,
+  passOnStoreError: true,
+  store: createRedisStore()
+};
 
 /**
  * Public APIs (login, register, otp, etc.)
@@ -6,8 +41,7 @@ const rateLimit = require("express-rate-limit");
 const publicLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
+  ...sharedLimiterOptions,
   message: {
     code: 429,
     message: "Too many requests. Try again later.",
@@ -22,8 +56,7 @@ const publicLimiter = rateLimit({
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
-  standardHeaders: true,
-  legacyHeaders: false
+  ...sharedLimiterOptions
 });
 
 module.exports = {
