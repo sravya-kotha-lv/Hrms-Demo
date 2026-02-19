@@ -73,5 +73,6 @@ const getRedisClient = async () => {
 
 module.exports = {
   getRedisClient,
-  isRedisEnabled
+  isRedisEnabled,
+  isRedisReady: () => Boolean(redisClient && redisClient.status === "ready")
 };

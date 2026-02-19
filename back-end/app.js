@@ -2,7 +2,14 @@ const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const morgan = require("morgan");
+const mongoose = require("mongoose");
 const { authLimiter } = require("./src/middlewares/rateLimiter");
+const { getRedisClient, isRedisEnabled, isRedisReady } = require("./src/config/redis");
+const {
+  metricsMiddleware,
+  metricsHandler,
+  getMetricsSnapshot
+} = require("./src/observability/httpMetrics");
 
 // Load env variables
 dotenv.config({ quiet: true });
@@ -56,6 +63,10 @@ if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
 
+if (process.env.ENABLE_HTTP_METRICS !== "false") {
+  app.use(metricsMiddleware);
+}
+
 // Custom request logger (audit / tracing)
 // const requestLogger = require("./src/middlewares/requestLogger");
 // app.use(requestLogger);
@@ -79,11 +90,39 @@ app.use("/swagger-ui", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Health check
 app.get("/health", (req, res) => {
+  const metrics = getMetricsSnapshot();
   res.json({
     status: "OK",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: metrics.uptimeSeconds
   });
 });
+
+app.get("/ready", async (req, res) => {
+  const dbReady = mongoose.connection.readyState === 1;
+  const redisEnabled = isRedisEnabled();
+
+  let redisReady = !redisEnabled;
+  if (redisEnabled && !isRedisReady()) {
+    const client = await getRedisClient();
+    redisReady = Boolean(client && client.status === "ready");
+  }
+
+  const isReady = dbReady && redisReady;
+
+  return res.status(isReady ? 200 : 503).json({
+    status: isReady ? "READY" : "NOT_READY",
+    timestamp: new Date().toISOString(),
+    checks: {
+      database: dbReady ? "up" : "down",
+      redis: redisEnabled ? (redisReady ? "up" : "down") : "disabled"
+    }
+  });
+});
+
+if (process.env.ENABLE_HTTP_METRICS !== "false") {
+  app.get("/metrics", metricsHandler);
+}
 
 // API routes
 app.use("/api/users", require("./src/modules/users/user.routes"));
@@ -105,16 +144,7 @@ app.use("/api/org-settings", require("./src/modules/orgSettings/orgSettings.rout
 app.use("/api/notifications", require("./src/modules/notifications/notification.routes"));
 app.use("/api/expenses", require("./src/modules/expenses/expense.routes"));
 
-/* ----------------------JOBS----------------*/
-require("./src/jobs/leaveCarryForward.job");
-
-/* ----------------------JOBS----------------*/
-
-
-/* ----------------------JOBS----------------*/
-require("./src/jobs/leaveCredit.job");
-/* ----------------------JOBS----------------*/
-require("./src/jobs/probationCompletion.job");
+const shouldRunSchedulerInApi = process.env.ENABLE_JOB_SCHEDULER === "true";
 
 /* -------------------------------------------------------------------------- */
 /*                         GLOBAL ERROR HANDLER                                */
@@ -155,6 +185,15 @@ const startServer = async () => {
     // console.log("✅ Org permissions synced from routes");
   } catch (err) {
     console.error("❌ Failed to sync org permissions from routes:", err);
+  }
+
+  if (shouldRunSchedulerInApi) {
+    try {
+      const { startJobScheduler } = require("./src/jobs/scheduler");
+      await startJobScheduler();
+    } catch (error) {
+      console.error("❌ Failed to start in-process job scheduler:", error?.message || error);
+    }
   }
 
   app.listen(PORT, () => {
