@@ -7,7 +7,9 @@ const controller = require("./expense.controller");
 const {
   createExpenseSchema,
   updateExpenseSchema,
+  listExpensesQuerySchema,
   actionExpenseSchema,
+  updateReimbursementSchema,
   uploadReceiptSchema,
   createVendorSchema,
   updateVendorSchema
@@ -25,6 +27,7 @@ router.get(
   "/",
   auth,
   authorize(["EXPENSE_VIEW", "EXPENSE_MANAGE"]),
+  validate(listExpensesQuerySchema, "query"),
   asyncHandler(controller.list)
 );
 
@@ -32,7 +35,15 @@ router.get(
   "/summary",
   auth,
   authorize(["EXPENSE_VIEW", "EXPENSE_MANAGE"]),
+  validate(listExpensesQuerySchema, "query"),
   asyncHandler(controller.summary)
+);
+
+router.get(
+  "/employees",
+  auth,
+  authorize(["EXPENSE_VIEW", "EXPENSE_MANAGE"]),
+  asyncHandler(controller.listEmployees)
 );
 
 router.post(
@@ -94,6 +105,14 @@ router.put(
   authorize("EXPENSE_ACTION"),
   validate(actionExpenseSchema),
   asyncHandler(controller.action)
+);
+
+router.put(
+  "/:id/reimbursement",
+  auth,
+  authorize("EXPENSE_MANAGE"),
+  validate(updateReimbursementSchema),
+  asyncHandler(controller.updateReimbursement)
 );
 
 router.put(

@@ -149,6 +149,30 @@ exports.lifecycleActionSchema = Joi.object({
   reason: Joi.string().trim().max(300).optional().allow("")
 });
 
+exports.listEmployeesQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).optional(),
+  limit: Joi.number().integer().min(1).max(200).optional(),
+  search: Joi.string().trim().optional().allow(""),
+  departmentId: objectId.optional(),
+  designationId: objectId.optional(),
+  status: status.optional(),
+  managerId: objectId.optional(),
+  employmentType: employmentType.optional(),
+  organizationId: objectId.optional(),
+  sortBy: Joi.string()
+    .valid(
+      "createdAt",
+      "firstName",
+      "lastName",
+      "employeeCode",
+      "dateOfJoining",
+      "status",
+      "employmentLifecycleStatus"
+    )
+    .optional(),
+  sortOrder: Joi.string().lowercase().valid("asc", "desc").optional()
+});
+
 exports.bulkUpdateEmployeesSchema = Joi.object({
   employeeIds: Joi.array().items(objectId).min(1).required(),
   shiftId: objectId.optional().allow(null, ""),

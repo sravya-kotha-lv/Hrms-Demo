@@ -96,6 +96,10 @@ const Employees = () => {
   const [managerFilter, setManagerFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [employmentTypeFilter, setEmploymentTypeFilter] = useState("all");
+  const [orgSearch, setOrgSearch] = useState("");
+  const [deptSearch, setDeptSearch] = useState("");
+  const [designationSearch, setDesignationSearch] = useState("");
+  const [managerSearch, setManagerSearch] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -132,8 +136,33 @@ const Employees = () => {
     [searchParams]
   );
 
+  const filteredOrganizations = useMemo(
+    () => organizations.filter((org) => (org.name || "").toLowerCase().includes(orgSearch.toLowerCase())),
+    [organizations, orgSearch]
+  );
+  const filteredDepartments = useMemo(
+    () => departments.filter((dept) => (dept.name || "").toLowerCase().includes(deptSearch.toLowerCase())),
+    [departments, deptSearch]
+  );
+  const filteredDesignations = useMemo(
+    () =>
+      designations.filter((designation) =>
+        (designation.name || "").toLowerCase().includes(designationSearch.toLowerCase())
+      ),
+    [designations, designationSearch]
+  );
+  const filteredManagers = useMemo(
+    () => managers.filter((manager) => (manager.name || "").toLowerCase().includes(managerSearch.toLowerCase())),
+    [managers, managerSearch]
+  );
+
   const fetchDepartments = async () => {
-    const res = await getApiWithToken("/departments", null, {
+    const params = new URLSearchParams();
+    if (isSuperAdmin && selectedOrgId) {
+      params.set("organizationId", selectedOrgId);
+    }
+    const query = params.toString();
+    const res = await getApiWithToken(`/departments${query ? `?${query}` : ""}`, null, {
       requiredPermissions: ["DEPT_VIEW"]
     });
     if (res?.skipped) return;
@@ -255,11 +284,14 @@ const Employees = () => {
   };
 
   useEffect(() => {
-    fetchDepartments();
     fetchDesignations();
     fetchOrganizations();
     fetchShifts();
   }, []);
+
+  useEffect(() => {
+    fetchDepartments();
+  }, [selectedOrgId]);
 
   useEffect(() => {
     fetchManagers();
@@ -489,40 +521,71 @@ const Employees = () => {
                 <SelectValue placeholder="Select Organization" />
               </SelectTrigger>
               <SelectContent>
-                {organizations.map((org) => (
+                <div className="p-2">
+                  <Input
+                    placeholder="Search organization..."
+                    value={orgSearch}
+                    onChange={(e) => setOrgSearch(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  />
+                </div>
+                {filteredOrganizations.map((org) => (
                   <SelectItem key={org._id} value={org._id}>
                     {org.name}
                   </SelectItem>
                 ))}
+                {filteredOrganizations.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">No organizations found</div>
+                )}
               </SelectContent>
             </Select>
           )}
-          {!isSuperAdmin && (
-            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Department" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Departments</SelectItem>
-                {departments.map((dept) => (
-                  <SelectItem key={dept._id} value={dept._id}>
-                    {dept.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Department" />
+            </SelectTrigger>
+            <SelectContent>
+              <div className="p-2">
+                <Input
+                  placeholder="Search department..."
+                  value={deptSearch}
+                  onChange={(e) => setDeptSearch(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                />
+              </div>
+              <SelectItem value="all">All Departments</SelectItem>
+              {filteredDepartments.map((dept) => (
+                <SelectItem key={dept._id} value={dept._id}>
+                  {dept.name}
+                </SelectItem>
+              ))}
+              {filteredDepartments.length === 0 && (
+                <div className="px-3 py-2 text-sm text-muted-foreground">No departments found</div>
+              )}
+            </SelectContent>
+          </Select>
           <Select value={designationFilter} onValueChange={setDesignationFilter}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Designation" />
             </SelectTrigger>
             <SelectContent>
+              <div className="p-2">
+                <Input
+                  placeholder="Search designation..."
+                  value={designationSearch}
+                  onChange={(e) => setDesignationSearch(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                />
+              </div>
               <SelectItem value="all">All Designations</SelectItem>
-              {designations.map((designation) => (
+              {filteredDesignations.map((designation) => (
                 <SelectItem key={designation._id} value={designation._id}>
                   {designation.name}
                 </SelectItem>
               ))}
+              {filteredDesignations.length === 0 && (
+                <div className="px-3 py-2 text-sm text-muted-foreground">No designations found</div>
+              )}
             </SelectContent>
           </Select>
           <Select value={managerFilter} onValueChange={setManagerFilter}>
@@ -530,12 +593,23 @@ const Employees = () => {
               <SelectValue placeholder="Manager" />
             </SelectTrigger>
             <SelectContent>
+              <div className="p-2">
+                <Input
+                  placeholder="Search manager..."
+                  value={managerSearch}
+                  onChange={(e) => setManagerSearch(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                />
+              </div>
               <SelectItem value="all">All Managers</SelectItem>
-              {managers.map((manager) => (
+              {filteredManagers.map((manager) => (
                 <SelectItem key={manager._id} value={manager._id}>
                   {manager.name}
                 </SelectItem>
               ))}
+              {filteredManagers.length === 0 && (
+                <div className="px-3 py-2 text-sm text-muted-foreground">No managers found</div>
+              )}
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -584,11 +658,11 @@ const Employees = () => {
 
       {canEdit && (
         <div className="mb-6">
-          <div className="bg-card rounded-xl card-shadow p-3">
+          {/* <div className="bg-card rounded-xl card-shadow p-3">
             <div className="text-sm text-muted-foreground">
               Bulk update selected employees: <span className="font-medium text-foreground">{selectedEmployeeIds.length}</span>
             </div>
-          </div>
+          </div> */}
 
           <AnimatePresence initial={false}>
             {bulkPanelOpen && (
@@ -707,10 +781,7 @@ const Employees = () => {
             columnsCountOverride={tableColumnCount}
             renderHeader={() => (
               <TableRow className="table-header sticky top-0 z-30 bg-card">
-                <TableHead
-                  className="sticky top-0 left-0 z-40 bg-card min-w-[300px] cursor-pointer select-none"
-                  onClick={() => toggleSort("firstName")}
-                >
+                <TableHead className="sticky top-0 left-0 z-40 bg-card min-w-[300px]">
                   <div className="flex items-center gap-3">
                     {canEdit && (
                       <Checkbox
@@ -718,8 +789,14 @@ const Employees = () => {
                         onCheckedChange={(value) => toggleSelectAllVisible(Boolean(value))}
                       />
                     )}
-                    <span>Employee</span>
-                    <ArrowUpDown className={`w-3.5 h-3.5 ${sortBy === "firstName" ? "opacity-100" : "opacity-40"}`} />
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 cursor-pointer select-none"
+                      onClick={() => toggleSort("firstName")}
+                    >
+                      <span>Employee</span>
+                      <ArrowUpDown className={`w-3.5 h-3.5 ${sortBy === "firstName" ? "opacity-100" : "opacity-40"}`} />
+                    </button>
                   </div>
                 </TableHead>
                 {renderSortableHead("Email")}

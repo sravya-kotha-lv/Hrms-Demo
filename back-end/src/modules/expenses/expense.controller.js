@@ -16,6 +16,11 @@ exports.summary = async (req, res) => {
   res.status(200).json(buildSuccessResponse({ data }));
 };
 
+exports.listEmployees = async (req, res) => {
+  const data = await service.listExpenseEmployees(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
 exports.update = async (req, res) => {
   const data = await service.updateExpense(req);
   res.status(200).json(buildSuccessResponse({ message: "Expense updated", data }));
@@ -34,6 +39,11 @@ exports.restore = async (req, res) => {
 exports.action = async (req, res) => {
   const data = await service.actionExpense(req);
   res.status(200).json(buildSuccessResponse({ message: `Expense ${req.body.status}`, data }));
+};
+
+exports.updateReimbursement = async (req, res) => {
+  const data = await service.updateReimbursement(req);
+  res.status(200).json(buildSuccessResponse({ message: "Reimbursement updated", data }));
 };
 
 exports.uploadReceipt = async (req, res) => {
