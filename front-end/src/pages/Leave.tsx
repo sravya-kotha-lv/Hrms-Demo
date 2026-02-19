@@ -126,6 +126,13 @@ const toIdString = (value: any) => {
   return String(value);
 };
 
+const getLeaveDurationLabel = (leave: any) => {
+  const duration = leave?.duration || "full_day";
+  if (duration !== "half_day") return "Full Day";
+  const session = leave?.halfDaySession === "second_half" ? "Second Half" : "First Half";
+  return `Half Day (${session})`;
+};
+
 const Leave = () => {
   const { hasAnyPermission, profile } = useAuth();
   const navigate = useNavigate();
@@ -145,6 +152,8 @@ const Leave = () => {
     leaveTypeId: "",
     fromDate: "",
     toDate: "",
+    duration: "full_day",
+    halfDaySession: "first_half",
     reason: ""
   });
   const canViewAll = hasAnyPermission(["LEAVE_VIEW_ALL"]);
@@ -248,6 +257,8 @@ const Leave = () => {
         leaveTypeId: "",
         fromDate: "",
         toDate: "",
+        duration: "full_day",
+        halfDaySession: "first_half",
         reason: ""
       });
       fetchLeaves();
@@ -445,6 +456,7 @@ const Leave = () => {
               <TableHead>From</TableHead>
               <TableHead>To</TableHead>
               <TableHead>Days</TableHead>
+              <TableHead>Duration</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Approval</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -453,14 +465,14 @@ const Leave = () => {
           <TableBody>
             {loading && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-10">
+                <TableCell colSpan={9} className="text-center py-10">
                   Loading...
                 </TableCell>
               </TableRow>
             )}
             {!loading && filteredLeaves.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-10">
+                <TableCell colSpan={9} className="text-center py-10">
                   No leave requests found
                 </TableCell>
               </TableRow>
@@ -503,6 +515,7 @@ const Leave = () => {
                     {leave.toDate ? formatDateInOrgTimeZone(leave.toDate) : "-"}
                   </TableCell>
                   <TableCell>{leave.totalDays ?? "-"}</TableCell>
+                  <TableCell>{getLeaveDurationLabel(leave)}</TableCell>
                   <TableCell>{getStatusBadge(leave.status)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-[280px]">
                     {getApprovalProgressLabel(leave)}
@@ -589,6 +602,7 @@ const Leave = () => {
               <p><span className="font-medium">From:</span> {selectedLeave.fromDate ? formatDateInOrgTimeZone(selectedLeave.fromDate) : "-"}</p>
               <p><span className="font-medium">To:</span> {selectedLeave.toDate ? formatDateInOrgTimeZone(selectedLeave.toDate) : "-"}</p>
               <p><span className="font-medium">Days:</span> {selectedLeave.totalDays ?? "-"}</p>
+              <p><span className="font-medium">Duration:</span> {getLeaveDurationLabel(selectedLeave)}</p>
               <p><span className="font-medium">Status:</span> {selectedLeave.status || "-"}</p>
               <p><span className="font-medium">Approval:</span> {getApprovalProgressLabel(selectedLeave)}</p>
               <p><span className="font-medium">Reason:</span> {selectedLeave.reason || "-"}</p>
@@ -651,12 +665,59 @@ const Leave = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
+                <Label>Duration</Label>
+                <Select
+                  value={applyForm.duration}
+                  onValueChange={(value) =>
+                    setApplyForm((prev) => ({
+                      ...prev,
+                      duration: value,
+                      toDate: value === "half_day" ? prev.fromDate : prev.toDate
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select duration" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full_day">Full Day</SelectItem>
+                    <SelectItem value="half_day">Half Day</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {applyForm.duration === "half_day" && (
+                <div>
+                  <Label>Session</Label>
+                  <Select
+                    value={applyForm.halfDaySession}
+                    onValueChange={(value) =>
+                      setApplyForm({ ...applyForm, halfDaySession: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select session" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="first_half">First Half</SelectItem>
+                      <SelectItem value="second_half">Second Half</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
                 <Label>From Date</Label>
                 <Input
                   type="date"
                   value={applyForm.fromDate}
                   onChange={(e) =>
-                    setApplyForm({ ...applyForm, fromDate: e.target.value })
+                    setApplyForm((prev) => ({
+                      ...prev,
+                      fromDate: e.target.value,
+                      toDate: prev.duration === "half_day" ? e.target.value : prev.toDate
+                    }))
                   }
                 />
               </div>
@@ -665,6 +726,7 @@ const Leave = () => {
                 <Input
                   type="date"
                   value={applyForm.toDate}
+                  disabled={applyForm.duration === "half_day"}
                   onChange={(e) =>
                     setApplyForm({ ...applyForm, toDate: e.target.value })
                   }

@@ -88,6 +88,7 @@ const ReportsPage: React.FC = () => {
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
 
     </div>

@@ -4,6 +4,12 @@ exports.applyLeaveSchema = Joi.object({
   leaveTypeId: Joi.string().required(),
   fromDate: Joi.date().required(),
   toDate: Joi.date().required(),
+  duration: Joi.string().valid("full_day", "half_day").default("full_day"),
+  halfDaySession: Joi.when("duration", {
+    is: "half_day",
+    then: Joi.string().valid("first_half", "second_half").required(),
+    otherwise: Joi.optional().allow(null, "")
+  }),
   reason: Joi.string().min(3).required()
 });
 

@@ -22,6 +22,9 @@ type LeaveType = {
   code?: string;
 };
 
+type LeaveDuration = "full_day" | "half_day";
+type HalfDaySession = "first_half" | "second_half";
+
 type LeaveBalance = {
   leaveTypeId: string;
   total: number;
@@ -114,6 +117,8 @@ const LeaveApply = () => {
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [duration, setDuration] = useState<LeaveDuration>("full_day");
+  const [halfDaySession, setHalfDaySession] = useState<HalfDaySession>("first_half");
   const [isMobile, setIsMobile] = useState(false);
 
   const loadContext = async () => {
@@ -185,16 +190,25 @@ const LeaveApply = () => {
   };
 
   const applicableDays = useMemo(() => {
-    return getApplicableLeaveDays({
+    const days = getApplicableLeaveDays({
       from: selectedRange?.from,
       to: selectedRange?.to,
       weekOffDays,
       holidayKeys,
       sandwichRuleEnabled
     });
-  }, [selectedRange, weekOffDays, holidayKeys, sandwichRuleEnabled]);
+    if (duration === "half_day" && days > 0) return 0.5;
+    return days;
+  }, [selectedRange, weekOffDays, holidayKeys, sandwichRuleEnabled, duration]);
 
   const onRangeChange = (range: DateRange | undefined) => {
+    if (duration === "half_day") {
+      const single = range?.from;
+      setSelectedRange(single ? { from: single, to: single } : undefined);
+      setFromDate(single ? dateKey(single) : "");
+      setToDate(single ? dateKey(single) : "");
+      return;
+    }
     setSelectedRange(range);
     setFromDate(range?.from ? dateKey(range.from) : "");
     setToDate(range?.to ? dateKey(range.to) : "");
@@ -203,7 +217,10 @@ const LeaveApply = () => {
   const onFromDateChange = (value: string) => {
     setFromDate(value);
     const from = parseDateInput(value);
-    const to = parseDateInput(toDate);
+    const to = duration === "half_day" ? from : parseDateInput(toDate);
+    if (duration === "half_day") {
+      setToDate(value);
+    }
     setSelectedRange({ from, to });
   };
 
@@ -212,6 +229,19 @@ const LeaveApply = () => {
     const from = parseDateInput(fromDate);
     const to = parseDateInput(value);
     setSelectedRange({ from, to });
+  };
+
+  const onDurationChange = (value: LeaveDuration) => {
+    setDuration(value);
+    if (value === "half_day") {
+      const singleFrom = selectedRange?.from || parseDateInput(fromDate);
+      const singleDate = singleFrom ? dateKey(singleFrom) : fromDate;
+      setSelectedRange(singleFrom ? { from: singleFrom, to: singleFrom } : undefined);
+      if (singleDate) {
+        setFromDate(singleDate);
+        setToDate(singleDate);
+      }
+    }
   };
 
   const submit = async () => {
@@ -228,7 +258,7 @@ const LeaveApply = () => {
       setSubmitting(true);
       const res = await postApiWithToken(
         "/leaves/apply",
-        { leaveTypeId, fromDate, toDate, reason },
+        { leaveTypeId, fromDate, toDate, duration, halfDaySession, reason },
         null,
         { requiredPermissions: ["LEAVE_APPLY"] }
       );
@@ -238,6 +268,8 @@ const LeaveApply = () => {
         setSelectedRange(undefined);
         setFromDate("");
         setToDate("");
+        setDuration("full_day");
+        setHalfDaySession("first_half");
         setReason("");
         await loadContext();
       } else {
@@ -349,12 +381,49 @@ const LeaveApply = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
+                <Label>Duration</Label>
+                <Select value={duration} onValueChange={(value) => onDurationChange(value as LeaveDuration)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select duration" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full_day">Full Day</SelectItem>
+                    <SelectItem value="half_day">Half Day</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {duration === "half_day" && (
+                <div className="space-y-2">
+                  <Label>Session</Label>
+                  <Select
+                    value={halfDaySession}
+                    onValueChange={(value) => setHalfDaySession(value as HalfDaySession)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select session" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="first_half">First Half</SelectItem>
+                      <SelectItem value="second_half">Second Half</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label>From Date</Label>
                 <Input type="date" value={fromDate} onChange={(e) => onFromDateChange(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>To Date</Label>
-                <Input type="date" value={toDate} onChange={(e) => onToDateChange(e.target.value)} />
+                <Input
+                  type="date"
+                  value={toDate}
+                  disabled={duration === "half_day"}
+                  onChange={(e) => onToDateChange(e.target.value)}
+                />
               </div>
             </div>
 

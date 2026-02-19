@@ -749,6 +749,13 @@ module.exports = {
     },
 
     "/roles/{id}": {
+      get: {
+        tags: ["Roles"],
+        summary: "Get role by id",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Role fetched" } }
+      },
       put: {
         tags: ["Roles"],
         summary: "Update role",
@@ -1581,5 +1588,854 @@ module.exports = {
         },
       },
     },
+
+    "/users": {
+      get: {
+        tags: ["Users"],
+        summary: "List users in organization",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Users fetched" } }
+      }
+    },
+
+    "/users/me/permissions": {
+      get: {
+        tags: ["Users"],
+        summary: "Get current user permissions",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Permissions fetched" } }
+      }
+    },
+
+    "/users/me/profile": {
+      get: {
+        tags: ["Users"],
+        summary: "Get current user profile",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Profile fetched" } }
+      }
+    },
+
+    "/permissions": {
+      get: {
+        tags: ["Permissions"],
+        summary: "List permissions",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Permissions fetched" } }
+      }
+    },
+
+    "/employees/upcoming-events": {
+      get: {
+        tags: ["Employees"],
+        summary: "Get upcoming employee events",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Upcoming events fetched" } }
+      }
+    },
+
+    "/employees/me": {
+      get: {
+        tags: ["Employees"],
+        summary: "Get my employee profile",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Employee profile fetched" } }
+      }
+    },
+
+    "/employees/bulk-update": {
+      put: {
+        tags: ["Employees"],
+        summary: "Bulk update employees",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  employeeIds: { type: "array", items: { type: "string" } },
+                  updates: { type: "object" }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: "Employees bulk updated" } }
+      }
+    },
+
+    "/employees/{id}": {
+      get: {
+        tags: ["Employees"],
+        summary: "Get employee by id",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Employee fetched" } }
+      },
+      put: {
+        tags: ["Employees"],
+        summary: "Update employee by id",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 200: { description: "Employee updated" } }
+      },
+      delete: {
+        tags: ["Employees"],
+        summary: "Delete employee by id",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Employee deleted" } }
+      }
+    },
+
+    "/employees/{id}/lifecycle-action": {
+      put: {
+        tags: ["Employees"],
+        summary: "Apply lifecycle action on employee",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["action"],
+                properties: {
+                  action: { type: "string", example: "confirm" },
+                  reason: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: "Lifecycle action applied" } }
+      }
+    },
+
+    "/employees/{id}/reopen-profile": {
+      put: {
+        tags: ["Employees"],
+        summary: "Reopen employee profile completion",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Profile reopened" } }
+      }
+    },
+
+    "/week-offs/all": {
+      get: {
+        tags: ["WeekOffs"],
+        summary: "Get all week off configurations",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Week off configs fetched" } }
+      }
+    },
+
+    "/leaves": {
+      get: {
+        tags: ["Leaves"],
+        summary: "List all leaves",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Leaves fetched" } }
+      }
+    },
+
+    "/leaves/apply": {
+      post: {
+        tags: ["Leaves"],
+        summary: "Apply leave",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["leaveTypeId", "fromDate", "toDate", "reason"],
+                properties: {
+                  leaveTypeId: { type: "string" },
+                  fromDate: { type: "string", format: "date" },
+                  toDate: { type: "string", format: "date" },
+                  duration: { type: "string", enum: ["full_day", "half_day"], default: "full_day" },
+                  halfDaySession: { type: "string", enum: ["first_half", "second_half"] },
+                  reason: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: { 201: { description: "Leave applied" } }
+      }
+    },
+
+    "/leaves/my": {
+      get: {
+        tags: ["Leaves"],
+        summary: "Get my leaves",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "My leaves fetched" } }
+      }
+    },
+
+    "/leaves/my-range": {
+      get: {
+        tags: ["Leaves"],
+        summary: "Get my approved leaves in range",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: "startDate", in: "query", schema: { type: "string", format: "date" } },
+          { name: "endDate", in: "query", schema: { type: "string", format: "date" } }
+        ],
+        responses: { 200: { description: "Leave range fetched" } }
+      }
+    },
+
+    "/leaves/apply-context": {
+      get: {
+        tags: ["Leaves"],
+        summary: "Get leave apply context",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Apply context fetched" } }
+      }
+    },
+
+    "/leaves/pending/my-approvals": {
+      get: {
+        tags: ["Leaves"],
+        summary: "Get my pending leave approvals",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Pending approvals fetched" } }
+      }
+    },
+
+    "/leaves/{id}/action": {
+      put: {
+        tags: ["Leaves"],
+        summary: "Approve/reject/cancel leave",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: { type: "string", enum: ["approved", "rejected", "cancelled"] },
+                  rejectionReason: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: "Leave action completed" } }
+      }
+    },
+
+    "/approval-flows": {
+      post: {
+        tags: ["ApprovalFlows"],
+        summary: "Create approval flow",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 201: { description: "Approval flow created" } }
+      },
+      get: {
+        tags: ["ApprovalFlows"],
+        summary: "List approval flows",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Approval flows fetched" } }
+      }
+    },
+
+    "/approval-flows/{id}": {
+      put: {
+        tags: ["ApprovalFlows"],
+        summary: "Update approval flow",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 200: { description: "Approval flow updated" } }
+      },
+      delete: {
+        tags: ["ApprovalFlows"],
+        summary: "Delete approval flow",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Approval flow deleted" } }
+      }
+    },
+
+    "/shifts": {
+      post: {
+        tags: ["Shifts"],
+        summary: "Create shift",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 201: { description: "Shift created" } }
+      },
+      get: {
+        tags: ["Shifts"],
+        summary: "List shifts",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Shifts fetched" } }
+      }
+    },
+
+    "/shifts/my": {
+      get: {
+        tags: ["Shifts"],
+        summary: "Get my shift",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "My shift fetched" } }
+      }
+    },
+
+    "/shifts/{id}": {
+      put: {
+        tags: ["Shifts"],
+        summary: "Update shift",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 200: { description: "Shift updated" } }
+      },
+      delete: {
+        tags: ["Shifts"],
+        summary: "Delete shift",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Shift deleted" } }
+      }
+    },
+
+    "/org-settings": {
+      get: {
+        tags: ["OrgSettings"],
+        summary: "Get organization settings",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Settings fetched" } }
+      },
+      post: {
+        tags: ["OrgSettings"],
+        summary: "Create/update organization settings",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 200: { description: "Settings saved" } }
+      }
+    },
+
+    "/notifications/my": {
+      get: {
+        tags: ["Notifications"],
+        summary: "Get my notifications",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Notifications fetched" } }
+      }
+    },
+
+    "/notifications/unread-count": {
+      get: {
+        tags: ["Notifications"],
+        summary: "Get my unread notification count",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Unread count fetched" } }
+      }
+    },
+
+    "/notifications/{id}/read": {
+      patch: {
+        tags: ["Notifications"],
+        summary: "Mark notification as read",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Notification marked read" } }
+      }
+    },
+
+    "/notifications/read-all": {
+      patch: {
+        tags: ["Notifications"],
+        summary: "Mark all notifications as read",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "All notifications marked read" } }
+      }
+    },
+
+    "/expenses": {
+      post: {
+        tags: ["Expenses"],
+        summary: "Create expense",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 201: { description: "Expense created" } }
+      },
+      get: {
+        tags: ["Expenses"],
+        summary: "List expenses",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Expenses fetched" } }
+      }
+    },
+
+    "/expenses/summary": {
+      get: {
+        tags: ["Expenses"],
+        summary: "Get expense summary",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Expense summary fetched" } }
+      }
+    },
+
+    "/expenses/upload-receipt": {
+      post: {
+        tags: ["Expenses"],
+        summary: "Upload expense receipt",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 200: { description: "Receipt uploaded" } }
+      }
+    },
+
+    "/expenses/vendors": {
+      get: {
+        tags: ["Expenses"],
+        summary: "List expense vendors",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Vendors fetched" } }
+      },
+      post: {
+        tags: ["Expenses"],
+        summary: "Create expense vendor",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 201: { description: "Vendor created" } }
+      }
+    },
+
+    "/expenses/vendors/{vendorId}": {
+      put: {
+        tags: ["Expenses"],
+        summary: "Update expense vendor",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "vendorId", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 200: { description: "Vendor updated" } }
+      },
+      delete: {
+        tags: ["Expenses"],
+        summary: "Delete expense vendor",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "vendorId", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Vendor deleted" } }
+      }
+    },
+
+    "/expenses/{id}": {
+      put: {
+        tags: ["Expenses"],
+        summary: "Update expense",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 200: { description: "Expense updated" } }
+      },
+      delete: {
+        tags: ["Expenses"],
+        summary: "Delete expense",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Expense deleted" } }
+      }
+    },
+
+    "/expenses/{id}/action": {
+      put: {
+        tags: ["Expenses"],
+        summary: "Approve/reject expense",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: { type: "string", enum: ["approved", "rejected"] },
+                  rejectionReason: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: "Expense action completed" } }
+      }
+    },
+
+    "/expenses/{id}/restore": {
+      put: {
+        tags: ["Expenses"],
+        summary: "Restore deleted expense",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Expense restored" } }
+      }
+    },
+
+    "/timesheets/check-in": {
+      post: {
+        tags: ["Timesheets"],
+        summary: "Check in",
+        security: [{ BearerAuth: [] }],
+        responses: { 201: { description: "Checked in" } }
+      }
+    },
+
+    "/timesheets/check-out": {
+      post: {
+        tags: ["Timesheets"],
+        summary: "Check out",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Checked out" } }
+      }
+    },
+
+    "/timesheets/attendance/my": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get my attendance",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "date", in: "query", schema: { type: "string", format: "date" } }],
+        responses: { 200: { description: "Attendance fetched" } }
+      }
+    },
+
+    "/timesheets/attendance": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "List attendance",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "date", in: "query", schema: { type: "string", format: "date" } }],
+        responses: { 200: { description: "Attendance list fetched" } }
+      }
+    },
+
+    "/timesheets/attendance/matrix": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get attendance matrix",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "month", in: "query", schema: { type: "string", example: "2026-02" } }],
+        responses: { 200: { description: "Attendance matrix fetched" } }
+      }
+    },
+
+    "/timesheets/attendance/matrix/my": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get my attendance matrix",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "month", in: "query", schema: { type: "string", example: "2026-02" } }],
+        responses: { 200: { description: "My attendance matrix fetched" } }
+      }
+    },
+
+    "/timesheets/attendance/matrix/history": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get attendance cell history",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: "employeeId", in: "query", required: true, schema: { type: "string" } },
+          { name: "date", in: "query", required: true, schema: { type: "string", format: "date" } }
+        ],
+        responses: { 200: { description: "Cell history fetched" } }
+      }
+    },
+
+    "/timesheets/attendance/matrix/history/my": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get my attendance cell history",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: "date", in: "query", required: true, schema: { type: "string", format: "date" } }
+        ],
+        responses: { 200: { description: "My cell history fetched" } }
+      }
+    },
+
+    "/timesheets/attendance/matrix/{employeeId}": {
+      put: {
+        tags: ["Timesheets"],
+        summary: "Override attendance for one employee/date",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "employeeId", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["date", "status"],
+                properties: {
+                  date: { type: "string", format: "date" },
+                  status: { type: "string", enum: ["present", "absent"] },
+                  checkInTime: { type: "string", example: "09:00" },
+                  checkOutTime: { type: "string", example: "18:00" },
+                  reason: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: "Attendance overridden" } }
+      }
+    },
+
+    "/timesheets/attendance/matrix/bulk": {
+      post: {
+        tags: ["Timesheets"],
+        summary: "Bulk override attendance",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["employeeIds", "date", "status"],
+                properties: {
+                  employeeIds: { type: "array", items: { type: "string" } },
+                  date: { type: "string", format: "date" },
+                  status: { type: "string", enum: ["present", "absent"] },
+                  checkInTime: { type: "string", example: "09:00" },
+                  checkOutTime: { type: "string", example: "18:00" },
+                  reason: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: "Attendance bulk updated" } }
+      }
+    },
+
+    "/timesheets/attendance/requests/my": {
+      post: {
+        tags: ["Timesheets"],
+        summary: "Raise my attendance request",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 201: { description: "Attendance request raised" } }
+      },
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get my attendance requests",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "My attendance requests fetched" } }
+      }
+    },
+
+    "/timesheets/attendance/requests": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "List attendance requests",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "status", in: "query", schema: { type: "string" } }],
+        responses: { 200: { description: "Attendance requests fetched" } }
+      }
+    },
+
+    "/timesheets/attendance/requests/pending/my-approvals": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get my pending attendance approvals",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Pending attendance approvals fetched" } }
+      }
+    },
+
+    "/timesheets/attendance/requests/{id}/action": {
+      put: {
+        tags: ["Timesheets"],
+        summary: "Approve/reject attendance request",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: { type: "string", enum: ["approved", "rejected"] },
+                  rejectionReason: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: "Attendance request action completed" } }
+      }
+    },
+
+    "/timesheets/online": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get online employees",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Online employees fetched" } }
+      }
+    },
+
+    "/timesheets/on-leave": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get employees currently on leave",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "On-leave list fetched" } }
+      }
+    },
+
+    "/timesheets/weekly": {
+      post: {
+        tags: ["Timesheets"],
+        summary: "Create weekly timesheet",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 201: { description: "Timesheet created" } }
+      },
+      get: {
+        tags: ["Timesheets"],
+        summary: "List weekly timesheets",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: "status", in: "query", schema: { type: "string" } },
+          { name: "employeeId", in: "query", schema: { type: "string" } },
+          { name: "weekStart", in: "query", schema: { type: "string", format: "date" } }
+        ],
+        responses: { 200: { description: "Weekly timesheets fetched" } }
+      }
+    },
+
+    "/timesheets/weekly/my": {
+      get: {
+        tags: ["Timesheets"],
+        summary: "Get my weekly timesheets",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: "status", in: "query", schema: { type: "string" } },
+          { name: "weekStart", in: "query", schema: { type: "string", format: "date" } }
+        ],
+        responses: { 200: { description: "My weekly timesheets fetched" } }
+      }
+    },
+
+    "/timesheets/weekly/{id}": {
+      put: {
+        tags: ["Timesheets"],
+        summary: "Update weekly timesheet",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } }
+        },
+        responses: { 200: { description: "Timesheet updated" } }
+      }
+    },
+
+    "/timesheets/weekly/{id}/submit": {
+      post: {
+        tags: ["Timesheets"],
+        summary: "Submit weekly timesheet",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Timesheet submitted" } }
+      }
+    },
+
+    "/timesheets/weekly/{id}/recall": {
+      post: {
+        tags: ["Timesheets"],
+        summary: "Recall weekly timesheet",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Timesheet recalled" } }
+      }
+    },
+
+    "/timesheets/weekly/{id}/action": {
+      put: {
+        tags: ["Timesheets"],
+        summary: "Approve/reject weekly timesheet",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: { type: "string", enum: ["approved", "rejected"] },
+                  rejectionReason: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: "Timesheet action completed" } }
+      }
+    }
   }
 };

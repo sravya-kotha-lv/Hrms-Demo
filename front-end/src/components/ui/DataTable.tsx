@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Table,
   TableBody,
@@ -10,6 +10,22 @@ import {
 import { Input } from "@/components/ui/input";
 import { ArrowUpDown } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious
+} from "@/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 
 export interface Column<T> {
   header: string;
@@ -30,6 +46,8 @@ interface DataTableProps<T> {
   renderRow?: (row: T) => React.ReactNode;
   columnsCountOverride?: number;
   hideFooter?: boolean;
+  containerClassName?: string;
+  viewportClassName?: string;
 }
 
 export function DataTable<T>({
@@ -43,8 +61,12 @@ export function DataTable<T>({
   renderRow,
   columnsCountOverride,
   hideFooter = false,
+  containerClassName,
+  viewportClassName,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [sortConfig, setSortConfig] = useState<{
     key: keyof T;
     direction: "asc" | "desc";
@@ -87,8 +109,29 @@ export function DataTable<T>({
     return selectable ? "sticky left-10 z-10" : "sticky left-0 z-10";
   };
 
+  const totalItems = filteredData.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, sortConfig, data.length, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredData.slice(start, start + pageSize);
+  }, [filteredData, currentPage, pageSize]);
+
+  const startIndex = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endIndex = Math.min(currentPage * pageSize, totalItems);
+
   return (
-    <div className="bg-card rounded-xl border card-shadow flex flex-col">
+    <div className={cn("bg-card rounded-xl border card-shadow flex flex-col", containerClassName)}>
       {/* 🔍 Header */}
       {searchKey && (
         <div className="p-4 border-b flex items-center shrink-0">
@@ -102,101 +145,144 @@ export function DataTable<T>({
       )}
 
       {/* 📋 Table */}
-      <div className="overflow-x-auto">
-        <div className="min-w-0">
-          <Table className={tableClassName || "w-full min-w-[600px] border-collapse"}>
-            <TableHeader>
-              {renderHeader ? (
-                renderHeader(columns, selectable)
+      <div className={cn("min-h-0 flex-1 overflow-auto max-h-[60vh]", viewportClassName)}>
+        <Table className={tableClassName || "w-full min-w-[600px] border-collapse"}>
+          <TableHeader>
+            {renderHeader ? (
+              renderHeader(columns, selectable)
+            ) : (
+              <TableRow className="bg-muted/40">
+                {selectable && (
+                  <TableHead className="w-10">
+                    <Checkbox />
+                  </TableHead>
+                )}
+
+                {columns.map((col, columnIndex) => (
+                  <TableHead
+                    key={String(col.accessor)}
+                    className={`text-muted-foreground font-medium bg-muted/40 ${
+                      col.sortable ? "cursor-pointer" : ""
+                    } ${getStickyLeftClass(columnIndex)} ${col.className || ""}`}
+                    onClick={() =>
+                      col.sortable && handleSort(col.accessor)
+                    }
+                  >
+                    <div className="flex items-center gap-1">
+                      {col.header}
+                      {col.sortable && (
+                        <ArrowUpDown className="w-4 h-4 opacity-60" />
+                      )}
+                    </div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            )}
+          </TableHeader>
+
+          <TableBody>
+            {totalItems === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={
+                    columnsCountOverride ??
+                    columns.length + (selectable ? 1 : 0)
+                  }
+                  className="text-center py-10 text-muted-foreground"
+                >
+                  No data found
+                </TableCell>
+              </TableRow>
+            )}
+
+            {paginatedData.map((row) =>
+              renderRow ? (
+                <TableRow
+                  key={String(row[rowKey])}
+                  className="hover:bg-muted/40 transition"
+                >
+                  {renderRow(row)}
+                </TableRow>
               ) : (
-                <TableRow className="bg-muted/40">
+                <TableRow
+                  key={String(row[rowKey])}
+                  className="hover:bg-muted/40 transition"
+                >
                   {selectable && (
-                    <TableHead className="w-10">
+                    <TableCell>
                       <Checkbox />
-                    </TableHead>
+                    </TableCell>
                   )}
 
                   {columns.map((col, columnIndex) => (
-                    <TableHead
+                    <TableCell
                       key={String(col.accessor)}
-                      className={`text-muted-foreground font-medium bg-muted/40 ${
-                        col.sortable ? "cursor-pointer" : ""
-                      } ${getStickyLeftClass(columnIndex)} ${col.className || ""}`}
-                      onClick={() =>
-                        col.sortable && handleSort(col.accessor)
-                      }
+                      className={`py-4 bg-card ${getStickyLeftClass(columnIndex)} ${col.className || ""}`}
                     >
-                      <div className="flex items-center gap-1">
-                        {col.header}
-                        {col.sortable && (
-                          <ArrowUpDown className="w-4 h-4 opacity-60" />
-                        )}
-                      </div>
-                    </TableHead>
+                      {col.render
+                        ? col.render(row)
+                        : String(row[col.accessor])}
+                    </TableCell>
                   ))}
                 </TableRow>
-              )}
-            </TableHeader>
+              )
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
-            <TableBody>
-              {filteredData.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={
-                      columnsCountOverride ??
-                      columns.length + (selectable ? 1 : 0)
-                    }
-                    className="text-center py-10 text-muted-foreground"
-                  >
-                    No data found
-                  </TableCell>
-                </TableRow>
-              )}
-
-              {filteredData.map((row) =>
-                renderRow ? (
-                  <TableRow
-                    key={String(row[rowKey])}
-                    className="hover:bg-muted/40 transition"
-                  >
-                    {renderRow(row)}
-                  </TableRow>
-                ) : (
-                  <TableRow
-                    key={String(row[rowKey])}
-                    className="hover:bg-muted/40 transition"
-                  >
-                    {selectable && (
-                      <TableCell>
-                        <Checkbox />
-                      </TableCell>
-                    )}
-
-                    {columns.map((col, columnIndex) => (
-                      <TableCell
-                        key={String(col.accessor)}
-                        className={`py-4 bg-card ${getStickyLeftClass(columnIndex)} ${col.className || ""}`}
-                      >
-                        {col.render
-                          ? col.render(row)
-                          : String(row[col.accessor])}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                )
-              )}
-            </TableBody>
-          </Table>
-
-          {/* 📌 Footer */}
+      {/* 📌 Footer */}
       {!hideFooter && (
-        <div className="px-4 py-3 text-sm text-muted-foreground border-t shrink-0">
-          Showing {filteredData.length} of {data.length} records
+        <div className="sticky bottom-0 z-10 px-4 py-3 text-sm text-muted-foreground border-t bg-card shrink-0">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <span>
+                Showing {startIndex}-{endIndex} of {totalItems}
+              </span>
+              <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+                <SelectTrigger className="h-8 w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 rows</SelectItem>
+                  <SelectItem value="25">25 rows</SelectItem>
+                  <SelectItem value="50">50 rows</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Pagination className="justify-end">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (currentPage > 1) setCurrentPage((p) => p - 1);
+                    }}
+                    className={currentPage <= 1 ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationLink href="#" isActive>
+                    {currentPage}/{totalPages}
+                  </PaginationLink>
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (currentPage < totalPages) setCurrentPage((p) => p + 1);
+                    }}
+                    className={currentPage >= totalPages ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
         </div>
       )}
-        </div>
-      </div>
-      
     </div>
   );
 }

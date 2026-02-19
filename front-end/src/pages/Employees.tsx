@@ -538,7 +538,7 @@ const Employees = () => {
 
       {/* Employee Table */}
       <motion.div
-        className="bg-card rounded-xl card-shadow overflow-hidden"
+        className="bg-card rounded-xl card-shadow overflow-hidden flex flex-col max-h-[72vh] lg:h-[calc(100vh-240px)]"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
@@ -547,12 +547,15 @@ const Employees = () => {
           <div className="p-6 text-sm text-muted-foreground">Loading employees...</div>
         )}
         {!loading && (
+          <div className="min-h-0 flex-1">
           <DataTable
             columns={columns}
             data={employees}
             rowKey="_id"
             hideFooter
             tableClassName="min-w-[1500px]"
+            containerClassName="h-full border-0 rounded-none shadow-none bg-transparent"
+            viewportClassName="h-full"
             columnsCountOverride={tableColumnCount}
             renderHeader={() => (
               <TableRow className="table-header">
@@ -672,84 +675,85 @@ const Employees = () => {
               </>
             )}
           />
+          </div>
         )}
-      </motion.div>
-
-      <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <p className="text-sm text-muted-foreground">
-            Showing page {currentPage} of {totalPages} ({totalItems} total)
-          </p>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(value) => setPageSize(Number(value))}
-          >
-            <SelectTrigger className="w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="10">10 rows</SelectItem>
-              <SelectItem value="25">25 rows</SelectItem>
-              <SelectItem value="50">50 rows</SelectItem>
-              <SelectItem value="100">100 rows</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <Pagination className="justify-end">
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationPrevious
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (currentPage > 1) setCurrentPage((p) => p - 1);
-                }}
-                className={currentPage <= 1 ? "pointer-events-none opacity-50" : ""}
-              />
-            </PaginationItem>
-            {getPageItems().map((item, index) => (
-              <PaginationItem key={`${item}-${index}`}>
-                {typeof item === "number" ? (
-                  <PaginationLink
+        <div className="sticky bottom-0 z-20 border-t bg-card px-4 py-3">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                Showing page {currentPage} of {totalPages} ({totalItems} total)
+              </p>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => setPageSize(Number(value))}
+              >
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 rows</SelectItem>
+                  <SelectItem value="25">25 rows</SelectItem>
+                  <SelectItem value="50">50 rows</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Pagination className="justify-end">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
                     href="#"
-                    isActive={item === currentPage}
                     onClick={(e) => {
                       e.preventDefault();
-                      setCurrentPage(item);
+                      if (currentPage > 1) setCurrentPage((p) => p - 1);
                     }}
+                    className={currentPage <= 1 ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+                {getPageItems().map((item, index) => (
+                  <PaginationItem key={`${item}-${index}`}>
+                    {typeof item === "number" ? (
+                      <PaginationLink
+                        href="#"
+                        isActive={item === currentPage}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setCurrentPage(item);
+                        }}
+                      >
+                        {item}
+                      </PaginationLink>
+                    ) : (
+                      <PaginationEllipsis />
+                    )}
+                  </PaginationItem>
+                ))}
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (currentPage < totalPages) setCurrentPage((p) => p + 1);
+                    }}
+                    className={currentPage >= totalPages ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationLink
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setCurrentPage(totalPages);
+                    }}
+                    className={currentPage >= totalPages ? "pointer-events-none opacity-50" : ""}
                   >
-                    {item}
+                    Last
                   </PaginationLink>
-                ) : (
-                  <PaginationEllipsis />
-                )}
-              </PaginationItem>
-            ))}
-            <PaginationItem>
-              <PaginationNext
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (currentPage < totalPages) setCurrentPage((p) => p + 1);
-                }}
-                className={currentPage >= totalPages ? "pointer-events-none opacity-50" : ""}
-              />
-            </PaginationItem>
-            <PaginationItem>
-              <PaginationLink
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setCurrentPage(totalPages);
-                }}
-                className={currentPage >= totalPages ? "pointer-events-none opacity-50" : ""}
-              >
-                Last
-              </PaginationLink>
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-      </div>
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        </div>
+      </motion.div>
 
       {/* Delete Confirmation */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

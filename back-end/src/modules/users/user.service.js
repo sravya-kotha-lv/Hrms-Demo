@@ -48,6 +48,35 @@ exports.loginUser = async ({ email, password }) => {
   }
 
   const m = memberships[0];
+  const employee = await Employee.findOne({
+    userId: user._id,
+    organizationId: m.organizationId?._id || m.organizationId,
+    isDeleted: false
+  }).select("employmentLifecycleStatus noticeEndDate");
+
+  if (employee?.employmentLifecycleStatus === "terminated") {
+    throw {
+      code: 403,
+      message: "Your employment has been terminated. Please contact your manager."
+    };
+  }
+
+  if (employee?.employmentLifecycleStatus === "notice") {
+    const now = new Date();
+    const noticeEndDate = employee.noticeEndDate ? new Date(employee.noticeEndDate) : null;
+
+    if (noticeEndDate) {
+      noticeEndDate.setHours(23, 59, 59, 999);
+    }
+
+    if (noticeEndDate && now > noticeEndDate) {
+      throw {
+        code: 403,
+        message: "Your notice period is completed. Please contact your manager."
+      };
+    }
+  }
+
   const activeRole = m.roleIds[0] || null;
 
   const token = createJwtToken({
