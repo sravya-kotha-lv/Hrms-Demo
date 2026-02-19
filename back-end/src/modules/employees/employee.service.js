@@ -433,6 +433,8 @@ exports.listByOrganization = async (req) => {
     departmentId,
     designationId,
     status,
+    managerId,
+    employmentType,
     organizationId: orgIdOverride,
     sortBy,
     sortOrder
@@ -481,6 +483,8 @@ exports.listByOrganization = async (req) => {
   if (departmentId) query.departmentId = departmentId;
   if (designationId) query.designationId = designationId;
   if (status) query.status = status;
+  if (managerId) query.managerId = managerId;
+  if (employmentType) query.employmentType = employmentType;
 
   const allowedSortFields = new Set([
     "createdAt",
@@ -524,9 +528,31 @@ exports.listByOrganization = async (req) => {
   }
 
   const employees = await employeeQuery;
+  const userIds = employees
+    .map((employee) => employee.userId?._id || employee.userId)
+    .filter(Boolean);
+  const orgUsers = await OrgUser.find({
+    organizationId: query.organizationId,
+    userId: { $in: userIds }
+  })
+    .populate("roleIds", "name")
+    .select("userId roleIds");
+  const roleMap = new Map(
+    orgUsers.map((orgUser) => [
+      String(orgUser.userId),
+      (orgUser.roleIds || []).map((role) => ({
+        _id: role._id,
+        name: role.name
+      }))
+    ])
+  );
+  const items = employees.map((employee) => ({
+    ...employee.toObject(),
+    roleIds: roleMap.get(String(employee.userId?._id || employee.userId)) || []
+  }));
 
   return {
-    items: employees,
+    items,
     pagination // will be null if not paginated
   };
 };

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
 import {
   Search,
@@ -10,6 +10,8 @@ import {
   Trash2,
   Eye,
   ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -90,6 +92,10 @@ const Employees = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [designationFilter, setDesignationFilter] = useState("all");
+  const [managerFilter, setManagerFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [employmentTypeFilter, setEmploymentTypeFilter] = useState("all");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -106,6 +112,7 @@ const Employees = () => {
   const [bulkStatus, setBulkStatus] = useState("none");
   const [bulkLifecycleStatus, setBulkLifecycleStatus] = useState("none");
   const [bulkApplying, setBulkApplying] = useState(false);
+  const [bulkPanelOpen, setBulkPanelOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -118,7 +125,7 @@ const Employees = () => {
   const canEdit = hasAnyPermission(["EMP_UPDATE"]);
   const canDelete = hasAnyPermission(["EMP_DELETE"]);
   const canAnyAction = canView || canEdit || canDelete;
-  const tableColumnCount = 13 + (canAnyAction ? 1 : 0);
+  const tableColumnCount = 14 + (canAnyAction ? 1 : 0);
 
   const selectedOrgId = useMemo(
     () => searchParams.get("organizationId") || "",
@@ -171,7 +178,12 @@ const Employees = () => {
   };
 
   const fetchManagers = async () => {
-    const res = await getApiWithToken("/employees", null, {
+    const params = new URLSearchParams();
+    if (isSuperAdmin && selectedOrgId) {
+      params.set("organizationId", selectedOrgId);
+    }
+    const query = params.toString();
+    const res = await getApiWithToken(`/employees${query ? `?${query}` : ""}`, null, {
       requiredPermissions: ["EMP_VIEW"]
     });
     if (res?.success) {
@@ -198,6 +210,18 @@ const Employees = () => {
       if (searchQuery) params.set("search", searchQuery);
       if (departmentFilter !== "all") {
         params.set("departmentId", departmentFilter);
+      }
+      if (designationFilter !== "all") {
+        params.set("designationId", designationFilter);
+      }
+      if (managerFilter !== "all") {
+        params.set("managerId", managerFilter);
+      }
+      if (statusFilter !== "all") {
+        params.set("status", statusFilter);
+      }
+      if (employmentTypeFilter !== "all") {
+        params.set("employmentType", employmentTypeFilter);
       }
       if (isSuperAdmin && selectedOrgId) {
         params.set("organizationId", selectedOrgId);
@@ -235,19 +259,45 @@ const Employees = () => {
     fetchDesignations();
     fetchOrganizations();
     fetchShifts();
-    fetchManagers();
   }, []);
 
   useEffect(() => {
+    fetchManagers();
+  }, [selectedOrgId]);
+
+  useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, departmentFilter, selectedOrgId, pageSize, sortBy, sortOrder]);
+  }, [
+    searchQuery,
+    departmentFilter,
+    designationFilter,
+    managerFilter,
+    statusFilter,
+    employmentTypeFilter,
+    selectedOrgId,
+    pageSize,
+    sortBy,
+    sortOrder
+  ]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchEmployees();
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, departmentFilter, selectedOrgId, currentPage, pageSize, sortBy, sortOrder]);
+  }, [
+    searchQuery,
+    departmentFilter,
+    designationFilter,
+    managerFilter,
+    statusFilter,
+    employmentTypeFilter,
+    selectedOrgId,
+    currentPage,
+    pageSize,
+    sortBy,
+    sortOrder
+  ]);
 
   const handleDelete = (employee: any) => {
     setSelectedEmployee(employee);
@@ -341,9 +391,13 @@ const Employees = () => {
   };
 
   const renderSortableHead = (label: string, field?: string, className?: string) => {
-    if (!field) return <TableHead className={className}>{label}</TableHead>;
+    const stickyClass = "sticky top-0 z-30 bg-card";
+    if (!field) return <TableHead className={`${stickyClass} ${className || ""}`}>{label}</TableHead>;
     return (
-      <TableHead className={`cursor-pointer select-none ${className || ""}`} onClick={() => toggleSort(field)}>
+      <TableHead
+        className={`${stickyClass} cursor-pointer select-none ${className || ""}`}
+        onClick={() => toggleSort(field)}
+      >
         <div className="flex items-center gap-1">
           <span>{label}</span>
           <ArrowUpDown className={`w-3.5 h-3.5 ${sortBy === field ? "opacity-100" : "opacity-40"}`} />
@@ -372,6 +426,7 @@ const Employees = () => {
     { header: "Phone", accessor: "phone" },
     { header: "Department", accessor: "departmentId" },
     { header: "Designation", accessor: "designationId" },
+    { header: "Roles", accessor: "roleIds" },
     { header: "Manager", accessor: "managerId" },
     { header: "Shift", accessor: "shiftId" },
     { header: "Employment Type", accessor: "employmentType" },
@@ -389,17 +444,36 @@ const Employees = () => {
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Employees" }]}
     >
       {/* Action Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search employees..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
+      <div className="flex flex-col items-start gap-4 mb-6">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search employees..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <PermissionGate permissions={["EMP_CREATE"]}>
+            <Button className="gap-2 self-end sm:self-auto" onClick={() => navigate("/employees/add")}>
+              <Plus className="w-4 h-4" />
+              Add Employee
+            </Button>
+          </PermissionGate>
         </div>
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full">
+          {canEdit && !isSuperAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={() => setBulkPanelOpen((prev) => !prev)}
+            >
+              {bulkPanelOpen ? "Hide Bulk Update" : "Show Bulk Update"}
+              {bulkPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </Button>
+          )}
           {isSuperAdmin && (
             <Select
               value={selectedOrgId}
@@ -438,101 +512,175 @@ const Employees = () => {
               </SelectContent>
             </Select>
           )}
+          <Select value={designationFilter} onValueChange={setDesignationFilter}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Designation" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Designations</SelectItem>
+              {designations.map((designation) => (
+                <SelectItem key={designation._id} value={designation._id}>
+                  {designation.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={managerFilter} onValueChange={setManagerFilter}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Manager" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Managers</SelectItem>
+              {managers.map((manager) => (
+                <SelectItem key={manager._id} value={manager._id}>
+                  {manager.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="on_leave">On Leave</SelectItem>
+              <SelectItem value="resigned">Resigned</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={employmentTypeFilter} onValueChange={setEmploymentTypeFilter}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Employment Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="full_time">Full Time</SelectItem>
+              <SelectItem value="part_time">Part Time</SelectItem>
+              <SelectItem value="contract">Contract</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSearchQuery("");
+              setDepartmentFilter("all");
+              setDesignationFilter("all");
+              setManagerFilter("all");
+              setStatusFilter("all");
+              setEmploymentTypeFilter("all");
+              setSortBy("createdAt");
+              setSortOrder("desc");
+            }}
+          >
+            Reset
+          </Button>
           <Button variant="outline" className="gap-2">
             <Download className="w-4 h-4" />
             Export
           </Button>
-          <PermissionGate permissions={["EMP_CREATE"]}>
-            <Button className="gap-2" onClick={() => navigate("/employees/add")}>
-              <Plus className="w-4 h-4" />
-              Add Employee
-            </Button>
-          </PermissionGate>
         </div>
       </div>
 
       {canEdit && (
-        <div className="bg-card rounded-xl card-shadow p-4 mb-6 space-y-3">
-          <div className="text-sm text-muted-foreground">
-            Bulk update selected employees: <span className="font-medium text-foreground">{selectedEmployeeIds.length}</span>
+        <div className="mb-6">
+          <div className="bg-card rounded-xl card-shadow p-3">
+            <div className="text-sm text-muted-foreground">
+              Bulk update selected employees: <span className="font-medium text-foreground">{selectedEmployeeIds.length}</span>
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Select value={bulkShiftId} onValueChange={setBulkShiftId}>
-              <SelectTrigger><SelectValue placeholder="Assign Shift" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Shift: No Change</SelectItem>
-                <SelectItem value="clear">Shift: Clear</SelectItem>
-                {shifts.map((shift: any) => (
-                  <SelectItem key={shift._id} value={shift._id}>
-                    {shift.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
 
-            <Select value={bulkManagerId} onValueChange={setBulkManagerId}>
-              <SelectTrigger><SelectValue placeholder="Assign Manager" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Manager: No Change</SelectItem>
-                <SelectItem value="clear">Manager: Clear</SelectItem>
-                {managers.map((manager: any) => (
-                  <SelectItem key={manager._id} value={manager._id}>
-                    {manager.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <AnimatePresence initial={false}>
+            {bulkPanelOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+                className="overflow-hidden"
+              >
+                <div className="bg-card rounded-xl card-shadow p-4 mt-3 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <Select value={bulkShiftId} onValueChange={setBulkShiftId}>
+                      <SelectTrigger><SelectValue placeholder="Assign Shift" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Shift: No Change</SelectItem>
+                        <SelectItem value="clear">Shift: Clear</SelectItem>
+                        {shifts.map((shift: any) => (
+                          <SelectItem key={shift._id} value={shift._id}>
+                            {shift.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-            <Select value={bulkDepartmentId} onValueChange={setBulkDepartmentId}>
-              <SelectTrigger><SelectValue placeholder="Assign Department" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Department: No Change</SelectItem>
-                {departments.map((dept: any) => (
-                  <SelectItem key={dept._id} value={dept._id}>
-                    {dept.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                    <Select value={bulkManagerId} onValueChange={setBulkManagerId}>
+                      <SelectTrigger><SelectValue placeholder="Assign Manager" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Manager: No Change</SelectItem>
+                        <SelectItem value="clear">Manager: Clear</SelectItem>
+                        {managers.map((manager: any) => (
+                          <SelectItem key={manager._id} value={manager._id}>
+                            {manager.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-            <Select value={bulkDesignationId} onValueChange={setBulkDesignationId}>
-              <SelectTrigger><SelectValue placeholder="Assign Designation" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Designation: No Change</SelectItem>
-                {designations.map((designation: any) => (
-                  <SelectItem key={designation._id} value={designation._id}>
-                    {designation.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                    <Select value={bulkDepartmentId} onValueChange={setBulkDepartmentId}>
+                      <SelectTrigger><SelectValue placeholder="Assign Department" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Department: No Change</SelectItem>
+                        {departments.map((dept: any) => (
+                          <SelectItem key={dept._id} value={dept._id}>
+                            {dept.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-            <Select value={bulkStatus} onValueChange={setBulkStatus}>
-              <SelectTrigger><SelectValue placeholder="Update Status" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Status: No Change</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="on_leave">On Leave</SelectItem>
-                <SelectItem value="resigned">Resigned</SelectItem>
-              </SelectContent>
-            </Select>
+                    <Select value={bulkDesignationId} onValueChange={setBulkDesignationId}>
+                      <SelectTrigger><SelectValue placeholder="Assign Designation" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Designation: No Change</SelectItem>
+                        {designations.map((designation: any) => (
+                          <SelectItem key={designation._id} value={designation._id}>
+                            {designation.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-            <Select value={bulkLifecycleStatus} onValueChange={setBulkLifecycleStatus}>
-              <SelectTrigger><SelectValue placeholder="Lifecycle Status" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Lifecycle: No Change</SelectItem>
-                <SelectItem value="probation">Probation</SelectItem>
-                <SelectItem value="confirmed">Confirmed</SelectItem>
-                <SelectItem value="notice">Notice</SelectItem>
-                <SelectItem value="terminated">Terminated</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Button onClick={handleBulkUpdate} disabled={bulkApplying || selectedEmployeeIds.length === 0}>
-              {bulkApplying ? "Applying..." : "Apply Bulk Update"}
-            </Button>
-          </div>
+                    <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                      <SelectTrigger><SelectValue placeholder="Update Status" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Status: No Change</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="on_leave">On Leave</SelectItem>
+                        <SelectItem value="resigned">Resigned</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Select value={bulkLifecycleStatus} onValueChange={setBulkLifecycleStatus}>
+                      <SelectTrigger><SelectValue placeholder="Lifecycle Status" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Lifecycle: No Change</SelectItem>
+                        <SelectItem value="probation">Probation</SelectItem>
+                        <SelectItem value="confirmed">Confirmed</SelectItem>
+                        <SelectItem value="notice">Notice</SelectItem>
+                        <SelectItem value="terminated">Terminated</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Button onClick={handleBulkUpdate} disabled={bulkApplying || selectedEmployeeIds.length === 0}>
+                      {bulkApplying ? "Applying..." : "Apply Bulk Update"}
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
@@ -544,7 +692,7 @@ const Employees = () => {
         transition={{ delay: 0.2 }}
       >
         {loading && (
-          <div className="p-6 text-sm text-muted-foreground">Loading employees...</div>
+          <div className="sticky top-0 p-6 text-sm text-muted-foreground">Loading employees...</div>
         )}
         {!loading && (
           <div className="min-h-0 flex-1">
@@ -553,13 +701,16 @@ const Employees = () => {
             data={employees}
             rowKey="_id"
             hideFooter
-            tableClassName="min-w-[1500px]"
+            tableClassName="min-w-[1650px]"
             containerClassName="h-full border-0 rounded-none shadow-none bg-transparent"
-            viewportClassName="h-full"
+            viewportClassName="h-full overflow-y-auto overflow-x-auto [&>div]:overflow-visible"
             columnsCountOverride={tableColumnCount}
             renderHeader={() => (
-              <TableRow className="table-header">
-                <TableHead className="sticky left-0 z-20 bg-card min-w-[300px]">
+              <TableRow className="table-header sticky top-0 z-30 bg-card">
+                <TableHead
+                  className="sticky top-0 left-0 z-40 bg-card min-w-[300px] cursor-pointer select-none"
+                  onClick={() => toggleSort("firstName")}
+                >
                   <div className="flex items-center gap-3">
                     {canEdit && (
                       <Checkbox
@@ -568,12 +719,14 @@ const Employees = () => {
                       />
                     )}
                     <span>Employee</span>
+                    <ArrowUpDown className={`w-3.5 h-3.5 ${sortBy === "firstName" ? "opacity-100" : "opacity-40"}`} />
                   </div>
                 </TableHead>
                 {renderSortableHead("Email")}
                 {renderSortableHead("Phone")}
                 {renderSortableHead("Department")}
                 {renderSortableHead("Designation")}
+                {renderSortableHead("Roles")}
                 {renderSortableHead("Manager")}
                 {renderSortableHead("Shift")}
                 {renderSortableHead("Employment Type")}
@@ -613,6 +766,11 @@ const Employees = () => {
                 <TableCell>{employee.phone || "-"}</TableCell>
                 <TableCell>{employee.departmentId?.name || "-"}</TableCell>
                 <TableCell>{employee.designationId?.name || "-"}</TableCell>
+                <TableCell>
+                  {Array.isArray(employee.roleIds) && employee.roleIds.length
+                    ? employee.roleIds.map((role: any) => role?.name).filter(Boolean).join(", ")
+                    : "-"}
+                </TableCell>
                 <TableCell>
                   {employee.managerId
                     ? `${employee.managerId?.firstName || ""} ${employee.managerId?.lastName || ""}`.trim()
