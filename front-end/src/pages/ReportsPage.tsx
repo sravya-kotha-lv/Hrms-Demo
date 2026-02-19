@@ -49,18 +49,6 @@ const ReportsPage: React.FC = () => {
           <h2 className="font-semibold">Employee Attendance Report</h2>
         </div>
 
-<<<<<<< HEAD
-        <div className="overflow-x-auto">
-        <table className="w-full text-left">
-          <thead className="bg-gray-50 text-gray-600 text-sm">
-            <tr>
-              <th className="sticky top-0 z-10 bg-gray-50 p-4">Employee</th>
-              <th className="sticky top-0 z-10 bg-gray-50 p-4">Department</th>
-              <th className="sticky top-0 z-10 bg-gray-50 p-4">Present Days</th>
-              <th className="sticky top-0 z-10 bg-gray-50 p-4">Absent Days</th>
-              <th className="sticky top-0 z-10 bg-gray-50 p-4">Late Entries</th>
-              <th className="sticky top-0 z-10 bg-gray-50 p-4">Status</th>
-=======
         <table className="w-full text-left">
           <thead className="bg-gray-50 text-gray-600 text-sm">
             <tr>
@@ -70,7 +58,6 @@ const ReportsPage: React.FC = () => {
               <th className="p-4">Absent Days</th>
               <th className="p-4">Late Entries</th>
               <th className="p-4">Status</th>
->>>>>>> b1f7742 (sidebar changes)
             </tr>
           </thead>
           <tbody>
@@ -101,10 +88,7 @@ const ReportsPage: React.FC = () => {
             </tr>
           </tbody>
         </table>
-<<<<<<< HEAD
         </div>
-=======
->>>>>>> b1f7742 (sidebar changes)
       </div>
 
     </div>
