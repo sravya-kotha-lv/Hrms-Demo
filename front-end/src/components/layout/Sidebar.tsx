@@ -176,9 +176,11 @@ export const Sidebar = ({
   onCollapsedChange
 }: SidebarProps) => {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const [hoverExpanded, setHoverExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const { profile, hasAnyPermission, isSuperAdmin } = useAuth();
   const collapsed = controlledCollapsed ?? internalCollapsed;
+  const effectiveCollapsed = collapsed && !hoverExpanded;
 
   const setCollapsed = (next: boolean) => {
     if (controlledCollapsed === undefined) {
@@ -259,8 +261,14 @@ export const Sidebar = ({
           isMobile ? (mobileOpen ? "translate-x-0" : "-translate-x-full") : "translate-x-0"
         )}
         initial={false}
-        animate={{ width: collapsed ? 72 : 260 }}
+        animate={{ width: effectiveCollapsed ? 72 : 260 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
+        onMouseEnter={() => {
+          if (!isMobile && collapsed) setHoverExpanded(true);
+        }}
+        onMouseLeave={() => {
+          if (!isMobile) setHoverExpanded(false);
+        }}
       >
         <div className="p-4 border-b border-white/10">
           <div className="flex items-center justify-between">
@@ -269,7 +277,7 @@ export const Sidebar = ({
                 <UserCircle className="w-6 h-6 text-primary" />
               </div>
               <AnimatePresence>
-                {!collapsed && (
+                {!effectiveCollapsed && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -297,7 +305,7 @@ export const Sidebar = ({
               <NavItem
                 key={item.to}
                 {...item}
-                collapsed={collapsed}
+                collapsed={effectiveCollapsed}
                 onNavigate={() => isMobile && onMobileClose?.()}
               />
             ))}
@@ -312,7 +320,7 @@ export const Sidebar = ({
                 <AvatarFallback className="bg-white/20 text-white">JD</AvatarFallback>
               </Avatar>
               <AnimatePresence>
-                {!collapsed && (
+                {!effectiveCollapsed && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
