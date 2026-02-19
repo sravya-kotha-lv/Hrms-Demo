@@ -147,7 +147,7 @@ export function DataTable<T>({
       {/* 📋 Table */}
       <div className={cn("min-h-0 flex-1 overflow-auto max-h-[60vh]", viewportClassName)}>
         <Table className={tableClassName || "w-full min-w-[600px] border-collapse"}>
-          <TableHeader>
+          <TableHeader className="sticky top-0 z-30 bg-card">
             {renderHeader ? (
               renderHeader(columns, selectable)
             ) : (
