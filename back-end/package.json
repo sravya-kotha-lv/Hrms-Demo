@@ -10,10 +10,13 @@
     "test": "node --test",
     "test:watch": "node --test --watch",
     "start": "nodemon app.js",
+    "jobs:scheduler": "node src/jobs/scheduler.js",
+    "jobs:worker": "node src/jobs/worker.js",
     "migrate:weekoffs:rotational": "node src/script/migrate.weekoffs.rotational.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5.58.5",
     "cloudinary": "^2.9.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",

@@ -160,7 +160,17 @@ const Attendance = () => {
     });
   }, [rows, search]);
 
+  const isFutureDay = (day: number) => {
+    const date = new Date(`${month}-${String(day).padStart(2, "0")}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date.getTime() > today.getTime();
+  };
+
   const openCellDetails = async (row: EmployeeRow, day: number) => {
+    const cell = row.days?.[day] || emptyCell;
+    if (isFutureDay(day) || cell.isWeekOff) return;
     setSelectedEmployee(row);
     setSelectedDay(day);
     const cellStatus = row.days?.[day]?.status || "absent";
@@ -458,39 +468,40 @@ const Attendance = () => {
             </div>
           )}
 
-          <div className="bg-card rounded-xl card-shadow overflow-auto">
-            <table className="w-full border-collapse min-w-[1100px]">
+          <div className="bg-card rounded-xl card-shadow overflow-hidden">
+            <div className="max-h-[72vh] overflow-auto">
+              <table className="w-full border-collapse min-w-[1100px]">
               <thead>
                 <tr className="border-b">
                   {canEdit && (
-                    <th className="sticky left-0 top-0 bg-card text-left p-3 min-w-[48px] z-20">
+                    <th className="sticky left-0 top-0 bg-card text-left p-3 min-w-[48px] z-30">
                       Sel
                     </th>
                   )}
-                  <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-card text-left p-3 min-w-[220px] z-10`}>
+                  <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-card text-left p-3 min-w-[220px] z-30`}>
                     Employee
                   </th>
                   {Array.from({ length: daysInMonth }).map((_, idx) => (
-                    <th key={idx + 1} className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[42px]">
+                    <th key={idx + 1} className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[42px]">
                       {idx + 1}
                     </th>
                   ))}
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Present
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[120px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[120px]">
                     Pending Checkout
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Absent
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     On Leave
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Week Off
                   </th>
-                  <th className="sticky top-0 bg-card z-10 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                     Total
                   </th>
                 </tr>
@@ -529,7 +540,9 @@ const Attendance = () => {
                     </td>
                     {Array.from({ length: daysInMonth }).map((_, idx) => {
                       const day = idx + 1;
+                      const isFuture = isFutureDay(day);
                       const cell = row.days?.[day] || emptyCell;
+                      const isNonInteractive = isFuture || cell.isWeekOff;
                       const isPresent = cell.status === "present";
                       const isPendingCheckout = cell.status === "pending_checkout";
                       const isLeave = cell.isOnLeave;
@@ -557,10 +570,11 @@ const Attendance = () => {
                         <td key={day} className="p-1">
                           <button
                             type="button"
-                            onClick={() => openCellDetails(row, day)}
+                            onClick={() => !isNonInteractive && openCellDetails(row, day)}
+                            disabled={isNonInteractive}
                             title={formatHoverInfo(cell)}
                             className={`w-full h-8 rounded text-xs font-medium border ${colorClass} ${
-                              "cursor-pointer hover:opacity-90"
+                              isNonInteractive ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:opacity-90"
                             }`}
                           >
                             {isPartialLeaveWithAttendance ? "PL" : isLeave ? "L" : isHoliday ? "H" : isWeekOff ? "W" : isPendingCheckout ? "PC" : isPresent ? "P" : "A"}
@@ -596,7 +610,8 @@ const Attendance = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-xs mt-3">

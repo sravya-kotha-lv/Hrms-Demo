@@ -35,11 +35,13 @@ import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { setPermissions } from "@/utils/auth";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/context/AuthContext";
 
 /* ========================= Dashboard ========================= */
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { isSuperAdmin, permissions } = useAuth();
   const today = new Date();
   const monthValue = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   const yearValue = today.getFullYear();
@@ -100,13 +102,12 @@ const Dashboard = () => {
   /* ================= EFFECT ================= */
 
   useEffect(() => {
-    const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
-    if (isSuperAdmin) return;
+    if (!isSuperAdmin && permissions.length === 0) return;
     fetchOrganizations();
     loadDashboardData();
     const timer = window.setInterval(() => loadDashboardData(), 60000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [isSuperAdmin, permissions]);
 
   /* ================= API ================= */
 
@@ -170,17 +171,20 @@ const Dashboard = () => {
     start7.setDate(now.getDate() - 6);
     const start7Iso = `${start7.getFullYear()}-${String(start7.getMonth() + 1).padStart(2, "0")}-${String(start7.getDate()).padStart(2, "0")}`;
 
+    const reqOptions = (requiredPermissions: string[]) =>
+      isSuperAdmin ? {} : { requiredPermissions };
+
     const [employeesRes, attendanceRes, attendance7Res, matrixRes, leavesRes, weeklyRes, holidayRes, weekOffRes, settingsRes, notifRes] = await Promise.all([
-      getApiWithToken("/employees?page=1&limit=500", null, { requiredPermissions: ["EMP_VIEW"] }),
-      getApiWithToken(`/timesheets/attendance?startDate=${dayIso}&endDate=${dayIso}`, null, { requiredPermissions: ["TIMESHEET_VIEW_ALL"] }),
-      getApiWithToken(`/timesheets/attendance?startDate=${start7Iso}&endDate=${dayIso}`, null, { requiredPermissions: ["TIMESHEET_VIEW_ALL"] }),
-      getApiWithToken(`/timesheets/attendance/matrix?month=${monthValue}`, null, { requiredPermissions: ["ATTENDANCE_VIEW_ALL"] }),
-      getApiWithToken("/leaves", null, { requiredPermissions: ["LEAVE_VIEW_ALL"] }),
-      getApiWithToken("/timesheets/weekly", null, { requiredPermissions: ["TIMESHEET_VIEW_ALL"] }),
-      getApiWithToken(`/holidays?year=${yearValue}`, null, { requiredPermissions: ["HOLIDAY_VIEW"] }),
-      getApiWithToken("/week-offs", null, { requiredPermissions: ["WEEK_OFF_VIEW"] }),
-      getApiWithToken("/org-settings", null, { requiredPermissions: ["ORG_SETTINGS_VIEW"] }),
-      getApiWithToken("/notifications/my?limit=6", null, { requiredPermissions: ["NOTIFICATION_VIEW_SELF"] }),
+      getApiWithToken("/employees?page=1&limit=500", null, reqOptions(["EMP_VIEW"])),
+      getApiWithToken(`/timesheets/attendance?startDate=${dayIso}&endDate=${dayIso}`, null, reqOptions(["TIMESHEET_VIEW_ALL"])),
+      getApiWithToken(`/timesheets/attendance?startDate=${start7Iso}&endDate=${dayIso}`, null, reqOptions(["TIMESHEET_VIEW_ALL"])),
+      getApiWithToken(`/timesheets/attendance/matrix?month=${monthValue}`, null, reqOptions(["ATTENDANCE_VIEW_ALL"])),
+      getApiWithToken("/leaves", null, reqOptions(["LEAVE_VIEW_ALL"])),
+      getApiWithToken("/timesheets/weekly", null, reqOptions(["TIMESHEET_VIEW_ALL"])),
+      getApiWithToken(`/holidays?year=${yearValue}`, null, reqOptions(["HOLIDAY_VIEW"])),
+      getApiWithToken("/week-offs", null, reqOptions(["WEEK_OFF_VIEW"])),
+      getApiWithToken("/org-settings", null, reqOptions(["ORG_SETTINGS_VIEW"])),
+      getApiWithToken("/notifications/my?limit=6", null, reqOptions(["NOTIFICATION_VIEW_SELF"])),
     ]);
 
     setEmployeeList(employeesRes?.success ? (employeesRes.data?.items || []) : []);

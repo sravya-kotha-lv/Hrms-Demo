@@ -460,10 +460,18 @@ const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone 
   const settings = await OrgSettings.findOne({ organizationId })
     .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay");
 
-  if (!settings?.attendanceLockEnabled) return;
-
   const target = startOfDayInTimeZone(dateValue, timeZone);
   const today = startOfDayInTimeZone(new Date(), timeZone);
+  const targetKey = toDateKeyInTimeZone(target, timeZone);
+  const todayKey = toDateKeyInTimeZone(today, timeZone);
+
+  // Never allow attendance overrides on future dates.
+  if (targetKey > todayKey) {
+    throw new Error("Attendance cannot be updated for future dates");
+  }
+
+  if (!settings?.attendanceLockEnabled) return;
+
   const mode = settings.attendanceLockMode || "days_window";
 
   if (mode === "days_window") {
@@ -476,17 +484,18 @@ const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone 
   }
 
   const cutoffDay = Number(settings.payrollCutoffDay ?? 25);
-  const currentDay = today.getDate();
-  let periodStart;
-  if (currentDay > cutoffDay) {
-    periodStart = new Date(today.getFullYear(), today.getMonth(), cutoffDay + 1);
-  } else {
-    periodStart = new Date(today.getFullYear(), today.getMonth() - 1, cutoffDay + 1);
-  }
-  periodStart = startOfDayInTimeZone(periodStart, timeZone);
+  const currentDay = getDayInTimeZone(today, timeZone);
 
-  if (target < periodStart) {
-    throw new Error(`Attendance is locked before payroll period start ${periodStart.toDateString()}`);
+  // payroll_cutoff mode policy:
+  // - Before cutoff day: allow current + previous month edits.
+  // - On/after cutoff day: lock previous month; allow only current month dates.
+  const [todayYear, todayMonth] = todayKey.split("-").map(Number);
+  const periodStartKey = currentDay >= cutoffDay
+    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-01`
+    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-01`;
+
+  if (targetKey < periodStartKey) {
+    throw new Error(`Attendance is locked before payroll period start ${periodStartKey}`);
   }
 };
 

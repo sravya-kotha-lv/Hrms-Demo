@@ -151,7 +151,7 @@ exports.lifecycleActionSchema = Joi.object({
 
 exports.listEmployeesQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).optional(),
-  limit: Joi.number().integer().min(1).max(200).optional(),
+  limit: Joi.number().integer().min(1).max(500).optional(),
   search: Joi.string().trim().optional().allow(""),
   departmentId: objectId.optional(),
   designationId: objectId.optional(),
