@@ -39,6 +39,7 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
   const { profile, setProfile, setPermissions } = useAuth();
   const roles = useMemo(() => profile?.roles || [], [profile]);
   const activeRole = useMemo(() => profile?.activeRole || roles?.[0] || null, [profile, roles]);
+  const organizationName = profile?.organization?.name || profile?.activeOrganization?.name || "Organization";
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
@@ -57,10 +58,6 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
 
   useEffect(() => {
     loadNotifications(true);
-    const interval = window.setInterval(() => {
-      loadNotifications(false);
-    }, 30000);
-    return () => window.clearInterval(interval);
   }, []);
 
   const handleSwitchRole = async (role: any) => {
@@ -134,7 +131,12 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
   };
 
   return (
-    <header className="h-16 bg-card border-b border-border flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-40">
+    <header className="relative h-16 bg-card border-b border-border flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-40">
+      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 hidden md:flex items-center pointer-events-none">
+        <div className="max-w-[320px] rounded-full border border-border/80 bg-muted/50 px-4 py-1 text-sm font-medium text-foreground truncate">
+          {organizationName}
+        </div>
+      </div>
       {/* Left Section */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         <button
@@ -147,7 +149,7 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
         </button>
         {breadcrumb && breadcrumb.length > 0 && (
           <nav className="breadcrumb hidden md:flex">
-            {breadcrumb.map((item, index) => (
+            {/* {breadcrumb.map((item, index) => (
               <span key={index} className="flex items-center gap-2">
                 {index > 0 && <span>/</span>}
                 {item.href ? (
@@ -158,7 +160,7 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
                   <span className="text-foreground font-medium">{item.label}</span>
                 )}
               </span>
-            ))}
+            ))} */}
           </nav>
         )}
         {title && <h1 className="page-header truncate">{title}</h1>}
