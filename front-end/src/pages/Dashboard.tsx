@@ -103,11 +103,13 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (!isSuperAdmin && permissions.length === 0) return;
-    fetchOrganizations();
     loadDashboardData();
-    const timer = window.setInterval(() => loadDashboardData(), 60000);
-    return () => window.clearInterval(timer);
   }, [isSuperAdmin, permissions]);
+
+  useEffect(() => {
+    if (!showOrgPopup) return;
+    fetchOrganizations();
+  }, [showOrgPopup]);
 
   /* ================= API ================= */
 
@@ -165,39 +167,30 @@ const Dashboard = () => {
 
   const loadDashboardData = async () => {
     setDashboardLoading(true);
-    const now = new Date();
-    const dayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const start7 = new Date(now);
-    start7.setDate(now.getDate() - 6);
-    const start7Iso = `${start7.getFullYear()}-${String(start7.getMonth() + 1).padStart(2, "0")}-${String(start7.getDate()).padStart(2, "0")}`;
+    try {
+      const summaryRes = await getApiWithToken(
+        `/dashboard/summary?month=${monthValue}&year=${yearValue}`
+      );
 
-    const reqOptions = (requiredPermissions: string[]) =>
-      isSuperAdmin ? {} : { requiredPermissions };
+      if (!summaryRes?.success) {
+        toast.error(summaryRes?.message || "Failed to load dashboard");
+        return;
+      }
 
-    const [employeesRes, attendanceRes, attendance7Res, matrixRes, leavesRes, weeklyRes, holidayRes, weekOffRes, settingsRes, notifRes] = await Promise.all([
-      getApiWithToken("/employees?page=1&limit=500", null, reqOptions(["EMP_VIEW"])),
-      getApiWithToken(`/timesheets/attendance?startDate=${dayIso}&endDate=${dayIso}`, null, reqOptions(["TIMESHEET_VIEW_ALL"])),
-      getApiWithToken(`/timesheets/attendance?startDate=${start7Iso}&endDate=${dayIso}`, null, reqOptions(["TIMESHEET_VIEW_ALL"])),
-      getApiWithToken(`/timesheets/attendance/matrix?month=${monthValue}`, null, reqOptions(["ATTENDANCE_VIEW_ALL"])),
-      getApiWithToken("/leaves", null, reqOptions(["LEAVE_VIEW_ALL"])),
-      getApiWithToken("/timesheets/weekly", null, reqOptions(["TIMESHEET_VIEW_ALL"])),
-      getApiWithToken(`/holidays?year=${yearValue}`, null, reqOptions(["HOLIDAY_VIEW"])),
-      getApiWithToken("/week-offs", null, reqOptions(["WEEK_OFF_VIEW"])),
-      getApiWithToken("/org-settings", null, reqOptions(["ORG_SETTINGS_VIEW"])),
-      getApiWithToken("/notifications/my?limit=6", null, reqOptions(["NOTIFICATION_VIEW_SELF"])),
-    ]);
-
-    setEmployeeList(employeesRes?.success ? (employeesRes.data?.items || []) : []);
-    setAttendanceToday(attendanceRes?.success ? (attendanceRes.data || []) : []);
-    setAttendanceLast7(attendance7Res?.success ? (attendance7Res.data || []) : []);
-    setAttendanceMatrix(matrixRes?.success ? (matrixRes.data?.employees || []) : []);
-    setLeaveList(leavesRes?.success ? (leavesRes.data || []) : []);
-    setWeeklyList(weeklyRes?.success ? (weeklyRes.data || []) : []);
-    setHolidays(holidayRes?.success ? (holidayRes.data || []) : []);
-    setWeekOffDays(weekOffRes?.success ? (weekOffRes.data?.weekOffDays || []) : []);
-    setOrgSettings(settingsRes?.success ? (settingsRes.data || null) : null);
-    setNotifications(notifRes?.success ? (notifRes.data?.items || []) : []);
-    setDashboardLoading(false);
+      const data = summaryRes.data || {};
+      setEmployeeList(data.employeeList || []);
+      setAttendanceToday(data.attendanceToday || []);
+      setAttendanceLast7(data.attendanceLast7 || []);
+      setAttendanceMatrix(data.attendanceMatrix || []);
+      setLeaveList(data.leaveList || []);
+      setWeeklyList(data.weeklyList || []);
+      setHolidays(data.holidays || []);
+      setWeekOffDays(data.weekOffDays || []);
+      setOrgSettings(data.orgSettings || null);
+      setNotifications(data.notifications || []);
+    } finally {
+      setDashboardLoading(false);
+    }
   };
 
   const switchOrganization = async (organizationId: string) => {
