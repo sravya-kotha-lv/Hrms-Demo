@@ -40,7 +40,7 @@ const sharedLimiterOptions = {
  */
 const publicLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 10000,
   ...sharedLimiterOptions,
   message: {
     code: 429,
@@ -55,7 +55,7 @@ const publicLimiter = rateLimit({
  */
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 3000,
   ...sharedLimiterOptions
 });
 
