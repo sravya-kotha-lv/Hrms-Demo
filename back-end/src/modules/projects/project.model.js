@@ -31,7 +31,7 @@ const projectSchema = new mongoose.Schema(
     },
     clientCompany: {
       type: String,
-      required: true,
+      default: "",
       trim: true
     },
     clientEmail: {
@@ -94,6 +94,18 @@ const projectSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true
+    },
+    mouFile: {
+      fileName: String,
+      fileUrl: String,
+      mimeType: String,
+      uploadedAt: Date
+    },
+    documentationFile: {
+      fileName: String,
+      fileUrl: String,
+      mimeType: String,
+      uploadedAt: Date
     },
     isDeleted: {
       type: Boolean,

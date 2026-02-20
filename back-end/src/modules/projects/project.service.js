@@ -1,6 +1,7 @@
 const Project = require("./project.model");
 const Employee = require("../employees/employee.model");
 const { audit } = require("../auditLogs/auditLogs.service");
+const { uploadDataUri } = require("../../config/cloudinary");
 
 const toKey = (value) => String(value || "").trim().toLowerCase();
 
@@ -35,12 +36,9 @@ const computeAmounts = ({ actualAmount, discountedAmount, paidAmount }) => {
   };
 };
 
-const resolvePaidTo = async ({ organizationId, paidTo, paidAmount }) => {
+const resolvePaidTo = async ({ organizationId, paidTo }) => {
   if (!paidTo) {
-    if (Number(paidAmount || 0) > 0) {
-      throw { code: 400, message: "Paid To employee is required when paid amount is greater than 0" };
-    }
-    return null;
+    throw { code: 400, message: "Paid To employee is required" };
   }
 
   const employee = await Employee.findOne({
@@ -55,6 +53,24 @@ const resolvePaidTo = async ({ organizationId, paidTo, paidAmount }) => {
   return employee._id;
 };
 
+const uploadProjectFile = async (uploadPayload, folder, fallbackName) => {
+  if (!uploadPayload?.base64Data || !uploadPayload?.mimeType) return undefined;
+
+  const dataUri = `data:${uploadPayload.mimeType};base64,${uploadPayload.base64Data}`;
+  const isPdf = String(uploadPayload.mimeType).toLowerCase() === "application/pdf";
+  const uploaded = await uploadDataUri(dataUri, {
+    folder,
+    resource_type: isPdf ? "raw" : "auto"
+  });
+
+  return {
+    fileName: uploadPayload.fileName || fallbackName,
+    fileUrl: uploaded?.secure_url || "",
+    mimeType: uploadPayload.mimeType || "",
+    uploadedAt: new Date()
+  };
+};
+
 exports.create = async (req) => {
   const organizationId = req.user.organizationId;
   const projectNameKey = toKey(req.body.projectName);
@@ -67,16 +83,25 @@ exports.create = async (req) => {
   const amounts = computeAmounts(req.body);
   const paidTo = await resolvePaidTo({
     organizationId,
-    paidTo: req.body.paidTo || null,
-    paidAmount: amounts.paidAmount
+    paidTo: req.body.paidTo || null
   });
+  const mouFile = await uploadProjectFile(
+    req.body.mouUpload,
+    "hrms/project-mou-files",
+    "project-mou"
+  );
+  const documentationFile = await uploadProjectFile(
+    req.body.documentationUpload,
+    "hrms/project-documentation-files",
+    "project-documentation"
+  );
   const project = await Project.create({
     organizationId,
     projectName: req.body.projectName,
     projectNameKey,
     logoUrl: req.body.logoUrl || "",
     clientName: req.body.clientName,
-    clientCompany: req.body.clientCompany,
+    clientCompany: req.body.clientCompany || "",
     clientEmail: req.body.clientEmail || "",
     clientPhone: req.body.clientPhone || "",
     clientAddress: req.body.clientAddress || "",
@@ -86,6 +111,8 @@ exports.create = async (req) => {
     startDate: req.body.startDate || null,
     expectedEndDate: req.body.expectedEndDate || null,
     notes: req.body.notes || "",
+    mouFile,
+    documentationFile,
     createdBy: req.user.userId,
     updatedBy: req.user.userId
   });
@@ -187,8 +214,7 @@ exports.update = async (req) => {
       : project.paidTo || null;
   project.paidTo = await resolvePaidTo({
     organizationId: req.user.organizationId,
-    paidTo: paidToCandidate,
-    paidAmount: nextAmounts.paidAmount
+    paidTo: paidToCandidate
   });
 
   if (req.body.logoUrl !== undefined) project.logoUrl = req.body.logoUrl || "";
@@ -203,6 +229,22 @@ exports.update = async (req) => {
     project.expectedEndDate = req.body.expectedEndDate || null;
   }
   if (req.body.notes !== undefined) project.notes = req.body.notes || "";
+  if (req.body.mouUpload) {
+    const mouFile = await uploadProjectFile(
+      req.body.mouUpload,
+      "hrms/project-mou-files",
+      "project-mou"
+    );
+    if (mouFile) project.mouFile = mouFile;
+  }
+  if (req.body.documentationUpload) {
+    const documentationFile = await uploadProjectFile(
+      req.body.documentationUpload,
+      "hrms/project-documentation-files",
+      "project-documentation"
+    );
+    if (documentationFile) project.documentationFile = documentationFile;
+  }
 
   project.updatedBy = req.user.userId;
   await project.save();

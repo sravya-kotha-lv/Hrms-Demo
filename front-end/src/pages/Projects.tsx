@@ -7,7 +7,16 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList
+} from "@/components/ui/command";
+import { Plus, Pencil, Trash2, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   deleteApiWithToken,
@@ -19,6 +28,8 @@ import { useAuth } from "@/context/AuthContext";
 
 type ProjectStatus = "active" | "on_hold" | "completed" | "cancelled";
 type PaidToValue = string;
+type UploadPayload = { fileName: string; mimeType: string; base64Data: string };
+type UploadedFileMeta = { fileName?: string; fileUrl?: string; mimeType?: string; uploadedAt?: string };
 
 interface EmployeeOption {
   _id: string;
@@ -50,6 +61,10 @@ interface Project {
   pendingAmount?: number;
   status: ProjectStatus;
   notes?: string;
+  mouFile?: UploadedFileMeta | null;
+  documentationFile?: UploadedFileMeta | null;
+  mouUpload?: UploadPayload | null;
+  documentationUpload?: UploadPayload | null;
 }
 
 const emptyProject: Project = {
@@ -66,8 +81,13 @@ const emptyProject: Project = {
   paidTo: "none",
   pendingAmount: 0,
   status: "active",
-  notes: ""
+  notes: "",
+  mouUpload: null,
+  documentationUpload: null
 };
+
+const PROJECT_FILE_MAX_BYTES = 5 * 1024 * 1024;
+const PROJECT_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 
 const formatINR = (value: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
@@ -91,6 +111,7 @@ const Projects = () => {
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<Project>(emptyProject);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [paidToOpen, setPaidToOpen] = useState(false);
 
   const pendingAmount = useMemo(() => {
     const discounted = Number(form.discountedAmount || 0);
@@ -98,6 +119,60 @@ const Projects = () => {
     return Math.max(0, discounted - paid);
   }, [form.discountedAmount, form.paidAmount]);
   const paidToId = useMemo(() => getPaidToId(form.paidTo), [form.paidTo]);
+  const paidToLabel = useMemo(() => {
+    const selected = employees.find((emp) => emp._id === paidToId);
+    if (!selected) return "Select employee *";
+    return (
+      `${selected.firstName || ""} ${selected.lastName || ""}`.trim() ||
+      selected.employeeCode ||
+      selected._id
+    );
+  }, [employees, paidToId]);
+
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || "");
+        const base64 = result.includes(",") ? result.split(",")[1] : result;
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const validateFile = (file: File, label: string) => {
+    if (!PROJECT_FILE_TYPES.includes(file.type)) {
+      toast.error(`Invalid ${label} format`);
+      return false;
+    }
+    if (file.size > PROJECT_FILE_MAX_BYTES) {
+      toast.error(`${label} size should be under 5MB`);
+      return false;
+    }
+    return true;
+  };
+
+  const handleAmountChange = (
+    field: "actualAmount" | "discountedAmount" | "paidAmount",
+    value: string,
+    errorKey: "actualAmount" | "discountedAmount" | "paidAmount"
+  ) => {
+    const trimmed = value.trim();
+    // Allow only non-negative numbers with up to 2 decimal places.
+    if (!/^\d*(\.\d{0,2})?$/.test(trimmed)) {
+      setErrors((prev) => ({ ...prev, [errorKey]: "Enter a valid number (max 2 decimals)" }));
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      [field]: trimmed === "" ? 0 : Number(trimmed)
+    }));
+    if (errors[errorKey]) {
+      setErrors((prev) => ({ ...prev, [errorKey]: "" }));
+    }
+  };
 
   const fetchProjects = async () => {
     const response = await getApiWithToken("/projects", null, {
@@ -146,7 +221,6 @@ const Projects = () => {
 
     if (!form.projectName.trim()) nextErrors.projectName = "Project name is required";
     if (!form.clientName.trim()) nextErrors.clientName = "Client name is required";
-    if (!form.clientCompany.trim()) nextErrors.clientCompany = "Client company is required";
     if (Number(form.actualAmount) < 0) nextErrors.actualAmount = "Actual amount must be 0 or more";
     if (Number(form.discountedAmount) < 0) {
       nextErrors.discountedAmount = "Discounted amount must be 0 or more";
@@ -158,8 +232,8 @@ const Projects = () => {
     if (Number(form.paidAmount) > Number(form.discountedAmount)) {
       nextErrors.paidAmount = "Paid amount cannot exceed discounted amount";
     }
-    if (Number(form.paidAmount) > 0 && paidToId === "none") {
-      nextErrors.paidTo = "Select employee in Paid To when paid amount is greater than 0";
+    if (paidToId === "none") {
+      nextErrors.paidTo = "Paid To is required";
     }
     if (form.clientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.clientEmail)) {
       nextErrors.clientEmail = "Enter a valid email";
@@ -186,9 +260,11 @@ const Projects = () => {
       actualAmount: Number(form.actualAmount || 0),
       discountedAmount: Number(form.discountedAmount || 0),
       paidAmount: Number(form.paidAmount || 0),
-      paidTo: paidToId !== "none" ? paidToId : null,
+      paidTo: paidToId,
       status: form.status,
-      notes: form.notes || ""
+      notes: form.notes || "",
+      mouUpload: form.mouUpload || undefined,
+      documentationUpload: form.documentationUpload || undefined
     };
 
     const res =
@@ -220,7 +296,7 @@ const Projects = () => {
       render: (row) => (
         <div>
           <div className="font-medium">{row.clientName}</div>
-          <div className="text-xs text-muted-foreground">{row.clientCompany}</div>
+          <div className="text-xs text-muted-foreground">{row.clientCompany || "-"}</div>
         </div>
       )
     },
@@ -240,6 +316,22 @@ const Projects = () => {
                 (row.paidTo as any).employeeCode ||
                 "-"
               : "-"}
+          </div>
+          <div>
+            MOU:{" "}
+            {row.mouFile?.fileUrl ? (
+              <a href={row.mouFile.fileUrl} className="text-primary underline" target="_blank" rel="noreferrer">
+                View
+              </a>
+            ) : "-"}
+          </div>
+          <div>
+            Documentation:{" "}
+            {row.documentationFile?.fileUrl ? (
+              <a href={row.documentationFile.fileUrl} className="text-primary underline" target="_blank" rel="noreferrer">
+                View
+              </a>
+            ) : "-"}
           </div>
         </div>
       )
@@ -274,7 +366,9 @@ const Projects = () => {
                   clientEmail: row.clientEmail || "",
                   clientPhone: row.clientPhone || "",
                   clientAddress: row.clientAddress || "",
-                  notes: row.notes || ""
+                  notes: row.notes || "",
+                  mouUpload: null,
+                  documentationUpload: null
                 });
                 setOpen(true);
               }}
@@ -409,7 +503,7 @@ const Projects = () => {
             />
             {errors.clientName && <p className="text-xs text-red-600">{errors.clientName}</p>}
             <Input
-              placeholder="Client Company * (e.g. Acme Pvt Ltd)"
+              placeholder="Client Company (optional)"
               value={form.clientCompany}
               onChange={(e) => {
                 setForm({ ...form, clientCompany: e.target.value });
@@ -418,7 +512,7 @@ const Projects = () => {
             />
             {errors.clientCompany && <p className="text-xs text-red-600">{errors.clientCompany}</p>}
             <Input
-              placeholder="Client Email (e.g. client@company.com)"
+              placeholder="Client Email (optional)"
               value={form.clientEmail}
               onChange={(e) => {
                 setForm({ ...form, clientEmail: e.target.value });
@@ -442,14 +536,10 @@ const Projects = () => {
               <p className="text-xs font-medium">Actual Amount *</p>
               <p className="text-[11px] text-muted-foreground">Original quote before discount</p>
               <Input
-                type="number"
-                min={0}
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={form.actualAmount}
-                onChange={(e) => {
-                  setForm({ ...form, actualAmount: Number(e.target.value || 0) });
-                  if (errors.actualAmount) setErrors({ ...errors, actualAmount: "" });
-                }}
+                onChange={(e) => handleAmountChange("actualAmount", e.target.value, "actualAmount")}
               />
               {errors.actualAmount && <p className="text-xs text-red-600">{errors.actualAmount}</p>}
             </div>
@@ -458,14 +548,12 @@ const Projects = () => {
               <p className="text-xs font-medium">Discounted Amount *</p>
               <p className="text-[11px] text-muted-foreground">Final agreed amount after discount</p>
               <Input
-                type="number"
-                min={0}
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={form.discountedAmount}
-                onChange={(e) => {
-                  setForm({ ...form, discountedAmount: Number(e.target.value || 0) });
-                  if (errors.discountedAmount) setErrors({ ...errors, discountedAmount: "" });
-                }}
+                onChange={(e) =>
+                  handleAmountChange("discountedAmount", e.target.value, "discountedAmount")
+                }
               />
               {errors.discountedAmount && (
                 <p className="text-xs text-red-600">{errors.discountedAmount}</p>
@@ -476,17 +564,10 @@ const Projects = () => {
               <p className="text-xs font-medium">Paid Amount *</p>
               <p className="text-[11px] text-muted-foreground">Amount already received from client</p>
               <Input
-                type="number"
-                min={0}
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={form.paidAmount}
-                onChange={(e) => {
-                  setForm({ ...form, paidAmount: Number(e.target.value || 0) });
-                  if (errors.paidAmount) setErrors({ ...errors, paidAmount: "" });
-                  if (Number(e.target.value || 0) === 0) {
-                    setForm((prev) => ({ ...prev, paidAmount: 0, paidTo: "none" }));
-                  }
-                }}
+                onChange={(e) => handleAmountChange("paidAmount", e.target.value, "paidAmount")}
               />
               {errors.paidAmount && <p className="text-xs text-red-600">{errors.paidAmount}</p>}
             </div>
@@ -502,45 +583,71 @@ const Projects = () => {
               <p className="text-[11px] text-muted-foreground">
                 Employee who collected/received this payment
               </p>
-              <Select
-                value={paidToId}
-                onValueChange={(v: string) => {
-                  setForm({ ...form, paidTo: v });
-                  if (errors.paidTo) setErrors({ ...errors, paidTo: "" });
-                }}
-                disabled={Number(form.paidAmount || 0) <= 0}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select employee" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Not selected</SelectItem>
-                  {employees.map((emp) => (
-                    <SelectItem key={emp._id} value={emp._id}>
-                      {`${emp.firstName || ""} ${emp.lastName || ""}`.trim() ||
-                        emp.employeeCode ||
-                        emp._id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={paidToOpen} onOpenChange={setPaidToOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between font-normal">
+                    <span className="truncate">{paidToLabel}</span>
+                    <ChevronDown className="h-4 w-4 opacity-60" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search employee by name or code" />
+                    <CommandList>
+                      <CommandEmpty>No employees match your search.</CommandEmpty>
+                      <CommandGroup>
+                        {employees.map((emp) => {
+                          const label =
+                            `${emp.firstName || ""} ${emp.lastName || ""}`.trim() ||
+                            emp.employeeCode ||
+                            emp._id;
+                          return (
+                            <CommandItem
+                              key={emp._id}
+                              value={`${label} ${emp.employeeCode || ""}`}
+                              onSelect={() => {
+                                setForm({ ...form, paidTo: emp._id });
+                                if (errors.paidTo) setErrors({ ...errors, paidTo: "" });
+                                setPaidToOpen(false);
+                              }}
+                            >
+                              {label}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {employees.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No active employees found.
+                </p>
+              )}
               {errors.paidTo && <p className="text-xs text-red-600">{errors.paidTo}</p>}
             </div>
 
-            <Select
-              value={form.status}
-              onValueChange={(v: ProjectStatus) => setForm({ ...form, status: v })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="on_hold">On Hold</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="space-y-1">
+              <p className="text-xs font-medium">Status</p>
+              <p className="text-[11px] text-muted-foreground">
+                Current lifecycle status of this project
+              </p>
+              <Select
+                value={form.status}
+                onValueChange={(v: ProjectStatus) => setForm({ ...form, status: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="on_hold">On Hold</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <Textarea
@@ -553,6 +660,71 @@ const Projects = () => {
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <p className="text-xs font-medium">MOU Upload</p>
+              <Input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (!validateFile(file, "MOU")) return;
+                  const base64Data = await fileToBase64(file);
+                  setForm({
+                    ...form,
+                    mouUpload: {
+                      fileName: file.name,
+                      mimeType: file.type,
+                      base64Data
+                    }
+                  });
+                }}
+              />
+              {form.mouUpload?.fileName && (
+                <p className="text-xs text-muted-foreground">{form.mouUpload.fileName}</p>
+              )}
+              {!form.mouUpload?.fileName && form.mouFile?.fileUrl && (
+                <a href={form.mouFile.fileUrl} className="text-xs text-primary underline" target="_blank" rel="noreferrer">
+                  View current MOU
+                </a>
+              )}
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium">Documentation Upload</p>
+              <Input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (!validateFile(file, "Documentation")) return;
+                  const base64Data = await fileToBase64(file);
+                  setForm({
+                    ...form,
+                    documentationUpload: {
+                      fileName: file.name,
+                      mimeType: file.type,
+                      base64Data
+                    }
+                  });
+                }}
+              />
+              {form.documentationUpload?.fileName && (
+                <p className="text-xs text-muted-foreground">{form.documentationUpload.fileName}</p>
+              )}
+              {!form.documentationUpload?.fileName && form.documentationFile?.fileUrl && (
+                <a
+                  href={form.documentationFile.fileUrl}
+                  className="text-xs text-primary underline"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View current documentation
+                </a>
+              )}
+            </div>
+          </div>
 
           <Button onClick={handleSubmit} className="w-full">
             {isEdit ? "Update Project" : "Create Project"}
