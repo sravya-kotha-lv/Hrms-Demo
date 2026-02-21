@@ -1,16 +1,63 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, ActivityIndicator } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { postApiWithToken } from '@/services/apiWrapper';
 
-const EMPLOYEES = ['John Doe', 'Jane Smith', 'Mike Wilson', 'Sarah Lee'];
+const EMPLOYEES = [
+  { id: "1", name: "John Doe" },
+  { id: "2", name: "Jane Smith" },
+  { id: "3", name: "Mike Wilson" },
+  { id: "4", name: "Sarah Lee" },
+];
 
 export default function AttendanceModal() {
+
   const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<'Present' | 'Late' | 'Absent'>('Present');
+  const [saving, setSaving] = useState(false);
+
+  /* ================= SUBMIT API ================= */
+
+  const submitAttendance = async () => {
+    if (!selected) return;
+
+    try {
+      setSaving(true);
+
+      const payload = {
+        employeeIds: [selected],
+        date: new Date().toISOString().slice(0, 10),
+        status:
+          status === "Present"
+            ? "present"
+            : status === "Late"
+            ? "pending_checkout"
+            : "absent"
+      };
+
+      const res = await postApiWithToken(
+        "/timesheets/attendance/matrix/bulk",
+        payload
+      );
+
+      if (res?.success) {
+        router.back();
+      } else {
+        console.log(res?.message);
+      }
+
+    } catch (e) {
+      console.log(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* ================= UI ================= */
 
   return (
     <ThemedView style={styles.container}>
@@ -23,6 +70,8 @@ export default function AttendanceModal() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+
+        {/* STATUS */}
         <ThemedText style={styles.sectionTitle}>Select Status</ThemedText>
         <View style={styles.statusRow}>
           {(['Present', 'Late', 'Absent'] as const).map((s) => (
@@ -48,30 +97,43 @@ export default function AttendanceModal() {
           ))}
         </View>
 
+        {/* EMPLOYEES */}
         <ThemedText style={styles.sectionTitle}>Select Employee</ThemedText>
+
         {EMPLOYEES.map((emp) => (
           <Pressable
-            key={emp}
-            style={[styles.employeeRow, selected === emp && styles.employeeRowSelected]}
-            onPress={() => setSelected(emp)}
+            key={emp.id}
+            style={[styles.employeeRow, selected === emp.id && styles.employeeRowSelected]}
+            onPress={() => setSelected(emp.id)}
           >
             <View style={styles.avatar}>
-              <ThemedText style={styles.avatarText}>{emp.charAt(0)}</ThemedText>
+              <ThemedText style={styles.avatarText}>{emp.name.charAt(0)}</ThemedText>
             </View>
-            <ThemedText style={styles.employeeName}>{emp}</ThemedText>
-            {selected === emp && (
+
+            <ThemedText style={styles.employeeName}>{emp.name}</ThemedText>
+
+            {selected === emp.id && (
               <MaterialIcons name="check-circle" size={24} color="#16a34a" />
             )}
           </Pressable>
         ))}
 
+        {/* SUBMIT */}
         <Pressable
           style={({ pressed }) => [styles.submitButton, pressed && styles.buttonPressed]}
-          onPress={() => router.back()}
+          onPress={submitAttendance}
+          disabled={saving}
         >
-          <MaterialIcons name="check-circle" size={22} color="#fff" />
-          <ThemedText style={styles.submitText}>Mark Attendance</ThemedText>
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <MaterialIcons name="check-circle" size={22} color="#fff" />
+              <ThemedText style={styles.submitText}>Mark Attendance</ThemedText>
+            </>
+          )}
         </Pressable>
+
       </ScrollView>
     </ThemedView>
   );
