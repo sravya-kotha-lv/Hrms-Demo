@@ -4,7 +4,9 @@ import { ActionCard } from '@/components/hrm/ActionCard';
 import HRMLogo from '@/components/hrm/HRMLogo';
 import { StatCard } from '@/components/hrm/StatCard';
 import { ThemedText } from '@/components/themed-text';
+import Toast from 'react-native-toast-message';
 
+<Toast />
 export default function DashboardScreen() {
   const router = useRouter();
 
@@ -15,7 +17,7 @@ export default function DashboardScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={{paddingBottom:20 }}>
-        <HRMLogo size="md" />
+        <HRMLogo />
       </View>
       <ThemedText type="title">Dashboard</ThemedText>
       <ThemedText style={{ fontSize: 16, marginTop: 4, opacity: 0.7 }}>
