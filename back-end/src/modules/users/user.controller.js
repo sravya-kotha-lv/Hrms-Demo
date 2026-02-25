@@ -122,6 +122,67 @@ exports.verifyOtp = async (req, res) => {
   );
 };
 
+exports.forgotPasswordSendOtp = async (req, res) => {
+  await userService.sendOtp(req.body);
+  return res.json(
+    buildSuccessResponse({
+      message: "OTP sent successfully"
+    })
+  );
+};
+
+exports.forgotPasswordVerifyOtp = async (req, res) => {
+  await userService.verifyOtp(req.body, { forPasswordReset: true });
+  return res.json(
+    buildSuccessResponse({
+      message: "OTP verified successfully"
+    })
+  );
+};
+
+exports.resetPasswordWithOtp = async (req, res) => {
+  await userService.resetPasswordWithOtp(req.body);
+  return res.json(
+    buildSuccessResponse({
+      message: "Password updated successfully"
+    })
+  );
+};
+
+exports.sendChangePasswordOtp = async (req, res) => {
+  await userService.sendOtp({ email: req.user.email });
+  return res.json(
+    buildSuccessResponse({
+      message: "OTP sent successfully"
+    })
+  );
+};
+
+exports.verifyChangePasswordOtp = async (req, res) => {
+  await userService.verifyOtp(
+    { email: req.user.email, otp: req.body.otp },
+    { forPasswordReset: true }
+  );
+  return res.json(
+    buildSuccessResponse({
+      message: "OTP verified successfully"
+    })
+  );
+};
+
+exports.updatePasswordWithOtp = async (req, res) => {
+  await userService.resetPasswordWithOtp({
+    email: req.user.email,
+    password: req.body.password,
+    confirmPassword: req.body.confirmPassword
+  });
+  return res.json(
+    buildSuccessResponse({
+      message: "Password updated successfully"
+    })
+  );
+};
+
 exports.myPermissions = async (req, res) => {
   const data = await userService.getActivePermissions({ user: req.user });
   return res.status(200).json(

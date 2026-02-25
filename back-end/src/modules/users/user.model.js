@@ -31,6 +31,8 @@ const userSchema = new mongoose.Schema(
     otp: String,
     otpTimestamp: Date,
     otpAttempts: { type: Number, default: 0 },
+    resetPasswordVerifiedAt: Date,
+    resetPasswordVerifiedUntil: Date,
 
     tokenList: [
       {

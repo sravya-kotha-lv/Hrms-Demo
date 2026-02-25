@@ -482,15 +482,20 @@ exports.getMyProfile = async ({ user }) => {
 
 
 const OTP_EXPIRY_MS = 10 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+const RESET_PASSWORD_VERIFICATION_WINDOW_MS = 10 * 60 * 1000;
 
 const generateOtp = () =>
   Math.floor(100000 + Math.random() * 900000).toString();
+
+const normalizeEmail = (email) => String(email || "").toLowerCase().trim();
 
 /**
  * SEND OTP
  */
 exports.sendOtp = async ({ email }) => {
-  const user = await User.findOne({ email });
+  const normalizedEmail = normalizeEmail(email);
+  const user = await User.findOne({ email: normalizedEmail });
   if (!user) {
     throw { code: 404, message: "Email not registered" };
   }
@@ -498,42 +503,106 @@ exports.sendOtp = async ({ email }) => {
   const otp = generateOtp();
 
   await User.updateOne(
-    { email },
+    { email: normalizedEmail },
     {
       otp,
       otpTimestamp: Date.now(),
-      otpAttempts: 0
+      otpAttempts: 0,
+      resetPasswordVerifiedAt: null,
+      resetPasswordVerifiedUntil: null
     }
   );
 
   await sendMail(
     "otp",
-    email,
+    normalizedEmail,
     "Your OTP",
     otp,
-    email
+    normalizedEmail
   );
 };
 
 /**
  * VERIFY OTP
  */
-exports.verifyOtp = async ({ email, otp }) => {
-  const user = await User.findOne({ email });
+exports.verifyOtp = async ({ email, otp }, options = {}) => {
+  const normalizedEmail = normalizeEmail(email);
+  const { forPasswordReset = false } = options;
+  const user = await User.findOne({ email: normalizedEmail });
   if (!user) throw { code: 404, message: "User not found" };
 
+  if (!user.otp || !user.otpTimestamp) {
+    throw { code: 400, message: "OTP not found. Please request a new OTP." };
+  }
+
+  if ((user.otpAttempts || 0) >= OTP_MAX_ATTEMPTS) {
+    throw { code: 429, message: "Maximum OTP attempts exceeded. Please request a new OTP." };
+  }
+
+  if (Date.now() - new Date(user.otpTimestamp).getTime() > OTP_EXPIRY_MS) {
+    throw { code: 400, message: "OTP expired" };
+  }
+
   if (user.otp !== otp) {
-    user.otpAttempts += 1;
+    user.otpAttempts = (user.otpAttempts || 0) + 1;
     await user.save();
     throw { code: 400, message: "Invalid OTP" };
   }
 
-  if (Date.now() - user.otpTimestamp > OTP_EXPIRY_MS) {
-    throw { code: 400, message: "OTP expired" };
+  const update = {
+    otp: null,
+    otpTimestamp: null,
+    otpAttempts: 0
+  };
+
+  if (forPasswordReset) {
+    const now = new Date();
+    update.resetPasswordVerifiedAt = now;
+    update.resetPasswordVerifiedUntil = new Date(
+      now.getTime() + RESET_PASSWORD_VERIFICATION_WINDOW_MS
+    );
   }
 
+  await User.updateOne({ email: normalizedEmail }, update);
+};
+
+exports.resetPasswordWithOtp = async ({
+  email,
+  password,
+  confirmPassword
+}) => {
+  const normalizedEmail = normalizeEmail(email);
+  if (password !== confirmPassword) {
+    throw { code: 400, message: "Confirm password must match password" };
+  }
+
+  const user = await User.findOne({ email: normalizedEmail }).select("+password");
+  if (!user) {
+    throw { code: 404, message: "User not found" };
+  }
+
+  if (
+    !user.resetPasswordVerifiedUntil ||
+    new Date(user.resetPasswordVerifiedUntil).getTime() < Date.now()
+  ) {
+    throw { code: 400, message: "OTP verification expired. Please verify OTP again." };
+  }
+
+  const isSameAsOldPassword = await checkPasswords(password, user.password);
+  if (isSameAsOldPassword) {
+    throw { code: 400, message: "New password cannot be the same as current password" };
+  }
+
+  const hashedPassword = await genHashedPassword(password);
   await User.updateOne(
-    { email },
-    { otp: null, otpTimestamp: null, otpAttempts: 0 }
+    { email: normalizedEmail },
+    {
+      password: hashedPassword,
+      otp: null,
+      otpTimestamp: null,
+      otpAttempts: 0,
+      resetPasswordVerifiedAt: null,
+      resetPasswordVerifiedUntil: null
+    }
   );
 };

@@ -32,6 +32,8 @@ const Roles = React.lazy(() => import("./pages/Roles"));
 const AddRole = React.lazy(() => import("./pages/AddRole"));
 const Permissions = React.lazy(() => import("./pages/Permissions"));
 const Login = React.lazy(() => import("./pages/Login"));
+const ForgotPassword = React.lazy(() => import("./pages/ForgotPassword"));
+const ChangePassword = React.lazy(() => import("./pages/ChangePassword"));
 const Departments = React.lazy(() => import("./pages/Departments"));
 const AddDepartment = React.lazy(() => import("./pages/AddDepartment"));
 const Designations = React.lazy(() => import("./pages/Designations"));
@@ -57,6 +59,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<RoleBasedHome />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route element={<MainLayout><Outlet /></MainLayout>}>
             <Route
               path="/complete-profile"
@@ -230,6 +233,16 @@ const App = () => (
                 <RequireAuth>
                   <RequireProfile>
                     <ProfilePage />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/change-password"
+              element={
+                <RequireAuth>
+                  <RequireProfile>
+                    <ChangePassword />
                   </RequireProfile>
                 </RequireAuth>
               }

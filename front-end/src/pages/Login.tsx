@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
 import { getApiWithToken, postApiWithoutToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
@@ -218,6 +218,11 @@ const Login = () => {
               onChange={(e) => setPassword(e.target.value)}
               className="h-11"
             />
+            <div className="text-right -mt-2">
+              <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-700">
+                Forgot password?
+              </Link>
+            </div>
             <Button type="submit" className="w-full h-11" disabled={submitting}>
               {submitting ? <InlineLoader label="Signing in..." className="text-white" /> : "Login"}
             </Button>

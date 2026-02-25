@@ -61,6 +61,44 @@ router.post(
   validate(validator.validateOTPSchema),
   asyncHandler(controller.verifyOtp)
 );
+router.post(
+  "/forgot-password/send-otp",
+  publicLimiter,
+  validate(validator.sendOTPUserSchema),
+  asyncHandler(controller.forgotPasswordSendOtp)
+);
+router.post(
+  "/forgot-password/verify-otp",
+  publicLimiter,
+  validate(validator.validateOTPSchema),
+  asyncHandler(controller.forgotPasswordVerifyOtp)
+);
+router.post(
+  "/forgot-password/reset-password",
+  publicLimiter,
+  validate(validator.resetPasswordSchema),
+  asyncHandler(controller.resetPasswordWithOtp)
+);
+router.post(
+  "/change-password/send-otp",
+  auth,
+  publicLimiter,
+  asyncHandler(controller.sendChangePasswordOtp)
+);
+router.post(
+  "/change-password/verify-otp",
+  auth,
+  publicLimiter,
+  validate(validator.verifyOtpOnlySchema),
+  asyncHandler(controller.verifyChangePasswordOtp)
+);
+router.post(
+  "/change-password/update",
+  auth,
+  publicLimiter,
+  validate(validator.updatePasswordAuthSchema),
+  asyncHandler(controller.updatePasswordWithOtp)
+);
 
 
 module.exports = router;
