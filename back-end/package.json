@@ -12,7 +12,11 @@
     "start": "nodemon app.js",
     "jobs:scheduler": "node src/jobs/scheduler.js",
     "jobs:worker": "node src/jobs/worker.js",
-    "migrate:weekoffs:rotational": "node src/script/migrate.weekoffs.rotational.js"
+    "migrate:weekoffs:rotational": "node src/script/migrate.weekoffs.rotational.js",
+    "migrate:payroll:up": "node src/script/payroll.migrate.js up",
+    "migrate:payroll:down": "node src/script/payroll.migrate.js down",
+    "migrate:payroll:status": "node src/script/payroll.migrate.js status",
+    "seed:payroll:tenants": "node src/script/payroll.seed.tenants.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -32,6 +36,7 @@
     "nodemailer": "^7.0.12",
     "nodemon": "^3.1.11",
     "path": "^0.12.7",
+    "pg": "^8.13.3",
     "rate-limit-redis": "^4.3.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",

@@ -1,23 +1,38 @@
 const winston = require("winston");
 
-const { combine, timestamp, printf, colorize } = winston.format;
+const { combine, timestamp, printf, colorize, errors, splat, metadata, json } =
+  winston.format;
 
 // Log format
-const logFormat = printf(({ level, message, timestamp, stack }) => {
-  return `${timestamp} [${level}]: ${stack || message}`;
+const devLogFormat = printf(({ level, message, timestamp, stack, metadata: meta }) => {
+  const payload = meta && Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : "";
+  return `${timestamp} [${level}]: ${stack || message}${payload}`;
 });
 
 // Create logger instance
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || "info",
   format: combine(
-    timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-    logFormat
+    timestamp(),
+    errors({ stack: true }),
+    splat(),
+    metadata({ fillExcept: ["level", "message", "timestamp", "stack"] }),
+    process.env.NODE_ENV === "production" ? json() : devLogFormat
   ),
   transports: [
     // Console logs
     new winston.transports.Console({
-      format: combine(colorize(), logFormat)
+      format:
+        process.env.NODE_ENV === "production"
+          ? combine(timestamp(), errors({ stack: true }), splat(), metadata(), json())
+          : combine(
+              colorize(),
+              timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+              errors({ stack: true }),
+              splat(),
+              metadata({ fillExcept: ["level", "message", "timestamp", "stack"] }),
+              devLogFormat
+            )
     }),
 
     // Error logs

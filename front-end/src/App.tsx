@@ -22,6 +22,7 @@ const LeaveApply = React.lazy(() => import("./pages/LeaveApply"));
 const Holidays = React.lazy(() => import("./pages/Holidays"));
 const WeekOffs = React.lazy(() => import("./pages/WeekOffs"));
 const Payroll = React.lazy(() => import("./pages/Payroll"));
+const PayrollEmployeeBreakdown = React.lazy(() => import("./pages/PayrollEmployeeBreakdown"));
 const PerformanceDashboard = React.lazy(() => import("./pages/PerformanceDashboard"));
 const ProfilePage = React.lazy(() => import("./pages/ProfilePage"));
 const Organization = React.lazy(() => import("./pages/Organization"));
@@ -213,6 +214,16 @@ const App = () => (
                 <RequireAuth>
                   <RequireProfile>
                     <Payroll />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/payroll/employee-breakdown"
+              element={
+                <RequireAuth>
+                  <RequireProfile>
+                    <PayrollEmployeeBreakdown />
                   </RequireProfile>
                 </RequireAuth>
               }

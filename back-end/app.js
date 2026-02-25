@@ -6,6 +6,12 @@ const mongoose = require("mongoose");
 const { authLimiter } = require("./src/middlewares/rateLimiter");
 const { getRedisClient, isRedisEnabled, isRedisReady } = require("./src/config/redis");
 const {
+  isPayrollDbEnabled,
+  isPayrollDbReady,
+  connectPayrollDb,
+  validatePayrollDbConfig
+} = require("./src/config/payrollDb");
+const {
   metricsMiddleware,
   metricsHandler,
   getMetricsSnapshot
@@ -102,6 +108,7 @@ app.get("/health", (req, res) => {
 app.get("/ready", async (req, res) => {
   const dbReady = mongoose.connection.readyState === 1;
   const redisEnabled = isRedisEnabled();
+  const payrollDbEnabled = isPayrollDbEnabled();
 
   let redisReady = !redisEnabled;
   if (redisEnabled && !isRedisReady()) {
@@ -109,14 +116,16 @@ app.get("/ready", async (req, res) => {
     redisReady = Boolean(client && client.status === "ready");
   }
 
-  const isReady = dbReady && redisReady;
+  const payrollDbReady = payrollDbEnabled ? isPayrollDbReady() : true;
+  const isReady = dbReady && redisReady && payrollDbReady;
 
   return res.status(isReady ? 200 : 503).json({
     status: isReady ? "READY" : "NOT_READY",
     timestamp: new Date().toISOString(),
     checks: {
       database: dbReady ? "up" : "down",
-      redis: redisEnabled ? (redisReady ? "up" : "down") : "disabled"
+      redis: redisEnabled ? (redisReady ? "up" : "down") : "disabled",
+      payrollPostgres: payrollDbEnabled ? (payrollDbReady ? "up" : "down") : "disabled"
     }
   });
 });
@@ -146,6 +155,7 @@ app.use("/api/notifications", require("./src/modules/notifications/notification.
 app.use("/api/expenses", require("./src/modules/expenses/expense.routes"));
 app.use("/api/projects", require("./src/modules/projects/project.routes"));
 app.use("/api/dashboard", require("./src/modules/dashboard/dashboard.routes"));
+app.use("/api/payroll", require("./src/modules/payroll/payrollAttendance.routes"));
 
 const shouldRunSchedulerInApi = process.env.ENABLE_JOB_SCHEDULER === "true";
 
@@ -167,6 +177,8 @@ const { ensureSystemBootstrap } = require("./src/utils/bootstrapSystem");
 
 const startServer = async () => {
   await connectDB();
+  validatePayrollDbConfig();
+  await connectPayrollDb();
 
   try {
     const bootstrapResult = await ensureSystemBootstrap();

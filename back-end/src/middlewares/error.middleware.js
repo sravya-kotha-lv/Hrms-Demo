@@ -1,7 +1,18 @@
 module.exports = (err, req, res, next) => {
   console.error("❌ Error:", err);
 
-  let statusCode = err.status || err.code || 500;
+  const parseStatusCode = (value) => {
+    const n = Number(value);
+    if (!Number.isInteger(n)) return null;
+    if (n < 100 || n > 599) return null;
+    return n;
+  };
+
+  let statusCode =
+    parseStatusCode(err.statusCode) ||
+    parseStatusCode(err.status) ||
+    parseStatusCode(err.httpStatus) ||
+    500;
   let message = err.message || "Internal Server Error";
 
   // 🔒 Mongo duplicate key error
@@ -17,9 +28,12 @@ module.exports = (err, req, res, next) => {
     message = err.message;
   }
 
-  // 🚫 Ensure valid HTTP status
-  if (statusCode < 100 || statusCode > 599) {
-    statusCode = 500;
+  // PostgreSQL errors (e.g. 42P01 undefined_table, 23505 unique_violation)
+  // should not be used as HTTP status codes.
+  if (typeof err.code === "string" && /^23\d{3}$/.test(err.code)) {
+    statusCode = 409;
+  } else if (typeof err.code === "string" && /^22\d{3}$/.test(err.code)) {
+    statusCode = 400;
   }
 
   res.status(statusCode).json({

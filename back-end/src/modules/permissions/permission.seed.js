@@ -42,6 +42,17 @@ const PERMISSIONS = [
   { code: "SHIFT_MANAGE", name: "Manage Shifts", module: "Shifts" },
   { code: "SHIFT_VIEW_SELF", name: "View Shift Self", module: "Shifts" },
 
+  // 💰 Payroll
+  { code: "PAYROLL_CONFIG_MANAGE", name: "Manage Payroll Config", module: "Payroll" },
+  { code: "PAYROLL_RUN_CREATE", name: "Create Payroll Runs", module: "Payroll" },
+  { code: "PAYROLL_RUN_VIEW", name: "View Payroll Runs", module: "Payroll" },
+  { code: "PAYROLL_RUN_SUBMIT", name: "Submit Payroll Run", module: "Payroll" },
+  { code: "PAYROLL_RUN_APPROVE", name: "Approve Payroll Run", module: "Payroll" },
+  { code: "PAYROLL_RUN_LOCK", name: "Lock Payroll Run", module: "Payroll" },
+  { code: "PAYROLL_RUN_REOPEN", name: "Reopen Payroll Run", module: "Payroll" },
+  { code: "PAYROLL_PAYSLIP_VIEW", name: "View Payslips", module: "Payroll" },
+  { code: "PAYROLL_REPORT_VIEW", name: "View Payroll Reports", module: "Payroll" },
+
 ];
 
 exports.seedPermissions = async (organizationId) => {

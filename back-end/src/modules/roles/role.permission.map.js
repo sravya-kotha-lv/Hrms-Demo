@@ -1,6 +1,18 @@
 const Role = require("./role.model");
 const Permission = require("../permissions/permission.model");
 
+const PAYROLL_ALL_PERMISSIONS = [
+  "PAYROLL_CONFIG_MANAGE",
+  "PAYROLL_RUN_CREATE",
+  "PAYROLL_RUN_VIEW",
+  "PAYROLL_RUN_SUBMIT",
+  "PAYROLL_RUN_APPROVE",
+  "PAYROLL_RUN_LOCK",
+  "PAYROLL_RUN_REOPEN",
+  "PAYROLL_PAYSLIP_VIEW",
+  "PAYROLL_REPORT_VIEW"
+];
+
 const ROLE_PERMISSION_MAP = {
   super_admin: ["*"],
 
@@ -28,14 +40,17 @@ const ROLE_PERMISSION_MAP = {
     "SHIFT_VIEW_SELF",
     "EXPENSE_VIEW",
     "EXPENSE_MANAGE",
-    "EXPENSE_ACTION"
+    "EXPENSE_ACTION",
+    ...PAYROLL_ALL_PERMISSIONS
   ],
+  "org-admin": ["*", ...PAYROLL_ALL_PERMISSIONS],
 
   hr: [
     "EMP_CREATE",
     "EMP_UPDATE",
     "EMP_VIEW",
-    "DEPT_VIEW"
+    "DEPT_VIEW",
+    ...PAYROLL_ALL_PERMISSIONS
   ],
 
   manager: [
@@ -46,7 +61,8 @@ const ROLE_PERMISSION_MAP = {
     "NOTIFICATION_MANAGE_SELF",
     "SHIFT_VIEW_SELF",
     "EXPENSE_VIEW",
-    "EXPENSE_ACTION"
+    "EXPENSE_ACTION",
+    ...PAYROLL_ALL_PERMISSIONS
   ],
 
   employee: [
@@ -54,7 +70,8 @@ const ROLE_PERMISSION_MAP = {
     "ATTENDANCE_VIEW_SELF",
     "NOTIFICATION_VIEW_SELF",
     "NOTIFICATION_MANAGE_SELF",
-    "SHIFT_VIEW_SELF"
+    "SHIFT_VIEW_SELF",
+    "PAYROLL_PAYSLIP_VIEW"
   ]
 };
 
