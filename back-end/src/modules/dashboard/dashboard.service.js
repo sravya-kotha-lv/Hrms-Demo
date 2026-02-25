@@ -61,6 +61,21 @@ const hasAnyPermission = (codes, required) => {
   return required.some((code) => codes.includes(code));
 };
 
+const getEmployeeExternalId = (value) => {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    if (value._id) return String(value._id);
+    if (value.employeeId) return getEmployeeExternalId(value.employeeId);
+  }
+  return null;
+};
+
+const isActiveEmployee = (employee) => {
+  if (!employee) return false;
+  return employee.status !== "resigned" && employee.employmentLifecycleStatus !== "terminated";
+};
+
 exports.getSummary = async (req) => {
   const permissionCodes = await getPermissionCodesForRequest(req);
   const month = req.query?.month || toDateKeyInTimeZone(new Date(), "UTC").slice(0, 7);
@@ -126,17 +141,44 @@ exports.getSummary = async (req) => {
       : Promise.resolve({ items: [] })
   ]);
 
+  const activeEmployees = (employeesData?.items || []).filter(isActiveEmployee);
+  const activeEmployeeIds = new Set(activeEmployees.map((employee) => String(employee._id)));
+
+  const activeAttendanceToday = (attendanceToday || []).filter((row) => {
+    const employeeId = getEmployeeExternalId(row?.employeeId);
+    return Boolean(employeeId && activeEmployeeIds.has(employeeId));
+  });
+
+  const activeAttendanceLast7 = (attendanceLast7 || []).filter((row) => {
+    const employeeId = getEmployeeExternalId(row?.employeeId);
+    return Boolean(employeeId && activeEmployeeIds.has(employeeId));
+  });
+
+  const activeAttendanceMatrix = (matrixData?.employees || []).filter((row) => {
+    const employeeId = getEmployeeExternalId(row?.employeeId);
+    return Boolean(employeeId && activeEmployeeIds.has(employeeId));
+  });
+
+  const activeLeaves = (leaveList || []).filter((row) => {
+    const employeeId = getEmployeeExternalId(row?.employeeId);
+    return Boolean(employeeId && activeEmployeeIds.has(employeeId));
+  });
+
+  const activeWeekly = (weeklyList || []).filter((row) => {
+    const employeeId = getEmployeeExternalId(row?.employeeId);
+    return Boolean(employeeId && activeEmployeeIds.has(employeeId));
+  });
+
   return {
-    employeeList: employeesData?.items || [],
-    attendanceToday: attendanceToday || [],
-    attendanceLast7: attendanceLast7 || [],
-    attendanceMatrix: matrixData?.employees || [],
-    leaveList: leaveList || [],
-    weeklyList: weeklyList || [],
+    employeeList: activeEmployees,
+    attendanceToday: activeAttendanceToday,
+    attendanceLast7: activeAttendanceLast7,
+    attendanceMatrix: activeAttendanceMatrix,
+    leaveList: activeLeaves,
+    weeklyList: activeWeekly,
     holidays: holidays || [],
     weekOffDays: weekOff?.weekOffDays || [],
     orgSettings: orgSettings || null,
     notifications: notificationsData?.items || []
   };
 };
-

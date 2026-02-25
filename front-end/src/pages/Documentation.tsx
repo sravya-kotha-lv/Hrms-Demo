@@ -39,6 +39,37 @@ const administratorSections: DocSection[] = [
     ]
   },
   {
+    id: "administrator-payroll-quick-start",
+    title: "Payroll Quick Start (HR)",
+    points: [
+      "Open Payroll Setup Wizard and review Telangana default components.",
+      "Create or review pay groups before assigning salary details to employees.",
+      "Enter annual CTC and pay group in employee salary details; component values auto-calculate.",
+      "Override component values only for approved exceptions, then save with reason.",
+      "Generate attendance snapshot, create payroll run, validate, submit, approve, and lock."
+    ],
+    checklist: [
+      "Bank details are saved for all payroll employees",
+      "PAN/UAN/ESI fields are complete where applicable",
+      "Attendance and leave approvals are finalized for the month",
+      "No validation errors remain before final approval"
+    ]
+  },
+  {
+    id: "administrator-payroll-formulas",
+    title: "Payroll Formula Guide (Simple)",
+    points: [
+      "Basic Salary: usually fixed as a percentage of CTC or gross (company policy).",
+      "HRA: usually calculated as a percentage of Basic for non-metro rules.",
+      "Gross Salary: sum of all earnings.",
+      "Net Salary: Gross minus all deductions.",
+      "Use Fixed Amount for stable components, Percentage for ratio-based components, Formula for linked components."
+    ],
+    warnings: [
+      "Statutory thresholds and rates can change. Verify policy values before locking payroll."
+    ]
+  },
+  {
     id: "administrator-attendance",
     title: "Attendance Administration",
     points: [
@@ -78,7 +109,9 @@ const administratorSections: DocSection[] = [
       "If approvals are not visible, verify pending approvals and workflow configuration",
       "If leave day calculation is incorrect, verify holidays, weekly off policies, and sandwich rule settings",
       "If attendance shows pending checkout with approved half-day leave, check for PL state and reconciliation note in hover details",
-      "If receipt upload fails, verify Cloudinary credentials in environment configuration"
+      "If receipt upload fails, verify Cloudinary credentials in environment configuration",
+      "If payroll shows missing bank details, complete employee bank tab and recompute the run",
+      "If payroll run creation shows duplicate month/group, continue using existing run for that pay month"
     ]
   }
 ];

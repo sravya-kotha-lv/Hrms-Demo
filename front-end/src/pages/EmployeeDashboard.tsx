@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNavigate } from "react-router-dom";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import PermissionGate from "@/components/PermissionGate";
@@ -82,6 +83,7 @@ const EmployeeDashboard = () => {
   const [myProfile, setMyProfile] = useState<any>(null);
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
 
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
 
@@ -300,51 +302,29 @@ const EmployeeDashboard = () => {
 
   return (
     <MainLayout title="My Dashboard" breadcrumb={[{ label: "Home" }, { label: "My Dashboard" }]}>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
-            <span className="flex items-center gap-2"><CalendarCheck className="w-4 h-4" /> Today Status</span>
-            {lateFlag && <Badge variant="destructive">Late</Badge>}
-          </div>
-          <div className="text-lg font-semibold">{isCheckedOut ? "Checked Out" : isCheckedIn ? "Pending Checkout" : "Not Marked"}</div>
-          <p className="text-sm text-muted-foreground mt-2">In: {checkInTimeText} | Out: {checkOutTimeText}</p>
-          {isCheckedIn && (
-            <p className="text-xs text-orange-700 mt-1">
-              Session is open and excluded from payroll until check-out.
+      <motion.div
+        className="rounded-2xl border bg-gradient-to-r from-background to-muted/40 p-5"
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <CalendarCheck className="w-4 h-4" />
+              Today Status
+              {lateFlag && <Badge variant="destructive">Late</Badge>}
+            </div>
+            <h2 className="text-2xl font-semibold tracking-tight">
+              {isCheckedOut ? "Checked Out" : isCheckedIn ? "Pending Checkout" : "Attendance Not Marked"}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-2">
+              Check-in: {checkInTimeText} • Check-out: {checkOutTimeText}
             </p>
-          )}
-        </motion.div>
-
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <ClipboardCheck className="w-4 h-4" /> Leave Balance
-          </div>
-          <div className="text-2xl font-semibold">{totalLeaveRemaining.toFixed(1)}</div>
-          <p className="text-sm text-muted-foreground mt-1">Total remaining across leave types</p>
-        </motion.div>
-
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <Timer className="w-4 h-4" /> Weekly Timesheet
-          </div>
-          <div className="text-2xl font-semibold">{weeklyHours.toFixed(1)}h</div>
-          <p className="text-sm text-muted-foreground mt-1">{weeklyStatus ? `Status: ${weeklyStatus}` : "No weekly sheet yet"}</p>
-        </motion.div>
-
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <AlertCircle className="w-4 h-4" /> Pending Requests
-          </div>
-          <div className="text-2xl font-semibold">{pendingLeaves + pendingTimesheets}</div>
-          <p className="text-sm text-muted-foreground mt-1">Leaves: {pendingLeaves} | Timesheets: {pendingTimesheets}</p>
-        </motion.div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-6">
-        <motion.div className="stat-card xl:col-span-2" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold">Quick Actions</h3>
-            <Badge variant="outline">Today</Badge>
+            {isCheckedIn && (
+              <p className="text-xs text-orange-700 mt-1">
+                Session is open and excluded from payroll until check-out.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <PermissionGate permissions={["TIMESHEET_CHECKIN_SELF"]}>
@@ -357,225 +337,277 @@ const EmployeeDashboard = () => {
                 <LogOut className="w-4 h-4 mr-2" /> Check Out
               </Button>
             </PermissionGate>
-            <Button variant="outline" onClick={() => navigate("/leave/apply")}>
-              Apply Leave
-            </Button>
-            <Button variant="outline" onClick={() => navigate("/timesheets")}>
-              Fill Timesheet
-            </Button>
-            <Button variant="outline" onClick={() => navigate("/attendance")}>
-              View Attendance
-            </Button>
+            <Button variant="outline" onClick={() => navigate("/leave/apply")}>Apply Leave</Button>
+            <Button variant="outline" onClick={() => navigate("/timesheets")}>Timesheet</Button>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-4 text-sm">
-            <div className="p-2 rounded-lg bg-muted/40">Present: <span className="font-semibold">{monthlySummary.present}</span></div>
-            <div className="p-2 rounded-lg bg-muted/40">Pending: <span className="font-semibold">{monthlySummary.pendingCheckout}</span></div>
-            <div className="p-2 rounded-lg bg-muted/40">Absent: <span className="font-semibold">{monthlySummary.absent}</span></div>
-            <div className="p-2 rounded-lg bg-muted/40">On Leave: <span className="font-semibold">{monthlySummary.onLeave}</span></div>
-            <div className="p-2 rounded-lg bg-muted/40">Week Off: <span className="font-semibold">{monthlySummary.weekOff}</span></div>
-          </div>
-        </motion.div>
+        </div>
+      </motion.div>
 
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <Bell className="w-4 h-4 text-muted-foreground" />
-            <h3 className="font-semibold">Latest Notifications</h3>
-          </div>
-          <div className="space-y-2 max-h-56 overflow-auto custom-scroll pr-1">
-            {notifications.length === 0 && <p className="text-sm text-muted-foreground">No notifications</p>}
-            {notifications.map((n: any) => (
-              <div key={n._id} className="p-2 rounded-lg border bg-background">
-                <p className="text-sm font-medium">{n.title}</p>
-                <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-5">
         <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <CalendarDays className="w-4 h-4 text-muted-foreground" />
-            <h3 className="font-semibold">Upcoming Holidays</h3>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <ClipboardCheck className="w-4 h-4" /> Leave Balance
           </div>
-          <div className="space-y-2">
-            {upcomingHolidays.length === 0 && <p className="text-sm text-muted-foreground">No upcoming holidays</p>}
-            {upcomingHolidays.map((h: any) => (
-              <div key={h._id} className="flex items-center justify-between text-sm p-2 rounded-lg bg-muted/40">
-                <span>{h.name}</span>
-                <span className="text-muted-foreground">{formatDateInOrgTimeZone(h.date)}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4">
-            <p className="text-sm font-medium mb-2">Week Off Days</p>
-            <div className="flex flex-wrap gap-2">
-              {weekOffDays.length === 0 && <span className="text-sm text-muted-foreground">Not configured</span>}
-              {weekOffDays.map((d) => (
-                <Badge key={d} variant="secondary">{dayNames[d]}</Badge>
-              ))}
-            </div>
-          </div>
+          <div className="text-2xl font-semibold">{totalLeaveRemaining.toFixed(1)}</div>
+          <p className="text-sm text-muted-foreground mt-1">Total remaining</p>
         </motion.div>
 
         <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <ClipboardCheck className="w-4 h-4 text-muted-foreground" />
-            <h3 className="font-semibold">Leave Balances</h3>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <Timer className="w-4 h-4" /> Weekly Timesheet
           </div>
-          <div className="space-y-2">
-            {leaveBalances.length === 0 && <p className="text-sm text-muted-foreground">No balances found</p>}
-            {leaveBalances.map((b: any) => (
-              <div key={b.leaveTypeId} className="p-2 rounded-lg border">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{b.leaveType}</span>
-                  <span>{Number(b.remaining || 0).toFixed(1)}/{Number(b.total || 0).toFixed(1)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Used: {Number(b.used || 0).toFixed(1)} | Pending: {Number(b.pending || 0).toFixed(1)}
-                </p>
-              </div>
-            ))}
-          </div>
+          <div className="text-2xl font-semibold">{weeklyHours.toFixed(1)}h</div>
+          <p className="text-sm text-muted-foreground mt-1">{weeklyStatus ? `Status: ${weeklyStatus}` : "No weekly sheet"}</p>
         </motion.div>
 
         <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <Users className="w-4 h-4 text-muted-foreground" />
-            <h3 className="font-semibold">Team Snapshot</h3>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <Users className="w-4 h-4" /> Team
           </div>
-          <div className="text-sm space-y-2">
-            <div className="p-2 rounded-lg bg-muted/40">Online now: <span className="font-semibold">{onlineList.length}</span></div>
-            <div className="p-2 rounded-lg bg-muted/40">On leave today: <span className="font-semibold">{onLeaveList.length}</span></div>
-          </div>
-          <div className="mt-3 space-y-2 max-h-40 overflow-auto custom-scroll pr-1">
-            {onlineList.slice(0, 4).map((item: any) => (
-              <div key={item._id} className="flex items-center justify-between text-sm">
-                <span>{item.employeeId?.firstName} {item.employeeId?.lastName}</span>
-                <CheckCircle2 className="w-4 h-4 text-green-600" />
-              </div>
-            ))}
-          </div>
+          <div className="text-2xl font-semibold">{onlineList.length}</div>
+          <p className="text-sm text-muted-foreground mt-1">Online now</p>
         </motion.div>
 
         <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <CalendarDays className="w-4 h-4 text-muted-foreground" />
-            <h3 className="font-semibold">Next 7 Days Events</h3>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <AlertCircle className="w-4 h-4" /> Pending Requests
           </div>
-          <div className="space-y-3">
-            <div>
-              <p className="text-sm font-medium mb-1">Birthdays</p>
-              <div className="space-y-1">
-                {(upcomingEvents.birthdays || []).length === 0 && (
-                  <p className="text-xs text-muted-foreground">No upcoming birthdays</p>
-                )}
-                {(upcomingEvents.birthdays || []).slice(0, 4).map((e: any) => (
-                  <div key={`eb-${e.employeeId}-${e.eventDate}`} className="text-xs p-2 rounded bg-muted/40 flex items-center justify-between">
-                    <span>{e.name}</span>
-                    <span className="text-muted-foreground">
-                      {formatDateInOrgTimeZone(e.eventDate)} ({e.daysAway === 0 ? "Today" : `${e.daysAway}d`})
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-sm font-medium mb-1">Anniversaries</p>
-              <div className="space-y-1">
-                {(upcomingEvents.anniversaries || []).length === 0 && (
-                  <p className="text-xs text-muted-foreground">No upcoming anniversaries</p>
-                )}
-                {(upcomingEvents.anniversaries || []).slice(0, 4).map((e: any) => (
-                  <div key={`ea-${e.employeeId}-${e.eventDate}`} className="text-xs p-2 rounded bg-muted/40 flex items-center justify-between">
-                    <span>{e.name}</span>
-                    <span className="text-muted-foreground">
-                      {formatDateInOrgTimeZone(e.eventDate)} ({e.years}y)
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <div className="text-2xl font-semibold">{pendingLeaves + pendingTimesheets}</div>
+          <p className="text-sm text-muted-foreground mt-1">Leaves: {pendingLeaves} • Timesheet: {pendingTimesheets}</p>
         </motion.div>
       </div>
 
-      <motion.div className="stat-card mt-6" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold">Monthly Attendance Calendar</h3>
-          <Badge variant="outline">{formatDateTimeInOrgTimeZone(new Date(), { month: "long", year: "numeric" })}</Badge>
-        </div>
-        <div className="grid grid-cols-7 gap-2 mb-2">
-          {dayNames.map((d) => (
-            <div key={d} className="text-xs text-muted-foreground text-center">{d}</div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-2">
-          {monthCells.map((day, idx) => {
-            if (!day) return <div key={`empty-${idx}`} className="h-14 rounded-lg bg-transparent" />;
-            const cell = matrixDays[day];
-            const isFuture = day > today.getDate();
-            const baseClass = "h-14 rounded-lg border text-xs p-2 flex flex-col justify-between";
-            let toneClass = "bg-muted/20";
-            let label = "";
-            if (cell?.holidayName) {
-              toneClass = "bg-rose-100 border-rose-300";
-              label = "Holiday";
-            } else if (cell?.isWeekOff) {
-              toneClass = "bg-sky-100 border-sky-300";
-              label = "WO";
-            } else if (cell?.isOnLeave) {
-              toneClass = "bg-emerald-100 border-emerald-300";
-              label = "Leave";
-            } else if (cell?.status === "pending_checkout") {
-              toneClass = "bg-orange-100 border-orange-300";
-              label = "Pending";
-            } else if (cell?.status === "present") {
-              toneClass = "bg-blue-100 border-blue-300";
-              label = "Present";
-            } else if (!isFuture) {
-              toneClass = "bg-rose-100 border-rose-300";
-              label = "Absent";
-            }
-            return (
-              <div key={day} className={`${baseClass} ${toneClass}`}>
-                <span className="font-semibold">{day}</span>
-                <span className="text-[10px] text-muted-foreground">{label}</span>
-              </div>
-            );
-          })}
-        </div>
-        <div className="flex flex-wrap gap-2 mt-4 text-xs">
-          <span className="px-2 py-1 rounded bg-blue-100 border border-blue-300">Present</span>
-          <span className="px-2 py-1 rounded bg-orange-100 border border-orange-300">Pending Checkout</span>
-          <span className="px-2 py-1 rounded bg-rose-100 border border-rose-300">Absent</span>
-          <span className="px-2 py-1 rounded bg-emerald-100 border border-emerald-300">Leave</span>
-          <span className="px-2 py-1 rounded bg-sky-100 border border-sky-300">Week Off</span>
-          <span className="px-2 py-1 rounded bg-rose-100 border border-rose-300">Holiday</span>
-        </div>
-      </motion.div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
+        <TabsList className="grid grid-cols-3 w-full md:w-[480px]">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="attendance">Attendance</TabsTrigger>
+          <TabsTrigger value="planning">Planning</TabsTrigger>
+        </TabsList>
 
-      <motion.div className="stat-card mt-6" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="font-semibold">Profile Completion</h3>
-          <Clock3 className="w-4 h-4 text-muted-foreground" />
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {myProfile?.profileCompleted ? "Profile marked completed." : "Profile is not completed yet."}
-        </p>
-        <div className="mt-3 text-sm">
-          {missingProfileFields.length === 0 ? (
-            <span className="text-emerald-700">No pending profile tasks.</span>
-          ) : (
-            <span className="text-muted-foreground">Pending fields: {missingProfileFields.join(", ")}</span>
-          )}
-        </div>
-        <div className="flex gap-2 mt-3">
-          <Button variant="outline" onClick={() => navigate("/profile")}>Update Profile</Button>
-          <Button variant="outline" onClick={() => navigate("/leave")}>My Leave Requests</Button>
-        </div>
-      </motion.div>
+        <TabsContent value="overview" className="mt-4">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <motion.div className="stat-card xl:col-span-2" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold">Latest Notifications</h3>
+                <Bell className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <div className="space-y-2 max-h-64 overflow-auto custom-scroll pr-1">
+                {notifications.length === 0 && <p className="text-sm text-muted-foreground">No notifications</p>}
+                {notifications.map((n: any) => (
+                  <div key={n._id} className="p-3 rounded-lg border bg-background">
+                    <p className="text-sm font-medium">{n.title}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
+            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold">Profile Completion</h3>
+                <Clock3 className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {myProfile?.profileCompleted ? "Profile marked completed." : "Profile is not completed yet."}
+              </p>
+              <div className="mt-3 text-sm">
+                {missingProfileFields.length === 0 ? (
+                  <span className="text-emerald-700">No pending profile tasks.</span>
+                ) : (
+                  <span className="text-muted-foreground">Pending: {missingProfileFields.join(", ")}</span>
+                )}
+              </div>
+              <div className="flex gap-2 mt-3">
+                <Button variant="outline" onClick={() => navigate("/profile")}>Update Profile</Button>
+                <Button variant="outline" onClick={() => navigate("/leave")}>My Leaves</Button>
+              </div>
+            </motion.div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold">Team Snapshot</h3>
+                <Badge variant="outline">Today</Badge>
+              </div>
+              <div className="text-sm space-y-2">
+                <div className="p-2 rounded-lg bg-muted/40">Online now: <span className="font-semibold">{onlineList.length}</span></div>
+                <div className="p-2 rounded-lg bg-muted/40">On leave today: <span className="font-semibold">{onLeaveList.length}</span></div>
+              </div>
+              <div className="mt-3 space-y-2 max-h-40 overflow-auto custom-scroll pr-1">
+                {onlineList.slice(0, 4).map((item: any) => (
+                  <div key={item._id} className="flex items-center justify-between text-sm">
+                    <span>{item.employeeId?.firstName} {item.employeeId?.lastName}</span>
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
+            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+              <div className="flex items-center gap-2 mb-3">
+                <CalendarDays className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-semibold">Next 7 Days Events</h3>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium mb-1">Birthdays</p>
+                  <div className="space-y-1">
+                    {(upcomingEvents.birthdays || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground">No upcoming birthdays</p>
+                    )}
+                    {(upcomingEvents.birthdays || []).slice(0, 4).map((e: any) => (
+                      <div key={`eb-${e.employeeId}-${e.eventDate}`} className="text-xs p-2 rounded bg-muted/40 flex items-center justify-between">
+                        <span>{e.name}</span>
+                        <span className="text-muted-foreground">
+                          {formatDateInOrgTimeZone(e.eventDate)} ({e.daysAway === 0 ? "Today" : `${e.daysAway}d`})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium mb-1">Anniversaries</p>
+                  <div className="space-y-1">
+                    {(upcomingEvents.anniversaries || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground">No upcoming anniversaries</p>
+                    )}
+                    {(upcomingEvents.anniversaries || []).slice(0, 4).map((e: any) => (
+                      <div key={`ea-${e.employeeId}-${e.eventDate}`} className="text-xs p-2 rounded bg-muted/40 flex items-center justify-between">
+                        <span>{e.name}</span>
+                        <span className="text-muted-foreground">
+                          {formatDateInOrgTimeZone(e.eventDate)} ({e.years}y)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="attendance" className="mt-4 space-y-4">
+          <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Attendance Summary</h3>
+              <Button variant="outline" size="sm" onClick={() => navigate("/attendance")}>Open Attendance</Button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+              <div className="p-2 rounded-lg bg-muted/40">Present: <span className="font-semibold">{monthlySummary.present}</span></div>
+              <div className="p-2 rounded-lg bg-muted/40">Pending: <span className="font-semibold">{monthlySummary.pendingCheckout}</span></div>
+              <div className="p-2 rounded-lg bg-muted/40">Absent: <span className="font-semibold">{monthlySummary.absent}</span></div>
+              <div className="p-2 rounded-lg bg-muted/40">On Leave: <span className="font-semibold">{monthlySummary.onLeave}</span></div>
+              <div className="p-2 rounded-lg bg-muted/40">Week Off: <span className="font-semibold">{monthlySummary.weekOff}</span></div>
+            </div>
+          </motion.div>
+
+          <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">Monthly Attendance Calendar</h3>
+              <Badge variant="outline">{formatDateTimeInOrgTimeZone(new Date(), { month: "long", year: "numeric" })}</Badge>
+            </div>
+            <div className="grid grid-cols-7 gap-2 mb-2">
+              {dayNames.map((d) => (
+                <div key={d} className="text-xs text-muted-foreground text-center">{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-2">
+              {monthCells.map((day, idx) => {
+                if (!day) return <div key={`empty-${idx}`} className="h-14 rounded-lg bg-transparent" />;
+                const cell = matrixDays[day];
+                const isFuture = day > today.getDate();
+                const baseClass = "h-14 rounded-lg border text-xs p-2 flex flex-col justify-between";
+                let toneClass = "bg-muted/20";
+                let label = "";
+                if (cell?.holidayName) {
+                  toneClass = "bg-rose-100 border-rose-300";
+                  label = "Holiday";
+                } else if (cell?.isWeekOff) {
+                  toneClass = "bg-sky-100 border-sky-300";
+                  label = "WO";
+                } else if (cell?.isOnLeave) {
+                  toneClass = "bg-emerald-100 border-emerald-300";
+                  label = "Leave";
+                } else if (cell?.status === "pending_checkout") {
+                  toneClass = "bg-orange-100 border-orange-300";
+                  label = "Pending";
+                } else if (cell?.status === "present") {
+                  toneClass = "bg-blue-100 border-blue-300";
+                  label = "Present";
+                } else if (!isFuture) {
+                  toneClass = "bg-rose-100 border-rose-300";
+                  label = "Absent";
+                }
+                return (
+                  <div key={day} className={`${baseClass} ${toneClass}`}>
+                    <span className="font-semibold">{day}</span>
+                    <span className="text-[10px] text-muted-foreground">{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4 text-xs">
+              <span className="px-2 py-1 rounded bg-blue-100 border border-blue-300">Present</span>
+              <span className="px-2 py-1 rounded bg-orange-100 border border-orange-300">Pending Checkout</span>
+              <span className="px-2 py-1 rounded bg-rose-100 border border-rose-300">Absent</span>
+              <span className="px-2 py-1 rounded bg-emerald-100 border border-emerald-300">Leave</span>
+              <span className="px-2 py-1 rounded bg-sky-100 border border-sky-300">Week Off</span>
+              <span className="px-2 py-1 rounded bg-rose-100 border border-rose-300">Holiday</span>
+            </div>
+          </motion.div>
+        </TabsContent>
+
+        <TabsContent value="planning" className="mt-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+              <div className="flex items-center gap-2 mb-3">
+                <ClipboardCheck className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-semibold">Leave Balances</h3>
+              </div>
+              <div className="space-y-2">
+                {leaveBalances.length === 0 && <p className="text-sm text-muted-foreground">No balances found</p>}
+                {leaveBalances.map((b: any) => (
+                  <div key={b.leaveTypeId} className="p-2 rounded-lg border">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{b.leaveType}</span>
+                      <span>{Number(b.remaining || 0).toFixed(1)}/{Number(b.total || 0).toFixed(1)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Used: {Number(b.used || 0).toFixed(1)} | Pending: {Number(b.pending || 0).toFixed(1)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
+            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+              <div className="flex items-center gap-2 mb-3">
+                <CalendarDays className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-semibold">Upcoming Holidays</h3>
+              </div>
+              <div className="space-y-2">
+                {upcomingHolidays.length === 0 && <p className="text-sm text-muted-foreground">No upcoming holidays</p>}
+                {upcomingHolidays.map((h: any) => (
+                  <div key={h._id} className="flex items-center justify-between text-sm p-2 rounded-lg bg-muted/40">
+                    <span>{h.name}</span>
+                    <span className="text-muted-foreground">{formatDateInOrgTimeZone(h.date)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4">
+                <p className="text-sm font-medium mb-2">Week Off Days</p>
+                <div className="flex flex-wrap gap-2">
+                  {weekOffDays.length === 0 && <span className="text-sm text-muted-foreground">Not configured</span>}
+                  {weekOffDays.map((d) => (
+                    <Badge key={d} variant="secondary">{dayNames[d]}</Badge>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </MainLayout>
   );
 };

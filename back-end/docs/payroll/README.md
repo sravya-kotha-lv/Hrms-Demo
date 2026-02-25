@@ -14,6 +14,8 @@ This documentation set covers the production payroll stack for Upanaya using a h
    - Complete payroll API catalog with route groups and permissions.
 5. [05-operational-runbook.md](./05-operational-runbook.md)
    - Deployment, scaling, observability, incident handling, and backup guidance.
+6. [06-payroll-hr-guide.md](./06-payroll-hr-guide.md)
+   - Fresher-HR-friendly step-by-step payroll execution guide with Telangana defaults.
 
 ## Scope
 
@@ -38,4 +40,3 @@ Then verify:
 - `GET /health`
 - `GET /ready`
 - `GET /metrics`
-
