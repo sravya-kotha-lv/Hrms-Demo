@@ -12,6 +12,8 @@ import {
   BarChart3,
   UserCheck,
   CircleCheck,
+  UserX,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +38,7 @@ import { setPermissions } from "@/utils/auth";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /* ========================= Dashboard ========================= */
 
@@ -96,7 +99,7 @@ const Dashboard = () => {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [selectedKpiKey, setSelectedKpiKey] = useState<
-    "total" | "present" | "leave" | "late" | "missed" | null
+    "total" | "present" | "absent" | "leave" | "late" | "missed" | null
   >(null);
 
   /* ================= EFFECT ================= */
@@ -285,14 +288,32 @@ const Dashboard = () => {
       const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       return l.status === "approved" && t >= new Date(from.getFullYear(), from.getMonth(), from.getDate()) && t <= new Date(to.getFullYear(), to.getMonth(), to.getDate());
     }).length;
+    const absentToday = attendanceMatrix.reduce((count: number, row: any) => {
+      const day = today.getDate();
+      const cell = row?.days?.[day];
+      if (!cell) return count;
+      if (cell.holidayName || cell.isWeekOff || cell.isOnLeave) return count;
+      if (cell.status === "present" || cell.status === "pending_checkout") return count;
+      return count + 1;
+    }, 0);
     return {
       totalEmployees,
       presentToday,
+      absentToday,
       checkedInOnly,
       lateArrivals,
       onLeaveToday
     };
-  }, [employeeList, attendanceToday, leaveList]);
+  }, [employeeList, attendanceToday, leaveList, attendanceMatrix, today]);
+
+  const kpiHelpText = {
+    total: "Total active employees only. Resigned and terminated employees are excluded.",
+    present: "Employees who checked in or checked out today.",
+    leave: "Employees with approved leave that includes today.",
+    absent: "Employees marked absent today, excluding holiday, week off, and approved leave.",
+    late: "Employees who checked in late based on shift start and grace rules.",
+    missed: "Employees who checked in today but have not checked out yet."
+  };
 
   const kpiEmployeeDetails = useMemo(() => {
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -352,6 +373,24 @@ const Dashboard = () => {
         })
     );
 
+    const absentRows = uniqueByEmployeeId(
+      (attendanceMatrix || [])
+        .filter((row: any) => {
+          const cell = row?.days?.[todayStart.getDate()];
+          if (!cell) return false;
+          if (cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
+          if (cell.status === "present" || cell.status === "pending_checkout") return false;
+          return true;
+        })
+        .map((row: any) => {
+          const base = employeeById.get(String(row.employeeId?._id || row.employeeId));
+          return toDisplayRow(base || {}, {
+            id: String(base?._id || row.employeeId?._id || row.employeeId),
+            absentReason: row?.days?.[todayStart.getDate()]?.holidayName ? "Holiday" : "Absent"
+          });
+        })
+    );
+
     const lateRows = uniqueByEmployeeId(
       (attendanceToday || [])
         .filter((a: any) => Number(a.lateByMinutes || 0) > 0)
@@ -379,13 +418,14 @@ const Dashboard = () => {
     return {
       total: { title: "Total Employees", rows: totalRows },
       present: { title: "Present Today", rows: presentRows },
+      absent: { title: "Absent Today", rows: absentRows },
       leave: { title: "On Leave Today", rows: leaveRows },
       late: { title: "Late Arrivals", rows: lateRows },
       missed: { title: "Missed Checkout", rows: missedRows }
     };
-  }, [employeeList, attendanceToday, leaveList, today]);
+  }, [employeeList, attendanceToday, leaveList, attendanceMatrix, today]);
 
-  const openKpiDialog = (key: "total" | "present" | "leave" | "late" | "missed") => {
+  const openKpiDialog = (key: "total" | "present" | "absent" | "leave" | "late" | "missed") => {
     setSelectedKpiKey(key);
     setDetailsDialogOpen(true);
   };
@@ -653,9 +693,12 @@ const Dashboard = () => {
                 {"lateByMinutes" in row && (
                   <p className="text-xs text-muted-foreground mt-2">Late by {row.lateByMinutes} mins</p>
                 )}
-                {"leaveType" in row && (
-                  <p className="text-xs text-muted-foreground mt-2">Leave type: {row.leaveType}</p>
-                )}
+        {"leaveType" in row && (
+          <p className="text-xs text-muted-foreground mt-2">Leave type: {row.leaveType}</p>
+        )}
+        {"absentReason" in row && (
+          <p className="text-xs text-muted-foreground mt-2">Status: {row.absentReason}</p>
+        )}
                 {"checkInAt" in row && (
                   <p className="text-xs text-muted-foreground mt-2">
                     Check-in: {row.checkInAt}{" "}
@@ -861,13 +904,21 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
         <div
           className="stat-card cursor-pointer hover:ring-1 hover:ring-primary/20"
           onClick={() => openKpiDialog("total")}
         >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <Users className="w-4 h-4" /> Total Employees
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground/70 hover:text-foreground">
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{kpiHelpText.total}</TooltipContent>
+            </Tooltip>
           </div>
           <div className="text-2xl font-semibold">{kpis.totalEmployees}</div>
         </div>
@@ -877,6 +928,14 @@ const Dashboard = () => {
         >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <UserCheck className="w-4 h-4" /> Present Today
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground/70 hover:text-foreground">
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{kpiHelpText.present}</TooltipContent>
+            </Tooltip>
           </div>
           <div className="text-2xl font-semibold">{kpis.presentToday}</div>
         </div>
@@ -886,8 +945,33 @@ const Dashboard = () => {
         >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <ClipboardCheck className="w-4 h-4" /> On Leave Today
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground/70 hover:text-foreground">
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{kpiHelpText.leave}</TooltipContent>
+            </Tooltip>
           </div>
           <div className="text-2xl font-semibold">{kpis.onLeaveToday}</div>
+        </div>
+        <div
+          className="stat-card cursor-pointer hover:ring-1 hover:ring-primary/20"
+          onClick={() => openKpiDialog("absent")}
+        >
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <UserX className="w-4 h-4" /> Absent Today
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground/70 hover:text-foreground">
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{kpiHelpText.absent}</TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="text-2xl font-semibold">{kpis.absentToday}</div>
         </div>
         <div
           className="stat-card cursor-pointer hover:ring-1 hover:ring-primary/20"
@@ -895,6 +979,14 @@ const Dashboard = () => {
         >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <AlertCircle className="w-4 h-4" /> Late Arrivals
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground/70 hover:text-foreground">
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{kpiHelpText.late}</TooltipContent>
+            </Tooltip>
           </div>
           <div className="text-2xl font-semibold">{kpis.lateArrivals}</div>
         </div>
@@ -904,6 +996,14 @@ const Dashboard = () => {
         >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <FileClock className="w-4 h-4" /> Missed Checkout
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground/70 hover:text-foreground">
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{kpiHelpText.missed}</TooltipContent>
+            </Tooltip>
           </div>
           <div className="text-2xl font-semibold">{kpis.checkedInOnly}</div>
         </div>

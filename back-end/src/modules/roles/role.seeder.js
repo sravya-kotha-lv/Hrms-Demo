@@ -11,7 +11,20 @@ const ROLE_DEFS = [
 
 const ROLE_RULES = {
   "org-admin": { type: "all" },
-  admin: { type: "all" },
+  admin: {
+    type: "allExcept",
+    exclude: [
+      "PAYROLL_CONFIG_MANAGE",
+      "PAYROLL_RUN_CREATE",
+      "PAYROLL_RUN_VIEW",
+      "PAYROLL_RUN_SUBMIT",
+      "PAYROLL_RUN_APPROVE",
+      "PAYROLL_RUN_LOCK",
+      "PAYROLL_RUN_REOPEN",
+      "PAYROLL_PAYSLIP_VIEW",
+      "PAYROLL_REPORT_VIEW"
+    ]
+  },
   hr: { type: "allExcept", exclude: ["ORG_MANAGE"] },
   manager: {
     type: "include",
@@ -41,16 +54,7 @@ const ROLE_RULES = {
       "NOTIFICATION_MANAGE_SELF",
       "SHIFT_VIEW_SELF",
       "EXPENSE_VIEW",
-      "EXPENSE_ACTION",
-      "PAYROLL_CONFIG_MANAGE",
-      "PAYROLL_RUN_CREATE",
-      "PAYROLL_RUN_VIEW",
-      "PAYROLL_RUN_SUBMIT",
-      "PAYROLL_RUN_APPROVE",
-      "PAYROLL_RUN_LOCK",
-      "PAYROLL_RUN_REOPEN",
-      "PAYROLL_PAYSLIP_VIEW",
-      "PAYROLL_REPORT_VIEW"
+      "EXPENSE_ACTION"
     ]
   },
   employee: {
@@ -64,8 +68,7 @@ const ROLE_RULES = {
       code === "DESIG_VIEW" ||
       code === "TIMESHEET_VIEW_ALL" ||
       code === "TIMESHEET_RECALL_SELF" ||
-      code === "ORG_SETTINGS_VIEW" ||
-      code === "PAYROLL_PAYSLIP_VIEW"
+      code === "ORG_SETTINGS_VIEW"
   }
 };
 
