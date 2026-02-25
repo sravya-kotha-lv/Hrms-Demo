@@ -1,4 +1,5 @@
 const METRIC_PREFIX = "upanaya_api";
+const { renderPayrollMetrics } = require("./payrollMetrics");
 
 const state = {
   startedAt: Date.now(),
@@ -106,6 +107,8 @@ const metricsHandler = (req, res) => {
       `${METRIC_PREFIX}_duration_bucket{method="${method}",route="${route}",le="${le}"} ${value}`
     );
   }
+
+  lines.push(...renderPayrollMetrics());
 
   res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
   res.status(200).send(lines.join("\n"));

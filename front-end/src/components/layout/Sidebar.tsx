@@ -156,8 +156,49 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
       { icon: <CalendarDays size={18} />, label: "Shifts", to: "/shifts", permissions: ["SHIFT_VIEW"] },
       { icon: <DollarSign size={18} />, label: "Expenses", to: "/expenses", permissions: ["EXPENSE_VIEW", "EXPENSE_MANAGE"] },
       { icon: <Settings size={18} />, label: "Settings", to: "/organization/settings", permissions: ["ORG_SETTINGS_VIEW"] },
-      { icon: <DollarSign size={18} />, label: "Payroll", to: "/payroll" },
       { icon: <Shield size={18} />, label: "Permissions", to: "/permissions", permissions: ["PERMISSION_VIEW"] }
+    ]
+  },
+  {
+    icon: <DollarSign size={20} />,
+    label: "Payroll",
+    to: "/payroll",
+    permissions: [
+      "PAYROLL_CONFIG_MANAGE",
+      "PAYROLL_RUN_CREATE",
+      "PAYROLL_RUN_APPROVE",
+      "PAYROLL_RUN_LOCK",
+      "PAYROLL_REPORT_VIEW",
+      "PAYROLL_PAYSLIP_VIEW",
+      "PAYROLL_RUN_VIEW"
+    ],
+    children: [
+      {
+        icon: <DollarSign size={18} />,
+        label: "Run",
+        to: "/payroll",
+        permissions: [
+          "PAYROLL_CONFIG_MANAGE",
+          "PAYROLL_RUN_CREATE",
+          "PAYROLL_RUN_APPROVE",
+          "PAYROLL_RUN_LOCK",
+          "PAYROLL_REPORT_VIEW",
+          "PAYROLL_PAYSLIP_VIEW",
+          "PAYROLL_RUN_VIEW"
+        ]
+      },
+      {
+        icon: <Users size={18} />,
+        label: "Breakdown",
+        to: "/payroll/employee-breakdown",
+        permissions: [
+          "PAYROLL_RUN_VIEW",
+          "PAYROLL_REPORT_VIEW",
+          "PAYROLL_RUN_CREATE",
+          "PAYROLL_RUN_APPROVE",
+          "PAYROLL_RUN_LOCK"
+        ]
+      }
     ]
   },
   {

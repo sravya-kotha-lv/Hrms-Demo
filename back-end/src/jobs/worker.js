@@ -6,6 +6,8 @@ const { runCarryForwardForOrg } = require("../modules/leaveCarryForward/leaveCar
 const { notifyProbationCompleted } = require("../modules/employees/employeeLifecycle.service");
 const { getQueueConnection } = require("./queue");
 const { JOB_QUEUE_NAME, JOBS } = require("./queue.constants");
+const { processPayrollRunComputeJob } = require("../modules/payroll/payrollJob.service");
+const logger = require("../logger/logger");
 
 const processLeaveCredits = async () => {
   console.log("🟢 Worker: leave credit job started");
@@ -39,6 +41,8 @@ const processJob = async (job) => {
       return processCarryForward();
     case JOBS.PROBATION_COMPLETION_DAILY:
       return processProbationCompletion();
+    case JOBS.PAYROLL_RUN_COMPUTE:
+      return processPayrollRunComputeJob(job);
     default:
       throw new Error(`Unsupported job: ${job.name}`);
   }
@@ -53,15 +57,26 @@ const startJobWorker = async () => {
   });
 
   worker.on("ready", () => {
-    console.log("✅ BullMQ worker ready");
+    logger.info("jobs.worker.ready", { queue: JOB_QUEUE_NAME });
   });
 
   worker.on("completed", (job) => {
-    console.log(`✅ Job completed: ${job.name}`);
+    logger.info("jobs.worker.completed", {
+      queue: JOB_QUEUE_NAME,
+      jobName: job.name,
+      jobId: String(job.id),
+      attemptsMade: job.attemptsMade
+    });
   });
 
   worker.on("failed", (job, error) => {
-    console.error(`❌ Job failed: ${job?.name || "unknown"}`, error?.message || error);
+    logger.error("jobs.worker.failed", {
+      queue: JOB_QUEUE_NAME,
+      jobName: job?.name || "unknown",
+      jobId: job?.id ? String(job.id) : null,
+      attemptsMade: job?.attemptsMade,
+      message: error?.message || error
+    });
   });
 
   return worker;
@@ -69,7 +84,7 @@ const startJobWorker = async () => {
 
 if (require.main === module) {
   startJobWorker().catch((error) => {
-    console.error("❌ Failed to start worker:", error?.message || error);
+    logger.error("jobs.worker.start_failed", { message: error?.message || error });
     process.exit(1);
   });
 }
