@@ -260,6 +260,9 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
             <DropdownMenuItem asChild>
               <a href="/profile">Profile</a>
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/change-password")}>
+              Change Password
+            </DropdownMenuItem>
             <DropdownMenuItem>Settings</DropdownMenuItem>
             <DropdownMenuItem>Billing</DropdownMenuItem>
             <DropdownMenuSub>

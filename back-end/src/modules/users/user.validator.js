@@ -46,3 +46,36 @@ exports.validateOTPSchema = Joi.object({
     .length(6)
     .required()
 });
+
+exports.resetPasswordSchema = Joi.object({
+  email: Joi.string()
+    .email()
+    .required(),
+  password: Joi.string()
+    .min(6)
+    .required(),
+  confirmPassword: Joi.any()
+    .valid(Joi.ref("password"))
+    .required()
+    .messages({
+      "any.only": "Confirm password must match password"
+    })
+});
+
+exports.verifyOtpOnlySchema = Joi.object({
+  otp: Joi.string()
+    .length(6)
+    .required()
+});
+
+exports.updatePasswordAuthSchema = Joi.object({
+  password: Joi.string()
+    .min(6)
+    .required(),
+  confirmPassword: Joi.any()
+    .valid(Joi.ref("password"))
+    .required()
+    .messages({
+      "any.only": "Confirm password must match password"
+    })
+});
