@@ -136,7 +136,7 @@ const LeaveTypes = () => {
     { header: "Name", accessor: "name", sortable: true },
     { header: "Code", accessor: "code", sortable: true },
     {
-      header: "Days/Year",
+      header: "Days",
       accessor: "daysPerYear",
       sortable: true
     },

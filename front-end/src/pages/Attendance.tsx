@@ -16,13 +16,18 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger
+} from "@/components/ui/hover-card";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
 
 type DayCell = {
-  status: "present" | "absent" | "pending_checkout";
+  status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
   checkInAt: string | null;
   checkOutAt: string | null;
   isOpenSession?: boolean;
@@ -89,6 +94,9 @@ const emptyCell: DayCell = {
   leaveHalfDaySession: null,
   leaveUnits: 0
 };
+
+const isPresentLikeStatus = (status?: string | null) =>
+  status === "present" || status === "half_day_present" || status === "full_day_present";
 
 const Attendance = () => {
   const { hasAnyPermission } = useAuth();
@@ -174,7 +182,7 @@ const Attendance = () => {
     setSelectedEmployee(row);
     setSelectedDay(day);
     const cellStatus = row.days?.[day]?.status || "absent";
-    setSelectedStatus(cellStatus === "pending_checkout" ? "present" : (cellStatus as "present" | "absent"));
+    setSelectedStatus(cellStatus === "absent" ? "absent" : "present");
     setOpen(true);
     setHistory([]);
     try {
@@ -225,6 +233,10 @@ const Attendance = () => {
     const parts: string[] = [];
     if (cell.status === "pending_checkout") {
       parts.push("Status: Pending checkout");
+    } else if (cell.status === "half_day_present") {
+      parts.push("Status: Half day present");
+    } else if (cell.status === "full_day_present") {
+      parts.push("Status: Full day present");
     }
     if (cell.excludeFromPayroll) {
       parts.push("Excluded from payroll until checkout is completed");
@@ -264,6 +276,79 @@ const Attendance = () => {
     return parts.join(" | ") || "No details";
   };
 
+  const getCellUi = (cell: DayCell) => {
+    const isFullDayPresent = cell.status === "full_day_present";
+    const isHalfDayPresent = cell.status === "half_day_present";
+    const isPresent = isPresentLikeStatus(cell.status);
+    const isPendingCheckout = cell.status === "pending_checkout";
+    const isLeave = cell.isOnLeave;
+    const isPartialLeaveWithAttendance = isLeave && (isPresent || isPendingCheckout);
+    const isWeekOff = cell.isWeekOff;
+    const isHoliday = Boolean(cell.holidayName);
+
+    if (isPartialLeaveWithAttendance) {
+      return {
+        label: "Present + Leave",
+        shortLabel: "PL",
+        className: "bg-indigo-100 text-indigo-700 border-indigo-300"
+      };
+    }
+    if (isLeave) {
+      return {
+        label: "Leave",
+        shortLabel: "L",
+        className: "bg-violet-100 text-violet-700 border-violet-300"
+      };
+    }
+    if (isHoliday) {
+      return {
+        label: "Holiday",
+        shortLabel: "H",
+        className: "bg-amber-100 text-amber-700 border-amber-300"
+      };
+    }
+    if (isWeekOff) {
+      return {
+        label: "Week Off",
+        shortLabel: "W",
+        className: "bg-sky-100 text-sky-700 border-sky-300"
+      };
+    }
+    if (isPendingCheckout) {
+      return {
+        label: "Pending Checkout",
+        shortLabel: "PC",
+        className: "bg-orange-100 text-orange-700 border-orange-300"
+      };
+    }
+    if (isFullDayPresent) {
+      return {
+        label: "Full Day Present",
+        shortLabel: "P",
+        className: "bg-emerald-100 text-emerald-700 border-emerald-300"
+      };
+    }
+    if (isHalfDayPresent) {
+      return {
+        label: "Half Day Present",
+        shortLabel: "HP",
+        className: "bg-lime-100 text-lime-700 border-lime-300"
+      };
+    }
+    if (isPresent) {
+      return {
+        label: "Present",
+        shortLabel: "P",
+        className: "bg-emerald-100 text-emerald-700 border-emerald-300"
+      };
+    }
+    return {
+      label: "Absent",
+      shortLabel: "A",
+      className: "bg-rose-100 text-rose-700 border-rose-300"
+    };
+  };
+
   const getEmployeeTotals = (row: EmployeeRow) => {
     let presentDays = 0;
     let pendingCheckoutDays = 0;
@@ -281,7 +366,12 @@ const Attendance = () => {
         }
         continue;
       }
-      if (cell.status === "present") {
+      if (cell.status === "half_day_present") {
+        presentDays += 0.5;
+        absentDays += 0.5;
+        continue;
+      }
+      if (cell.status === "full_day_present" || cell.status === "present") {
         presentDays += 1;
         continue;
       }
@@ -307,7 +397,13 @@ const Attendance = () => {
       weekOffDays,
       holidayDays,
       payrollExcludedDays,
-      totalDays: daysInMonth
+      totalDays:
+        presentDays
+        + pendingCheckoutDays
+        + absentDays
+        + onLeaveDays
+        + weekOffDays
+        + holidayDays
     };
   };
 
@@ -398,6 +494,17 @@ const Attendance = () => {
     }
   };
 
+  const isEmployeeOnlyView = canViewSelf && !canViewAll;
+  const selfRow = isEmployeeOnlyView ? (rows?.[0] || null) : null;
+  const selfTotals = selfRow ? getEmployeeTotals(selfRow) : null;
+  const monthStart = new Date(`${month}-01T00:00:00`);
+  const firstDayOffset = Number.isNaN(monthStart.getTime()) ? 0 : monthStart.getDay();
+  const calendarSlots = Array.from(
+    { length: firstDayOffset + daysInMonth },
+    (_, idx) => (idx < firstDayOffset ? null : idx - firstDayOffset + 1)
+  );
+  const weekDayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
   return (
     <MainLayout
       title="Attendance"
@@ -414,243 +521,382 @@ const Attendance = () => {
           <div className="text-xs text-muted-foreground mb-2">
             Tip: Hover any day cell to view check-in/out, shift, late/early, leave, holiday and override details.
           </div>
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 mb-4">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto">
-              <Input
-                type="month"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                className="w-full sm:w-44"
-              />
-              <Input
-                placeholder="Search employee..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full sm:w-64"
-              />
-              <Button variant="outline" onClick={fetchMatrix}>
-                Refresh
-              </Button>
-              <Button variant="outline" onClick={downloadCsv}>
-                Export CSV
-              </Button>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {canEdit
-                ? "Click any day cell to override attendance."
-                : "Read-only view."}
-            </div>
-          </div>
 
-          {canEdit && (
-            <div className="flex flex-wrap items-end gap-2 sm:gap-3 mb-4">
-              <Button variant="outline" onClick={toggleSelectAllFiltered}>
-                Select/Unselect Filtered ({selectedEmployeeIds.length})
-              </Button>
-              <Input
-                type="date"
-                value={bulkDate}
-                onChange={(e) => setBulkDate(e.target.value)}
-                className="w-full sm:w-48"
-              />
-              <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as "present" | "absent")}>
-                <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="present">Present</SelectItem>
-                  <SelectItem value="absent">Absent</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button onClick={runBulkUpdate} disabled={bulkSaving}>
-                {bulkSaving ? "Updating..." : "Bulk Update"}
-              </Button>
-            </div>
-          )}
+          {isEmployeeOnlyView ? (
+            <>
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-blue-50 p-4 sm:p-5 mb-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-slate-500">My Attendance Calendar</p>
+                    <h3 className="text-lg font-semibold tracking-tight text-slate-900">
+                      {selfRow ? `${selfRow.firstName || ""} ${selfRow.lastName || ""}`.trim() : "Attendance"}
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Input
+                      type="month"
+                      value={month}
+                      onChange={(e) => setMonth(e.target.value)}
+                      className="w-full sm:w-44 bg-white/80"
+                    />
+                    <Button variant="outline" onClick={fetchMatrix}>
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
+              </div>
 
-          <div className="bg-card rounded-xl card-shadow overflow-hidden">
-            <div className="max-h-[72vh] overflow-auto">
-              <table className="w-full border-collapse min-w-[1100px]">
-              <thead>
-                <tr className="border-b">
-                  {canEdit && (
-                    <th className="sticky left-0 top-0 bg-card text-left p-3 min-w-[48px] z-30">
-                      Sel
-                    </th>
-                  )}
-                  <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-card text-left p-3 min-w-[220px] z-30`}>
-                    Employee
-                  </th>
-                  {Array.from({ length: daysInMonth }).map((_, idx) => (
-                    <th key={idx + 1} className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[42px]">
-                      {idx + 1}
-                    </th>
-                  ))}
-                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
-                    Present
-                  </th>
-                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[120px]">
-                    Pending Checkout
-                  </th>
-                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
-                    Absent
-                  </th>
-                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
-                    On Leave
-                  </th>
-                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
-                    Week Off
-                  </th>
-                  <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && (
-                  <tr>
-                    <td colSpan={daysInMonth + 7 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
-                      Loading attendance...
-                    </td>
-                  </tr>
-                )}
-                {!loading && filteredRows.length === 0 && (
-                  <tr>
-                    <td colSpan={daysInMonth + 7 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
-                      No employees found.
-                    </td>
-                  </tr>
-                )}
-                {!loading && filteredRows.map((row) => (
-                  <tr key={row.employeeId} className="border-b">
-                    {canEdit && (
-                      <td className="sticky left-0 bg-card p-2 z-20 text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedEmployeeIds.includes(row.employeeId)}
-                          onChange={() => toggleEmployeeSelection(row.employeeId)}
-                        />
-                      </td>
-                    )}
-                    <td className={`sticky ${canEdit ? "left-[48px]" : "left-0"} bg-card p-3 z-10`}>
-                      <div className="font-medium">
-                        {`${row.firstName || ""} ${row.lastName || ""}`.trim() || "-"}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{row.employeeCode || "-"}</div>
-                    </td>
-                    {Array.from({ length: daysInMonth }).map((_, idx) => {
-                      const day = idx + 1;
-                      const isFuture = isFutureDay(day);
-                      const cell = row.days?.[day] || emptyCell;
-                      const isNonInteractive = isFuture || cell.isWeekOff;
-                      const isPresent = cell.status === "present";
-                      const isPendingCheckout = cell.status === "pending_checkout";
-                      const isLeave = cell.isOnLeave;
-                      const isPartialLeaveWithAttendance = isLeave && (isPresent || isPendingCheckout);
-                      const isWeekOff = cell.isWeekOff;
-                      const isHoliday = Boolean(cell.holidayName);
-                      let colorClass = "";
-                      if (isPartialLeaveWithAttendance) {
-                        colorClass = "bg-indigo-100 text-indigo-700 border-indigo-300";
-                      } else if (isLeave) {
-                        colorClass = "bg-violet-100 text-violet-700 border-violet-300";
-                      } else if (isHoliday) {
-                        colorClass = "bg-amber-100 text-amber-700 border-amber-300";
-                      } else if (isWeekOff) {
-                        colorClass = "bg-sky-100 text-sky-700 border-sky-300";
-                      } else if (isPendingCheckout) {
-                        colorClass = "bg-orange-100 text-orange-700 border-orange-300";
-                      } else if (isPresent) {
-                        colorClass = "bg-emerald-100 text-emerald-700 border-emerald-300";
-                      } else {
-                        colorClass = "bg-rose-100 text-rose-700 border-rose-300";
-                      }
+              {loading && (
+                <div className="bg-card rounded-xl border p-8 text-sm text-muted-foreground">
+                  Loading attendance...
+                </div>
+              )}
 
-                      return (
-                        <td key={day} className="p-1">
-                          <button
-                            type="button"
-                            onClick={() => !isNonInteractive && openCellDetails(row, day)}
-                            disabled={isNonInteractive}
-                            title={formatHoverInfo(cell)}
-                            className={`w-full h-8 rounded text-xs font-medium border ${colorClass} ${
-                              isNonInteractive ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:opacity-90"
-                            }`}
-                          >
-                            {isPartialLeaveWithAttendance ? "PL" : isLeave ? "L" : isHoliday ? "H" : isWeekOff ? "W" : isPendingCheckout ? "PC" : isPresent ? "P" : "A"}
-                          </button>
+              {!loading && !selfRow && (
+                <div className="bg-card rounded-xl border p-8 text-sm text-muted-foreground">
+                  No attendance data found.
+                </div>
+              )}
+
+              {!loading && selfRow && selfTotals && (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 mb-4">
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                      <p className="text-xs text-emerald-700">Present</p>
+                      <p className="text-lg font-semibold text-emerald-800">{selfTotals.presentDays.toFixed(1)}</p>
+                    </div>
+                    <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3">
+                      <p className="text-xs text-orange-700">Pending</p>
+                      <p className="text-lg font-semibold text-orange-800">{selfTotals.pendingCheckoutDays}</p>
+                    </div>
+                    <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+                      <p className="text-xs text-rose-700">Absent</p>
+                      <p className="text-lg font-semibold text-rose-800">{selfTotals.absentDays.toFixed(1)}</p>
+                    </div>
+                    <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-3">
+                      <p className="text-xs text-violet-700">Leave</p>
+                      <p className="text-lg font-semibold text-violet-800">{selfTotals.onLeaveDays}</p>
+                    </div>
+                    <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+                      <p className="text-xs text-sky-700">Week Off</p>
+                      <p className="text-lg font-semibold text-sky-800">{selfTotals.weekOffDays}</p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                      <p className="text-xs text-amber-700">Holiday</p>
+                      <p className="text-lg font-semibold text-amber-800">{selfTotals.holidayDays}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-300 bg-slate-100/70 p-3">
+                      <p className="text-xs text-slate-700">Total</p>
+                      <p className="text-lg font-semibold text-slate-900">{selfTotals.totalDays}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white card-shadow p-3 sm:p-4">
+                    <div className="grid grid-cols-7 gap-2 mb-2">
+                      {weekDayHeaders.map((day) => (
+                        <div key={day} className="text-[11px] sm:text-xs text-center font-medium text-slate-500 py-1">
+                          {day}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-2">
+                      {calendarSlots.map((day, idx) => {
+                        if (!day) {
+                          return <div key={`blank-${idx}`} className="h-[86px] sm:h-[96px] rounded-xl bg-slate-50/60 border border-slate-100" />;
+                        }
+                        const isFuture = isFutureDay(day);
+                        const cell = selfRow.days?.[day] || emptyCell;
+                        const cellUi = getCellUi(cell);
+                        return (
+                          <HoverCard key={day} openDelay={120} closeDelay={80}>
+                            <HoverCardTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => !isFuture && openCellDetails(selfRow, day)}
+                                className={`h-[86px] sm:h-[96px] w-full rounded-xl border p-2 text-left transition-all duration-200 ${cellUi.className} ${isFuture ? "opacity-60 cursor-default" : "hover:-translate-y-0.5 hover:shadow-sm"}`}
+                                disabled={isFuture}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] sm:text-xs font-semibold">{String(day).padStart(2, "0")}</span>
+                                  <span className="text-[10px] sm:text-[11px] font-semibold">{cellUi.shortLabel}</span>
+                                </div>
+                                <div className="mt-2 text-[10px] sm:text-[11px] leading-4 opacity-90">
+                                  <p>{cell.checkInAt ? `In ${formatTimeInOrgTimeZone(cell.checkInAt)}` : "No check-in"}</p>
+                                  <p>{cell.checkOutAt ? `Out ${formatTimeInOrgTimeZone(cell.checkOutAt)}` : "No check-out"}</p>
+                                </div>
+                              </button>
+                            </HoverCardTrigger>
+                            <HoverCardContent className="w-72">
+                              <div className="space-y-1.5">
+                                <p className="text-sm font-semibold">{month}-{String(day).padStart(2, "0")} • {cellUi.label}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Check-in: {cell.checkInAt ? formatTimeInOrgTimeZone(cell.checkInAt) : "Not recorded"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Check-out: {cell.checkOutAt ? formatTimeInOrgTimeZone(cell.checkOutAt) : "Not recorded"}
+                                </p>
+                                {(cell.shiftName || cell.shiftCode) && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Shift: {cell.shiftName || "Shift"}{cell.shiftCode ? ` (${cell.shiftCode})` : ""}
+                                  </p>
+                                )}
+                                {cell.shiftStartTime && cell.shiftEndTime && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Shift Time: {cell.shiftStartTime} - {cell.shiftEndTime}
+                                  </p>
+                                )}
+                                {cell.holidayName && (
+                                  <p className="text-xs text-amber-700">Holiday: {cell.holidayName}</p>
+                                )}
+                                {cell.isOnLeave && (
+                                  <p className="text-xs text-violet-700">
+                                    Leave: {cell.leaveType || "Approved leave"}
+                                  </p>
+                                )}
+                                {(cell.lateByMinutes || 0) > 0 && (
+                                  <p className="text-xs text-rose-700">Late by {cell.lateByMinutes} min</p>
+                                )}
+                              </div>
+                            </HoverCardContent>
+                          </HoverCard>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 mb-4">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto">
+                  <Input
+                    type="month"
+                    value={month}
+                    onChange={(e) => setMonth(e.target.value)}
+                    className="w-full sm:w-44"
+                  />
+                  <Input
+                    placeholder="Search employee..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full sm:w-64"
+                  />
+                  <Button variant="outline" onClick={fetchMatrix}>
+                    Refresh
+                  </Button>
+                  <Button variant="outline" onClick={downloadCsv}>
+                    Export CSV
+                  </Button>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {canEdit
+                    ? "Click any day cell to override attendance."
+                    : "Read-only view."}
+                </div>
+              </div>
+
+              {canEdit && (
+                <div className="flex flex-wrap items-end gap-2 sm:gap-3 mb-4">
+                  <Button variant="outline" onClick={toggleSelectAllFiltered}>
+                    Select/Unselect Filtered ({selectedEmployeeIds.length})
+                  </Button>
+                  <Input
+                    type="date"
+                    value={bulkDate}
+                    onChange={(e) => setBulkDate(e.target.value)}
+                    className="w-full sm:w-48"
+                  />
+                  <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as "present" | "absent")}>
+                    <SelectTrigger className="w-full sm:w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="present">Present</SelectItem>
+                      <SelectItem value="absent">Absent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={runBulkUpdate} disabled={bulkSaving}>
+                    {bulkSaving ? "Updating..." : "Bulk Update"}
+                  </Button>
+                </div>
+              )}
+
+              <div className="bg-card rounded-xl card-shadow overflow-hidden">
+                <div className="max-h-[72vh] overflow-auto">
+                  <table className="w-full border-collapse min-w-[1100px]">
+                  <thead>
+                    <tr className="border-b">
+                      {canEdit && (
+                        <th className="sticky left-0 top-0 bg-card text-left p-3 min-w-[48px] z-30">
+                          Sel
+                        </th>
+                      )}
+                      <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-card text-left p-3 min-w-[220px] z-30`}>
+                        Employee
+                      </th>
+                      {Array.from({ length: daysInMonth }).map((_, idx) => (
+                        <th key={idx + 1} className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[42px]">
+                          {idx + 1}
+                        </th>
+                      ))}
+                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                        Present
+                      </th>
+                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[120px]">
+                        Pending Checkout
+                      </th>
+                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                        Absent
+                      </th>
+                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                        On Leave
+                      </th>
+                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                        Week Off
+                      </th>
+                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                        Holiday
+                      </th>
+                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading && (
+                      <tr>
+                        <td colSpan={daysInMonth + 8 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
+                          Loading attendance...
                         </td>
-                      );
-                    })}
-                    {(() => {
-                      const totals = getEmployeeTotals(row);
-                      return (
-                        <>
-                          <td className="text-center text-sm font-medium text-emerald-700">
-                            {totals.presentDays}
+                      </tr>
+                    )}
+                    {!loading && filteredRows.length === 0 && (
+                      <tr>
+                        <td colSpan={daysInMonth + 8 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
+                          No employees found.
+                        </td>
+                      </tr>
+                    )}
+                    {!loading && filteredRows.map((row) => (
+                      <tr key={row.employeeId} className="border-b">
+                        {canEdit && (
+                          <td className="sticky left-0 bg-card p-2 z-20 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedEmployeeIds.includes(row.employeeId)}
+                              onChange={() => toggleEmployeeSelection(row.employeeId)}
+                            />
                           </td>
-                          <td className="text-center text-sm font-medium text-orange-700">
-                            {totals.pendingCheckoutDays}
-                          </td>
-                          <td className="text-center text-sm font-medium text-rose-700">
-                            {totals.absentDays}
-                          </td>
-                          <td className="text-center text-sm font-medium text-violet-700">
-                            {totals.onLeaveDays}
-                          </td>
-                          <td className="text-center text-sm font-medium text-sky-700">
-                            {totals.weekOffDays}
-                          </td>
-                          <td className="text-center text-sm font-medium">
-                            {totals.totalDays}
-                          </td>
-                        </>
-                      );
-                    })()}
-                  </tr>
-                ))}
-              </tbody>
-              </table>
-            </div>
-          </div>
+                        )}
+                        <td className={`sticky ${canEdit ? "left-[48px]" : "left-0"} bg-card p-3 z-10`}>
+                          <div className="font-medium">
+                            {`${row.firstName || ""} ${row.lastName || ""}`.trim() || "-"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{row.employeeCode || "-"}</div>
+                        </td>
+                        {Array.from({ length: daysInMonth }).map((_, idx) => {
+                          const day = idx + 1;
+                          const isFuture = isFutureDay(day);
+                          const cell = row.days?.[day] || emptyCell;
+                          const isNonInteractive = isFuture || cell.isWeekOff;
+                          const cellUi = getCellUi(cell);
 
-          <div className="flex flex-wrap items-center gap-3 text-xs mt-3">
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded bg-emerald-100 border border-emerald-300" />
-              Present
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded bg-orange-100 border border-orange-300" />
-              Pending Checkout
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded bg-rose-100 border border-rose-300" />
-              Absent
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded bg-sky-100 border border-sky-300" />
-              Week Off
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded bg-violet-100 border border-violet-300" />
-              Approved Leave
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded bg-indigo-100 border border-indigo-300" />
-              Present + Leave
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded bg-amber-100 border border-amber-300" />
-              Holiday
-            </div>
-          </div>
+                          return (
+                            <td key={day} className="p-1">
+                              <button
+                                type="button"
+                                onClick={() => !isNonInteractive && openCellDetails(row, day)}
+                                disabled={isNonInteractive}
+                                title={formatHoverInfo(cell)}
+                                className={`w-full h-8 rounded text-xs font-medium border ${cellUi.className} ${
+                                  isNonInteractive ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:opacity-90"
+                                }`}
+                              >
+                                {cellUi.shortLabel}
+                              </button>
+                            </td>
+                          );
+                        })}
+                        {(() => {
+                          const totals = getEmployeeTotals(row);
+                          return (
+                            <>
+                              <td className="text-center text-sm font-medium text-emerald-700">
+                                {totals.presentDays.toFixed(1)}
+                              </td>
+                              <td className="text-center text-sm font-medium text-orange-700">
+                                {totals.pendingCheckoutDays}
+                              </td>
+                              <td className="text-center text-sm font-medium text-rose-700">
+                                {totals.absentDays.toFixed(1)}
+                              </td>
+                              <td className="text-center text-sm font-medium text-violet-700">
+                                {totals.onLeaveDays}
+                              </td>
+                              <td className="text-center text-sm font-medium text-sky-700">
+                                {totals.weekOffDays}
+                              </td>
+                              <td className="text-center text-sm font-medium text-amber-700">
+                                {totals.holidayDays}
+                              </td>
+                              <td className="text-center text-sm font-medium">
+                                {totals.totalDays}
+                              </td>
+                            </>
+                          );
+                        })()}
+                      </tr>
+                    ))}
+                  </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 text-xs mt-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded bg-emerald-100 border border-emerald-300" />
+                  Full Day Present
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded bg-lime-100 border border-lime-300" />
+                  Half Day Present
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded bg-orange-100 border border-orange-300" />
+                  Pending Checkout
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded bg-rose-100 border border-rose-300" />
+                  Absent
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded bg-sky-100 border border-sky-300" />
+                  Week Off
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded bg-violet-100 border border-violet-300" />
+                  Approved Leave
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded bg-indigo-100 border border-indigo-300" />
+                  Present + Leave
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded bg-amber-100 border border-amber-300" />
+                  Holiday
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Update Attendance</DialogTitle>
+            <DialogTitle>{canEdit ? "Update Attendance" : "Attendance Details"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">

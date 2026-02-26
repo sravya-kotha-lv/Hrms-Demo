@@ -9,10 +9,17 @@ interface RequireAuthProps {
 const RequireAuth = ({ children, permissions }: RequireAuthProps) => {
   const location = useLocation();
   const token = sessionStorage.getItem("token");
-  const { hasAnyPermission } = useAuth();
+  const { hasAnyPermission, profile } = useAuth();
 
   if (!token) {
     return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  if (
+    profile?.mustChangePassword &&
+    location.pathname !== "/change-password"
+  ) {
+    return <Navigate to="/change-password" replace />;
   }
 
   if (permissions && permissions.length > 0 && !hasAnyPermission(permissions)) {

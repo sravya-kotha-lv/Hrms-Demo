@@ -87,6 +87,15 @@ const Login = () => {
           resolvedActiveRole?.slug === "superadmin" ||
           roles?.some((role: any) => role.slug === "superadmin");
 
+        const mustChangePassword = Boolean(response?.data?.mustChangePassword);
+
+        if (mustChangePassword) {
+          setPermissions([]);
+          toast.info("Please change your password to continue.");
+          navigate("/change-password", { replace: true });
+          return;
+        }
+
         try {
           const [permRes] = await Promise.all([
             getApiWithToken("/users/me/permissions"),

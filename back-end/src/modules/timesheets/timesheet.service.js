@@ -367,6 +367,36 @@ const validateHours = async (req, entries) => {
   }
 };
 
+const resolveWorkedMinutes = (attendanceRow) => {
+  const explicitMinutes = Number(attendanceRow?.totalMinutes || 0);
+  if (explicitMinutes > 0) return explicitMinutes;
+
+  if (attendanceRow?.checkInAt && attendanceRow?.checkOutAt) {
+    return Math.max(
+      0,
+      Math.round((new Date(attendanceRow.checkOutAt).getTime() - new Date(attendanceRow.checkInAt).getTime()) / 60000)
+    );
+  }
+
+  return 0;
+};
+
+const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8 }) => {
+  const isOpenSession = Boolean(attendanceRow?.checkInAt && !attendanceRow?.checkOutAt);
+  if (isOpenSession) return "pending_checkout";
+
+  const hasAnyAttendance = Boolean(attendanceRow?.checkInAt || attendanceRow?.checkOutAt);
+  if (!hasAnyAttendance) return "absent";
+
+  const workedMinutes = resolveWorkedMinutes(attendanceRow);
+  const halfDayMinutes = Math.max(0, Number(minHalfDayHours || 0) * 60);
+  const fullDayMinutes = Math.max(halfDayMinutes, Number(minWorkHoursPerDay || 0) * 60);
+
+  if (workedMinutes >= fullDayMinutes) return "full_day_present";
+  if (workedMinutes >= halfDayMinutes) return "half_day_present";
+  return "absent";
+};
+
 const getEmployeeFromReq = async (req) => {
   const employee = await Employee.findOne({
     userId: req.user.userId,
@@ -770,13 +800,13 @@ exports.getAttendanceMatrix = async (req) => {
   }
 
   const employeeIds = employees.map((e) => e._id);
-  const [attendanceRows, holidays, approvedLeaves, weekOffMap] = await Promise.all([
+  const [attendanceRows, holidays, approvedLeaves, weekOffMap, orgSettings] = await Promise.all([
     Attendance.find({
       organizationId: req.user.organizationId,
       employeeId: { $in: employeeIds },
       date: { $gte: start, $lte: end }
     })
-      .select("employeeId date checkInAt checkOutAt overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
+      .select("employeeId date checkInAt checkOutAt totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
       .populate("overriddenBy", "firstName lastName"),
     Holiday.find({
       organizationId: req.user.organizationId,
@@ -793,7 +823,8 @@ exports.getAttendanceMatrix = async (req) => {
     WeekOffService.resolveWeekOffMapForEmployees({
       organizationId: req.user.organizationId,
       employees
-    })
+    }),
+    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("minHalfDayHours minWorkHoursPerDay")
   ]);
 
   const holidayByDay = new Map();
@@ -809,10 +840,15 @@ exports.getAttendanceMatrix = async (req) => {
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
       : null;
     const isOpenSession = Boolean(row.checkInAt && !row.checkOutAt);
+    const status = resolveAttendanceMatrixStatus(row, {
+      minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
+      minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
+    });
     attendanceMap.set(key, {
-      status: isOpenSession ? "pending_checkout" : (row.checkInAt || row.checkOutAt ? "present" : "absent"),
+      status,
       checkInAt: row.checkInAt || null,
       checkOutAt: row.checkOutAt || null,
+      totalMinutes: Number(row.totalMinutes || 0),
       isOpenSession,
       excludeFromPayroll: isOpenSession,
       payrollReconciledByLeave: false,
@@ -920,13 +956,13 @@ exports.getMyAttendanceMatrix = async (req) => {
   );
   const employee = await getEmployeeFromReq(req);
 
-  const [attendanceRows, holidays, approvedLeaves, weekOffDays] = await Promise.all([
+  const [attendanceRows, holidays, approvedLeaves, weekOffDays, orgSettings] = await Promise.all([
     Attendance.find({
       organizationId: req.user.organizationId,
       employeeId: employee._id,
       date: { $gte: start, $lte: end }
     })
-      .select("date checkInAt checkOutAt overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
+      .select("date checkInAt checkOutAt totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
       .populate("overriddenBy", "firstName lastName"),
     Holiday.find({
       organizationId: req.user.organizationId,
@@ -943,7 +979,8 @@ exports.getMyAttendanceMatrix = async (req) => {
     WeekOffService.resolveWeekOffDays({
       organizationId: req.user.organizationId,
       shiftId: employee.shiftId
-    })
+    }),
+    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("minHalfDayHours minWorkHoursPerDay")
   ]);
 
   const holidayByDay = new Map();
@@ -988,11 +1025,16 @@ exports.getMyAttendanceMatrix = async (req) => {
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
       : null;
     const isOpenSession = Boolean(row.checkInAt && !row.checkOutAt);
+    const status = resolveAttendanceMatrixStatus(row, {
+      minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
+      minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
+    });
     days[day] = {
       ...days[day],
-      status: isOpenSession ? "pending_checkout" : (row.checkInAt || row.checkOutAt ? "present" : "absent"),
+      status,
       checkInAt: row.checkInAt || null,
       checkOutAt: row.checkOutAt || null,
+      totalMinutes: Number(row.totalMinutes || 0),
       isOpenSession,
       excludeFromPayroll: isOpenSession,
       payrollReconciledByLeave: false,
@@ -1580,6 +1622,16 @@ exports.overrideAttendance = async (req) => {
     { upsert: true, new: true }
   );
 
+  const hoursWorked = status === "present"
+    ? Number((shiftMinutes / 60).toFixed(2))
+    : 0;
+  await upsertTimesheetHours({
+    organizationId: req.user.organizationId,
+    employeeId: employee._id,
+    dateValue: date,
+    hoursWorked
+  });
+
   await audit({
     req,
     module: "timesheets",
@@ -1714,6 +1766,16 @@ exports.bulkOverrideAttendance = async (req) => {
       { upsert: true, new: true }
     );
 
+    const hoursWorked = req.body.status === "present"
+      ? Number((shiftMinutes / 60).toFixed(2))
+      : 0;
+    await upsertTimesheetHours({
+      organizationId: req.user.organizationId,
+      employeeId: employee._id,
+      dateValue: date,
+      hoursWorked
+    });
+
     await audit({
       req,
       module: "timesheets",
@@ -1757,10 +1819,20 @@ exports.bulkOverrideAttendance = async (req) => {
 };
 
 exports.getOnline = async (req) => {
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const now = new Date();
+  const yesterdayStart = startOfDayInTimeZone(
+    addDaysToDateKey(toDateKeyInTimeZone(now, organizationTimeZone), -1),
+    organizationTimeZone
+  );
+  const todayKey = toDateKeyInTimeZone(now, organizationTimeZone);
+  const yesterdayKey = addDaysToDateKey(todayKey, -1);
+
   const query = {
     organizationId: req.user.organizationId,
-    checkInAt: { $ne: null },
-    checkOutAt: null
+    checkInAt: { $ne: null, $lte: now },
+    checkOutAt: null,
+    date: { $gte: yesterdayStart }
   };
 
   if (req.user.activeRoleId) {
@@ -1785,9 +1857,24 @@ exports.getOnline = async (req) => {
     }
   }
 
-  return Attendance.find(query)
+  const rows = await Attendance.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .sort({ checkInAt: -1 });
+
+  return rows.filter((row) => {
+    const attendanceDateKey = toDateKeyInTimeZone(row.date, organizationTimeZone);
+    const scheduledEndAt = row.scheduledEndAt ? new Date(row.scheduledEndAt) : endOfDayInTimeZone(row.date, organizationTimeZone);
+
+    if (now > scheduledEndAt) return false;
+
+    if (attendanceDateKey === todayKey) return true;
+
+    if (attendanceDateKey === yesterdayKey && row.scheduledEndAt) {
+      return now <= scheduledEndAt;
+    }
+
+    return false;
+  });
 };
 
 exports.getOnLeave = async (req) => {

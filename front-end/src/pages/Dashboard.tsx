@@ -42,6 +42,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 /* ========================= Dashboard ========================= */
 
+const isPresentLikeStatus = (status?: string | null) =>
+  status === "present" || status === "half_day_present" || status === "full_day_present";
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { isSuperAdmin, permissions } = useAuth();
@@ -293,7 +296,7 @@ const Dashboard = () => {
       const cell = row?.days?.[day];
       if (!cell) return count;
       if (cell.holidayName || cell.isWeekOff || cell.isOnLeave) return count;
-      if (cell.status === "present" || cell.status === "pending_checkout") return count;
+      if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") return count;
       return count + 1;
     }, 0);
     return {
@@ -379,7 +382,7 @@ const Dashboard = () => {
           const cell = row?.days?.[todayStart.getDate()];
           if (!cell) return false;
           if (cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
-          if (cell.status === "present" || cell.status === "pending_checkout") return false;
+          if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") return false;
           return true;
         })
         .map((row: any) => {
@@ -452,7 +455,7 @@ const Dashboard = () => {
         onLeave += 1;
       } else if (cell.status === "pending_checkout") {
         pendingCheckout += 1;
-      } else if (cell.status === "present") {
+      } else if (isPresentLikeStatus(cell.status)) {
         present += 1;
       } else {
         absent += 1;
@@ -486,7 +489,7 @@ const Dashboard = () => {
       const cell = row?.days?.[day];
       if (!cell) return;
       if (cell.isOnLeave) grouped[dept].onLeave += 1;
-      else if (cell.status === "present" || cell.status === "pending_checkout") grouped[dept].present += 1;
+      else if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") grouped[dept].present += 1;
       else grouped[dept].absent += 1;
     });
 
