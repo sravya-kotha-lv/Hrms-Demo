@@ -93,7 +93,8 @@ exports.loginUser = async ({ email, password }) => {
     userId: user._id,
     organization: m.organizationId,
     roles: m.roleIds,
-    activeRole
+    activeRole,
+    mustChangePassword: Boolean(user.passwordChangeRequired)
   };
 };
 
@@ -159,7 +160,8 @@ exports.createOrgUser = async ({
     password: await genHashedPassword(password),
     organizationIds: [activeOrgId],
     activeOrganizationId: activeOrgId,
-    status: "active"
+    status: "active",
+    passwordChangeRequired: true
   });
 
   /**
@@ -463,7 +465,7 @@ exports.getActivePermissions = async ({ user }) => {
 };
 
 exports.getMyProfile = async ({ user }) => {
-  const userDoc = await User.findById(user.userId).select("email");
+  const userDoc = await User.findById(user.userId).select("email passwordChangeRequired");
   const employee = await Employee.findOne({
     userId: user.userId,
     organizationId: user.organizationId
@@ -471,6 +473,7 @@ exports.getMyProfile = async ({ user }) => {
 
   return {
     email: userDoc?.email || null,
+    mustChangePassword: Boolean(userDoc?.passwordChangeRequired),
     employeeId: employee?._id || null,
     firstName: employee?.firstName || null,
     lastName: employee?.lastName || null,
@@ -598,6 +601,8 @@ exports.resetPasswordWithOtp = async ({
     { email: normalizedEmail },
     {
       password: hashedPassword,
+      passwordChangeRequired: false,
+      passwordChangedAt: new Date(),
       otp: null,
       otpTimestamp: null,
       otpAttempts: 0,

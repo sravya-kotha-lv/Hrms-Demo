@@ -21,7 +21,7 @@ module.exports = async (req, res, next) => {
     const userId = decoded.userId || decoded._id;
     
     const user = await User.findById(userId).select(
-      "_id email organizationIds activeOrganizationId status tokenList"
+      "_id email organizationIds activeOrganizationId status tokenList passwordChangeRequired"
     );
 
     // console.log(user, decoded);
@@ -62,8 +62,36 @@ module.exports = async (req, res, next) => {
       email: user.email,
       organizationId: decoded.organizationId,
       roleIds: decoded.roleIds,
-      activeRoleId: decoded.activeRoleId
+      activeRoleId: decoded.activeRoleId,
+      mustChangePassword: Boolean(user.passwordChangeRequired)
     };
+
+    if (user.passwordChangeRequired) {
+      const allowedRoutePrefixes = [
+        "/api/users/change-password/send-otp",
+        "/api/users/change-password/verify-otp",
+        "/api/users/change-password/update",
+        "/api/users/me/profile",
+        "/api/users/me/permissions"
+      ];
+      const requestPath = req.originalUrl.split("?")[0];
+
+      const isAllowed = allowedRoutePrefixes.some((prefix) =>
+        requestPath.startsWith(prefix)
+      );
+
+      if (!isAllowed) {
+        return res.status(403).json({
+          success: false,
+          code: 403,
+          message: "Password change required before continuing.",
+          data: {
+            mustChangePassword: true
+          },
+          error: null
+        });
+      }
+    }
 
     req.token = token;
 

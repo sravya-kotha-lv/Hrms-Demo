@@ -252,9 +252,7 @@ const App = () => (
               path="/change-password"
               element={
                 <RequireAuth>
-                  <RequireProfile>
-                    <ChangePassword />
-                  </RequireProfile>
+                  <ChangePassword />
                 </RequireAuth>
               }
             />

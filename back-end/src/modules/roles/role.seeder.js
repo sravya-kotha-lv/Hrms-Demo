@@ -46,29 +46,52 @@ const ROLE_RULES = {
       "TIMESHEET_EDIT_SELF",
       "TIMESHEET_SUBMIT_SELF",
       "TIMESHEET_RECALL_SELF",
-      "WEEK_OFF_VIEW",
       "TIMESHEET_VIEW_ALL",
       "TIMESHEET_VIEW_ONLINE",
       "TIMESHEET_ACTION",
       "NOTIFICATION_VIEW_SELF",
       "NOTIFICATION_MANAGE_SELF",
-      "SHIFT_VIEW_SELF",
       "EXPENSE_VIEW",
       "EXPENSE_ACTION"
     ]
   },
   employee: {
     type: "predicate",
-    match: (code) =>
-      code.includes("_SELF") ||
-      code === "TIMESHEET_VIEW_ONLINE" ||
-      code === "LEAVE_APPLY" ||
-      code === "WEEK_OFF_VIEW" ||
-      code === "DEPT_VIEW" ||
-      code === "DESIG_VIEW" ||
-      code === "TIMESHEET_VIEW_ALL" ||
-      code === "TIMESHEET_RECALL_SELF" ||
-      code === "ORG_SETTINGS_VIEW"
+    match: (code) => {
+      const blockedExactCodes = new Set([
+        "PERMISSION_VIEW",
+        "ORG_SETTINGS_VIEW",
+        "ORG_SETTINGS_MANAGE",
+        "WEEK_OFF_VIEW",
+        "WEEK_OFF_MANAGE",
+        "LEAVE_TYPE_VIEW",
+        "LEAVE_TYPE_MANAGE",
+        "SHIFT_VIEW",
+        "SHIFT_VIEW_SELF",
+        "SHIFT_MANAGE",
+        "APPROVAL_FLOW_VIEW",
+        "APPROVAL_FLOW_MANAGE",
+        "ROLE_CREATE",
+        "ROLE_UPDATE",
+        "ROLE_DELETE",
+        "ROLE_VIEW",
+        "ORG_VIEW",
+        "ORG_MANAGE"
+      ]);
+
+      if (blockedExactCodes.has(code)) return false;
+      if (code.startsWith("PAYROLL_")) return false;
+
+      return (
+        code.includes("_SELF") ||
+        code === "TIMESHEET_VIEW_ONLINE" ||
+        code === "LEAVE_APPLY" ||
+        code === "DEPT_VIEW" ||
+        code === "DESIG_VIEW" ||
+        code === "TIMESHEET_VIEW_ALL" ||
+        code === "TIMESHEET_RECALL_SELF"
+      );
+    }
   }
 };
 

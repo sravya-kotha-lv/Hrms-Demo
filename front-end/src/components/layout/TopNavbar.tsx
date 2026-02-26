@@ -263,8 +263,8 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
             <DropdownMenuItem onClick={() => navigate("/change-password")}>
               Change Password
             </DropdownMenuItem>
-            <DropdownMenuItem>Settings</DropdownMenuItem>
-            <DropdownMenuItem>Billing</DropdownMenuItem>
+            {/* <DropdownMenuItem>Settings</DropdownMenuItem> */}
+            {/* <DropdownMenuItem>Billing</DropdownMenuItem> */}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 Switch role

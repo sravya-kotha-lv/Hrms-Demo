@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useNavigate } from "react-router-dom";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import PermissionGate from "@/components/PermissionGate";
@@ -48,7 +49,7 @@ const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padS
 const currentYear = today.getFullYear();
 
 type AttendanceDay = {
-  status: "present" | "absent" | "pending_checkout";
+  status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
   checkInAt: string | null;
   checkOutAt: string | null;
   excludeFromPayroll?: boolean;
@@ -61,11 +62,15 @@ type AttendanceDay = {
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+const isPresentLikeStatus = (status?: string | null) =>
+  status === "present" || status === "half_day_present" || status === "full_day_present";
+
 const EmployeeDashboard = () => {
   const navigate = useNavigate();
 
   const [weeklyStatus, setWeeklyStatus] = useState<string | null>(null);
   const [weeklyHours, setWeeklyHours] = useState<number>(0);
+  const [weeklyEntries, setWeeklyEntries] = useState<any[]>([]);
   const [onlineList, setOnlineList] = useState<any[]>([]);
   const [onLeaveList, setOnLeaveList] = useState<any[]>([]);
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
@@ -84,6 +89,9 @@ const EmployeeDashboard = () => {
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [onlineDialogOpen, setOnlineDialogOpen] = useState(false);
+  const [pendingDialogOpen, setPendingDialogOpen] = useState(false);
+  const [weeklyDialogOpen, setWeeklyDialogOpen] = useState(false);
 
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
 
@@ -132,7 +140,9 @@ const EmployeeDashboard = () => {
 
     if (weeklyRes?.success && weeklyRes?.data) {
       setWeeklyStatus(weeklyRes.data.status || "draft");
-      const total = (weeklyRes.data.entries || []).reduce(
+      const entries = weeklyRes.data.entries || [];
+      setWeeklyEntries(entries);
+      const total = entries.reduce(
         (sum: number, e: any) => sum + (Number(e.hours) || 0),
         0
       );
@@ -140,6 +150,7 @@ const EmployeeDashboard = () => {
     } else {
       setWeeklyStatus(null);
       setWeeklyHours(0);
+      setWeeklyEntries([]);
     }
 
     if (attendanceRes?.success) {
@@ -215,7 +226,7 @@ const EmployeeDashboard = () => {
       }
       if (cell.status === "pending_checkout") {
         pendingCheckout += 1;
-      } else if (cell.status === "present") {
+      } else if (isPresentLikeStatus(cell.status)) {
         present += 1;
       } else {
         absent += 1;
@@ -226,6 +237,10 @@ const EmployeeDashboard = () => {
 
   const pendingLeaves = useMemo(
     () => (myLeaves || []).filter((l: any) => l.status === "pending").length,
+    [myLeaves]
+  );
+  const pendingLeaveItems = useMemo(
+    () => (myLeaves || []).filter((l: any) => l.status === "pending"),
     [myLeaves]
   );
 
@@ -251,6 +266,77 @@ const EmployeeDashboard = () => {
     () => (leaveBalances || []).reduce((sum: number, b: any) => sum + Number(b.remaining || 0), 0),
     [leaveBalances]
   );
+
+  const weeklyProgress = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayKey = toDateInput(todayStart);
+    const sundayStart = new Date(todayStart);
+    sundayStart.setDate(todayStart.getDate() - todayStart.getDay());
+
+    let todayLiveHours = 0;
+    if (attendanceToday?.checkInAt) {
+      const inAt = new Date(attendanceToday.checkInAt);
+      const outAt = attendanceToday?.checkOutAt ? new Date(attendanceToday.checkOutAt) : now;
+      todayLiveHours = Math.max(0, (outAt.getTime() - inAt.getTime()) / (1000 * 60 * 60));
+    }
+
+    const dayRows = Array.from({ length: 7 }, (_, idx) => {
+      const dayDate = new Date(sundayStart);
+      dayDate.setDate(sundayStart.getDate() + idx);
+      dayDate.setHours(0, 0, 0, 0);
+      const dayKey = toDateInput(dayDate);
+
+      const dayName = dayNames[dayDate.getDay()];
+      const entryForDay = (weeklyEntries || []).find((e: any) => {
+        if (!e?.date) return false;
+        return toDateInput(new Date(e.date)) === dayKey;
+      });
+      const timesheetHours = Number(entryForDay?.hours || 0);
+
+      const matrixCell = dayDate.getMonth() === today.getMonth() && dayDate.getFullYear() === today.getFullYear()
+        ? matrixDays[dayDate.getDate()]
+        : null;
+
+      let attendanceHours = 0;
+      if (matrixCell?.checkInAt) {
+        const inAt = new Date(matrixCell.checkInAt);
+        const outAt = matrixCell?.checkOutAt ? new Date(matrixCell.checkOutAt) : now;
+        attendanceHours = Math.max(0, (outAt.getTime() - inAt.getTime()) / (1000 * 60 * 60));
+      }
+
+      const completedHours = dayKey === todayKey
+        ? Math.max(timesheetHours, attendanceHours, todayLiveHours)
+        : Math.max(timesheetHours, attendanceHours);
+
+      return {
+        dayName,
+        date: dayDate,
+        timesheetHours,
+        attendanceHours,
+        completedHours
+      };
+    });
+
+    const completedIncludingToday = dayRows
+      .filter((d) => toDateInput(new Date(d.date)) <= todayKey)
+      .reduce((sum, d) => sum + Number(d.completedHours || 0), 0);
+
+    const completedTimesheetHours = dayRows
+      .filter((d) => toDateInput(new Date(d.date)) <= todayKey)
+      .reduce((sum, d) => sum + Number(d.timesheetHours || 0), 0);
+
+    const todayTimesheetHours = dayRows.find((d) => toDateInput(new Date(d.date)) === todayKey)?.timesheetHours || 0;
+
+    return {
+      completedTimesheetHours,
+      todayTimesheetHours,
+      todayLiveHours,
+      completedIncludingToday,
+      dayRows
+    };
+  }, [weeklyEntries, attendanceToday]);
 
   const isCheckedIn = Boolean(attendanceToday?.checkInAt) && !attendanceToday?.checkOutAt;
   const isCheckedOut = Boolean(attendanceToday?.checkInAt) && Boolean(attendanceToday?.checkOutAt);
@@ -352,29 +438,52 @@ const EmployeeDashboard = () => {
           <p className="text-sm text-muted-foreground mt-1">Total remaining</p>
         </motion.div>
 
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+        <motion.button
+          type="button"
+          onClick={() => setWeeklyDialogOpen(true)}
+          className="stat-card text-left"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+        >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <Timer className="w-4 h-4" /> Weekly Timesheet
           </div>
-          <div className="text-2xl font-semibold">{weeklyHours.toFixed(1)}h</div>
-          <p className="text-sm text-muted-foreground mt-1">{weeklyStatus ? `Status: ${weeklyStatus}` : "No weekly sheet"}</p>
-        </motion.div>
+          <div className="text-2xl font-semibold">{weeklyProgress.completedIncludingToday.toFixed(1)}h</div>
+          <p className="text-sm text-muted-foreground mt-1">
+            {weeklyStatus ? `Status: ${weeklyStatus}` : "No weekly sheet"} • click to view
+          </p>
+        </motion.button>
 
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+        <motion.button
+          type="button"
+          onClick={() => setOnlineDialogOpen(true)}
+          className="stat-card text-left"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <Users className="w-4 h-4" /> Team
           </div>
           <div className="text-2xl font-semibold">{onlineList.length}</div>
-          <p className="text-sm text-muted-foreground mt-1">Online now</p>
-        </motion.div>
+          <p className="text-sm text-muted-foreground mt-1">Online now • click to view</p>
+        </motion.button>
 
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+        <motion.button
+          type="button"
+          onClick={() => setPendingDialogOpen(true)}
+          className="stat-card text-left"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+        >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <AlertCircle className="w-4 h-4" /> Pending Requests
           </div>
           <div className="text-2xl font-semibold">{pendingLeaves + pendingTimesheets}</div>
-          <p className="text-sm text-muted-foreground mt-1">Leaves: {pendingLeaves} • Timesheet: {pendingTimesheets}</p>
-        </motion.div>
+          <p className="text-sm text-muted-foreground mt-1">Leaves: {pendingLeaves} • Timesheet: {pendingTimesheets} • click to view</p>
+        </motion.button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
@@ -433,14 +542,6 @@ const EmployeeDashboard = () => {
               <div className="text-sm space-y-2">
                 <div className="p-2 rounded-lg bg-muted/40">Online now: <span className="font-semibold">{onlineList.length}</span></div>
                 <div className="p-2 rounded-lg bg-muted/40">On leave today: <span className="font-semibold">{onLeaveList.length}</span></div>
-              </div>
-              <div className="mt-3 space-y-2 max-h-40 overflow-auto custom-scroll pr-1">
-                {onlineList.slice(0, 4).map((item: any) => (
-                  <div key={item._id} className="flex items-center justify-between text-sm">
-                    <span>{item.employeeId?.firstName} {item.employeeId?.lastName}</span>
-                    <CheckCircle2 className="w-4 h-4 text-green-600" />
-                  </div>
-                ))}
               </div>
             </motion.div>
 
@@ -532,7 +633,7 @@ const EmployeeDashboard = () => {
                 } else if (cell?.status === "pending_checkout") {
                   toneClass = "bg-orange-100 border-orange-300";
                   label = "Pending";
-                } else if (cell?.status === "present") {
+                } else if (isPresentLikeStatus(cell?.status)) {
                   toneClass = "bg-blue-100 border-blue-300";
                   label = "Present";
                 } else if (!isFuture) {
@@ -608,6 +709,98 @@ const EmployeeDashboard = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={onlineDialogOpen} onOpenChange={setOnlineDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Online Employees</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-80 overflow-auto custom-scroll pr-1">
+            {onlineList.length === 0 && (
+              <p className="text-sm text-muted-foreground">No employees are online right now.</p>
+            )}
+            {onlineList.map((item: any) => (
+              <div key={item._id} className="flex items-center justify-between text-sm p-2 rounded-lg border bg-background">
+                <span>{item.employeeId?.firstName} {item.employeeId?.lastName}</span>
+                <CheckCircle2 className="w-4 h-4 text-green-600" />
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pendingDialogOpen} onOpenChange={setPendingDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pending Requests</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 max-h-80 overflow-auto custom-scroll pr-1">
+            {pendingLeaveItems.length === 0 && pendingTimesheets === 0 && (
+              <p className="text-sm text-muted-foreground">No pending requests.</p>
+            )}
+
+            {pendingLeaveItems.map((leave: any) => (
+              <div key={leave._id} className="p-2 rounded-lg border bg-background text-sm">
+                <p className="font-medium">
+                  Leave: {leave.leaveTypeName || leave.leaveTypeId?.name || "Leave Request"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatDateInOrgTimeZone(leave.fromDate)}
+                  {leave.toDate ? ` to ${formatDateInOrgTimeZone(leave.toDate)}` : ""}
+                </p>
+              </div>
+            ))}
+
+            {pendingTimesheets > 0 && (
+              <div className="p-2 rounded-lg border bg-background text-sm">
+                <p className="font-medium">Timesheet: Weekly submission pending approval</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Current week timesheet is submitted and waiting for action.
+                </p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={weeklyDialogOpen} onOpenChange={setWeeklyDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Weekly Hours Progress</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <div className="p-2 rounded-lg bg-muted/40">
+              Completed till today (including today):{" "}
+              <span className="font-semibold">{weeklyProgress.completedIncludingToday.toFixed(1)}h</span>
+            </div>
+            <div className="p-2 rounded-lg bg-muted/40">
+              Weekly timesheet total: <span className="font-semibold">{weeklyHours.toFixed(1)}h</span>
+            </div>
+            <div className="p-2 rounded-lg bg-muted/40">
+              Today logged in timesheet: <span className="font-semibold">{weeklyProgress.todayTimesheetHours.toFixed(1)}h</span>
+            </div>
+            <div className="p-2 rounded-lg bg-muted/40">
+              Today worked (attendance): <span className="font-semibold">{weeklyProgress.todayLiveHours.toFixed(1)}h</span>
+            </div>
+            <div className="mt-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Sunday to Saturday</p>
+              <div className="space-y-1">
+                {weeklyProgress.dayRows.map((row: any) => (
+                  <div key={row.dayName} className="flex items-center justify-between p-2 rounded-lg border bg-background">
+                    <div>
+                      <p className="font-medium">{row.dayName}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {row.date ? formatDateInOrgTimeZone(row.date) : "-"}
+                      </p>
+                    </div>
+                    <span className="font-semibold">{Number(row.completedHours || 0).toFixed(1)}h</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 };

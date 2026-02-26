@@ -5,11 +5,14 @@ import { Input } from "@/components/ui/input";
 import { postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 type Step = "send" | "verify" | "update";
 
 const ChangePassword = () => {
-  const { profile } = useAuth();
+  const { profile, setProfile } = useAuth();
+  const navigate = useNavigate();
+  const isFirstLoginPasswordReset = Boolean(profile?.mustChangePassword);
   const [step, setStep] = useState<Step>("send");
   const [submitting, setSubmitting] = useState(false);
   const [otp, setOtp] = useState("");
@@ -67,10 +70,15 @@ const ChangePassword = () => {
 
     if (response?.success) {
       toast.success(response?.message || "Password updated successfully");
+      setProfile({
+        ...(profile || {}),
+        mustChangePassword: false
+      });
       setOtp("");
       setPassword("");
       setConfirmPassword("");
       setStep("send");
+      navigate("/", { replace: true });
       return;
     }
     toast.error(response?.message || "Failed to update password");
@@ -83,6 +91,11 @@ const ChangePassword = () => {
         <p className="text-sm text-muted-foreground mt-2">
           OTP will be sent to <span className="font-medium">{email}</span>.
         </p>
+        {isFirstLoginPasswordReset && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Password expired. Password update is required before accessing the dashboard.
+          </div>
+        )}
 
         {step === "send" && (
           <div className="mt-6 space-y-4">

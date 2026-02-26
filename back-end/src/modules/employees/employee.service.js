@@ -70,7 +70,8 @@ exports.createByHr = async (req) => {
               activeOrganizationId: organizationId,
               email: normalizedEmail,
               password: hashedPassword,
-              status: "active"
+              status: "active",
+              passwordChangeRequired: true
             }
           ],
           { session }
@@ -81,7 +82,8 @@ exports.createByHr = async (req) => {
             activeOrganizationId: organizationId,
             email: normalizedEmail,
             password: hashedPassword,
-            status: "active"
+            status: "active",
+            passwordChangeRequired: true
           }
         ]);
 
