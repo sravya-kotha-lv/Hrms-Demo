@@ -174,6 +174,90 @@ const toIdString = (value: any) => {
   return String(value);
 };
 
+const captureSelfieFromCamera = async (): Promise<string | null> => {
+  if (!navigator.mediaDevices?.getUserMedia) return null;
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.zIndex = "9999";
+    overlay.style.background = "rgba(0,0,0,0.8)";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+
+    const card = document.createElement("div");
+    card.style.background = "#fff";
+    card.style.padding = "12px";
+    card.style.borderRadius = "12px";
+    card.style.width = "min(92vw, 420px)";
+    card.style.display = "flex";
+    card.style.flexDirection = "column";
+    card.style.gap = "10px";
+
+    const title = document.createElement("div");
+    title.textContent = "Take Selfie for Check-In";
+    title.style.fontWeight = "600";
+
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    video.style.width = "100%";
+    video.style.borderRadius = "8px";
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.justifyContent = "flex-end";
+
+    const cancel = document.createElement("button");
+    cancel.textContent = "Cancel";
+    cancel.style.padding = "8px 10px";
+
+    const capture = document.createElement("button");
+    capture.textContent = "Capture";
+    capture.style.padding = "8px 10px";
+
+    const cleanup = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      overlay.remove();
+    };
+
+    cancel.onclick = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    capture.onclick = () => {
+      const maxSide = 480;
+      const canvas = document.createElement("canvas");
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 480;
+      const scale = Math.min(1, maxSide / Math.max(vw, vh));
+      canvas.width = Math.max(1, Math.round(vw * scale));
+      canvas.height = Math.max(1, Math.round(vh * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        cleanup();
+        resolve(null);
+        return;
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const image = canvas.toDataURL("image/jpeg", 0.7);
+      cleanup();
+      resolve(image);
+    };
+
+    actions.append(cancel, capture);
+    card.append(title, video, actions);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  });
+};
+
 const Timesheets = () => {
   const { profile } = useAuth();
   const [selectedDate] = useState(toDateInput(new Date()));
@@ -562,23 +646,14 @@ const Timesheets = () => {
     }
 
     if (checkInPolicy.attendanceSelfieRequired) {
-      const selfieImage = await new Promise<string | null>((resolve) => {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = "image/*";
-        input.capture = "user";
-        input.onchange = () => {
-          const file = input.files?.[0];
-          if (!file) return resolve(null);
-          const reader = new FileReader();
-          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-          reader.onerror = () => resolve(null);
-          reader.readAsDataURL(file);
-        };
-        input.click();
-      });
+      let selfieImage: string | null = null;
+      try {
+        selfieImage = await captureSelfieFromCamera();
+      } catch {
+        selfieImage = null;
+      }
       if (!selfieImage) {
-        toast.error("Selfie is required for check-in");
+        toast.error("Selfie capture is required for check-in");
         return;
       }
       payload.selfieImage = selfieImage;
