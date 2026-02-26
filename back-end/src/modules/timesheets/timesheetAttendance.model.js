@@ -23,6 +23,22 @@ const timesheetAttendanceSchema = new mongoose.Schema(
     },
 
     checkInAt: Date,
+    checkInIp: {
+      type: String,
+      default: null
+    },
+    checkInLatitude: {
+      type: Number,
+      default: null
+    },
+    checkInLongitude: {
+      type: Number,
+      default: null
+    },
+    checkInSelfieProvided: {
+      type: Boolean,
+      default: false
+    },
 
     checkOutAt: Date,
 

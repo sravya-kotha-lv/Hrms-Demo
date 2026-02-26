@@ -13,6 +13,14 @@ const DEFAULTS = {
   payrollCutoffDay: 25,
   minWorkHoursPerDay: 8,
   minHalfDayHours: 4,
+  attendanceIpEnabled: false,
+  attendanceAllowedIp: "",
+  attendanceSelfieRequired: false,
+  attendanceGeoFenceEnabled: false,
+  attendanceGeoLatitude: null,
+  attendanceGeoLongitude: null,
+  attendanceGeoRadiusMeters: 200,
+  attendanceDevBypassEnabled: false,
   probationPeriodDays: 90,
   noticePeriodDays: 30
 };
@@ -51,12 +59,51 @@ exports.upsert = async (req) => {
     payrollCutoffDay,
     minWorkHoursPerDay,
     minHalfDayHours,
+    attendanceIpEnabled,
+    attendanceAllowedIp,
+    attendanceSelfieRequired,
+    attendanceGeoFenceEnabled,
+    attendanceGeoLatitude,
+    attendanceGeoLongitude,
+    attendanceGeoRadiusMeters,
+    attendanceDevBypassEnabled,
     probationPeriodDays,
     noticePeriodDays
   } = req.body;
 
   if (!isValidTimeZone(timezone)) {
-    throw new Error("Invalid timezone");
+    throw { code: 400, statusCode: 400, message: "Invalid timezone" };
+  }
+  const enabledModesCount = [attendanceIpEnabled, attendanceSelfieRequired, attendanceGeoFenceEnabled]
+    .filter(Boolean).length;
+  if (enabledModesCount > 1) {
+    throw {
+      code: 400,
+      statusCode: 400,
+      message: "Only one attendance check-in restriction can be enabled at a time"
+    };
+  }
+  if (attendanceIpEnabled && !(attendanceAllowedIp || "").trim()) {
+    throw {
+      code: 400,
+      statusCode: 400,
+      message: "Allowed office IP is required when IP restriction is enabled"
+    };
+  }
+  if (
+    attendanceGeoFenceEnabled
+    && (
+      attendanceGeoLatitude === null
+      || attendanceGeoLongitude === null
+      || attendanceGeoLatitude === undefined
+      || attendanceGeoLongitude === undefined
+    )
+  ) {
+    throw {
+      code: 400,
+      statusCode: 400,
+      message: "Office latitude and longitude are required when geofencing is enabled"
+    };
   }
 
   const settings = await OrgSettings.findOneAndUpdate(
@@ -72,6 +119,14 @@ exports.upsert = async (req) => {
       payrollCutoffDay,
       minWorkHoursPerDay,
       minHalfDayHours,
+      attendanceIpEnabled,
+      attendanceAllowedIp: (attendanceAllowedIp || "").trim(),
+      attendanceSelfieRequired,
+      attendanceGeoFenceEnabled,
+      attendanceGeoLatitude,
+      attendanceGeoLongitude,
+      attendanceGeoRadiusMeters,
+      attendanceDevBypassEnabled,
       probationPeriodDays,
       noticePeriodDays
     },

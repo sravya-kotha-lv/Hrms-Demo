@@ -36,6 +36,12 @@ const OrganizationSettings = () => {
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
+  const [attendanceAllowedIp, setAttendanceAllowedIp] = useState("");
+  const [attendanceCheckInMode, setAttendanceCheckInMode] = useState<"none" | "ip" | "selfie" | "geofence">("none");
+  const [attendanceGeoLatitude, setAttendanceGeoLatitude] = useState("");
+  const [attendanceGeoLongitude, setAttendanceGeoLongitude] = useState("");
+  const [attendanceGeoRadiusMeters, setAttendanceGeoRadiusMeters] = useState(200);
+  const [attendanceDevBypassEnabled, setAttendanceDevBypassEnabled] = useState(false);
   const [probationPeriodDays, setProbationPeriodDays] = useState(90);
   const [noticePeriodDays, setNoticePeriodDays] = useState(30);
   const [loading, setLoading] = useState(false);
@@ -69,6 +75,30 @@ const OrganizationSettings = () => {
       setMinHalfDayHours(
         typeof res.data?.minHalfDayHours === "number" ? res.data.minHalfDayHours : 4
       );
+      setAttendanceAllowedIp(String(res.data?.attendanceAllowedIp || ""));
+      const resolvedMode =
+        res.data?.attendanceIpEnabled
+          ? "ip"
+          : res.data?.attendanceSelfieRequired
+            ? "selfie"
+            : res.data?.attendanceGeoFenceEnabled
+              ? "geofence"
+              : "none";
+      setAttendanceCheckInMode(resolvedMode);
+      setAttendanceGeoLatitude(
+        res.data?.attendanceGeoLatitude === null || res.data?.attendanceGeoLatitude === undefined
+          ? ""
+          : String(res.data.attendanceGeoLatitude)
+      );
+      setAttendanceGeoLongitude(
+        res.data?.attendanceGeoLongitude === null || res.data?.attendanceGeoLongitude === undefined
+          ? ""
+          : String(res.data.attendanceGeoLongitude)
+      );
+      setAttendanceGeoRadiusMeters(
+        typeof res.data?.attendanceGeoRadiusMeters === "number" ? res.data.attendanceGeoRadiusMeters : 200
+      );
+      setAttendanceDevBypassEnabled(Boolean(res.data?.attendanceDevBypassEnabled));
       setProbationPeriodDays(
         typeof res.data?.probationPeriodDays === "number" ? res.data.probationPeriodDays : 90
       );
@@ -98,6 +128,14 @@ const OrganizationSettings = () => {
         payrollCutoffDay: Number(payrollCutoffDay),
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours),
+        attendanceIpEnabled: attendanceCheckInMode === "ip",
+        attendanceAllowedIp,
+        attendanceSelfieRequired: attendanceCheckInMode === "selfie",
+        attendanceGeoFenceEnabled: attendanceCheckInMode === "geofence",
+        attendanceGeoLatitude: attendanceGeoLatitude === "" ? null : Number(attendanceGeoLatitude),
+        attendanceGeoLongitude: attendanceGeoLongitude === "" ? null : Number(attendanceGeoLongitude),
+        attendanceGeoRadiusMeters: Number(attendanceGeoRadiusMeters),
+        attendanceDevBypassEnabled,
         probationPeriodDays: Number(probationPeriodDays),
         noticePeriodDays: Number(noticePeriodDays)
       }, null, { requiredPermissions: ["ORG_SETTINGS_MANAGE"] });
@@ -313,6 +351,68 @@ const OrganizationSettings = () => {
           <p className="text-xs text-muted-foreground">
             In payroll cutoff mode, editable attendance starts from cutoff+1 day of current cycle.
           </p>
+        </div>
+
+        <div className="space-y-3 mb-6">
+          <label className="text-sm font-medium">Attendance Check-In Restrictions</label>
+          <Select
+            value={attendanceCheckInMode}
+            onValueChange={(value: "none" | "ip" | "selfie" | "geofence") => setAttendanceCheckInMode(value)}
+            disabled={!canManage}
+          >
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="Select check-in restriction mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No restriction</SelectItem>
+              <SelectItem value="ip">Office IP only</SelectItem>
+              <SelectItem value="selfie">Selfie required</SelectItem>
+              <SelectItem value="geofence">Office geofence only</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            type="text"
+            placeholder="Office IPs (comma/newline separated)"
+            value={attendanceAllowedIp}
+            onChange={(e) => setAttendanceAllowedIp(e.target.value)}
+            disabled={!canManage || attendanceCheckInMode !== "ip"}
+            className="w-64"
+          />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <Input
+              type="number"
+              step="0.000001"
+              placeholder="Office latitude"
+              value={attendanceGeoLatitude}
+              onChange={(e) => setAttendanceGeoLatitude(e.target.value)}
+              disabled={!canManage || attendanceCheckInMode !== "geofence"}
+            />
+            <Input
+              type="number"
+              step="0.000001"
+              placeholder="Office longitude"
+              value={attendanceGeoLongitude}
+              onChange={(e) => setAttendanceGeoLongitude(e.target.value)}
+              disabled={!canManage || attendanceCheckInMode !== "geofence"}
+            />
+            <Input
+              type="number"
+              min={10}
+              max={100000}
+              placeholder="Radius (meters)"
+              value={attendanceGeoRadiusMeters}
+              onChange={(e) => setAttendanceGeoRadiusMeters(Number(e.target.value || 200))}
+              disabled={!canManage || attendanceCheckInMode !== "geofence"}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={attendanceDevBypassEnabled}
+              onCheckedChange={(value) => setAttendanceDevBypassEnabled(Boolean(value))}
+              disabled={!canManage}
+            />
+            Enable local development bypass (skip check-in restrictions when NODE_ENV is not production)
+          </label>
         </div>
 
         <PermissionGate permissions={["ORG_SETTINGS_MANAGE"]}>

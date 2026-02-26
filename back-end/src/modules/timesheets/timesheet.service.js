@@ -284,6 +284,90 @@ const combineDateAndTime = (dateValue, hhmm) => {
 const calculateTotalHours = (entries) =>
   (entries || []).reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0);
 
+const throwHttpError = (code, message) => {
+  throw { code, statusCode: code, message };
+};
+
+const normalizeIp = (rawIp = "") => {
+  let value = String(rawIp || "").trim();
+  if (!value) return "";
+
+  if (value.startsWith("[") && value.includes("]")) {
+    value = value.slice(1, value.indexOf("]"));
+  }
+
+  if (/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(value)) {
+    value = value.split(":")[0];
+  }
+
+  return value.replace(/^::ffff:/, "").trim();
+};
+
+const ipV4ToLong = (ip) => {
+  const parts = String(ip || "").split(".");
+  if (parts.length !== 4) return null;
+  const nums = parts.map((p) => Number(p));
+  if (nums.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+  return ((nums[0] * 256 + nums[1]) * 256 + nums[2]) * 256 + nums[3];
+};
+
+const matchesIpv4Cidr = (ip, cidr) => {
+  const [network, bitsRaw] = String(cidr || "").split("/");
+  const bits = Number(bitsRaw);
+  const ipNum = ipV4ToLong(ip);
+  const networkNum = ipV4ToLong(network);
+  if (ipNum === null || networkNum === null || !Number.isInteger(bits) || bits < 0 || bits > 32) {
+    return false;
+  }
+  const mask = bits === 0 ? 0 : ((0xFFFFFFFF << (32 - bits)) >>> 0);
+  return (ipNum & mask) === (networkNum & mask);
+};
+
+const getRequestIp = (req) => {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    const forwardedCandidates = forwarded
+      .split(",")
+      .map((token) => normalizeIp(token))
+      .filter(Boolean);
+    if (forwardedCandidates.length) return forwardedCandidates[0];
+  }
+  const xRealIp = req.headers["x-real-ip"];
+  if (typeof xRealIp === "string" && xRealIp.trim()) {
+    return normalizeIp(xRealIp);
+  }
+  return normalizeIp(req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || "");
+};
+
+const isAllowedIp = (requestIp, allowedIpRaw) => {
+  const request = normalizeIp(requestIp);
+  const allowed = String(allowedIpRaw || "")
+    .split(/[\s,;]+/)
+    .map((ip) => normalizeIp(ip))
+    .filter(Boolean);
+  if (!request || !allowed.length) return false;
+  return allowed.some((candidate) => {
+    if (candidate === request) return true;
+    if (candidate.includes("/")) {
+      return matchesIpv4Cidr(request, candidate);
+    }
+    return false;
+  });
+};
+
+const toRadians = (value) => (value * Math.PI) / 180;
+
+const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
+  const earthRadius = 6371000;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+    + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2))
+    * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadius * c;
+};
+
 const applyHoursToEntries = (entries, dateValue, hours) => {
   const key = toDateKey(dateValue);
   return (entries || []).map((entry) => {
@@ -533,6 +617,59 @@ exports.checkIn = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const now = new Date();
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const attendanceSecurity = await OrgSettings.findOne({ organizationId: req.user.organizationId })
+    .select(
+      "attendanceIpEnabled attendanceAllowedIp attendanceSelfieRequired attendanceGeoFenceEnabled attendanceGeoLatitude attendanceGeoLongitude attendanceGeoRadiusMeters attendanceDevBypassEnabled"
+    );
+  const shouldBypassPolicyChecks = process.env.NODE_ENV !== "production"
+    && Boolean(attendanceSecurity?.attendanceDevBypassEnabled);
+  const checkInIp = getRequestIp(req);
+  const checkInLatitude = req.body?.latitude;
+  const checkInLongitude = req.body?.longitude;
+  const checkInSelfieProvided = Boolean(req.body?.selfieImage);
+  const enabledModesCount = [
+    attendanceSecurity?.attendanceIpEnabled,
+    attendanceSecurity?.attendanceSelfieRequired,
+    attendanceSecurity?.attendanceGeoFenceEnabled
+  ].filter(Boolean).length;
+  if (enabledModesCount > 1) {
+    throwHttpError(400, "Invalid attendance check-in policy: only one restriction mode can be enabled");
+  }
+
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceIpEnabled) {
+    if (!isAllowedIp(checkInIp, attendanceSecurity.attendanceAllowedIp)) {
+      throwHttpError(
+        403,
+        `Check-in is allowed only from the configured office IP. Detected IP: ${checkInIp || "unknown"}`
+      );
+    }
+  }
+
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && !checkInSelfieProvided) {
+    throwHttpError(403, "Selfie is required for check-in");
+  }
+
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceGeoFenceEnabled) {
+    const officeLat = Number(attendanceSecurity.attendanceGeoLatitude);
+    const officeLng = Number(attendanceSecurity.attendanceGeoLongitude);
+    const radiusMeters = Number(attendanceSecurity.attendanceGeoRadiusMeters || 200);
+    if (!Number.isFinite(checkInLatitude) || !Number.isFinite(checkInLongitude)) {
+      throwHttpError(403, "Location access is required for check-in");
+    }
+    if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng)) {
+      throwHttpError(400, "Office geofence is not configured. Please contact admin.");
+    }
+    const distanceMeters = getDistanceMeters(
+      officeLat,
+      officeLng,
+      Number(checkInLatitude),
+      Number(checkInLongitude)
+    );
+    if (distanceMeters > radiusMeters) {
+      throwHttpError(403, `You are outside office geofence. Allowed radius is ${radiusMeters} meters.`);
+    }
+  }
+
   const {
     attendanceDateKey,
     shift,
@@ -579,15 +716,32 @@ exports.checkIn = async (req) => {
   });
 
   if (existing && existing.checkInAt && !existing.checkOutAt) {
-    throw new Error("Already checked in for today");
+    // Already in an open session for the day. Keep the first check-in as-is.
+    return existing;
   }
 
-  if (existing && existing.checkOutAt) {
-    throw new Error("Already checked out for today");
+  if (existing && existing.checkInAt && existing.checkOutAt) {
+    // Re-open attendance session while preserving first check-in.
+    // Final hours are always computed as (first check-in -> latest check-out).
+    existing.checkOutAt = null;
+    existing.status = "checked_in";
+    existing.overriddenBy = null;
+    existing.overriddenAt = null;
+    existing.earlyCheckoutByMinutes = 0;
+    existing.overtimeMinutes = 0;
+    existing.missedCheckout = false;
+    existing.missedCheckoutMarkedAt = null;
+    existing.missedCheckoutResolvedRequestId = null;
+    await existing.save();
+    return existing;
   }
 
   if (existing && !existing.checkInAt && !existing.checkOutAt) {
     existing.checkInAt = now;
+    existing.checkInIp = checkInIp || null;
+    existing.checkInLatitude = Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null;
+    existing.checkInLongitude = Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null;
+    existing.checkInSelfieProvided = checkInSelfieProvided;
     existing.totalMinutes = 0;
     existing.status = "checked_in";
     existing.overriddenBy = null;
@@ -615,6 +769,10 @@ exports.checkIn = async (req) => {
     employeeId: employee._id,
     date: attendanceDate,
     checkInAt: now,
+    checkInIp: checkInIp || null,
+    checkInLatitude: Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null,
+    checkInLongitude: Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null,
+    checkInSelfieProvided,
     status: "checked_in",
     shiftId: shift._id || null,
     shiftName: shift.name,
@@ -641,6 +799,20 @@ exports.checkIn = async (req) => {
   });
 
   return attendance;
+};
+
+exports.getCheckInPolicy = async (req) => {
+  const settings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
+    .select(
+      "attendanceIpEnabled attendanceSelfieRequired attendanceGeoFenceEnabled attendanceGeoRadiusMeters"
+    );
+
+  return {
+    attendanceIpEnabled: Boolean(settings?.attendanceIpEnabled),
+    attendanceSelfieRequired: Boolean(settings?.attendanceSelfieRequired),
+    attendanceGeoFenceEnabled: Boolean(settings?.attendanceGeoFenceEnabled),
+    attendanceGeoRadiusMeters: Number(settings?.attendanceGeoRadiusMeters || 200)
+  };
 };
 
 exports.checkOut = async (req) => {

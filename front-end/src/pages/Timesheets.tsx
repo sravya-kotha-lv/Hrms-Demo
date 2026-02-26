@@ -134,6 +134,13 @@ type AttendanceRequest = {
   currentApprovalStep?: number | null;
 };
 
+type CheckInPolicy = {
+  attendanceIpEnabled: boolean;
+  attendanceSelfieRequired: boolean;
+  attendanceGeoFenceEnabled: boolean;
+  attendanceGeoRadiusMeters: number;
+};
+
 const toPersonLabel = (employee: any) => {
   if (!employee) return "-";
   const name = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
@@ -202,6 +209,12 @@ const Timesheets = () => {
   });
   const [myAttendanceRequests, setMyAttendanceRequests] = useState<AttendanceRequest[]>([]);
   const [pendingAttendanceRequests, setPendingAttendanceRequests] = useState<AttendanceRequest[]>([]);
+  const [checkInPolicy, setCheckInPolicy] = useState<CheckInPolicy>({
+    attendanceIpEnabled: false,
+    attendanceSelfieRequired: false,
+    attendanceGeoFenceEnabled: false,
+    attendanceGeoRadiusMeters: 200
+  });
   const currentEmployeeId = toIdString(profile?.employeeId);
   const currentRoleSlug = profile?.activeRole?.slug || "";
 
@@ -406,6 +419,21 @@ const Timesheets = () => {
     if (res?.success) setPendingAttendanceRequests(res.data || []);
   };
 
+  const loadCheckInPolicy = async () => {
+    const res = await getApiWithToken("/timesheets/checkin-policy", null, {
+      requiredPermissions: ["TIMESHEET_CHECKIN_SELF"]
+    });
+    if (res?.skipped) return;
+    if (res?.success && res?.data) {
+      setCheckInPolicy({
+        attendanceIpEnabled: Boolean(res.data.attendanceIpEnabled),
+        attendanceSelfieRequired: Boolean(res.data.attendanceSelfieRequired),
+        attendanceGeoFenceEnabled: Boolean(res.data.attendanceGeoFenceEnabled),
+        attendanceGeoRadiusMeters: Number(res.data.attendanceGeoRadiusMeters || 200)
+      });
+    }
+  };
+
   useEffect(() => {
     loadAttendanceToday();
     loadWeekly();
@@ -416,6 +444,7 @@ const Timesheets = () => {
     loadMyLeavesForWeek();
     loadMyAttendanceRequests();
     loadPendingAttendanceRequests();
+    loadCheckInPolicy();
   }, [weekStart.getTime()]);
 
   const submitAttendanceRequest = async () => {
@@ -507,9 +536,57 @@ const Timesheets = () => {
   };
 
   const handleCheckIn = async () => {
+    const payload: Record<string, any> = {};
+
+    if (checkInPolicy.attendanceGeoFenceEnabled) {
+      if (!navigator.geolocation) {
+        toast.error("Location is not supported on this browser");
+        return;
+      }
+      const geo = await new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (position) => resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      });
+      if (!geo) {
+        toast.error("Location permission is required for check-in");
+        return;
+      }
+      payload.latitude = geo.latitude;
+      payload.longitude = geo.longitude;
+    }
+
+    if (checkInPolicy.attendanceSelfieRequired) {
+      const selfieImage = await new Promise<string | null>((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.capture = "user";
+        input.onchange = () => {
+          const file = input.files?.[0];
+          if (!file) return resolve(null);
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        };
+        input.click();
+      });
+      if (!selfieImage) {
+        toast.error("Selfie is required for check-in");
+        return;
+      }
+      payload.selfieImage = selfieImage;
+    }
+
     const res = await postApiWithToken(
       "/timesheets/check-in",
-      {},
+      payload,
       null,
       { requiredPermissions: ["TIMESHEET_CHECKIN_SELF"] }
     );
@@ -755,7 +832,7 @@ const Timesheets = () => {
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <Button onClick={handleCheckIn} disabled={!canCheckIn || isCheckedIn || isCheckedOut}>
+        <Button onClick={handleCheckIn} disabled={!canCheckIn || isCheckedIn}>
           Check In
         </Button>
         <Button variant="outline" onClick={handleCheckOut} disabled={!canCheckOut || !isCheckedIn}>

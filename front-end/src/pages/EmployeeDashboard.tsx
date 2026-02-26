@@ -60,6 +60,13 @@ type AttendanceDay = {
   holidayName: string | null;
 };
 
+type CheckInPolicy = {
+  attendanceIpEnabled: boolean;
+  attendanceSelfieRequired: boolean;
+  attendanceGeoFenceEnabled: boolean;
+  attendanceGeoRadiusMeters: number;
+};
+
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const isPresentLikeStatus = (status?: string | null) =>
@@ -92,13 +99,19 @@ const EmployeeDashboard = () => {
   const [onlineDialogOpen, setOnlineDialogOpen] = useState(false);
   const [pendingDialogOpen, setPendingDialogOpen] = useState(false);
   const [weeklyDialogOpen, setWeeklyDialogOpen] = useState(false);
+  const [checkInPolicy, setCheckInPolicy] = useState<CheckInPolicy>({
+    attendanceIpEnabled: false,
+    attendanceSelfieRequired: false,
+    attendanceGeoFenceEnabled: false,
+    attendanceGeoRadiusMeters: 200
+  });
 
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
 
   const loadDashboard = async () => {
     const todayIso = toDateInput(new Date());
     const weekStartIso = toDateInput(weekStart);
-    const [weeklyRes, attendanceRes, leaveRes, balanceRes, onlineRes, onLeaveRes, notifRes, holidayRes, weekOffRes, matrixRes, profileRes, eventsRes] =
+    const [weeklyRes, attendanceRes, leaveRes, balanceRes, onlineRes, onLeaveRes, notifRes, holidayRes, weekOffRes, matrixRes, profileRes, eventsRes, checkInPolicyRes] =
       await Promise.all([
         getApiWithToken(`/timesheets/weekly/my?weekStart=${weekStartIso}`, null, {
           requiredPermissions: ["TIMESHEET_VIEW_SELF"]
@@ -136,6 +149,9 @@ const EmployeeDashboard = () => {
         getApiWithToken("/employees/upcoming-events?days=7", null, {
           requiredPermissions: ["EMP_SELF_VIEW", "EMP_VIEW"]
         }),
+        getApiWithToken("/timesheets/checkin-policy", null, {
+          requiredPermissions: ["TIMESHEET_CHECKIN_SELF"]
+        })
       ]);
 
     if (weeklyRes?.success && weeklyRes?.data) {
@@ -196,6 +212,15 @@ const EmployeeDashboard = () => {
     }
 
     setMyProfile(profileRes?.success ? (profileRes.data || null) : null);
+
+    if (checkInPolicyRes?.success && checkInPolicyRes?.data) {
+      setCheckInPolicy({
+        attendanceIpEnabled: Boolean(checkInPolicyRes.data.attendanceIpEnabled),
+        attendanceSelfieRequired: Boolean(checkInPolicyRes.data.attendanceSelfieRequired),
+        attendanceGeoFenceEnabled: Boolean(checkInPolicyRes.data.attendanceGeoFenceEnabled),
+        attendanceGeoRadiusMeters: Number(checkInPolicyRes.data.attendanceGeoRadiusMeters || 200)
+      });
+    }
   };
 
   useEffect(() => {
@@ -353,8 +378,57 @@ const EmployeeDashboard = () => {
   }, [attendanceToday]);
 
   const handleCheckIn = async () => {
+    const payload: Record<string, any> = {};
+
+    if (checkInPolicy.attendanceGeoFenceEnabled) {
+      if (!navigator.geolocation) {
+        toast.error("Location is not supported on this browser");
+        return;
+      }
+      const geo = await new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (position) =>
+            resolve({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude
+            }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      });
+      if (!geo) {
+        toast.error("Location permission is required for check-in");
+        return;
+      }
+      payload.latitude = geo.latitude;
+      payload.longitude = geo.longitude;
+    }
+
+    if (checkInPolicy.attendanceSelfieRequired) {
+      const selfieImage = await new Promise<string | null>((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.capture = "user";
+        input.onchange = () => {
+          const file = input.files?.[0];
+          if (!file) return resolve(null);
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        };
+        input.click();
+      });
+      if (!selfieImage) {
+        toast.error("Selfie is required for check-in");
+        return;
+      }
+      payload.selfieImage = selfieImage;
+    }
+
     setCheckinLoading(true);
-    const res = await postApiWithToken("/timesheets/check-in", {}, null, {
+    const res = await postApiWithToken("/timesheets/check-in", payload, null, {
       requiredPermissions: ["TIMESHEET_CHECKIN_SELF"]
     });
     setCheckinLoading(false);
@@ -414,7 +488,7 @@ const EmployeeDashboard = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <PermissionGate permissions={["TIMESHEET_CHECKIN_SELF"]}>
-              <Button onClick={handleCheckIn} disabled={isCheckedIn || isCheckedOut || checkinLoading}>
+              <Button onClick={handleCheckIn} disabled={isCheckedIn || checkinLoading}>
                 <LogIn className="w-4 h-4 mr-2" /> Check In
               </Button>
             </PermissionGate>
