@@ -47,6 +47,7 @@ const CompleteProfile = React.lazy(() => import("./pages/CompleteProfile"));
 const Documentation = React.lazy(() => import("./pages/Documentation"));
 const Expenses = React.lazy(() => import("./pages/Expenses"));
 const Projects = React.lazy(() => import("./pages/Projects"));
+const Hiring = React.lazy(() => import("./pages/Hiring"));
 
 const queryClient = new QueryClient();
 const App = () => (
@@ -443,6 +444,16 @@ const App = () => (
                 <RequireAuth permissions={["PROJECT_VIEW", "PROJECT_MANAGE"]}>
                   <RequireProfile>
                     <Projects />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/hiring"
+              element={
+                <RequireAuth permissions={["HIRING_VIEW", "HIRING_MANAGE"]}>
+                  <RequireProfile>
+                    <Hiring />
                   </RequireProfile>
                 </RequireAuth>
               }

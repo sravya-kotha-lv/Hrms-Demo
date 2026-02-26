@@ -55,6 +55,38 @@ const orgSettingsSchema = new mongoose.Schema(
       type: Number,
       default: 4
     },
+    attendanceIpEnabled: {
+      type: Boolean,
+      default: false
+    },
+    attendanceAllowedIp: {
+      type: String,
+      default: ""
+    },
+    attendanceSelfieRequired: {
+      type: Boolean,
+      default: false
+    },
+    attendanceGeoFenceEnabled: {
+      type: Boolean,
+      default: false
+    },
+    attendanceGeoLatitude: {
+      type: Number,
+      default: null
+    },
+    attendanceGeoLongitude: {
+      type: Number,
+      default: null
+    },
+    attendanceGeoRadiusMeters: {
+      type: Number,
+      default: 200
+    },
+    attendanceDevBypassEnabled: {
+      type: Boolean,
+      default: false
+    },
     probationPeriodDays: {
       type: Number,
       default: 90,

@@ -11,6 +11,14 @@ exports.upsertOrgSettingsSchema = Joi.object({
   payrollCutoffDay: Joi.number().integer().min(1).max(31).default(25),
   minWorkHoursPerDay: Joi.number().min(0).max(24).required(),
   minHalfDayHours: Joi.number().min(0).max(24).max(Joi.ref("minWorkHoursPerDay")).required(),
+  attendanceIpEnabled: Joi.boolean().default(false),
+  attendanceAllowedIp: Joi.string().trim().allow("").default(""),
+  attendanceSelfieRequired: Joi.boolean().default(false),
+  attendanceGeoFenceEnabled: Joi.boolean().default(false),
+  attendanceGeoLatitude: Joi.number().min(-90).max(90).allow(null),
+  attendanceGeoLongitude: Joi.number().min(-180).max(180).allow(null),
+  attendanceGeoRadiusMeters: Joi.number().integer().min(10).max(100000).default(200),
+  attendanceDevBypassEnabled: Joi.boolean().default(false),
   probationPeriodDays: Joi.number().integer().min(0).max(3650).default(90),
   noticePeriodDays: Joi.number().integer().min(0).max(3650).default(30)
 });

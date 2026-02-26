@@ -205,7 +205,21 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
     icon: <DollarSign size={20} />,
     label: "Business",
     to: "/business-development",
-    permissions: ["PROJECT_VIEW", "PROJECT_MANAGE"]
+    permissions: ["PROJECT_VIEW", "PROJECT_MANAGE", "HIRING_VIEW", "HIRING_MANAGE"],
+    children: [
+      {
+        icon: <Briefcase size={18} />,
+        label: "Projects",
+        to: "/business-development",
+        permissions: ["PROJECT_VIEW", "PROJECT_MANAGE"]
+      },
+      {
+        icon: <Users size={18} />,
+        label: "Hiring",
+        to: "/hiring",
+        permissions: ["HIRING_VIEW", "HIRING_MANAGE"]
+      }
+    ]
   },
   { icon: <FileText size={20} />, label: "Documentation", to: "/documentation", permissions: ["EMP_VIEW", "EMP_SELF_VIEW", "EMP_CREATE", "EMP_UPDATE"] }
 ];

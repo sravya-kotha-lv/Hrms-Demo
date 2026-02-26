@@ -154,6 +154,7 @@ app.use("/api/org-settings", require("./src/modules/orgSettings/orgSettings.rout
 app.use("/api/notifications", require("./src/modules/notifications/notification.routes"));
 app.use("/api/expenses", require("./src/modules/expenses/expense.routes"));
 app.use("/api/projects", require("./src/modules/projects/project.routes"));
+app.use("/api/hiring", require("./src/modules/hiring/hiring.routes"));
 app.use("/api/dashboard", require("./src/modules/dashboard/dashboard.routes"));
 app.use("/api/payroll", require("./src/modules/payroll/payrollAttendance.routes"));
 

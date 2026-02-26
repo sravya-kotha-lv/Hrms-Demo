@@ -11,6 +11,11 @@ exports.checkOut = async (req, res) => {
   res.status(200).json(buildSuccessResponse({ message: "Checked out", data }));
 };
 
+exports.getCheckInPolicy = async (req, res) => {
+  const data = await service.getCheckInPolicy(req);
+  res.status(200).json(buildSuccessResponse({ data }));
+};
+
 exports.myAttendance = async (req, res) => {
   const data = await service.getMyAttendance(req);
   res.status(200).json(buildSuccessResponse({ data }));

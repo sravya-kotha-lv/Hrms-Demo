@@ -6,6 +6,7 @@ const asyncHandler = require("../../middlewares/asyncHandler");
 
 const controller = require("./timesheet.controller");
 const {
+  checkInSchema,
   createWeeklySchema,
   updateWeeklySchema,
   submitWeeklySchema,
@@ -21,6 +22,7 @@ router.post(
   "/check-in",
   auth,
   authorize("TIMESHEET_CHECKIN_SELF"),
+  validate(checkInSchema),
   asyncHandler(controller.checkIn)
 );
 
@@ -125,6 +127,13 @@ router.put(
   authorize("ATTENDANCE_MANAGE"),
   validate(attendanceRequestActionSchema),
   asyncHandler(controller.actionAttendanceRequest)
+);
+
+router.get(
+  "/checkin-policy",
+  auth,
+  authorize("TIMESHEET_CHECKIN_SELF"),
+  asyncHandler(controller.getCheckInPolicy)
 );
 
 router.get(

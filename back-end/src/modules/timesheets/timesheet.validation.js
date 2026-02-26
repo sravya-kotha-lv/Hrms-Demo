@@ -11,6 +11,12 @@ exports.createWeeklySchema = Joi.object({
   entries: Joi.array().items(entrySchema).optional()
 });
 
+exports.checkInSchema = Joi.object({
+  latitude: Joi.number().min(-90).max(90).optional(),
+  longitude: Joi.number().min(-180).max(180).optional(),
+  selfieImage: Joi.string().max(5 * 1024 * 1024).allow("").optional()
+});
+
 exports.updateWeeklySchema = Joi.object({
   entries: Joi.array().items(entrySchema).required(),
   weekStart: Joi.date().optional()
