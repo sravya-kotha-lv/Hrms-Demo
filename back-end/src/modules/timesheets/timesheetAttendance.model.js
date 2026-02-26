@@ -39,6 +39,10 @@ const timesheetAttendanceSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    checkInSelfieImage: {
+      type: String,
+      default: null
+    },
 
     checkOutAt: Date,
 

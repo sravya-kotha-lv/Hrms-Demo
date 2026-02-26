@@ -30,6 +30,8 @@ type DayCell = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
   checkInAt: string | null;
   checkOutAt: string | null;
+  checkInIp?: string | null;
+  checkInSelfieProvided?: boolean;
   isOpenSession?: boolean;
   excludeFromPayroll?: boolean;
   payrollReconciledByLeave?: boolean;
@@ -68,6 +70,14 @@ type AttendanceHistoryItem = {
   actor: string;
 };
 
+type AttendanceSnapshot = {
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  checkInIp?: string | null;
+  checkInSelfieProvided?: boolean;
+  checkInSelfieImage?: string | null;
+} | null;
+
 const currentMonth = () => {
   const now = new Date();
   const y = now.getFullYear();
@@ -79,6 +89,8 @@ const emptyCell: DayCell = {
   status: "absent",
   checkInAt: null,
   checkOutAt: null,
+  checkInIp: null,
+  checkInSelfieProvided: false,
   isOpenSession: false,
   excludeFromPayroll: false,
   payrollReconciledByLeave: false,
@@ -99,11 +111,12 @@ const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
 const Attendance = () => {
-  const { hasAnyPermission } = useAuth();
+  const { hasAnyPermission, profile } = useAuth();
   const canViewAll = hasAnyPermission(["ATTENDANCE_VIEW_ALL"]);
   const canViewSelf = hasAnyPermission(["ATTENDANCE_VIEW_SELF"]);
   const canView = canViewAll || canViewSelf;
   const canEdit = hasAnyPermission(["ATTENDANCE_MANAGE"]);
+  const canViewSelfieData = ["hr", "org-admin"].includes(profile?.activeRole?.slug || "");
 
   const [month, setMonth] = useState(currentMonth());
   const [search, setSearch] = useState("");
@@ -122,6 +135,7 @@ const Attendance = () => {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [history, setHistory] = useState<AttendanceHistoryItem[]>([]);
+  const [selectedAttendanceSnapshot, setSelectedAttendanceSnapshot] = useState<AttendanceSnapshot>(null);
 
   const fetchMatrix = async () => {
     if (!canView) {
@@ -185,6 +199,7 @@ const Attendance = () => {
     setSelectedStatus(cellStatus === "absent" ? "absent" : "present");
     setOpen(true);
     setHistory([]);
+    setSelectedAttendanceSnapshot(null);
     try {
       setHistoryLoading(true);
       const date = `${month}-${String(day).padStart(2, "0")}`;
@@ -197,6 +212,7 @@ const Attendance = () => {
       const res = await getApiWithToken(endpoint, null, { requiredPermissions });
       if (res?.success) {
         setHistory(res.data?.history || []);
+        setSelectedAttendanceSnapshot(res.data?.attendance || null);
       }
     } finally {
       setHistoryLoading(false);
@@ -254,6 +270,12 @@ const Attendance = () => {
     if (cell.holidayName) parts.push(`Holiday: ${cell.holidayName}`);
     if (cell.checkInAt) parts.push(`Check-in: ${formatTimeInOrgTimeZone(cell.checkInAt)}`);
     if (cell.checkOutAt) parts.push(`Check-out: ${formatTimeInOrgTimeZone(cell.checkOutAt)}`);
+    if (canViewSelfieData && (cell.checkInAt || cell.checkOutAt)) {
+      parts.push(`Selfie: ${cell.checkInSelfieProvided ? "Yes" : "No"}`);
+    }
+    if (canViewSelfieData && cell.checkInIp) {
+      parts.push(`IP: ${cell.checkInIp}`);
+    }
     if (cell.shiftName || cell.shiftCode) {
       parts.push(`Shift: ${cell.shiftName || ""}${cell.shiftCode ? ` (${cell.shiftCode})` : ""}`);
     }
@@ -357,8 +379,12 @@ const Attendance = () => {
     let weekOffDays = 0;
     let holidayDays = 0;
     let payrollExcludedDays = 0;
+    let selfieDays = 0;
     for (let day = 1; day <= daysInMonth; day += 1) {
       const cell = row.days?.[day] || emptyCell;
+      if (cell.checkInSelfieProvided) {
+        selfieDays += 1;
+      }
       if (cell.status === "pending_checkout") {
         pendingCheckoutDays += 1;
         if (cell.excludeFromPayroll) {
@@ -396,6 +422,7 @@ const Attendance = () => {
       onLeaveDays,
       weekOffDays,
       holidayDays,
+      selfieDays,
       payrollExcludedDays,
       totalDays:
         presentDays
@@ -420,11 +447,14 @@ const Attendance = () => {
       "Excluded From Payroll",
       "Total Days"
     ];
+    if (canViewSelfieData) {
+      header.splice(8, 0, "Selfie");
+    }
     const lines = [header.join(",")];
     filteredRows.forEach((row) => {
       const t = getEmployeeTotals(row);
       const name = `${row.firstName || ""} ${row.lastName || ""}`.trim();
-      lines.push([
+      const rowData = [
         row.employeeCode || "",
         `"${name.replace(/"/g, '""')}"`,
         t.presentDays,
@@ -435,7 +465,11 @@ const Attendance = () => {
         t.holidayDays,
         t.payrollExcludedDays,
         t.totalDays
-      ].join(","));
+      ];
+      if (canViewSelfieData) {
+        rowData.splice(8, 0, t.selfieDays);
+      }
+      lines.push(rowData.join(","));
     });
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -504,6 +538,7 @@ const Attendance = () => {
     (_, idx) => (idx < firstDayOffset ? null : idx - firstDayOffset + 1)
   );
   const weekDayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const summaryColumnCount = canViewSelfieData ? 8 : 7;
 
   return (
     <MainLayout
@@ -636,6 +671,18 @@ const Attendance = () => {
                                 <p className="text-xs text-muted-foreground">
                                   Check-out: {cell.checkOutAt ? formatTimeInOrgTimeZone(cell.checkOutAt) : "Not recorded"}
                                 </p>
+                                {canViewSelfieData && (
+                                  <>
+                                    <p className="text-xs text-muted-foreground">
+                                      Selfie: {cell.checkInSelfieProvided ? "Yes" : "No"}
+                                    </p>
+                                    {cell.checkInIp && (
+                                      <p className="text-xs text-muted-foreground">
+                                        Check-in IP: {cell.checkInIp}
+                                      </p>
+                                    )}
+                                  </>
+                                )}
                                 {(cell.shiftName || cell.shiftCode) && (
                                   <p className="text-xs text-muted-foreground">
                                     Shift: {cell.shiftName || "Shift"}{cell.shiftCode ? ` (${cell.shiftCode})` : ""}
@@ -759,6 +806,11 @@ const Attendance = () => {
                       <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                         Holiday
                       </th>
+                      {canViewSelfieData && (
+                        <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                          Selfie
+                        </th>
+                      )}
                       <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
                         Total
                       </th>
@@ -767,14 +819,14 @@ const Attendance = () => {
                   <tbody>
                     {loading && (
                       <tr>
-                        <td colSpan={daysInMonth + 8 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
+                        <td colSpan={daysInMonth + summaryColumnCount + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
                           Loading attendance...
                         </td>
                       </tr>
                     )}
                     {!loading && filteredRows.length === 0 && (
                       <tr>
-                        <td colSpan={daysInMonth + 8 + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
+                        <td colSpan={daysInMonth + summaryColumnCount + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
                           No employees found.
                         </td>
                       </tr>
@@ -841,6 +893,11 @@ const Attendance = () => {
                               <td className="text-center text-sm font-medium text-amber-700">
                                 {totals.holidayDays}
                               </td>
+                              {canViewSelfieData && (
+                                <td className="text-center text-sm font-medium text-slate-700">
+                                  {totals.selfieDays}
+                                </td>
+                              )}
                               <td className="text-center text-sm font-medium">
                                 {totals.totalDays}
                               </td>
@@ -919,6 +976,28 @@ const Attendance = () => {
               </Select>
             )}
             <div className="rounded-md border p-3 max-h-40 overflow-auto">
+              {canViewSelfieData && selectedAttendanceSnapshot && (
+                <div className="mb-2 pb-2 border-b">
+                  <p className="text-xs text-muted-foreground">
+                    Selfie captured: {selectedAttendanceSnapshot.checkInSelfieProvided ? "Yes" : "No"}
+                  </p>
+                  {selectedAttendanceSnapshot.checkInIp && (
+                    <p className="text-xs text-muted-foreground">
+                      Check-in IP: {selectedAttendanceSnapshot.checkInIp}
+                    </p>
+                  )}
+                  {selectedAttendanceSnapshot.checkInSelfieImage && (
+                    <div className="mt-2">
+                      <p className="text-xs text-muted-foreground mb-1">Selfie proof:</p>
+                      <img
+                        src={selectedAttendanceSnapshot.checkInSelfieImage}
+                        alt="Selfie proof"
+                        className="max-h-44 rounded border object-contain bg-slate-50"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               <p className="text-xs font-medium mb-2">Activity Timeline</p>
               {historyLoading && <p className="text-xs text-muted-foreground">Loading...</p>}
               {!historyLoading && history.length === 0 && (

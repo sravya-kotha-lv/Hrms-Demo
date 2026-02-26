@@ -39,6 +39,7 @@ const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "org-admin",
   "superadmin"
 ]);
+const ATTENDANCE_SELFIE_VIEW_ROLE_SLUGS = new Set(["hr", "org-admin"]);
 
 const parseDateValue = (value) => {
   if (value instanceof Date) return new Date(value);
@@ -540,6 +541,11 @@ const getActorRoleSlug = async (req) => {
   return role?.slug || "";
 };
 
+const canActorViewAttendanceSelfie = async (req) => {
+  const roleSlug = await getActorRoleSlug(req);
+  return ATTENDANCE_SELFIE_VIEW_ROLE_SLUGS.has(roleSlug);
+};
+
 const assertManageAccessForEmployee = async (req, employeeId) => {
   if (!req.user.activeRoleId) return;
 
@@ -626,6 +632,7 @@ exports.checkIn = async (req) => {
   const checkInIp = getRequestIp(req);
   const checkInLatitude = req.body?.latitude;
   const checkInLongitude = req.body?.longitude;
+  const checkInSelfieImage = req.body?.selfieImage || null;
   const checkInSelfieProvided = Boolean(req.body?.selfieImage);
   const enabledModesCount = [
     attendanceSecurity?.attendanceIpEnabled,
@@ -724,6 +731,17 @@ exports.checkIn = async (req) => {
     // Re-open attendance session while preserving first check-in.
     // Final hours are always computed as (first check-in -> latest check-out).
     existing.checkOutAt = null;
+    existing.checkInIp = checkInIp || existing.checkInIp || null;
+    existing.checkInLatitude = Number.isFinite(checkInLatitude)
+      ? Number(checkInLatitude)
+      : (existing.checkInLatitude ?? null);
+    existing.checkInLongitude = Number.isFinite(checkInLongitude)
+      ? Number(checkInLongitude)
+      : (existing.checkInLongitude ?? null);
+    if (checkInSelfieProvided) {
+      existing.checkInSelfieProvided = true;
+      existing.checkInSelfieImage = checkInSelfieImage;
+    }
     existing.status = "checked_in";
     existing.overriddenBy = null;
     existing.overriddenAt = null;
@@ -742,6 +760,7 @@ exports.checkIn = async (req) => {
     existing.checkInLatitude = Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null;
     existing.checkInLongitude = Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null;
     existing.checkInSelfieProvided = checkInSelfieProvided;
+    existing.checkInSelfieImage = checkInSelfieImage;
     existing.totalMinutes = 0;
     existing.status = "checked_in";
     existing.overriddenBy = null;
@@ -773,6 +792,7 @@ exports.checkIn = async (req) => {
     checkInLatitude: Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null,
     checkInLongitude: Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null,
     checkInSelfieProvided,
+    checkInSelfieImage,
     status: "checked_in",
     shiftId: shift._id || null,
     shiftName: shift.name,
@@ -962,6 +982,7 @@ exports.getAttendance = async (req) => {
 
 exports.getAttendanceMatrix = async (req) => {
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const canViewSelfie = await canActorViewAttendanceSelfie(req);
   const { year, month, start, end, daysInMonth } = parseMonthRangeInTimeZone(
     req.query.month,
     organizationTimeZone
@@ -992,7 +1013,7 @@ exports.getAttendanceMatrix = async (req) => {
       employeeId: { $in: employeeIds },
       date: { $gte: start, $lte: end }
     })
-      .select("employeeId date checkInAt checkOutAt totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
+      .select("employeeId date checkInAt checkOutAt checkInIp checkInSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
       .populate("overriddenBy", "firstName lastName"),
     Holiday.find({
       organizationId: req.user.organizationId,
@@ -1034,6 +1055,8 @@ exports.getAttendanceMatrix = async (req) => {
       status,
       checkInAt: row.checkInAt || null,
       checkOutAt: row.checkOutAt || null,
+      checkInIp: canViewSelfie ? (row.checkInIp || null) : null,
+      checkInSelfieProvided: canViewSelfie ? Boolean(row.checkInSelfieProvided) : false,
       totalMinutes: Number(row.totalMinutes || 0),
       isOpenSession,
       excludeFromPayroll: isOpenSession,
@@ -1090,6 +1113,8 @@ exports.getAttendanceMatrix = async (req) => {
         status: "absent",
         checkInAt: null,
         checkOutAt: null,
+        checkInIp: null,
+        checkInSelfieProvided: false,
         isOpenSession: false,
         excludeFromPayroll: false,
         payrollReconciledByLeave: false,
@@ -1136,6 +1161,7 @@ exports.getAttendanceMatrix = async (req) => {
 
 exports.getMyAttendanceMatrix = async (req) => {
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const canViewSelfie = await canActorViewAttendanceSelfie(req);
   const { year, month, start, end, daysInMonth } = parseMonthRangeInTimeZone(
     req.query.month,
     organizationTimeZone
@@ -1148,7 +1174,7 @@ exports.getMyAttendanceMatrix = async (req) => {
       employeeId: employee._id,
       date: { $gte: start, $lte: end }
     })
-      .select("date checkInAt checkOutAt totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
+      .select("date checkInAt checkOutAt checkInIp checkInSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
       .populate("overriddenBy", "firstName lastName"),
     Holiday.find({
       organizationId: req.user.organizationId,
@@ -1181,6 +1207,8 @@ exports.getMyAttendanceMatrix = async (req) => {
       status: "absent",
       checkInAt: null,
       checkOutAt: null,
+      checkInIp: null,
+      checkInSelfieProvided: false,
       isOpenSession: false,
       excludeFromPayroll: false,
       payrollReconciledByLeave: false,
@@ -1220,6 +1248,8 @@ exports.getMyAttendanceMatrix = async (req) => {
       status,
       checkInAt: row.checkInAt || null,
       checkOutAt: row.checkOutAt || null,
+      checkInIp: canViewSelfie ? (row.checkInIp || null) : null,
+      checkInSelfieProvided: canViewSelfie ? Boolean(row.checkInSelfieProvided) : false,
       totalMinutes: Number(row.totalMinutes || 0),
       isOpenSession,
       excludeFromPayroll: isOpenSession,
@@ -1284,6 +1314,7 @@ exports.getAttendanceCellHistory = async (req) => {
   }
 
   await assertManageAccessForEmployee(req, employeeId);
+  const canViewSelfie = await canActorViewAttendanceSelfie(req);
 
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const day = startOfDayInTimeZone(date, organizationTimeZone);
@@ -1297,6 +1328,13 @@ exports.getAttendanceCellHistory = async (req) => {
     return { attendance: null, history: [] };
   }
 
+  const attendanceData = attendance.toObject ? attendance.toObject() : attendance;
+  if (!canViewSelfie) {
+    attendanceData.checkInSelfieProvided = false;
+    attendanceData.checkInSelfieImage = null;
+    attendanceData.checkInIp = null;
+  }
+
   const history = await AuditLog.find({
     organizationId: req.user.organizationId,
     module: "timesheets",
@@ -1308,7 +1346,7 @@ exports.getAttendanceCellHistory = async (req) => {
     .select("action before after createdAt userId");
 
   return {
-    attendance,
+    attendance: attendanceData,
     history: history.map((h) => ({
       action: h.action,
       createdAt: h.createdAt,
