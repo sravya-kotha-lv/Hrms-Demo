@@ -648,20 +648,34 @@ exports.checkOut = async (req) => {
   const now = new Date();
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
 
-  const attendance = await Attendance.findOne({
+  let attendance = await Attendance.findOne({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
     checkInAt: { $ne: null },
     checkOutAt: null
   }).sort({ date: -1, checkInAt: -1 });
 
-  if (!attendance || !attendance.checkInAt) {
-    throw new Error("You are not checked in");
-  }
+  // If no open session exists, allow checkout updates on the latest attendance
+  // for today/yesterday. This supports "last checkout wins" for same check-in.
+  if (!attendance) {
+    attendance = await Attendance.findOne({
+      organizationId: req.user.organizationId,
+      employeeId: employee._id,
+      checkInAt: { $ne: null }
+    }).sort({ date: -1, checkInAt: -1 });
 
-  if (attendance.checkOutAt) {
-    throw new Error("Already checked out for today");
+    if (!attendance || !attendance.checkInAt) {
+      throw new Error("You are not checked in");
+    }
+
+    const attendanceDateKey = toDateKeyInTimeZone(attendance.date, organizationTimeZone);
+    const todayKey = toDateKeyInTimeZone(now, organizationTimeZone);
+    const yesterdayKey = addDaysToDateKey(todayKey, -1);
+    if (![todayKey, yesterdayKey].includes(attendanceDateKey)) {
+      throw new Error("You are not checked in");
+    }
   }
+  const previousCheckOutAt = attendance.checkOutAt ? new Date(attendance.checkOutAt) : null;
 
   const totalMinutes = Math.max(
     0,
@@ -713,7 +727,7 @@ exports.checkOut = async (req) => {
     module: "timesheets",
     action: "CHECK_OUT",
     entityId: attendance._id,
-    before: { checkOutAt: null },
+    before: { checkOutAt: previousCheckOutAt },
     after: attendance.toObject()
   });
 

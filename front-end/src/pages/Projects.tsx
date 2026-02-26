@@ -473,8 +473,8 @@ const Projects = () => {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto custom-scroll">
+          <DialogHeader className="sticky top-0 z-10 bg-background pb-1">
             <DialogTitle>{isEdit ? "Edit Project" : "Add Project"}</DialogTitle>
           </DialogHeader>
 
