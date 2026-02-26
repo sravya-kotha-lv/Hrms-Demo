@@ -20,6 +20,13 @@ const {
   resolveRecipientsForStep
 } = require("../../utils/approvalFlowEngine");
 const { advanceApprovalSteps, getCurrentPendingStep } = require("../../utils/approvalProgress");
+const {
+  isValidTimeZone,
+  toDateKeyInTimeZone,
+  addDaysToDateKey,
+  startOfDayInTimeZone,
+  getDayInTimeZone
+} = require("../../utils/timezone");
 
 const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "manager",
@@ -126,6 +133,54 @@ const getActorRoleSlug = async (req) => {
   return role?.slug || "";
 };
 
+const getOrganizationTimeZone = async (organizationId) => {
+  const settings = await OrgSettings.findOne({ organizationId }).select("timezone");
+  if (isValidTimeZone(settings?.timezone)) return settings.timezone;
+
+  const organization = await Organization.findById(organizationId).select("timezone");
+  if (isValidTimeZone(organization?.timezone)) return organization.timezone;
+
+  return "UTC";
+};
+
+const assertLeaveApplyWindow = async ({ organizationId, fromDate, toDate, timeZone = "UTC" }) => {
+  const settings = await OrgSettings.findOne({ organizationId })
+    .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay");
+
+  if (!settings?.attendanceLockEnabled) return;
+
+  const fromDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(fromDate || ""))
+    ? String(fromDate)
+    : toDateKeyInTimeZone(fromDate, timeZone);
+  const toDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(toDate || ""))
+    ? String(toDate)
+    : toDateKeyInTimeZone(toDate, timeZone);
+
+  const today = startOfDayInTimeZone(new Date(), timeZone);
+  const todayKey = toDateKeyInTimeZone(today, timeZone);
+  const mode = settings.attendanceLockMode || "days_window";
+
+  if (mode === "days_window") {
+    const lockAfterDays = Number(settings.attendanceLockAfterDays ?? 7);
+    const earliestAllowedKey = addDaysToDateKey(todayKey, -lockAfterDays);
+    if (fromDateKey < earliestAllowedKey || toDateKey < earliestAllowedKey) {
+      throw new Error(`Attendance is locked for dates older than ${lockAfterDays} days. Leave cannot be applied for locked dates.`);
+    }
+    return;
+  }
+
+  const cutoffDay = Number(settings.payrollCutoffDay ?? 25);
+  const currentDay = getDayInTimeZone(today, timeZone);
+  const [todayYear, todayMonth] = todayKey.split("-").map(Number);
+  const periodStartKey = currentDay >= cutoffDay
+    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-01`
+    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-01`;
+
+  if (fromDateKey < periodStartKey || toDateKey < periodStartKey) {
+    throw new Error(`Attendance is locked before payroll period start ${periodStartKey}. Leave cannot be applied for locked dates.`);
+  }
+};
+
 const assertRequestApproverAccess = async (req, targetEmployeeId) => {
   const actorRoleSlug = await getActorRoleSlug(req);
   if (!REQUEST_APPROVER_ROLE_SLUGS.has(actorRoleSlug)) {
@@ -179,6 +234,14 @@ exports.applyLeave = async (req) => {
     throw new Error("Only confirmed employees can apply leave");
   }
 
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  await assertLeaveApplyWindow({
+    organizationId: req.user.organizationId,
+    fromDate: req.body.fromDate,
+    toDate: req.body.toDate,
+    timeZone: organizationTimeZone
+  });
+
   /* 🔒 STEP 4A: CHECK OVERLAPPING LEAVES */
   const overlappingLeave = await Leave.findOne({
     employeeId: employee._id,
@@ -226,11 +289,21 @@ exports.applyLeave = async (req) => {
     fromDate.getTime() === toDate.getTime() &&
     validLeaveDates.length === 0
   ) {
-    throw new Error("Selected date is a holiday or week off");
+    const singleDateKey = dateKey(fromDate);
+    const isHoliday = holidaySet.has(singleDateKey);
+    const isWeekOff = weekOffDays.includes(fromDate.getDay());
+
+    if (isHoliday) {
+      throw new Error("Selected date is a holiday");
+    }
+    if (isWeekOff) {
+      throw new Error("Selected date is a week off");
+    }
+    throw new Error("Selected date is not a working day");
   }
 
   if (validLeaveDates.length === 0) {
-    throw new Error("Selected dates fall on holidays or week offs");
+    throw new Error("Leave cannot be applied only on holidays or week offs without any working day");
   }
 
 
