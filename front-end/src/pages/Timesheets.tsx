@@ -232,9 +232,13 @@ const captureSelfieFromCamera = async (): Promise<string | null> => {
     };
 
     capture.onclick = () => {
+      const maxSide = 480;
       const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 480;
+      const scale = Math.min(1, maxSide / Math.max(vw, vh));
+      canvas.width = Math.max(1, Math.round(vw * scale));
+      canvas.height = Math.max(1, Math.round(vh * scale));
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         cleanup();
@@ -242,7 +246,7 @@ const captureSelfieFromCamera = async (): Promise<string | null> => {
         return;
       }
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const image = canvas.toDataURL("image/jpeg", 0.9);
+      const image = canvas.toDataURL("image/jpeg", 0.7);
       cleanup();
       resolve(image);
     };
