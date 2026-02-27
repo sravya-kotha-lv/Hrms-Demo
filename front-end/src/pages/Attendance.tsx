@@ -133,6 +133,7 @@ const Attendance = () => {
   const [bulkDate, setBulkDate] = useState("");
   const [bulkStatus, setBulkStatus] = useState<"present" | "absent">("present");
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [showBulkControls, setShowBulkControls] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [history, setHistory] = useState<AttendanceHistoryItem[]>([]);
   const [selectedAttendanceSnapshot, setSelectedAttendanceSnapshot] = useState<AttendanceSnapshot>(null);
@@ -530,7 +531,6 @@ const Attendance = () => {
 
   const isEmployeeOnlyView = canViewSelf && !canViewAll;
   const selfRow = isEmployeeOnlyView ? (rows?.[0] || null) : null;
-  const selfTotals = selfRow ? getEmployeeTotals(selfRow) : null;
   const monthStart = new Date(`${month}-01T00:00:00`);
   const firstDayOffset = Number.isNaN(monthStart.getTime()) ? 0 : monthStart.getDay();
   const calendarSlots = Array.from(
@@ -553,8 +553,11 @@ const Attendance = () => {
 
       {canView && (
         <>
-          <div className="text-xs text-muted-foreground mb-2">
+          <div className="text-xs text-muted-foreground">
             Tip: Hover any day cell to view check-in/out, shift, late/early, leave, holiday and override details.
+                <p className="text-sm text-slate-600 text-right">
+                  {canEdit ? "Click any day cell to override attendance." : "Read-only view."}
+                </p>
           </div>
 
           {isEmployeeOnlyView ? (
@@ -593,39 +596,8 @@ const Attendance = () => {
                 </div>
               )}
 
-              {!loading && selfRow && selfTotals && (
+              {!loading && selfRow && (
                 <>
-                  <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 mb-4">
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                      <p className="text-xs text-emerald-700">Present</p>
-                      <p className="text-lg font-semibold text-emerald-800">{selfTotals.presentDays.toFixed(1)}</p>
-                    </div>
-                    <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3">
-                      <p className="text-xs text-orange-700">Pending</p>
-                      <p className="text-lg font-semibold text-orange-800">{selfTotals.pendingCheckoutDays}</p>
-                    </div>
-                    <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3">
-                      <p className="text-xs text-rose-700">Absent</p>
-                      <p className="text-lg font-semibold text-rose-800">{selfTotals.absentDays.toFixed(1)}</p>
-                    </div>
-                    <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-3">
-                      <p className="text-xs text-violet-700">Leave</p>
-                      <p className="text-lg font-semibold text-violet-800">{selfTotals.onLeaveDays}</p>
-                    </div>
-                    <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
-                      <p className="text-xs text-sky-700">Week Off</p>
-                      <p className="text-lg font-semibold text-sky-800">{selfTotals.weekOffDays}</p>
-                    </div>
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-                      <p className="text-xs text-amber-700">Holiday</p>
-                      <p className="text-lg font-semibold text-amber-800">{selfTotals.holidayDays}</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-300 bg-slate-100/70 p-3">
-                      <p className="text-xs text-slate-700">Total</p>
-                      <p className="text-lg font-semibold text-slate-900">{selfTotals.totalDays}</p>
-                    </div>
-                  </div>
-
                   <div className="rounded-2xl border border-slate-200 bg-white card-shadow p-3 sm:p-4">
                     <div className="grid grid-cols-7 gap-2 mb-2">
                       {weekDayHeaders.map((day) => (
@@ -716,102 +688,120 @@ const Attendance = () => {
             </>
           ) : (
             <>
-              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 mb-4">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto">
-                  <Input
-                    type="month"
-                    value={month}
-                    onChange={(e) => setMonth(e.target.value)}
-                    className="w-full sm:w-44"
-                  />
-                  <Input
-                    placeholder="Search employee..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-full sm:w-64"
-                  />
-                  <Button variant="outline" onClick={fetchMatrix}>
-                    Refresh
-                  </Button>
-                  <Button variant="outline" onClick={downloadCsv}>
-                    Export CSV
-                  </Button>
+              <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-sky-50 p-4 sm:p-5 mb-4 shadow-sm">
+                <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
+                  <div className="w-full xl:w-auto">
+                    {canEdit && (
+                      <Button
+                        variant="outline"
+                        className="bg-white/90"
+                        onClick={() => setShowBulkControls((prev) => !prev)}
+                      >
+                        {showBulkControls ? "Hide Bulk Update" : "Show Bulk Update"}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3 w-full xl:w-auto xl:ml-auto">
+                    <Input
+                      type="month"
+                      value={month}
+                      onChange={(e) => setMonth(e.target.value)}
+                      className="w-full sm:w-44 bg-white/90"
+                    />
+                    <Input
+                      placeholder="Search employee..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="w-full sm:w-72 bg-white/90"
+                    />
+                    <Button variant="outline" className="bg-white/90" onClick={fetchMatrix}>
+                      Refresh
+                    </Button>
+                    <Button variant="outline" className="bg-white/90" onClick={downloadCsv}>
+                      Export CSV
+                    </Button>
+                  </div>
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  {canEdit
-                    ? "Click any day cell to override attendance."
-                    : "Read-only view."}
-                </div>
+
+                {canEdit && (
+                  <div
+                    className={`mt-4 overflow-hidden transition-all duration-500 ease-out ${
+                      showBulkControls ? "max-h-40 opacity-100 translate-y-0" : "max-h-0 opacity-0 -translate-y-1"
+                    }`}
+                  >
+                    {showBulkControls && (
+                      <div className="flex flex-wrap items-end justify-start gap-2 sm:gap-3">
+                      <>
+                        <Button variant="outline" className="bg-white/90" onClick={toggleSelectAllFiltered}>
+                          Select/Unselect Filtered ({selectedEmployeeIds.length})
+                        </Button>
+                        <Input
+                          type="date"
+                          value={bulkDate}
+                          onChange={(e) => setBulkDate(e.target.value)}
+                          className="w-full sm:w-48 bg-white/90"
+                        />
+                        <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as "present" | "absent")}>
+                          <SelectTrigger className="w-full sm:w-40 bg-white/90">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="present">Present</SelectItem>
+                            <SelectItem value="absent">Absent</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button onClick={runBulkUpdate} disabled={bulkSaving}>
+                          {bulkSaving ? "Updating..." : "Bulk Update"}
+                        </Button>
+                      </>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {canEdit && (
-                <div className="flex flex-wrap items-end gap-2 sm:gap-3 mb-4">
-                  <Button variant="outline" onClick={toggleSelectAllFiltered}>
-                    Select/Unselect Filtered ({selectedEmployeeIds.length})
-                  </Button>
-                  <Input
-                    type="date"
-                    value={bulkDate}
-                    onChange={(e) => setBulkDate(e.target.value)}
-                    className="w-full sm:w-48"
-                  />
-                  <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as "present" | "absent")}>
-                    <SelectTrigger className="w-full sm:w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="present">Present</SelectItem>
-                      <SelectItem value="absent">Absent</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={runBulkUpdate} disabled={bulkSaving}>
-                    {bulkSaving ? "Updating..." : "Bulk Update"}
-                  </Button>
-                </div>
-              )}
-
-              <div className="bg-card rounded-xl card-shadow overflow-hidden">
+              <div className="rounded-2xl border border-slate-200 bg-white/95 shadow-sm overflow-hidden">
                 <div className="max-h-[72vh] overflow-auto">
                   <table className="w-full border-collapse min-w-[1100px]">
                   <thead>
-                    <tr className="border-b">
+                    <tr className="border-b border-slate-200">
                       {canEdit && (
-                        <th className="sticky left-0 top-0 bg-card text-left p-3 min-w-[48px] z-30">
+                        <th className="sticky left-0 top-0 bg-white/95 backdrop-blur text-left p-3 min-w-[48px] z-30 text-slate-600">
                           Sel
                         </th>
                       )}
-                      <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-card text-left p-3 min-w-[220px] z-30`}>
+                      <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-white/95 backdrop-blur text-left p-3 min-w-[220px] z-30 text-slate-700`}>
                         Employee
                       </th>
                       {Array.from({ length: daysInMonth }).map((_, idx) => (
-                        <th key={idx + 1} className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[42px]">
+                        <th key={idx + 1} className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[42px]">
                           {idx + 1}
                         </th>
                       ))}
-                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                         Present
                       </th>
-                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[120px]">
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[120px]">
                         Pending Checkout
                       </th>
-                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                         Absent
                       </th>
-                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                         On Leave
                       </th>
-                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                         Week Off
                       </th>
-                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                         Holiday
                       </th>
                       {canViewSelfieData && (
-                        <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                        <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                           Selfie
                         </th>
                       )}
-                      <th className="sticky top-0 bg-card z-20 text-center p-2 text-sm text-muted-foreground min-w-[90px]">
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                         Total
                       </th>
                     </tr>
@@ -832,9 +822,9 @@ const Attendance = () => {
                       </tr>
                     )}
                     {!loading && filteredRows.map((row) => (
-                      <tr key={row.employeeId} className="border-b">
+                      <tr key={row.employeeId} className="border-b border-slate-100 hover:bg-slate-50/55 transition-colors">
                         {canEdit && (
-                          <td className="sticky left-0 bg-card p-2 z-20 text-center">
+                          <td className="sticky left-0 bg-white p-2 z-20 text-center">
                             <input
                               type="checkbox"
                               checked={selectedEmployeeIds.includes(row.employeeId)}
@@ -842,7 +832,7 @@ const Attendance = () => {
                             />
                           </td>
                         )}
-                        <td className={`sticky ${canEdit ? "left-[48px]" : "left-0"} bg-card p-3 z-10`}>
+                        <td className={`sticky ${canEdit ? "left-[48px]" : "left-0"} bg-white p-3 z-10`}>
                           <div className="font-medium">
                             {`${row.firstName || ""} ${row.lastName || ""}`.trim() || "-"}
                           </div>
@@ -862,8 +852,8 @@ const Attendance = () => {
                                 onClick={() => !isNonInteractive && openCellDetails(row, day)}
                                 disabled={isNonInteractive}
                                 title={formatHoverInfo(cell)}
-                                className={`w-full h-8 rounded text-xs font-medium border ${cellUi.className} ${
-                                  isNonInteractive ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:opacity-90"
+                                className={`w-full h-8 rounded-md text-xs font-semibold border transition-all duration-200 ${cellUi.className} ${
+                                  isNonInteractive ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:opacity-95 hover:-translate-y-[1px] hover:shadow-sm"
                                 }`}
                               >
                                 {cellUi.shortLabel}
@@ -911,37 +901,37 @@ const Attendance = () => {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 text-xs mt-3">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-emerald-100 border border-emerald-300" />
+              <div className="flex flex-wrap items-center gap-2 text-xs mt-3">
+                <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded bg-emerald-500" />
                   Full Day Present
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-lime-100 border border-lime-300" />
+                <div className="flex items-center gap-2 rounded-full border border-lime-200 bg-lime-50 px-3 py-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded bg-lime-500" />
                   Half Day Present
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-orange-100 border border-orange-300" />
+                <div className="flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded bg-orange-500" />
                   Pending Checkout
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-rose-100 border border-rose-300" />
+                <div className="flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded bg-rose-500" />
                   Absent
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-sky-100 border border-sky-300" />
+                <div className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded bg-sky-500" />
                   Week Off
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-violet-100 border border-violet-300" />
+                <div className="flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded bg-violet-500" />
                   Approved Leave
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-indigo-100 border border-indigo-300" />
+                <div className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded bg-indigo-500" />
                   Present + Leave
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-amber-100 border border-amber-300" />
+                <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded bg-amber-500" />
                   Holiday
                 </div>
               </div>
