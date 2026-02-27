@@ -342,9 +342,13 @@ export const Sidebar = memo(({
       >
         <div className="p-4 border-b border-white/10">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white/92 shadow-md flex items-center justify-center">
-                <UserCircle className="w-6 h-6 text-blue-600" />
+            <NavLink
+              to={effectiveDashboardPath}
+              onClick={() => isMobile && onMobileClose?.()}
+              className="flex items-center gap-3 px-1 py-1"
+            >
+              <div className="w-10 h-10 rounded-xl bg-white/8 border border-white/15 flex items-center justify-center">
+                <UserCircle className="w-6 h-6 text-white" />
               </div>
               <AnimatePresence>
                 {!effectiveCollapsed && (
@@ -358,7 +362,7 @@ export const Sidebar = memo(({
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
+            </NavLink>
             <button
               onClick={() => setCollapsed(!collapsed)}
               disabled={isMobile}

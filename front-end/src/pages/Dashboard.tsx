@@ -39,6 +39,7 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /* ========================= Dashboard ========================= */
 
@@ -912,6 +913,46 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
+      {dashboardLoading ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <div key={`kpi-skeleton-${idx}`} className="stat-card space-y-3">
+                <Skeleton className="h-4 w-28 rounded-sm" />
+                <Skeleton className="h-8 w-16 rounded-sm" />
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-6">
+            {Array.from({ length: 2 }).map((_, idx) => (
+              <div key={`trend-skeleton-${idx}`} className="stat-card space-y-3">
+                <Skeleton className="h-5 w-44 rounded-sm" />
+                {Array.from({ length: 5 }).map((__, rowIdx) => (
+                  <div key={`trend-skeleton-row-${idx}-${rowIdx}`} className="space-y-2">
+                    <Skeleton className="h-3 w-24 rounded-sm" />
+                    <Skeleton className="h-2 w-full rounded-sm" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {Array.from({ length: 3 }).map((_, sectionIdx) => (
+            <div key={`section-skeleton-${sectionIdx}`} className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-6">
+              {Array.from({ length: 3 }).map((__, cardIdx) => (
+                <div key={`section-skeleton-card-${sectionIdx}-${cardIdx}`} className="stat-card space-y-3">
+                  <Skeleton className="h-5 w-40 rounded-sm" />
+                  {Array.from({ length: 4 }).map((___, lineIdx) => (
+                    <Skeleton key={`line-skeleton-${sectionIdx}-${cardIdx}-${lineIdx}`} className="h-8 w-full rounded-sm" />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+        </>
+      ) : (
+      <>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
         <div
           className="stat-card cursor-pointer hover:ring-1 hover:ring-primary/20"
@@ -1235,6 +1276,8 @@ const Dashboard = () => {
         </div>
 
       </div>
+      </>
+      )}
     </MainLayout>
   );
 };
