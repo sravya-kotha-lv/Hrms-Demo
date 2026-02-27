@@ -22,6 +22,7 @@ import { useNavigate } from "react-router-dom";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import PermissionGate from "@/components/PermissionGate";
 import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   formatDateInOrgTimeZone,
   formatDateTimeInOrgTimeZone,
@@ -177,6 +178,7 @@ const EmployeeDashboard = () => {
   const [matrixDays, setMatrixDays] = useState<Record<number, AttendanceDay>>({});
   const [daysInMonth, setDaysInMonth] = useState<number>(31);
   const [myProfile, setMyProfile] = useState<any>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
@@ -192,7 +194,8 @@ const EmployeeDashboard = () => {
 
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
 
-  const loadDashboard = async () => {
+  const loadDashboard = async (silent = false) => {
+    if (!silent) setDashboardLoading(true);
     const todayIso = toDateInput(new Date());
     const weekStartIso = toDateInput(weekStart);
     const [weeklyRes, attendanceRes, leaveRes, balanceRes, onlineRes, onLeaveRes, notifRes, holidayRes, weekOffRes, matrixRes, profileRes, eventsRes, checkInPolicyRes] =
@@ -305,12 +308,13 @@ const EmployeeDashboard = () => {
         attendanceGeoRadiusMeters: Number(checkInPolicyRes.data.attendanceGeoRadiusMeters || 200)
       });
     }
+    if (!silent) setDashboardLoading(false);
   };
 
   useEffect(() => {
     loadDashboard();
     const timer = window.setInterval(() => {
-      loadDashboard();
+      loadDashboard(true);
     }, 30000);
     return () => window.clearInterval(timer);
   }, [weekStart]);
@@ -537,6 +541,68 @@ const EmployeeDashboard = () => {
 
   return (
     <MainLayout title="My Dashboard" breadcrumb={[{ label: "Home" }, { label: "My Dashboard" }]}>
+      {dashboardLoading ? (
+        <>
+          <div className="rounded-2xl border bg-gradient-to-r from-background to-muted/40 p-5 space-y-3">
+            <Skeleton className="h-4 w-36 rounded-sm" />
+            <Skeleton className="h-8 w-56 rounded-sm" />
+            <Skeleton className="h-4 w-72 rounded-sm" />
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Skeleton className="h-10 w-28 rounded-sm" />
+              <Skeleton className="h-10 w-28 rounded-sm" />
+              <Skeleton className="h-10 w-28 rounded-sm" />
+              <Skeleton className="h-10 w-28 rounded-sm" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-5">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={`emp-kpi-skeleton-${idx}`} className="stat-card space-y-3">
+                <Skeleton className="h-4 w-28 rounded-sm" />
+                <Skeleton className="h-8 w-20 rounded-sm" />
+                <Skeleton className="h-3 w-40 rounded-sm" />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6">
+            <div className="grid grid-cols-3 w-full md:w-[480px] gap-2">
+              <Skeleton className="h-10 rounded-sm" />
+              <Skeleton className="h-10 rounded-sm" />
+              <Skeleton className="h-10 rounded-sm" />
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-4">
+              <div className="stat-card xl:col-span-2 space-y-3">
+                <Skeleton className="h-5 w-44 rounded-sm" />
+                {Array.from({ length: 4 }).map((_, idx) => (
+                  <Skeleton key={`emp-overview-left-${idx}`} className="h-16 w-full rounded-sm" />
+                ))}
+              </div>
+              <div className="stat-card space-y-3">
+                <Skeleton className="h-5 w-32 rounded-sm" />
+                <Skeleton className="h-4 w-full rounded-sm" />
+                <Skeleton className="h-4 w-4/5 rounded-sm" />
+                <Skeleton className="h-10 w-full rounded-sm" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <div className="stat-card space-y-3">
+                <Skeleton className="h-5 w-36 rounded-sm" />
+                {Array.from({ length: 3 }).map((_, idx) => (
+                  <Skeleton key={`emp-overview-bottom-left-${idx}`} className="h-10 w-full rounded-sm" />
+                ))}
+              </div>
+              <div className="stat-card space-y-3">
+                <Skeleton className="h-5 w-40 rounded-sm" />
+                {Array.from({ length: 4 }).map((_, idx) => (
+                  <Skeleton key={`emp-overview-bottom-right-${idx}`} className="h-8 w-full rounded-sm" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+      <>
       <motion.div
         className="rounded-2xl border bg-gradient-to-r from-background to-muted/40 p-5"
         initial={{ opacity: 0, y: 14 }}
@@ -950,6 +1016,8 @@ const EmployeeDashboard = () => {
           </div>
         </DialogContent>
       </Dialog>
+      </>
+      )}
     </MainLayout>
   );
 };
