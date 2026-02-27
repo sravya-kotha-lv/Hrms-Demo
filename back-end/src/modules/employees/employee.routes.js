@@ -46,6 +46,13 @@ router.get(
   asyncHandler(controller.listByOrganization)
 );
 
+router.get(
+  "/next-code",
+  auth,
+  authorize("EMP_CREATE"),
+  asyncHandler(controller.getNextEmployeeCode)
+);
+
 router.get("/leave-types", auth, asyncHandler(controller.getEmployeeleaves));
 
 router.get(

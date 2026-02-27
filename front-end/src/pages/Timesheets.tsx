@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
 import { useAuth } from "@/context/AuthContext";
 import { InlineLoader } from "@/components/ui/loaders";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
 
 const toDateInput = (value: Date) => {
@@ -1195,8 +1196,11 @@ const Timesheets = () => {
           </div>
         </div>
         {weekLoading && (
-          <div className="px-6 py-2">
-            <InlineLoader label="Loading week data..." className="text-xs" />
+          <div className="px-6 py-3 space-y-2">
+            <Skeleton className="h-8 w-56 rounded-md" />
+            <Skeleton className="h-10 w-full rounded-md" />
+            <Skeleton className="h-10 w-full rounded-md" />
+            <Skeleton className="h-10 w-full rounded-md" />
           </div>
         )}
         {!isWeekSynced && !weekLoading && (

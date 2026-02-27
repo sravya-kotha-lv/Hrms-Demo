@@ -8,9 +8,9 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-const ADDRESS_PROOF_MAX_BYTES = 5 * 1024 * 1024;
+const PROOF_MAX_BYTES = 5 * 1024 * 1024;
 const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const ADDRESS_PROOF_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+const PROOF_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 const RELATION_OPTIONS = [
   { label: "Father", value: "father" },
   { label: "Mother", value: "mother" },
@@ -34,6 +34,8 @@ const CompleteProfile = () => {
     phone: "",
     dob: "",
     gender: "",
+    aadhaarNumber: "",
+    panNumber: "",
     address: {
       line1: "",
       line2: "",
@@ -46,7 +48,9 @@ const CompleteProfile = () => {
       { name: "", relation: "", phone: "" }
     ],
     profileImageUpload: null as null | { fileName: string; mimeType: string; base64Data: string },
-    addressProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string }
+    addressProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string },
+    aadhaarProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string },
+    panProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string }
   });
 
   const fileToBase64 = (file: File): Promise<string> =>
@@ -82,6 +86,8 @@ const CompleteProfile = () => {
         phone: res.data.phone || "",
         dob: res.data.dob ? new Date(res.data.dob).toISOString().slice(0, 10) : "",
         gender: res.data.gender || "",
+        aadhaarNumber: res.data.aadhaarNumber || "",
+        panNumber: res.data.panNumber || "",
         address: res.data.address || prev.address
       }));
     }
@@ -94,7 +100,37 @@ const CompleteProfile = () => {
 
   const handleSubmit = async () => {
     if (!form.phone || !form.dob || !form.gender) {
-      toast.error("Phone, DOB, and gender are required");
+      toast.error("Phone, DOB and gender are required");
+      return;
+    }
+    if (!/^\d{12}$/.test(form.aadhaarNumber.trim())) {
+      toast.error("Aadhaar number must be 12 digits");
+      return;
+    }
+    if (!/^[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}$/.test(form.panNumber.trim())) {
+      toast.error("PAN number format is invalid");
+      return;
+    }
+    if (
+      !form.address.line1.trim()
+      || !form.address.city.trim()
+      || !form.address.state.trim()
+      || !form.address.country.trim()
+      || !form.address.zip.trim()
+    ) {
+      toast.error("Address Line 1, City, State, Country and Zip are required");
+      return;
+    }
+    if (!form.addressProofUpload && !profile?.addressProof?.fileUrl) {
+      toast.error("Address proof is required");
+      return;
+    }
+    if (!form.aadhaarProofUpload && !profile?.aadhaarProof?.fileUrl) {
+      toast.error("Aadhaar proof upload is required");
+      return;
+    }
+    if (!form.panProofUpload && !profile?.panProof?.fileUrl) {
+      toast.error("PAN proof upload is required");
       return;
     }
     const emergency = form.emergencyContacts[0];
@@ -119,12 +155,14 @@ const CompleteProfile = () => {
       phone: form.phone,
       dob: form.dob,
       gender: form.gender,
-      address: form.address.line1 || form.address.city || form.address.state || form.address.country || form.address.zip
-        ? form.address
-        : undefined,
+      aadhaarNumber: form.aadhaarNumber.trim(),
+      panNumber: form.panNumber.trim().toUpperCase(),
+      address: form.address,
       emergencyContacts: form.emergencyContacts.filter((c) => c.name && c.relation && c.phone),
       profileImageUpload: form.profileImageUpload || undefined,
-      addressProofUpload: form.addressProofUpload || undefined
+      addressProofUpload: form.addressProofUpload || undefined,
+      aadhaarProofUpload: form.aadhaarProofUpload || undefined,
+      panProofUpload: form.panProofUpload || undefined
     };
 
     const res = await putApiWithToken("/employees/me/profile", payload);
@@ -186,6 +224,16 @@ const CompleteProfile = () => {
             placeholder="Gender"
             value={form.gender}
             onChange={(e) => setForm({ ...form, gender: e.target.value })}
+          />
+          <Input
+            placeholder="Aadhaar Number"
+            value={form.aadhaarNumber}
+            onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value.replace(/\D/g, "").slice(0, 12) })}
+          />
+          <Input
+            placeholder="PAN Number"
+            value={form.panNumber}
+            onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })}
           />
           <Input
             placeholder="Department"
@@ -269,14 +317,14 @@ const CompleteProfile = () => {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-sm text-muted-foreground">Address Proof (optional)</label>
+            <label className="text-sm text-muted-foreground">Address Proof (required)</label>
             <Input
               type="file"
               accept=".pdf,.png,.jpg,.jpeg,.webp"
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                if (!validateFile(file, ADDRESS_PROOF_TYPES, ADDRESS_PROOF_MAX_BYTES, "Address proof")) return;
+                if (!validateFile(file, PROOF_TYPES, PROOF_MAX_BYTES, "Address proof")) return;
                 const base64Data = await fileToBase64(file);
                 setForm({
                   ...form,
@@ -290,6 +338,63 @@ const CompleteProfile = () => {
             />
             {form.addressProofUpload?.fileName && (
               <p className="text-xs text-muted-foreground">{form.addressProofUpload.fileName}</p>
+            )}
+            {!form.addressProofUpload?.fileName && profile?.addressProof?.fileName && (
+              <p className="text-xs text-muted-foreground">Current: {profile.addressProof.fileName}</p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm text-muted-foreground">Aadhaar Proof (required)</label>
+            <Input
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.webp"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (!validateFile(file, PROOF_TYPES, PROOF_MAX_BYTES, "Aadhaar proof")) return;
+                const base64Data = await fileToBase64(file);
+                setForm({
+                  ...form,
+                  aadhaarProofUpload: {
+                    fileName: file.name,
+                    mimeType: file.type,
+                    base64Data
+                  }
+                });
+              }}
+            />
+            {form.aadhaarProofUpload?.fileName && (
+              <p className="text-xs text-muted-foreground">{form.aadhaarProofUpload.fileName}</p>
+            )}
+            {!form.aadhaarProofUpload?.fileName && profile?.aadhaarProof?.fileName && (
+              <p className="text-xs text-muted-foreground">Current: {profile.aadhaarProof.fileName}</p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm text-muted-foreground">PAN Proof (required)</label>
+            <Input
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.webp"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (!validateFile(file, PROOF_TYPES, PROOF_MAX_BYTES, "PAN proof")) return;
+                const base64Data = await fileToBase64(file);
+                setForm({
+                  ...form,
+                  panProofUpload: {
+                    fileName: file.name,
+                    mimeType: file.type,
+                    base64Data
+                  }
+                });
+              }}
+            />
+            {form.panProofUpload?.fileName && (
+              <p className="text-xs text-muted-foreground">{form.panProofUpload.fileName}</p>
+            )}
+            {!form.panProofUpload?.fileName && profile?.panProof?.fileName && (
+              <p className="text-xs text-muted-foreground">Current: {profile.panProof.fileName}</p>
             )}
           </div>
         </div>

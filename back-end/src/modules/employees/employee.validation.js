@@ -37,6 +37,17 @@ const emergencyRelation = Joi.string().valid(
 );
 const emergencyName = buildNameSchema({ min: 2, max: 50, required: false });
 const emergencyPhone = buildPhoneSchema({ min: 10, max: 10, required: false });
+const aadhaarNumberSchema = Joi.string().pattern(/^\d{12}$/).messages({
+  "string.pattern.base": "Aadhaar number must be exactly 12 digits"
+});
+const panNumberSchema = Joi.string().uppercase().pattern(/^[A-Z]{5}[0-9]{4}[A-Z]$/).messages({
+  "string.pattern.base": "PAN number format is invalid"
+});
+const uploadSchema = Joi.object({
+  fileName: Joi.string().required(),
+  mimeType: Joi.string().required(),
+  base64Data: Joi.string().required()
+});
 
 /* ------------------------------------------------------------------ */
 /* HR CREATES EMPLOYEE (MINIMUM REQUIRED DATA)                         */
@@ -69,18 +80,20 @@ exports.completeProfileSchema = Joi.object({
   dateOfJoining: Joi.date().optional(),
   employmentType: employmentType.optional(),
 
-  phone: buildPhoneSchema({ allowEmpty: true }),
-  dob: Joi.date().optional(),
-  gender: Joi.string().optional(),
+  phone: buildPhoneSchema({ required: true }),
+  dob: Joi.date().required(),
+  gender: Joi.string().required(),
+  aadhaarNumber: aadhaarNumberSchema.required(),
+  panNumber: panNumberSchema.required(),
 
   address: Joi.object({
-    line1: Joi.string().optional(),
+    line1: Joi.string().required(),
     line2: Joi.string().optional(),
-    city: Joi.string().optional(),
-    state: Joi.string().optional(),
-    country: Joi.string().optional(),
-    zip: Joi.string().optional()
-  }).optional(),
+    city: Joi.string().required(),
+    state: Joi.string().required(),
+    country: Joi.string().required(),
+    zip: Joi.string().required()
+  }).required(),
 
   emergencyContacts: Joi.array().items(
     Joi.object({
@@ -89,16 +102,10 @@ exports.completeProfileSchema = Joi.object({
       phone: emergencyPhone.required()
     })
   ).optional(),
-  profileImageUpload: Joi.object({
-    fileName: Joi.string().required(),
-    mimeType: Joi.string().required(),
-    base64Data: Joi.string().required()
-  }).optional(),
-  addressProofUpload: Joi.object({
-    fileName: Joi.string().required(),
-    mimeType: Joi.string().required(),
-    base64Data: Joi.string().required()
-  }).optional()
+  profileImageUpload: uploadSchema.optional(),
+  addressProofUpload: uploadSchema.optional(),
+  aadhaarProofUpload: uploadSchema.optional(),
+  panProofUpload: uploadSchema.optional()
 });
 
 /* ------------------------------------------------------------------ */
@@ -124,6 +131,8 @@ exports.updateEmployeeSchema = Joi.object({
 
   dob: Joi.date().optional(),
   gender: Joi.string().optional(),
+  aadhaarNumber: aadhaarNumberSchema.optional(),
+  panNumber: panNumberSchema.optional(),
 
   address: Joi.object({
     line1: Joi.string().optional(),
@@ -140,7 +149,10 @@ exports.updateEmployeeSchema = Joi.object({
       relation: emergencyRelation.required(),
       phone: emergencyPhone.required()
     })
-  ).optional()
+  ).optional(),
+  addressProofUpload: uploadSchema.optional(),
+  aadhaarProofUpload: uploadSchema.optional(),
+  panProofUpload: uploadSchema.optional()
 });
 
 exports.lifecycleActionSchema = Joi.object({

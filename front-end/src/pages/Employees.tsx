@@ -39,13 +39,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { deleteApiWithToken, getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { deleteApiWithToken, getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import {
   Pagination,
@@ -88,6 +89,7 @@ const getLifecycleBadge = (status: string) => {
 
 const Employees = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { hasAnyPermission } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
@@ -105,6 +107,7 @@ const Employees = () => {
   const [employees, setEmployees] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [designations, setDesignations] = useState<any[]>([]);
+  const [roles, setRoles] = useState<any[]>([]);
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [shifts, setShifts] = useState<any[]>([]);
   const [managers, setManagers] = useState<any[]>([]);
@@ -122,8 +125,25 @@ const Employees = () => {
   const [pageSize, setPageSize] = useState(25);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [sortBy, setSortBy] = useState("createdAt");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [sortBy, setSortBy] = useState("employeeCode");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [skipInitialFetch, setSkipInitialFetch] = useState(false);
+  const [formMode, setFormMode] = useState<"add" | "edit" | null>(null);
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [formSaving, setFormSaving] = useState(false);
+  const [employeeForm, setEmployeeForm] = useState({
+    email: "",
+    firstName: "",
+    lastName: "",
+    employeeCode: "",
+    departmentId: "",
+    designationId: "",
+    managerId: "",
+    shiftId: "",
+    roleIds: [] as string[],
+    employmentType: "",
+    dateOfJoining: ""
+  });
   const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
   const canView = hasAnyPermission(["EMP_VIEW"]);
   const canEdit = hasAnyPermission(["EMP_UPDATE"]);
@@ -135,6 +155,42 @@ const Employees = () => {
     () => searchParams.get("organizationId") || "",
     [searchParams]
   );
+
+  useEffect(() => {
+    const rawCache = sessionStorage.getItem("employees:list-cache");
+    if (!rawCache) return;
+
+    try {
+      const cache = JSON.parse(rawCache);
+      const cachedItems = Array.isArray(cache?.employees) ? cache.employees : [];
+      if (cachedItems.length > 0) {
+        const rawUpdated = sessionStorage.getItem("employees:last-updated");
+        let updatedEmployee: any = null;
+        if (rawUpdated) {
+          try {
+            updatedEmployee = JSON.parse(rawUpdated);
+          } catch {
+            updatedEmployee = null;
+          }
+        }
+
+        const merged = updatedEmployee?._id
+          ? cachedItems.map((emp: any) =>
+              emp._id === updatedEmployee._id ? { ...emp, ...updatedEmployee } : emp
+            )
+          : cachedItems;
+
+        setEmployees(merged);
+        setTotalItems(Number(cache?.totalItems || merged.length));
+        setTotalPages(Math.max(1, Number(cache?.totalPages || 1)));
+        setCurrentPage(Number(cache?.currentPage || 1));
+        setSkipInitialFetch(true);
+      }
+    } finally {
+      sessionStorage.removeItem("employees:last-updated");
+      sessionStorage.removeItem("employees:list-cache");
+    }
+  }, [location.key]);
 
   const filteredOrganizations = useMemo(
     () => organizations.filter((org) => (org.name || "").toLowerCase().includes(orgSearch.toLowerCase())),
@@ -192,6 +248,19 @@ const Employees = () => {
       setDesignations(res.data || []);
     } else {
       setDesignations([]);
+    }
+  };
+
+  const fetchRoles = async () => {
+    const res = await getApiWithToken("/roles", null, {
+      requiredPermissions: ["ROLE_VIEW"]
+    });
+    if (res?.skipped) return;
+    if (res?.success) {
+      setRoles(res.data || []);
+    } else {
+      setRoles([]);
+      toast.error(res?.message || "Failed to load roles");
     }
   };
 
@@ -283,8 +352,181 @@ const Employees = () => {
     }
   };
 
+  const patchEmployeeInList = (employeeId: string, patch: Record<string, any>) => {
+    setEmployees((prev) =>
+      prev.map((emp) => (emp._id === employeeId ? { ...emp, ...patch } : emp))
+    );
+  };
+
+  const patchEmployeesInList = (
+    employeeIds: string[],
+    buildPatch: (employee: any) => Record<string, any>
+  ) => {
+    const ids = new Set(employeeIds);
+    setEmployees((prev) =>
+      prev.map((emp) => (ids.has(emp._id) ? { ...emp, ...buildPatch(emp) } : emp))
+    );
+  };
+
+  const resetEmployeeForm = () => {
+    setEmployeeForm({
+      email: "",
+      firstName: "",
+      lastName: "",
+      employeeCode: "",
+      departmentId: "",
+      designationId: "",
+      managerId: "",
+      shiftId: "",
+      roleIds: [],
+      employmentType: "",
+      dateOfJoining: ""
+    });
+    setEditingEmployeeId(null);
+  };
+
+  const startAddForm = () => {
+    resetEmployeeForm();
+    setFormMode("add");
+    void (async () => {
+      const res = await getApiWithToken("/employees/next-code", null, {
+        requiredPermissions: ["EMP_CREATE"]
+      });
+      if (res?.success && res?.data?.employeeCode) {
+        setEmployeeForm((prev) => {
+          if (prev.employeeCode?.trim()) return prev;
+          return { ...prev, employeeCode: String(res.data.employeeCode).toUpperCase() };
+        });
+      }
+    })();
+  };
+
+  const startEditForm = (employee: any) => {
+    setEditingEmployeeId(employee._id);
+    setEmployeeForm({
+      email: employee?.userId?.email || "",
+      firstName: employee?.firstName || "",
+      lastName: employee?.lastName || "",
+      employeeCode: employee?.employeeCode || "",
+      departmentId: employee?.departmentId?._id || "",
+      designationId: employee?.designationId?._id || "",
+      managerId: employee?.managerId?._id || "",
+      shiftId: employee?.shiftId?._id || "",
+      roleIds: Array.isArray(employee?.roleIds)
+        ? employee.roleIds
+            .map((r: any) => (typeof r === "string" ? r : r?._id))
+            .filter(Boolean)
+        : [],
+      employmentType: employee?.employmentType || "",
+      dateOfJoining: employee?.dateOfJoining ? String(employee.dateOfJoining).slice(0, 10) : ""
+    });
+    setFormMode("edit");
+  };
+
+  const cancelForm = () => {
+    setFormMode(null);
+    resetEmployeeForm();
+  };
+
+  const submitEmployeeForm = async () => {
+    if (
+      !employeeForm.email ||
+      !employeeForm.firstName ||
+      !employeeForm.lastName ||
+      !employeeForm.departmentId ||
+      !employeeForm.designationId ||
+      !employeeForm.roleIds.length ||
+      !employeeForm.employmentType ||
+      !employeeForm.dateOfJoining
+    ) {
+      toast.error("Please fill all required fields");
+      return;
+    }
+
+    const payload: Record<string, any> = {
+      email: employeeForm.email.trim(),
+      firstName: employeeForm.firstName.trim(),
+      lastName: employeeForm.lastName.trim(),
+      employeeCode: employeeForm.employeeCode.trim().toUpperCase() || undefined,
+      departmentId: employeeForm.departmentId,
+      designationId: employeeForm.designationId,
+      managerId: employeeForm.managerId || undefined,
+      shiftId: employeeForm.shiftId || undefined,
+      roleIds: employeeForm.roleIds,
+      employmentType: employeeForm.employmentType,
+      dateOfJoining: employeeForm.dateOfJoining
+    };
+
+    setFormSaving(true);
+    const res = formMode === "edit" && editingEmployeeId
+      ? await putApiWithToken(`/employees/${editingEmployeeId}`, payload)
+      : await postApiWithToken("/employees", payload);
+    setFormSaving(false);
+
+    if (!res?.success) {
+      toast.error(res?.message || "Failed to save employee");
+      return;
+    }
+
+    const selectedDepartment = departments.find((d: any) => d._id === payload.departmentId) || null;
+    const selectedDesignation = designations.find((d: any) => d._id === payload.designationId) || null;
+    const selectedManager = managers.find((m: any) => m._id === payload.managerId) || null;
+    const selectedShift = shifts.find((s: any) => s._id === payload.shiftId) || null;
+    const selectedRoles = (roles || []).filter((r: any) => payload.roleIds.includes(r._id));
+
+    if (formMode === "edit" && editingEmployeeId) {
+      patchEmployeeInList(editingEmployeeId, {
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        employeeCode: payload.employeeCode,
+        employmentType: payload.employmentType,
+        dateOfJoining: payload.dateOfJoining,
+        departmentId: selectedDepartment || null,
+        designationId: selectedDesignation || null,
+        managerId: selectedManager
+          ? { _id: selectedManager._id, firstName: selectedManager.name.split(" ")[0], lastName: selectedManager.name.split(" ").slice(1).join(" ") }
+          : null,
+        shiftId: selectedShift || null,
+        roleIds: selectedRoles,
+        userId: { email: payload.email }
+      });
+      toast.success("Employee updated");
+    } else {
+      const newId = res?.data?._id || res?.data?.employeeId;
+      if (newId) {
+        const nextEmployee = {
+          _id: newId,
+          firstName: payload.firstName,
+          lastName: payload.lastName,
+          employeeCode: payload.employeeCode || "-",
+          employmentType: payload.employmentType,
+          dateOfJoining: payload.dateOfJoining,
+          status: "active",
+          employmentLifecycleStatus: "probation",
+          benefitsEligible: false,
+          profileCompleted: false,
+          departmentId: selectedDepartment || null,
+          designationId: selectedDesignation || null,
+          managerId: selectedManager
+            ? { _id: selectedManager._id, firstName: selectedManager.name.split(" ")[0], lastName: selectedManager.name.split(" ").slice(1).join(" ") }
+            : null,
+          shiftId: selectedShift || null,
+          roleIds: selectedRoles,
+          phone: "",
+          userId: { email: payload.email }
+        };
+        setEmployees((prev) => [nextEmployee, ...prev]);
+        setTotalItems((prev) => prev + 1);
+      }
+      toast.success("Employee created");
+    }
+
+    cancelForm();
+  };
+
   useEffect(() => {
     fetchDesignations();
+    fetchRoles();
     fetchOrganizations();
     fetchShifts();
   }, []);
@@ -313,6 +555,10 @@ const Employees = () => {
   ]);
 
   useEffect(() => {
+    if (skipInitialFetch) {
+      setSkipInitialFetch(false);
+      return;
+    }
     const timer = setTimeout(() => {
       fetchEmployees();
     }, 300);
@@ -328,7 +574,8 @@ const Employees = () => {
     currentPage,
     pageSize,
     sortBy,
-    sortOrder
+    sortOrder,
+    skipInitialFetch
   ]);
 
   const handleDelete = (employee: any) => {
@@ -346,7 +593,15 @@ const Employees = () => {
     const res = await deleteApiWithToken(`/employees/${selectedEmployee._id}`);
     if (res?.success) {
       toast.success("Employee deleted");
-      fetchEmployees();
+      setEmployees((prev) => prev.filter((emp) => emp._id !== selectedEmployee._id));
+      setSelectedEmployeeIds((prev) => prev.filter((id) => id !== selectedEmployee._id));
+      setTotalItems((prev) => {
+        const nextTotal = Math.max(0, prev - 1);
+        const nextPages = Math.max(1, Math.ceil(nextTotal / pageSize));
+        setTotalPages(nextPages);
+        setCurrentPage((cp) => Math.min(cp, nextPages));
+        return nextTotal;
+      });
     } else {
       toast.error(res?.message || "Delete failed");
     }
@@ -400,6 +655,51 @@ const Employees = () => {
 
     if (res?.success) {
       toast.success(`Updated ${res?.data?.updatedCount || selectedEmployeeIds.length} employees`);
+
+      const selectedDepartment = bulkDepartmentId !== "none"
+        ? departments.find((d: any) => d._id === bulkDepartmentId)
+        : null;
+      const selectedDesignation = bulkDesignationId !== "none"
+        ? designations.find((d: any) => d._id === bulkDesignationId)
+        : null;
+      const selectedShift = bulkShiftId !== "none" && bulkShiftId !== "clear"
+        ? shifts.find((s: any) => s._id === bulkShiftId)
+        : null;
+      const selectedManager = bulkManagerId !== "none" && bulkManagerId !== "clear"
+        ? managers.find((m: any) => m._id === bulkManagerId)
+        : null;
+
+      patchEmployeesInList(selectedEmployeeIds, (emp) => {
+        const patch: Record<string, any> = {};
+        if (bulkShiftId !== "none") {
+          patch.shiftId = bulkShiftId === "clear"
+            ? null
+            : (selectedShift || emp.shiftId);
+        }
+        if (bulkManagerId !== "none") {
+          const managerName = String(selectedManager?.name || "").trim();
+          const [firstName, ...lastNameParts] = managerName.split(" ");
+          patch.managerId = bulkManagerId === "clear"
+            ? null
+            : selectedManager
+              ? { _id: selectedManager._id, firstName: firstName || managerName, lastName: lastNameParts.join(" ") }
+              : emp.managerId;
+        }
+        if (bulkDepartmentId !== "none") {
+          patch.departmentId = selectedDepartment || emp.departmentId;
+        }
+        if (bulkDesignationId !== "none") {
+          patch.designationId = selectedDesignation || emp.designationId;
+        }
+        if (bulkStatus !== "none") {
+          patch.status = bulkStatus;
+        }
+        if (bulkLifecycleStatus !== "none") {
+          patch.employmentLifecycleStatus = bulkLifecycleStatus;
+        }
+        return patch;
+      });
+
       setSelectedEmployeeIds([]);
       setBulkShiftId("none");
       setBulkManagerId("none");
@@ -407,7 +707,6 @@ const Employees = () => {
       setBulkDesignationId("none");
       setBulkStatus("none");
       setBulkLifecycleStatus("none");
-      fetchEmployees();
     } else {
       toast.error(res?.message || "Bulk update failed");
     }
@@ -475,72 +774,74 @@ const Employees = () => {
       title="Employees"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Employees" }]}
     >
-      {/* Action Bar */}
-      <div className="flex flex-col items-start gap-4 mb-6">
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search employees..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <PermissionGate permissions={["EMP_CREATE"]}>
-            <Button className="gap-2 self-end sm:self-auto" onClick={() => navigate("/employees/add")}>
-              <Plus className="w-4 h-4" />
-              Add Employee
-            </Button>
-          </PermissionGate>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 w-full">
-          {canEdit && !isSuperAdmin && (
-            <Button
-              type="button"
-              variant="outline"
-              className="gap-2"
-              onClick={() => setBulkPanelOpen((prev) => !prev)}
-            >
-              {bulkPanelOpen ? "Hide Bulk Update" : "Show Bulk Update"}
-              {bulkPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </Button>
-          )}
-          {isSuperAdmin && (
-            <Select
-              value={selectedOrgId}
-              onValueChange={(value) => {
-                if (value) {
-                  setSearchParams({ organizationId: value });
-                } else {
-                  setSearchParams({});
-                }
-              }}
-            >
-              <SelectTrigger className="w-56">
-                <SelectValue placeholder="Select Organization" />
-              </SelectTrigger>
-              <SelectContent>
-                <div className="p-2">
-                  <Input
-                    placeholder="Search organization..."
-                    value={orgSearch}
-                    onChange={(e) => setOrgSearch(e.target.value)}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  />
-                </div>
-                {filteredOrganizations.map((org) => (
-                  <SelectItem key={org._id} value={org._id}>
-                    {org.name}
-                  </SelectItem>
-                ))}
-                {filteredOrganizations.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">No organizations found</div>
-                )}
-              </SelectContent>
-            </Select>
-          )}
-          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+      {!formMode && (
+        <>
+          {/* Action Bar */}
+          <div className="flex flex-col items-start gap-4 mb-6">
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative w-full sm:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search employees..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <PermissionGate permissions={["EMP_CREATE"]}>
+                <Button className="gap-2 self-end sm:self-auto" onClick={startAddForm}>
+                  <Plus className="w-4 h-4" />
+                  Add Employee
+                </Button>
+              </PermissionGate>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 w-full">
+              {canEdit && !isSuperAdmin && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => setBulkPanelOpen((prev) => !prev)}
+                >
+                  {bulkPanelOpen ? "Hide Bulk Update" : "Show Bulk Update"}
+                  {bulkPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </Button>
+              )}
+              {isSuperAdmin && (
+                <Select
+                  value={selectedOrgId}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setSearchParams({ organizationId: value });
+                    } else {
+                      setSearchParams({});
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-56">
+                    <SelectValue placeholder="Select Organization" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <div className="p-2">
+                      <Input
+                        placeholder="Search organization..."
+                        value={orgSearch}
+                        onChange={(e) => setOrgSearch(e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    {filteredOrganizations.map((org) => (
+                      <SelectItem key={org._id} value={org._id}>
+                        {org.name}
+                      </SelectItem>
+                    ))}
+                    {filteredOrganizations.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">No organizations found</div>
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="Department" />
             </SelectTrigger>
@@ -643,20 +944,20 @@ const Employees = () => {
               setManagerFilter("all");
               setStatusFilter("all");
               setEmploymentTypeFilter("all");
-              setSortBy("createdAt");
-              setSortOrder("desc");
+              setSortBy("employeeCode");
+              setSortOrder("asc");
             }}
           >
             Reset
           </Button>
-          <Button variant="outline" className="gap-2">
-            <Download className="w-4 h-4" />
-            Export
-          </Button>
-        </div>
-      </div>
+              <Button variant="outline" className="gap-2">
+                <Download className="w-4 h-4" />
+                Export
+              </Button>
+            </div>
+          </div>
 
-      {canEdit && (
+          {canEdit && (
         <div className="mb-6">
           {/* <div className="bg-card rounded-xl card-shadow p-3">
             <div className="text-sm text-muted-foreground">
@@ -756,9 +1057,81 @@ const Employees = () => {
             )}
           </AnimatePresence>
         </div>
+          )}
+        </>
       )}
 
       {/* Employee Table */}
+      {formMode && (
+        <div className="bg-card rounded-xl card-shadow p-5 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">
+              {formMode === "edit" ? "Edit Employee" : "Add Employee"}
+            </h3>
+            <Button variant="outline" onClick={cancelForm}>Back to List</Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input placeholder="Email" validationType="email" value={employeeForm.email} onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })} />
+            <Input placeholder="Employee Code (optional)" validationType="code" value={employeeForm.employeeCode} onChange={(e) => setEmployeeForm({ ...employeeForm, employeeCode: e.target.value.toUpperCase() })} />
+            <Input placeholder="First Name" validationType="name" value={employeeForm.firstName} onChange={(e) => setEmployeeForm({ ...employeeForm, firstName: e.target.value })} />
+            <Input placeholder="Last Name" validationType="name" value={employeeForm.lastName} onChange={(e) => setEmployeeForm({ ...employeeForm, lastName: e.target.value })} />
+            <Select value={employeeForm.departmentId} onValueChange={(value) => setEmployeeForm({ ...employeeForm, departmentId: value })}>
+              <SelectTrigger><SelectValue placeholder="Department" /></SelectTrigger>
+              <SelectContent>{departments.map((d: any) => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={employeeForm.designationId} onValueChange={(value) => setEmployeeForm({ ...employeeForm, designationId: value })}>
+              <SelectTrigger><SelectValue placeholder="Designation" /></SelectTrigger>
+              <SelectContent>{designations.map((d: any) => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={employeeForm.managerId || "none"} onValueChange={(value) => setEmployeeForm({ ...employeeForm, managerId: value === "none" ? "" : value })}>
+              <SelectTrigger><SelectValue placeholder="Manager" /></SelectTrigger>
+              <SelectContent><SelectItem value="none">No Manager</SelectItem>{managers.map((m: any) => <SelectItem key={m._id} value={m._id}>{m.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={employeeForm.shiftId || "none"} onValueChange={(value) => setEmployeeForm({ ...employeeForm, shiftId: value === "none" ? "" : value })}>
+              <SelectTrigger><SelectValue placeholder="Shift" /></SelectTrigger>
+              <SelectContent><SelectItem value="none">No Shift</SelectItem>{shifts.map((s: any) => <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={employeeForm.employmentType} onValueChange={(value) => setEmployeeForm({ ...employeeForm, employmentType: value })}>
+              <SelectTrigger><SelectValue placeholder="Employment Type" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full_time">Full Time</SelectItem>
+                <SelectItem value="part_time">Part Time</SelectItem>
+                <SelectItem value="contract">Contract</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input type="date" value={employeeForm.dateOfJoining} onChange={(e) => setEmployeeForm({ ...employeeForm, dateOfJoining: e.target.value })} />
+            <div className="md:col-span-2">
+              <p className="mb-2 text-sm text-muted-foreground">Roles</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {roles.map((role: any) => (
+                  <label key={role._id} className="flex items-center gap-2 text-sm border rounded-md p-2">
+                    <Checkbox
+                      checked={employeeForm.roleIds.includes(role._id)}
+                      onCheckedChange={(checked) =>
+                        setEmployeeForm((prev) => ({
+                          ...prev,
+                          roleIds: checked
+                            ? Array.from(new Set([...prev.roleIds, role._id]))
+                            : prev.roleIds.filter((id) => id !== role._id)
+                        }))
+                      }
+                    />
+                    <span>{role.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-5">
+            <Button onClick={submitEmployeeForm} disabled={formSaving}>
+              {formSaving ? "Saving..." : formMode === "edit" ? "Update Employee" : "Create Employee"}
+            </Button>
+            <Button variant="outline" onClick={cancelForm}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {!formMode && (
       <motion.div
         className="bg-card rounded-xl card-shadow overflow-hidden flex flex-col max-h-[72vh] lg:h-[calc(100vh-240px)]"
         initial={{ opacity: 0, y: 20 }}
@@ -766,7 +1139,17 @@ const Employees = () => {
         transition={{ delay: 0.2 }}
       >
         {loading && (
-          <div className="sticky top-0 p-6 text-sm text-muted-foreground">Loading employees...</div>
+          <div className="p-5 space-y-3">
+            {Array.from({ length: 10 }).map((_, idx) => (
+              <div key={`emp-skeleton-${idx}`} className="grid grid-cols-6 gap-3">
+                <Skeleton className="h-10 w-full rounded-md col-span-2" />
+                <Skeleton className="h-10 w-full rounded-md" />
+                <Skeleton className="h-10 w-full rounded-md" />
+                <Skeleton className="h-10 w-full rounded-md" />
+                <Skeleton className="h-10 w-full rounded-md" />
+              </div>
+            ))}
+          </div>
         )}
         {!loading && (
           <div className="min-h-0 flex-1">
@@ -879,7 +1262,9 @@ const Employees = () => {
                           </DropdownMenuItem>
                         </PermissionGate>
                         <PermissionGate permissions={["EMP_UPDATE"]}>
-                          <DropdownMenuItem onClick={() => navigate(`/employees/edit/${employee._id}`)}>
+                          <DropdownMenuItem
+                            onClick={() => startEditForm(employee)}
+                          >
                             <Edit className="w-4 h-4 mr-2" /> Edit
                           </DropdownMenuItem>
                         </PermissionGate>
@@ -889,7 +1274,7 @@ const Employees = () => {
                               const res = await putApiWithToken(`/employees/${employee._id}/reopen-profile`, {});
                               if (res?.success) {
                                 toast.success("Profile form enabled for employee");
-                                fetchEmployees();
+                                patchEmployeeInList(employee._id, { profileCompleted: false });
                               } else {
                                 toast.error(res?.message || "Failed to enable profile form");
                               }
@@ -989,6 +1374,7 @@ const Employees = () => {
           </div>
         </div>
       </motion.div>
+      )}
 
       {/* Delete Confirmation */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

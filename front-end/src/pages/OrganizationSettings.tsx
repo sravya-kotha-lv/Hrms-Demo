@@ -45,6 +45,7 @@ const OrganizationSettings = () => {
   const [attendanceDevBypassEnabled, setAttendanceDevBypassEnabled] = useState(false);
   const [probationPeriodDays, setProbationPeriodDays] = useState(90);
   const [noticePeriodDays, setNoticePeriodDays] = useState(30);
+  const [employeeIdPrefix, setEmployeeIdPrefix] = useState("");
   const [loading, setLoading] = useState(false);
   const canView = hasAnyPermission(["ORG_SETTINGS_VIEW"]);
   const canManage = hasAnyPermission(["ORG_SETTINGS_MANAGE"]);
@@ -106,6 +107,7 @@ const OrganizationSettings = () => {
       setNoticePeriodDays(
         typeof res.data?.noticePeriodDays === "number" ? res.data.noticePeriodDays : 30
       );
+      setEmployeeIdPrefix(String(res.data?.employeeIdPrefix || ""));
     } else {
       toast.error(res?.message || "Failed to load settings");
     }
@@ -138,7 +140,8 @@ const OrganizationSettings = () => {
         attendanceGeoRadiusMeters: Number(attendanceGeoRadiusMeters),
         attendanceDevBypassEnabled,
         probationPeriodDays: Number(probationPeriodDays),
-        noticePeriodDays: Number(noticePeriodDays)
+        noticePeriodDays: Number(noticePeriodDays),
+        employeeIdPrefix: employeeIdPrefix.trim().toUpperCase()
       }, null, { requiredPermissions: ["ORG_SETTINGS_MANAGE"] });
       if (res?.skipped) return;
       if (res?.success) {
@@ -257,6 +260,20 @@ const OrganizationSettings = () => {
                     disabled={!canManage}
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Employee ID Prefix</label>
+                <Input
+                  type="text"
+                  maxLength={10}
+                  placeholder="Ex: LV"
+                  value={employeeIdPrefix}
+                  onChange={(e) => setEmployeeIdPrefix(e.target.value.toUpperCase())}
+                  disabled={!canManage}
+                />
+                <p className="text-xs text-muted-foreground">
+                  New employee codes use this prefix. If empty, system uses `.env` prefix.
+                </p>
               </div>
               <p className="text-xs text-muted-foreground">
                 Probation is auto-completed after the configured days. Notice period is used when moving an employee to notice.

@@ -27,6 +27,28 @@ const LIFECYCLE_ACTION_ROLE_SLUGS = new Set([
   "superadmin"
 ]);
 
+const normalizeEmployeeCode = (value) => {
+  if (value === undefined || value === null) return "";
+  return String(value).trim().toUpperCase();
+};
+
+const toNameCase = (value) => {
+  if (value === undefined || value === null) return value;
+  const text = String(value).trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  return text
+    .split(" ")
+    .map((part) =>
+      part
+        .split("-")
+        .map((segment) =>
+          segment ? `${segment.charAt(0).toUpperCase()}${segment.slice(1).toLowerCase()}` : segment
+        )
+        .join("-")
+    )
+    .join(" ");
+};
+
 /* ------------------------------------------------------------------ */
 /* HR / ADMIN CREATES EMPLOYEE                                         */
 /* ------------------------------------------------------------------ */
@@ -40,6 +62,7 @@ exports.createByHr = async (req) => {
       roleIds,
       firstName,
       lastName,
+      employeeCode,
       departmentId,
       designationId,
       dateOfJoining,
@@ -50,6 +73,8 @@ exports.createByHr = async (req) => {
 
     const { organizationId } = req.user;
     const normalizedEmail = email.toLowerCase().trim();
+    const normalizedFirstName = toNameCase(firstName);
+    const normalizedLastName = toNameCase(lastName);
 
     const existingUser = useSession
       ? await User.findOne({ email: normalizedEmail }, null, { session })
@@ -106,10 +131,25 @@ exports.createByHr = async (req) => {
           }
         ]);
 
-    const employeeCode = await generateEmployeeCode(
-      organizationId,
-      useSession ? session : undefined
-    );
+    const requestedEmployeeCode = normalizeEmployeeCode(employeeCode);
+    let resolvedEmployeeCode = requestedEmployeeCode;
+    if (resolvedEmployeeCode) {
+      const employeeCodeExists = useSession
+        ? await Employee.findOne(
+            { organizationId, employeeCode: resolvedEmployeeCode },
+            "_id",
+            { session }
+          )
+        : await Employee.findOne({ organizationId, employeeCode: resolvedEmployeeCode }, "_id");
+      if (employeeCodeExists) {
+        throw { code: 409, message: "Employee code already exists" };
+      }
+    } else {
+      resolvedEmployeeCode = await generateEmployeeCode(
+        organizationId,
+        useSession ? session : undefined
+      );
+    }
     const orgSettings = useSession
       ? await OrgSettings.findOne({ organizationId }, null, { session })
       : await OrgSettings.findOne({ organizationId });
@@ -125,9 +165,9 @@ exports.createByHr = async (req) => {
             {
               organizationId,
               userId: user._id,
-              firstName,
-              lastName,
-              employeeCode,
+              firstName: normalizedFirstName,
+              lastName: normalizedLastName,
+              employeeCode: resolvedEmployeeCode,
               departmentId,
               designationId,
               dateOfJoining,
@@ -144,9 +184,9 @@ exports.createByHr = async (req) => {
           {
             organizationId,
             userId: user._id,
-            firstName,
-            lastName,
-            employeeCode,
+            firstName: normalizedFirstName,
+            lastName: normalizedLastName,
+            employeeCode: resolvedEmployeeCode,
             departmentId,
             designationId,
             dateOfJoining,
@@ -166,10 +206,10 @@ exports.createByHr = async (req) => {
     const orgDetails = await OrganizationService.getOrganizationById(organizationId);
     await sendMail(
       "employeeOnboarding",
-      firstName,
+      normalizedFirstName,
       `Welcome to ${orgDetails?.name}`,
       {
-        employeeName: firstName,
+        employeeName: normalizedFirstName,
         email,
         password: plainPassword,
         loginUrl: process.env.FRONTEND_LOGIN_URL,
@@ -238,6 +278,8 @@ exports.completeMyProfile = async (req) => {
     phone: req.body.phone,
     dob: req.body.dob,
     gender: req.body.gender,
+    aadhaarNumber: req.body.aadhaarNumber,
+    panNumber: req.body.panNumber ? String(req.body.panNumber).trim().toUpperCase() : req.body.panNumber,
     address: req.body.address,
     emergencyContacts: req.body.emergencyContacts
   };
@@ -263,11 +305,64 @@ exports.completeMyProfile = async (req) => {
     };
   }
 
+  if (req.body.aadhaarProofUpload?.base64Data && req.body.aadhaarProofUpload?.mimeType) {
+    const aadhaarDataUri = `data:${req.body.aadhaarProofUpload.mimeType};base64,${req.body.aadhaarProofUpload.base64Data}`;
+    const uploadedAadhaar = await uploadDataUri(aadhaarDataUri, {
+      folder: "hrms/employee-aadhaar-proofs"
+    });
+    editableFields.aadhaarProof = {
+      fileName: req.body.aadhaarProofUpload.fileName || "aadhaar-proof",
+      fileUrl: uploadedAadhaar?.secure_url || "",
+      mimeType: req.body.aadhaarProofUpload.mimeType || "",
+      uploadedAt: new Date()
+    };
+  }
+
+  if (req.body.panProofUpload?.base64Data && req.body.panProofUpload?.mimeType) {
+    const panDataUri = `data:${req.body.panProofUpload.mimeType};base64,${req.body.panProofUpload.base64Data}`;
+    const uploadedPan = await uploadDataUri(panDataUri, {
+      folder: "hrms/employee-pan-proofs"
+    });
+    editableFields.panProof = {
+      fileName: req.body.panProofUpload.fileName || "pan-proof",
+      fileUrl: uploadedPan?.secure_url || "",
+      mimeType: req.body.panProofUpload.mimeType || "",
+      uploadedAt: new Date()
+    };
+  }
+
+  const resolvedAddressProof = editableFields.addressProof || employee.addressProof;
+  const resolvedAadhaarProof = editableFields.aadhaarProof || employee.aadhaarProof;
+  const resolvedPanProof = editableFields.panProof || employee.panProof;
+  const resolvedAadhaarNumber = editableFields.aadhaarNumber || employee.aadhaarNumber;
+  const resolvedPanNumber = editableFields.panNumber || employee.panNumber;
+
+  if (!resolvedAadhaarNumber) {
+    throw { code: 400, message: "Aadhaar number is required" };
+  }
+  if (!resolvedPanNumber) {
+    throw { code: 400, message: "PAN number is required" };
+  }
+  if (!resolvedAddressProof?.fileUrl) {
+    throw { code: 400, message: "Address proof upload is required" };
+  }
+  if (!resolvedAadhaarProof?.fileUrl) {
+    throw { code: 400, message: "Aadhaar proof upload is required" };
+  }
+  if (!resolvedPanProof?.fileUrl) {
+    throw { code: 400, message: "PAN proof upload is required" };
+  }
+
   Object.assign(employee, editableFields);
   employee.profileCompleted = true;
 
   await employee.save();
-  return employee;
+  const employeeObj = employee.toObject();
+  return {
+    ...employeeObj,
+    firstName: toNameCase(employeeObj.firstName),
+    lastName: toNameCase(employeeObj.lastName)
+  };
 };
 
 /* ------------------------------------------------------------------ */
@@ -402,14 +497,21 @@ const buildEmployeeResponse = async ({ employeeId, organizationId }) => {
     organizationId
   }).populate("roleIds", "name");
 
+  const employeeObj = populatedEmployee.toObject();
   return {
-    ...populatedEmployee.toObject(),
+    ...employeeObj,
+    firstName: toNameCase(employeeObj.firstName),
+    lastName: toNameCase(employeeObj.lastName),
     roleIds: orgUser?.roleIds || []
   };
 };
 
 async function generateEmployeeCode(organizationId, session) {
-  const prefix = (process.env.EMPLOYEE_CODE_PREFIX || "LV").trim() || "LV";
+  const orgSettings = session
+    ? await OrgSettings.findOne({ organizationId }, "employeeIdPrefix", { session }).lean()
+    : await OrgSettings.findOne({ organizationId }, "employeeIdPrefix").lean();
+  const envPrefix = (process.env.EMPLOYEE_ID_PREFIX || process.env.EMPLOYEE_CODE_PREFIX || "LV").trim();
+  const prefix = ((orgSettings?.employeeIdPrefix || envPrefix || "LV").trim() || "LV").toUpperCase();
   let sequence = await Employee.countDocuments(
     { organizationId, isDeleted: false },
     { session }
@@ -497,8 +599,14 @@ exports.listByOrganization = async (req) => {
     "status",
     "employmentLifecycleStatus"
   ]);
-  const sortField = allowedSortFields.has(String(sortBy)) ? String(sortBy) : "createdAt";
-  const sortDirection = String(sortOrder).toLowerCase() === "asc" ? 1 : -1;
+  const sortField = allowedSortFields.has(String(sortBy)) ? String(sortBy) : "employeeCode";
+  const normalizedSortOrder = String(sortOrder || "asc").toLowerCase();
+  const sortDirection =
+    normalizedSortOrder === "asc"
+      ? 1
+      : normalizedSortOrder === "desc"
+        ? -1
+        : 1;
 
   // Build query
   let employeeQuery = Employee.find(query)
@@ -548,15 +656,26 @@ exports.listByOrganization = async (req) => {
       }))
     ])
   );
-  const items = employees.map((employee) => ({
-    ...employee.toObject(),
-    roleIds: roleMap.get(String(employee.userId?._id || employee.userId)) || []
-  }));
+  const items = employees.map((employee) => {
+    const obj = employee.toObject();
+    return {
+      ...obj,
+      firstName: toNameCase(obj.firstName),
+      lastName: toNameCase(obj.lastName),
+      roleIds: roleMap.get(String(employee.userId?._id || employee.userId)) || []
+    };
+  });
 
   return {
     items,
     pagination // will be null if not paginated
   };
+};
+
+exports.getNextEmployeeCode = async (req) => {
+  const { organizationId } = req.user;
+  const employeeCode = await generateEmployeeCode(organizationId);
+  return { employeeCode };
 };
 
 exports.getById = async (req) => {
@@ -610,6 +729,8 @@ exports.getById = async (req) => {
 
   return {
     ...employee.toObject(),
+    firstName: toNameCase(employee.firstName),
+    lastName: toNameCase(employee.lastName),
     roleIds: orgUser?.roleIds || []
   };
 };
@@ -681,14 +802,20 @@ exports.updateByHr = async (req) => {
     shiftId,
     dob,
     gender,
+    aadhaarNumber,
+    panNumber,
     address,
-    emergencyContacts
+    emergencyContacts,
+    addressProofUpload,
+    aadhaarProofUpload,
+    panProofUpload
   } = req.body;
+  const normalizedEmployeeCode = normalizeEmployeeCode(employeeCode);
 
-  if (employeeCode && employeeCode !== employee.employeeCode) {
+  if (normalizedEmployeeCode && normalizedEmployeeCode !== employee.employeeCode) {
     const exists = await Employee.findOne({
       organizationId,
-      employeeCode,
+      employeeCode: normalizedEmployeeCode,
       _id: { $ne: employee._id }
     });
     if (exists) {
@@ -726,10 +853,10 @@ exports.updateByHr = async (req) => {
   }
 
   const updates = {
-    firstName,
-    lastName,
+    firstName: firstName !== undefined ? toNameCase(firstName) : undefined,
+    lastName: lastName !== undefined ? toNameCase(lastName) : undefined,
     phone,
-    employeeCode,
+    employeeCode: normalizedEmployeeCode || undefined,
     departmentId,
     designationId,
     dateOfJoining,
@@ -739,6 +866,8 @@ exports.updateByHr = async (req) => {
     shiftId,
     dob,
     gender,
+    aadhaarNumber,
+    panNumber: panNumber ? String(panNumber).trim().toUpperCase() : panNumber,
     address,
     emergencyContacts
   };
@@ -759,6 +888,45 @@ exports.updateByHr = async (req) => {
 
   if (employee.employmentLifecycleStatus === "terminated") {
     employee.status = "resigned";
+  }
+
+  if (addressProofUpload?.base64Data && addressProofUpload?.mimeType) {
+    const proofDataUri = `data:${addressProofUpload.mimeType};base64,${addressProofUpload.base64Data}`;
+    const uploadedProof = await uploadDataUri(proofDataUri, {
+      folder: "hrms/employee-address-proofs"
+    });
+    employee.addressProof = {
+      fileName: addressProofUpload.fileName || "address-proof",
+      fileUrl: uploadedProof?.secure_url || "",
+      mimeType: addressProofUpload.mimeType || "",
+      uploadedAt: new Date()
+    };
+  }
+
+  if (aadhaarProofUpload?.base64Data && aadhaarProofUpload?.mimeType) {
+    const aadhaarDataUri = `data:${aadhaarProofUpload.mimeType};base64,${aadhaarProofUpload.base64Data}`;
+    const uploadedAadhaar = await uploadDataUri(aadhaarDataUri, {
+      folder: "hrms/employee-aadhaar-proofs"
+    });
+    employee.aadhaarProof = {
+      fileName: aadhaarProofUpload.fileName || "aadhaar-proof",
+      fileUrl: uploadedAadhaar?.secure_url || "",
+      mimeType: aadhaarProofUpload.mimeType || "",
+      uploadedAt: new Date()
+    };
+  }
+
+  if (panProofUpload?.base64Data && panProofUpload?.mimeType) {
+    const panDataUri = `data:${panProofUpload.mimeType};base64,${panProofUpload.base64Data}`;
+    const uploadedPan = await uploadDataUri(panDataUri, {
+      folder: "hrms/employee-pan-proofs"
+    });
+    employee.panProof = {
+      fileName: panProofUpload.fileName || "pan-proof",
+      fileUrl: uploadedPan?.secure_url || "",
+      mimeType: panProofUpload.mimeType || "",
+      uploadedAt: new Date()
+    };
   }
 
   await employee.save();

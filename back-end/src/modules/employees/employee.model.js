@@ -15,6 +15,16 @@ const emergencyContactSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const documentSchema = new mongoose.Schema(
+  {
+    fileName: String,
+    fileUrl: String,
+    mimeType: String,
+    uploadedAt: Date
+  },
+  { _id: false }
+);
+
 const employeeSchema = new mongoose.Schema(
   {
     organizationId: {
@@ -102,10 +112,24 @@ const employeeSchema = new mongoose.Schema(
       default: null
     },
     addressProof: {
-      fileName: String,
-      fileUrl: String,
-      mimeType: String,
-      uploadedAt: Date
+      type: documentSchema,
+      default: null
+    },
+    aadhaarNumber: {
+      type: String,
+      default: null
+    },
+    panNumber: {
+      type: String,
+      default: null
+    },
+    aadhaarProof: {
+      type: documentSchema,
+      default: null
+    },
+    panProof: {
+      type: documentSchema,
+      default: null
     },
 
     managerId: {
