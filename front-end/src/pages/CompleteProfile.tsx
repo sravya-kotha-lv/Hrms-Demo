@@ -8,9 +8,9 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-const ADDRESS_PROOF_MAX_BYTES = 5 * 1024 * 1024;
+const PROOF_MAX_BYTES = 5 * 1024 * 1024;
 const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const ADDRESS_PROOF_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+const PROOF_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 const RELATION_OPTIONS = [
   { label: "Father", value: "father" },
   { label: "Mother", value: "mother" },
@@ -34,6 +34,8 @@ const CompleteProfile = () => {
     phone: "",
     dob: "",
     gender: "",
+    aadhaarNumber: "",
+    panNumber: "",
     address: {
       line1: "",
       line2: "",
@@ -46,7 +48,9 @@ const CompleteProfile = () => {
       { name: "", relation: "", phone: "" }
     ],
     profileImageUpload: null as null | { fileName: string; mimeType: string; base64Data: string },
-    addressProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string }
+    addressProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string },
+    aadhaarProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string },
+    panProofUpload: null as null | { fileName: string; mimeType: string; base64Data: string }
   });
 
   const fileToBase64 = (file: File): Promise<string> =>
@@ -82,6 +86,8 @@ const CompleteProfile = () => {
         phone: res.data.phone || "",
         dob: res.data.dob ? new Date(res.data.dob).toISOString().slice(0, 10) : "",
         gender: res.data.gender || "",
+        aadhaarNumber: res.data.aadhaarNumber || "",
+        panNumber: res.data.panNumber || "",
         address: res.data.address || prev.address
       }));
     }
@@ -94,7 +100,37 @@ const CompleteProfile = () => {
 
   const handleSubmit = async () => {
     if (!form.phone || !form.dob || !form.gender) {
-      toast.error("Phone, DOB, and gender are required");
+      toast.error("Phone, DOB and gender are required");
+      return;
+    }
+    if (!/^\d{12}$/.test(form.aadhaarNumber.trim())) {
+      toast.error("Aadhaar number must be 12 digits");
+      return;
+    }
+    if (!/^[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}$/.test(form.panNumber.trim())) {
+      toast.error("PAN number format is invalid");
+      return;
+    }
+    if (
+      !form.address.line1.trim()
+      || !form.address.city.trim()
+      || !form.address.state.trim()
+      || !form.address.country.trim()
+      || !form.address.zip.trim()
+    ) {
+      toast.error("Address Line 1, City, State, Country and Zip are required");
+      return;
+    }
+    if (!form.addressProofUpload && !profile?.addressProof?.fileUrl) {
+      toast.error("Address proof is required");
+      return;
+    }
+    if (!form.aadhaarProofUpload && !profile?.aadhaarProof?.fileUrl) {
+      toast.error("Aadhaar proof upload is required");
+      return;
+    }
+    if (!form.panProofUpload && !profile?.panProof?.fileUrl) {
+      toast.error("PAN proof upload is required");
       return;
     }
     const emergency = form.emergencyContacts[0];
@@ -119,12 +155,14 @@ const CompleteProfile = () => {
       phone: form.phone,
       dob: form.dob,
       gender: form.gender,
-      address: form.address.line1 || form.address.city || form.address.state || form.address.country || form.address.zip
-        ? form.address
-        : undefined,
+      aadhaarNumber: form.aadhaarNumber.trim(),
+      panNumber: form.panNumber.trim().toUpperCase(),
+      address: form.address,
       emergencyContacts: form.emergencyContacts.filter((c) => c.name && c.relation && c.phone),
       profileImageUpload: form.profileImageUpload || undefined,
-      addressProofUpload: form.addressProofUpload || undefined
+      addressProofUpload: form.addressProofUpload || undefined,
+      aadhaarProofUpload: form.aadhaarProofUpload || undefined,
+      panProofUpload: form.panProofUpload || undefined
     };
 
     const res = await putApiWithToken("/employees/me/profile", payload);
@@ -139,164 +177,263 @@ const CompleteProfile = () => {
 
   return (
     <MainLayout title="Complete Profile" breadcrumb={[{ label: "Home" }, { label: "Complete Profile" }]}>
-      <div className="bg-card rounded-xl card-shadow p-6 max-w-3xl">
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold">Welcome{profile?.firstName ? `, ${profile.firstName}` : ""}</h2>
-          <p className="text-sm text-muted-foreground">
-            Please complete your profile to access the system.
-          </p>
-          {(profilePreviewUrl || profile?.profileImage) && (
-            <img
-              src={profilePreviewUrl || profile?.profileImage}
-              alt="Profile preview"
-              className="mt-4 h-20 w-20 rounded-full object-cover border"
-            />
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            placeholder="Work Email"
-            value={profile?.userId?.email || ""}
-            disabled
-          />
-          <Input
-            placeholder="First Name"
-            value={profile?.firstName || ""}
-            disabled
-          />
-          <Input
-            placeholder="Last Name"
-            value={profile?.lastName || ""}
-            disabled
-          />
-          <Input
-            placeholder="Phone"
-            validationType="phone"
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-          />
-          <Input
-            type="date"
-            placeholder="Date of Birth"
-            value={form.dob}
-            onChange={(e) => setForm({ ...form, dob: e.target.value })}
-          />
-          <Input
-            placeholder="Gender"
-            value={form.gender}
-            onChange={(e) => setForm({ ...form, gender: e.target.value })}
-          />
-          <Input
-            placeholder="Department"
-            value={profile?.departmentId?.name || ""}
-            disabled
-          />
-          <Input
-            placeholder="Designation"
-            value={profile?.designationId?.name || ""}
-            disabled
-          />
-          <Input
-            placeholder="Employment Type"
-            value={profile?.employmentType || ""}
-            disabled
-          />
-          <Input
-            placeholder="Date of Joining"
-            value={profile?.dateOfJoining ? new Date(profile.dateOfJoining).toISOString().slice(0, 10) : ""}
-            disabled
-          />
-          <Input
-            placeholder="Reporting Manager"
-            value={
-              profile?.managerId
-                ? `${profile.managerId.firstName || ""} ${profile.managerId.lastName || ""}`.trim()
-                : ""
-            }
-            disabled
-          />
-          <Input
-            placeholder="Address Line 1"
-            value={form.address.line1}
-            onChange={(e) => setForm({ ...form, address: { ...form.address, line1: e.target.value } })}
-          />
-          <Input
-            placeholder="Address Line 2 (optional)"
-            value={form.address.line2}
-            onChange={(e) => setForm({ ...form, address: { ...form.address, line2: e.target.value } })}
-          />
-          <Input
-            placeholder="City"
-            value={form.address.city}
-            onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })}
-          />
-          <Input
-            placeholder="State"
-            value={form.address.state}
-            onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value } })}
-          />
-          <Input
-            placeholder="Country"
-            value={form.address.country}
-            onChange={(e) => setForm({ ...form, address: { ...form.address, country: e.target.value } })}
-          />
-          <Input
-            placeholder="Zip"
-            value={form.address.zip}
-            onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value } })}
-          />
-          <div className="space-y-1">
-            <label className="text-sm text-muted-foreground">Profile Picture</label>
-            <Input
-              type="file"
-              accept="image/*"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                if (!validateFile(file, PROFILE_IMAGE_TYPES, PROFILE_IMAGE_MAX_BYTES, "Profile image")) return;
-                const base64Data = await fileToBase64(file);
-                setProfilePreviewUrl(URL.createObjectURL(file));
-                setForm({
-                  ...form,
-                  profileImageUpload: {
-                    fileName: file.name,
-                    mimeType: file.type,
-                    base64Data
-                  }
-                });
-              }}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm text-muted-foreground">Address Proof (optional)</label>
-            <Input
-              type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.webp"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                if (!validateFile(file, ADDRESS_PROOF_TYPES, ADDRESS_PROOF_MAX_BYTES, "Address proof")) return;
-                const base64Data = await fileToBase64(file);
-                setForm({
-                  ...form,
-                  addressProofUpload: {
-                    fileName: file.name,
-                    mimeType: file.type,
-                    base64Data
-                  }
-                });
-              }}
-            />
-            {form.addressProofUpload?.fileName && (
-              <p className="text-xs text-muted-foreground">{form.addressProofUpload.fileName}</p>
-            )}
+      <div className="max-w-5xl space-y-6">
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-r from-white via-blue-50/60 to-cyan-50/40 p-6">
+          <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full bg-blue-200/30 blur-2xl" />
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight">
+                Complete Your Profile{profile?.firstName ? `, ${profile.firstName}` : ""}
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Add your required KYC and personal details to activate your employee account.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-16 w-16 overflow-hidden rounded-full border border-slate-200 bg-white shadow-sm">
+                {(profilePreviewUrl || profile?.profileImage) ? (
+                  <img src={profilePreviewUrl || profile?.profileImage} alt="Profile preview" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">No Image</div>
+                )}
+              </div>
+              <div className="text-xs text-slate-500">
+                Employee ID: <span className="font-medium text-slate-700">{profile?.employeeCode || "-"}</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="mt-6">
-          <h3 className="text-md font-semibold mb-2">Emergency Contact (optional)</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-base font-semibold text-slate-900">Personal Details</h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Work Email</label>
+                <Input value={profile?.userId?.email || ""} disabled />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">First Name</label>
+                <Input value={profile?.firstName || ""} disabled />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Last Name</label>
+                <Input value={profile?.lastName || ""} disabled />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Phone</label>
+                <Input validationType="phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Date of Birth</label>
+                <Input type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Gender</label>
+                <Select value={form.gender} onValueChange={(value) => setForm({ ...form, gender: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Aadhaar Number</label>
+                <Input
+                  value={form.aadhaarNumber}
+                  onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value.replace(/\D/g, "").slice(0, 12) })}
+                  placeholder="12 digit Aadhaar number"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">PAN Number</label>
+                <Input
+                  value={form.panNumber}
+                  onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })}
+                  placeholder="ABCDE1234F"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-base font-semibold text-slate-900">Work Details</h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Department</label>
+                <Input value={profile?.departmentId?.name || ""} disabled />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Designation</label>
+                <Input value={profile?.designationId?.name || ""} disabled />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Employment Type</label>
+                <Input value={profile?.employmentType || ""} disabled />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Date of Joining</label>
+                <Input value={profile?.dateOfJoining ? new Date(profile.dateOfJoining).toISOString().slice(0, 10) : ""} disabled />
+              </div>
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reporting Manager</label>
+                <Input
+                  value={profile?.managerId ? `${profile.managerId.firstName || ""} ${profile.managerId.lastName || ""}`.trim() : ""}
+                  disabled
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Profile Picture (optional)</label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (!validateFile(file, PROFILE_IMAGE_TYPES, PROFILE_IMAGE_MAX_BYTES, "Profile image")) return;
+                    const base64Data = await fileToBase64(file);
+                    setProfilePreviewUrl(URL.createObjectURL(file));
+                    setForm({
+                      ...form,
+                      profileImageUpload: {
+                        fileName: file.name,
+                        mimeType: file.type,
+                        base64Data
+                      }
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-base font-semibold text-slate-900">Address Details</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Address Line 1</label>
+              <Input value={form.address.line1} onChange={(e) => setForm({ ...form, address: { ...form.address, line1: e.target.value } })} />
+            </div>
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Address Line 2 (optional)</label>
+              <Input value={form.address.line2} onChange={(e) => setForm({ ...form, address: { ...form.address, line2: e.target.value } })} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">City</label>
+              <Input value={form.address.city} onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">State</label>
+              <Input value={form.address.state} onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value } })} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Country</label>
+              <Input value={form.address.country} onChange={(e) => setForm({ ...form, address: { ...form.address, country: e.target.value } })} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Zip</label>
+              <Input value={form.address.zip} onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value } })} />
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-base font-semibold text-slate-900">KYC Documents</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 p-3">
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">Address Proof (required)</label>
+              <Input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (!validateFile(file, PROOF_TYPES, PROOF_MAX_BYTES, "Address proof")) return;
+                  const base64Data = await fileToBase64(file);
+                  setForm({
+                    ...form,
+                    addressProofUpload: {
+                      fileName: file.name,
+                      mimeType: file.type,
+                      base64Data
+                    }
+                  });
+                }}
+              />
+              {form.addressProofUpload?.fileName && (
+                <p className="mt-2 text-xs text-slate-600">{form.addressProofUpload.fileName}</p>
+              )}
+              {!form.addressProofUpload?.fileName && profile?.addressProof?.fileName && (
+                <p className="mt-2 text-xs text-slate-600">Current: {profile.addressProof.fileName}</p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 p-3">
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">Aadhaar Card (required)</label>
+              <Input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (!validateFile(file, PROOF_TYPES, PROOF_MAX_BYTES, "Aadhaar proof")) return;
+                  const base64Data = await fileToBase64(file);
+                  setForm({
+                    ...form,
+                    aadhaarProofUpload: {
+                      fileName: file.name,
+                      mimeType: file.type,
+                      base64Data
+                    }
+                  });
+                }}
+              />
+              {form.aadhaarProofUpload?.fileName && (
+                <p className="mt-2 text-xs text-slate-600">{form.aadhaarProofUpload.fileName}</p>
+              )}
+              {!form.aadhaarProofUpload?.fileName && profile?.aadhaarProof?.fileName && (
+                <p className="mt-2 text-xs text-slate-600">Current: {profile.aadhaarProof.fileName}</p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 p-3">
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">PAN Card (required)</label>
+              <Input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (!validateFile(file, PROOF_TYPES, PROOF_MAX_BYTES, "PAN proof")) return;
+                  const base64Data = await fileToBase64(file);
+                  setForm({
+                    ...form,
+                    panProofUpload: {
+                      fileName: file.name,
+                      mimeType: file.type,
+                      base64Data
+                    }
+                  });
+                }}
+              />
+              {form.panProofUpload?.fileName && (
+                <p className="mt-2 text-xs text-slate-600">{form.panProofUpload.fileName}</p>
+              )}
+              {!form.panProofUpload?.fileName && profile?.panProof?.fileName && (
+                <p className="mt-2 text-xs text-slate-600">Current: {profile.panProof.fileName}</p>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-base font-semibold text-slate-900">Emergency Contact (optional)</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <Input
               placeholder="Name"
               validationType="name"
@@ -340,11 +477,11 @@ const CompleteProfile = () => {
               }
             />
           </div>
-        </div>
+        </section>
 
-        <div className="mt-8">
-          <Button onClick={handleSubmit} disabled={loading}>
-            Save and Continue
+        <div className="flex items-center justify-end pb-2">
+          <Button onClick={handleSubmit} disabled={loading} className="h-11 px-7">
+            {loading ? "Saving..." : "Save and Continue"}
           </Button>
         </div>
       </div>

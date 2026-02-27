@@ -20,5 +20,6 @@ exports.upsertOrgSettingsSchema = Joi.object({
   attendanceGeoRadiusMeters: Joi.number().integer().min(10).max(100000).default(200),
   attendanceDevBypassEnabled: Joi.boolean().default(false),
   probationPeriodDays: Joi.number().integer().min(0).max(3650).default(90),
-  noticePeriodDays: Joi.number().integer().min(0).max(3650).default(30)
+  noticePeriodDays: Joi.number().integer().min(0).max(3650).default(30),
+  employeeIdPrefix: Joi.string().trim().max(10).allow("").default("")
 });

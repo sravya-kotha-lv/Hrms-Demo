@@ -90,6 +90,11 @@ const AddEmployee = () => {
   const [shifts, setShifts] = useState<Option[]>([]);
   const [orgProbationDays, setOrgProbationDays] = useState(90);
   const [orgNoticeDays, setOrgNoticeDays] = useState(30);
+  const [orgEmployeeCodePrefix, setOrgEmployeeCodePrefix] = useState(
+    ((import.meta as any).env?.VITE_EMPLOYEE_ID_PREFIX
+      || (import.meta as any).env?.VITE_EMPLOYEE_CODE_PREFIX
+      || "LV")
+  );
   const [profileImageUrl, setProfileImageUrl] = useState("");
   const [originalLifecycleStatus, setOriginalLifecycleStatus] = useState("confirmed");
   const [loading, setLoading] = useState(false);
@@ -137,9 +142,6 @@ const AddEmployee = () => {
     effectiveFrom: new Date().toISOString().slice(0, 10)
   });
   const canManagePayroll = hasAnyPermission(["PAYROLL_CONFIG_MANAGE"]);
-  const employeeCodePrefix =
-    (import.meta as any).env?.VITE_EMPLOYEE_CODE_PREFIX || "LV";
-
   const selectedPayGroup = useMemo(
     () => payGroups.find((row) => row.id === salaryForm.payGroupId) || null,
     [payGroups, salaryForm.payGroupId]
@@ -209,6 +211,9 @@ const AddEmployee = () => {
     fetchManagers();
     fetchShifts();
     fetchOrgSettings();
+    if (!isEdit) {
+      fetchNextEmployeeCode();
+    }
     if (isEdit) {
       fetchEmployee();
       fetchPayrollData();
@@ -288,6 +293,18 @@ const AddEmployee = () => {
     }
   };
 
+  const fetchNextEmployeeCode = async () => {
+    const res = await getApiWithToken("/employees/next-code", null, {
+      requiredPermissions: ["EMP_CREATE"]
+    });
+    if (res?.success && res?.data?.employeeCode) {
+      setForm((prev) => {
+        if (prev.employeeCode?.trim()) return prev;
+        return { ...prev, employeeCode: String(res.data.employeeCode).toUpperCase() };
+      });
+    }
+  };
+
   const fetchOrgSettings = async () => {
     const res = await getApiWithToken("/org-settings");
     if (res?.success && res?.data) {
@@ -297,6 +314,10 @@ const AddEmployee = () => {
       setOrgNoticeDays(
         typeof res.data.noticePeriodDays === "number" ? res.data.noticePeriodDays : 30
       );
+      const settingsPrefix = String(res.data.employeeIdPrefix || "").trim().toUpperCase();
+      if (settingsPrefix) {
+        setOrgEmployeeCodePrefix(settingsPrefix);
+      }
     }
   };
 
@@ -491,6 +512,7 @@ const AddEmployee = () => {
       roleIds: form.roleIds,
       firstName: form.firstName,
       lastName: form.lastName,
+      employeeCode: form.employeeCode?.trim() ? form.employeeCode.trim().toUpperCase() : undefined,
       departmentId: form.departmentId,
       designationId: form.designationId,
       managerId: form.managerId || undefined,
@@ -529,6 +551,9 @@ const AddEmployee = () => {
 
     if (res?.success) {
       toast.success(isEdit ? "Employee updated" : "Employee created & onboarding email sent");
+      if (isEdit && res?.data?._id) {
+        sessionStorage.setItem("employees:last-updated", JSON.stringify(res.data));
+      }
       navigate("/employees");
     } else {
       toast.error(res?.message || "Failed to save employee");
@@ -916,11 +941,20 @@ const AddEmployee = () => {
         </div>
 
         <div>
-          <Label>Employee Code (Auto)</Label>
+          <Label>
+            Employee Code
+          </Label>
           <Input
-            value={isEdit ? form.employeeCode : `${employeeCodePrefix}-AUTO`}
-            disabled
+            validationType="code"
+            value={form.employeeCode}
+            onChange={(e) =>
+              setForm({ ...form, employeeCode: e.target.value.toUpperCase() })
+            }
+            placeholder={!isEdit ? `${orgEmployeeCodePrefix}-0001 (optional)` : ""}
           />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Must be unique within this organization. Leave empty to auto-generate.
+          </p>
         </div>
 
         <div>

@@ -8,6 +8,7 @@ import RequireAuth from "./components/RequireAuth";
 import RoleBasedHome from "./components/RoleBasedHome";
 import RequireProfile from "./components/RequireProfile";
 import { MainLayout } from "@/components/layout/MainLayout";
+import { RouteSkeleton } from "@/components/ui/loaders";
 
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const SuperAdminDashboard = React.lazy(() => import("./pages/SuperAdminDashboard"));
@@ -57,7 +58,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}>
+        <React.Suspense fallback={<RouteSkeleton />}>
         <Routes>
           <Route path="/" element={<RoleBasedHome />} />
           <Route path="/login" element={<Login />} />

@@ -41,6 +41,17 @@ exports.listByOrganization = async (req, res) => {
   );
 };
 
+exports.getNextEmployeeCode = async (req, res) => {
+  const data = await service.getNextEmployeeCode(req);
+
+  res.json(
+    buildSuccessResponse({
+      message: "Next employee code fetched successfully",
+      data
+    })
+  );
+};
+
 exports.getEmployeeleaves = async (req, res) => {
   const data = await getEmployeeleaves(req);
   return res.status(200).json(buildSuccessResponse({ data }));

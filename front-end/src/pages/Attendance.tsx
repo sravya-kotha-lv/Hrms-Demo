@@ -25,6 +25,7 @@ import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/a
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type DayCell = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
@@ -123,6 +124,7 @@ const Attendance = () => {
   const [rows, setRows] = useState<EmployeeRow[]>([]);
   const [daysInMonth, setDaysInMonth] = useState(31);
   const [loading, setLoading] = useState(false);
+  const [visibleRowCount, setVisibleRowCount] = useState(0);
 
   const [open, setOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
@@ -182,6 +184,42 @@ const Attendance = () => {
       return name.includes(q) || code.includes(q);
     });
   }, [rows, search]);
+
+  useEffect(() => {
+    if (loading) {
+      setVisibleRowCount(0);
+      return;
+    }
+    if (filteredRows.length === 0) {
+      setVisibleRowCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    let frameId: number | null = null;
+    let count = 0;
+
+    const reveal = () => {
+      if (cancelled) return;
+      count += 1;
+      setVisibleRowCount(count);
+      if (count < filteredRows.length) {
+        frameId = window.requestAnimationFrame(reveal);
+      }
+    };
+
+    frameId = window.requestAnimationFrame(reveal);
+
+    return () => {
+      cancelled = true;
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+    };
+  }, [loading, filteredRows]);
+
+  const visibleRows = useMemo(
+    () => filteredRows.slice(0, Math.min(visibleRowCount, filteredRows.length)),
+    [filteredRows, visibleRowCount]
+  );
 
   const isFutureDay = (day: number) => {
     const date = new Date(`${month}-${String(day).padStart(2, "0")}T00:00:00`);
@@ -585,8 +623,15 @@ const Attendance = () => {
               </div>
 
               {loading && (
-                <div className="bg-card rounded-xl border p-8 text-sm text-muted-foreground">
-                  Loading attendance...
+                <div className="bg-card rounded-xl border p-5 space-y-3">
+                  <Skeleton className="h-8 w-48 rounded-md" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <Skeleton className="h-20 w-full rounded-xl" />
+                    <Skeleton className="h-20 w-full rounded-xl" />
+                    <Skeleton className="h-20 w-full rounded-xl" />
+                    <Skeleton className="h-20 w-full rounded-xl" />
+                  </div>
+                  <Skeleton className="h-72 w-full rounded-xl" />
                 </div>
               )}
 
@@ -809,8 +854,12 @@ const Attendance = () => {
                   <tbody>
                     {loading && (
                       <tr>
-                        <td colSpan={daysInMonth + summaryColumnCount + (canEdit ? 1 : 0)} className="p-4 text-muted-foreground">
-                          Loading attendance...
+                        <td colSpan={daysInMonth + summaryColumnCount + (canEdit ? 1 : 0)} className="p-3">
+                          <div className="space-y-2">
+                            {Array.from({ length: 6 }).map((_, idx) => (
+                              <Skeleton key={`attendance-row-skeleton-${idx}`} className="h-10 w-full rounded-md" />
+                            ))}
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -821,7 +870,7 @@ const Attendance = () => {
                         </td>
                       </tr>
                     )}
-                    {!loading && filteredRows.map((row) => (
+                    {!loading && visibleRows.map((row) => (
                       <tr key={row.employeeId} className="border-b border-slate-100 hover:bg-slate-50/55 transition-colors">
                         {canEdit && (
                           <td className="sticky left-0 bg-white p-2 z-20 text-center">

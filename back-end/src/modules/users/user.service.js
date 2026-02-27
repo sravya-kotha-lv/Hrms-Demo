@@ -7,6 +7,7 @@ const Role = require("../roles/role.model");
 const Permission = require("../permissions/permission.model");
 const sendMail = require("../../utils/sendMail");
 const Employee = require("../employees/employee.model");
+const OrgSettings = require("../orgSettings/orgSettings.model");
 const leaveBalanceService = require("../leaveBalances/leaveBalance.service");
 
 exports.loginUser = async ({ email, password }) => {
@@ -214,7 +215,9 @@ exports.createOrgUser = async ({
 };
 
 async function generateEmployeeCode(organizationId) {
-  const prefix = (process.env.EMPLOYEE_CODE_PREFIX || "LV").trim() || "LV";
+  const orgSettings = await OrgSettings.findOne({ organizationId }, "employeeIdPrefix").lean();
+  const envPrefix = (process.env.EMPLOYEE_ID_PREFIX || process.env.EMPLOYEE_CODE_PREFIX || "LV").trim();
+  const prefix = ((orgSettings?.employeeIdPrefix || envPrefix || "LV").trim() || "LV").toUpperCase();
   let sequence = await Employee.countDocuments(
     { organizationId, isDeleted: false }
   );

@@ -96,6 +96,10 @@ const orgSettingsSchema = new mongoose.Schema(
       type: Number,
       default: 30,
       min: 0
+    },
+    employeeIdPrefix: {
+      type: String,
+      default: ""
     }
   },
   { timestamps: true }

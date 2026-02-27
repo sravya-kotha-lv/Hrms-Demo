@@ -22,7 +22,8 @@ const DEFAULTS = {
   attendanceGeoRadiusMeters: 200,
   attendanceDevBypassEnabled: false,
   probationPeriodDays: 90,
-  noticePeriodDays: 30
+  noticePeriodDays: 30,
+  employeeIdPrefix: ""
 };
 
 exports.get = async (req) => {
@@ -68,7 +69,8 @@ exports.upsert = async (req) => {
     attendanceGeoRadiusMeters,
     attendanceDevBypassEnabled,
     probationPeriodDays,
-    noticePeriodDays
+    noticePeriodDays,
+    employeeIdPrefix
   } = req.body;
 
   if (!isValidTimeZone(timezone)) {
@@ -128,7 +130,8 @@ exports.upsert = async (req) => {
       attendanceGeoRadiusMeters,
       attendanceDevBypassEnabled,
       probationPeriodDays,
-      noticePeriodDays
+      noticePeriodDays,
+      employeeIdPrefix: (employeeIdPrefix || "").trim().toUpperCase()
     },
     { upsert: true, new: true }
   );

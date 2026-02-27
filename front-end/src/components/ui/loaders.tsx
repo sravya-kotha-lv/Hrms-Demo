@@ -20,9 +20,44 @@ export const PageLoader = ({
 }: {
   label?: string;
 }) => (
-  <div className="min-h-[50vh] flex items-center justify-center">
-    <div className="rounded-xl border bg-card px-5 py-4 shadow-sm">
-      <InlineLoader label={label} />
+  <div className="min-h-[50vh] space-y-4">
+    <div className="rounded-xl border bg-card p-5 space-y-3">
+      <Skeleton className="h-5 w-48" />
+      <Skeleton className="h-4 w-72" />
+      <Skeleton className="h-10 w-40" />
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Skeleton className="h-28 w-full rounded-xl" />
+      <Skeleton className="h-28 w-full rounded-xl" />
+      <Skeleton className="h-28 w-full rounded-xl" />
+    </div>
+    <div className="rounded-xl border bg-card p-5 space-y-2">
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-10 w-full" />
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  </div>
+);
+
+export const RouteSkeleton = () => (
+  <div className="p-6 space-y-5">
+    <div className="flex items-center justify-between">
+      <Skeleton className="h-8 w-44" />
+      <Skeleton className="h-9 w-52 rounded-full" />
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <Skeleton className="h-28 w-full rounded-xl" />
+      <Skeleton className="h-28 w-full rounded-xl" />
+      <Skeleton className="h-28 w-full rounded-xl" />
+      <Skeleton className="h-28 w-full rounded-xl" />
+    </div>
+    <div className="rounded-xl border bg-card p-4 space-y-3">
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-10 w-full" />
     </div>
   </div>
 );
