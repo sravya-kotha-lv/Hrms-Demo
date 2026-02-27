@@ -6,7 +6,7 @@ export const setOrgTimeZone = (timeZone: string) => {
 };
 
 export const getOrgTimeZone = () => {
-  return localStorage.getItem(ORG_TIMEZONE_KEY) || "UTC";
+  return localStorage.getItem(ORG_TIMEZONE_KEY) || "Asia/Kolkata";
 };
 
 const toDate = (value: string | number | Date) =>

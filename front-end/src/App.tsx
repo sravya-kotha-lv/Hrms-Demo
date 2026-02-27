@@ -7,7 +7,7 @@ import React from "react";
 import RequireAuth from "./components/RequireAuth";
 import RoleBasedHome from "./components/RoleBasedHome";
 import RequireProfile from "./components/RequireProfile";
-import { MainLayout } from "./components/layout/MainLayout";
+import { MainLayout } from "@/components/layout/MainLayout";
 
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const SuperAdminDashboard = React.lazy(() => import("./pages/SuperAdminDashboard"));

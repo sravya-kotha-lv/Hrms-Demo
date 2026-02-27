@@ -9,7 +9,7 @@ const DEFAULTS = {
   attendanceLockEnabled: false,
   attendanceLockAfterDays: 7,
   attendanceLockMode: "days_window",
-  timezone: "UTC",
+  timezone: "Asia/Kolkata",
   payrollCutoffDay: 25,
   minWorkHoursPerDay: 8,
   minHalfDayHours: 4,
@@ -27,7 +27,7 @@ const DEFAULTS = {
 
 exports.get = async (req) => {
   const org = await Organization.findById(req.user.organizationId).select("timezone");
-  const organizationTimeZone = isValidTimeZone(org?.timezone) ? org.timezone : "UTC";
+  const organizationTimeZone = isValidTimeZone(org?.timezone) ? org.timezone : "Asia/Kolkata";
 
   let settings = await OrgSettings.findOne({
     organizationId: req.user.organizationId

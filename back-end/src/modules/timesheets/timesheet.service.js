@@ -139,7 +139,7 @@ const getOrganizationTimeZone = async (organizationId) => {
   const organization = await Organization.findById(organizationId).select("timezone");
   if (isValidTimeZone(organization?.timezone)) return organization.timezone;
 
-  return "UTC";
+  return "Asia/Kolkata";
 };
 
 const resolveShiftSchedule = async (organizationId, employeeId, dateValue, timeZone = "UTC") => {
@@ -716,18 +716,66 @@ exports.checkIn = async (req) => {
     await openAttendance.save();
   }
 
-  const existing = await Attendance.findOne({
+  const attendanceFilter = {
     organizationId: req.user.organizationId,
     employeeId: employee._id,
     date: attendanceDate
-  });
+  };
+  const insertPayload = {
+    organizationId: req.user.organizationId,
+    employeeId: employee._id,
+    date: attendanceDate,
+    checkInAt: now,
+    checkInIp: checkInIp || null,
+    checkInLatitude: Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null,
+    checkInLongitude: Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null,
+    checkInSelfieProvided,
+    checkInSelfieImage,
+    status: "checked_in",
+    shiftId: shift._id || null,
+    shiftName: shift.name,
+    shiftCode: shift.code,
+    shiftStartTime: shift.startTime,
+    shiftEndTime: shift.endTime,
+    scheduledStartAt,
+    scheduledEndAt,
+    lateByMinutes,
+    earlyLoginByMinutes,
+    earlyCheckoutByMinutes: 0,
+    overtimeMinutes: 0,
+    missedCheckout: false,
+    missedCheckoutMarkedAt: null,
+    missedCheckoutResolvedRequestId: null
+  };
+  const upsertResult = await Attendance.updateOne(
+    attendanceFilter,
+    { $setOnInsert: insertPayload },
+    { upsert: true }
+  );
 
-  if (existing && existing.checkInAt && !existing.checkOutAt) {
+  if (Number(upsertResult?.upsertedCount || 0) > 0) {
+    const createdAttendance = await Attendance.findOne(attendanceFilter);
+    await audit({
+      req,
+      module: "timesheets",
+      action: "CHECK_IN",
+      entityId: createdAttendance?._id || null,
+      after: createdAttendance?.toObject?.() || null
+    });
+    return createdAttendance;
+  }
+
+  const existing = await Attendance.findOne(attendanceFilter);
+  if (!existing) {
+    throwHttpError(500, "Failed to create attendance");
+  }
+
+  if (existing?.checkInAt && !existing.checkOutAt) {
     // Already in an open session for the day. Keep the first check-in as-is.
     return existing;
   }
 
-  if (existing && existing.checkInAt && existing.checkOutAt) {
+  if (existing.checkInAt && existing.checkOutAt) {
     // Re-open attendance session while preserving first check-in.
     // Final hours are always computed as (first check-in -> latest check-out).
     existing.checkOutAt = null;
@@ -754,7 +802,7 @@ exports.checkIn = async (req) => {
     return existing;
   }
 
-  if (existing && !existing.checkInAt && !existing.checkOutAt) {
+  if (!existing.checkInAt && !existing.checkOutAt) {
     existing.checkInAt = now;
     existing.checkInIp = checkInIp || null;
     existing.checkInLatitude = Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null;
@@ -783,42 +831,7 @@ exports.checkIn = async (req) => {
     return existing;
   }
 
-  const attendance = await Attendance.create({
-    organizationId: req.user.organizationId,
-    employeeId: employee._id,
-    date: attendanceDate,
-    checkInAt: now,
-    checkInIp: checkInIp || null,
-    checkInLatitude: Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null,
-    checkInLongitude: Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null,
-    checkInSelfieProvided,
-    checkInSelfieImage,
-    status: "checked_in",
-    shiftId: shift._id || null,
-    shiftName: shift.name,
-    shiftCode: shift.code,
-    shiftStartTime: shift.startTime,
-    shiftEndTime: shift.endTime,
-    scheduledStartAt,
-    scheduledEndAt,
-    lateByMinutes,
-    earlyLoginByMinutes,
-    earlyCheckoutByMinutes: 0,
-    overtimeMinutes: 0,
-    missedCheckout: false,
-    missedCheckoutMarkedAt: null,
-    missedCheckoutResolvedRequestId: null
-  });
-
-  await audit({
-    req,
-    module: "timesheets",
-    action: "CHECK_IN",
-    entityId: attendance._id,
-    after: attendance.toObject()
-  });
-
-  return attendance;
+  return existing;
 };
 
 exports.getCheckInPolicy = async (req) => {
