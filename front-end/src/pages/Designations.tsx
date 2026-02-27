@@ -273,6 +273,7 @@ const Designations = () => {
               <div className="space-y-4">
                 <Input
                   placeholder="Designation Name"
+                  validationType="name"
                   value={form.name}
                   onChange={(e) =>
                     setForm({ ...form, name: e.target.value })

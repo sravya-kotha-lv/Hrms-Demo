@@ -1,14 +1,15 @@
 const Joi = require("joi");
+const { buildNameSchema } = require("../../utils/joiValidators");
 
 exports.createDesignationSchema = Joi.object({
-  name: Joi.string().min(2).required(),
+  name: buildNameSchema({ required: true }),
   level: Joi.number().optional(),
   departmentId: Joi.string().required(),
   status: Joi.string().valid("active", "inactive").default("active")
 });
 
 exports.updateDesignationSchema = Joi.object({
-  name: Joi.string().min(2).optional(),
+  name: buildNameSchema(),
   level: Joi.number().optional(),
   departmentId: Joi.string().required(),
   status: Joi.string().valid("active", "inactive").optional()

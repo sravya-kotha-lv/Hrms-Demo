@@ -261,6 +261,7 @@ const ProfilePage = () => {
             </div>
             <Input
               placeholder="Phone"
+              validationType="phone"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
             />

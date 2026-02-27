@@ -172,6 +172,7 @@ const CompleteProfile = () => {
           />
           <Input
             placeholder="Phone"
+            validationType="phone"
             value={form.phone}
             onChange={(e) => setForm({ ...form, phone: e.target.value })}
           />
@@ -298,6 +299,7 @@ const CompleteProfile = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Input
               placeholder="Name"
+              validationType="name"
               value={form.emergencyContacts[0].name}
               onChange={(e) =>
                 setForm({
@@ -328,6 +330,7 @@ const CompleteProfile = () => {
             </Select>
             <Input
               placeholder="Mobile Number"
+              validationType="phone"
               value={form.emergencyContacts[0].phone}
               onChange={(e) =>
                 setForm({

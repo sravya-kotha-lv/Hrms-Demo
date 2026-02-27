@@ -61,6 +61,7 @@ const AddOrganization = () => {
           <Input
             name="name"
             placeholder="Organization Name"
+            validationType="name"
             value={formData.name}
             onChange={handleChange}
             required
@@ -68,6 +69,7 @@ const AddOrganization = () => {
           <Input
             name="email"
             placeholder="Email"
+            validationType="email"
             value={formData.email}
             onChange={handleChange}
             required
@@ -75,6 +77,7 @@ const AddOrganization = () => {
           <Input
             name="phone"
             placeholder="Phone"
+            validationType="phone"
             value={formData.phone}
             onChange={handleChange}
           />

@@ -187,6 +187,7 @@ const Shifts = () => {
               </div>
               <Input
                 placeholder="Shift name"
+                validationType="name"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
@@ -203,6 +204,7 @@ const Shifts = () => {
               </div>
               <Input
                 placeholder="Code"
+                validationType="code"
                 value={form.code}
                 onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
                 disabled={isEdit}

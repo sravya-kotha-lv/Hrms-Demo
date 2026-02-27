@@ -1,4 +1,5 @@
 const Joi = require("joi");
+const { buildNameSchema, buildCodeSchema } = require("../../utils/joiValidators");
 
 const objectIdPattern = /^[0-9a-fA-F]{24}$/;
 const uuidPattern =
@@ -32,8 +33,8 @@ exports.payGroupIdParamSchema = Joi.object({
 });
 
 exports.createPayGroupSchema = Joi.object({
-  code: Joi.string().trim().uppercase().min(2).max(50).required(),
-  name: Joi.string().trim().min(2).max(120).required(),
+  code: buildCodeSchema({ max: 50, required: true }),
+  name: buildNameSchema({ required: true }),
   description: Joi.string().trim().max(1000).allow("", null),
   payFrequency: Joi.string().valid("monthly", "semi_monthly", "weekly").required(),
   cutoffDay: Joi.number().integer().min(1).max(31).allow(null),
@@ -44,8 +45,8 @@ exports.createPayGroupSchema = Joi.object({
 });
 
 exports.updatePayGroupSchema = Joi.object({
-  code: Joi.string().trim().uppercase().min(2).max(50),
-  name: Joi.string().trim().min(2).max(120),
+  code: buildCodeSchema({ max: 50 }),
+  name: buildNameSchema(),
   description: Joi.string().trim().max(1000).allow("", null),
   payFrequency: Joi.string().valid("monthly", "semi_monthly", "weekly"),
   cutoffDay: Joi.number().integer().min(1).max(31).allow(null),
@@ -67,8 +68,8 @@ exports.createSalaryComponentSchema = Joi.object({
   scope: Joi.string()
     .valid("earning", "deduction", "employer_contribution")
     .required(),
-  code: Joi.string().trim().uppercase().min(2).max(60).required(),
-  name: Joi.string().trim().min(2).max(120).required(),
+  code: buildCodeSchema({ max: 60, required: true }),
+  name: buildNameSchema({ required: true }),
   displayName: Joi.string().trim().max(120).allow("", null),
   description: Joi.string().max(1000).allow("", null),
   calculationMode: Joi.string().valid("fixed", "percentage", "formula", "slab").required(),
@@ -89,7 +90,7 @@ exports.createSalaryComponentSchema = Joi.object({
 });
 
 exports.updateSalaryComponentSchema = Joi.object({
-  name: Joi.string().trim().min(2).max(120),
+  name: buildNameSchema(),
   displayName: Joi.string().trim().max(120).allow("", null),
   description: Joi.string().max(1000).allow("", null),
   calculationMode: Joi.string().valid("fixed", "percentage", "formula", "slab"),
@@ -113,7 +114,7 @@ exports.updateSalaryComponentSchema = Joi.object({
 exports.listSalaryComponentsQuerySchema = Joi.object({
   scope: Joi.string().valid("earning", "deduction", "employer_contribution").required(),
   includeInactive: Joi.boolean().default(false),
-  code: Joi.string().trim().uppercase().max(60).optional()
+  code: buildCodeSchema({ max: 60 })
 });
 
 exports.profileIdParamSchema = Joi.object({
@@ -200,8 +201,8 @@ exports.upsertStatutoryDetailSchema = Joi.object({
 });
 
 exports.createSalaryStructureSchema = Joi.object({
-  structureCode: Joi.string().trim().uppercase().min(2).max(60).required(),
-  structureName: Joi.string().trim().min(2).max(120).required(),
+  structureCode: buildCodeSchema({ max: 60, required: true }),
+  structureName: buildNameSchema({ required: true }),
   annualCtc: Joi.number().min(0).required(),
   monthlyGross: Joi.number().min(0).allow(null),
   basicPay: Joi.number().min(0).allow(null),
@@ -214,7 +215,7 @@ exports.createSalaryStructureSchema = Joi.object({
 });
 
 exports.updateSalaryStructureSchema = Joi.object({
-  structureName: Joi.string().trim().min(2).max(120),
+  structureName: buildNameSchema(),
   annualCtc: Joi.number().min(0),
   monthlyGross: Joi.number().min(0).allow(null),
   basicPay: Joi.number().min(0).allow(null),

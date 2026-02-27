@@ -238,6 +238,7 @@ const Departments = () => {
           <div className="space-y-4">
             <Input
               placeholder="Department Name"
+              validationType="name"
               value={form.name}
               onChange={(e) =>
                 setForm({ ...form, name: e.target.value })
@@ -247,6 +248,7 @@ const Departments = () => {
             {!isEdit && (
               <Input
                 placeholder="Department Code"
+                validationType="code"
                 value={form.code}
                 onChange={(e) =>
                   setForm({ ...form, code: e.target.value })

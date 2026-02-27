@@ -128,6 +128,7 @@ const AddDesignation = () => {
 
           <Input
             placeholder="Designation Name"
+            validationType="name"
             value={formData.name}
             onChange={(e) =>
               setFormData({ ...formData, name: e.target.value })

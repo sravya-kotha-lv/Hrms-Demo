@@ -119,6 +119,16 @@ exports.sendRejectionEmail = async (req, res) => {
   );
 };
 
+exports.convertCandidateToEmployee = async (req, res) => {
+  const data = await hiringService.convertCandidateToEmployee(req);
+  return res.status(200).json(
+    buildSuccessResponse({
+      message: "Candidate converted to employee successfully",
+      data
+    })
+  );
+};
+
 exports.scheduleInterview = async (req, res) => {
   const data = await hiringService.scheduleInterview(req);
   return res.status(200).json(

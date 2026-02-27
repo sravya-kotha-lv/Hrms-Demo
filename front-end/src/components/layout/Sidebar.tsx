@@ -148,15 +148,15 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
     permissions: ["ORG_VIEW", "ROLE_VIEW", "PERMISSION_VIEW", "DEPT_VIEW", "DESIG_VIEW", "LEAVE_TYPE_VIEW"],
     children: [
       { icon: <Shield size={18} />, label: "Roles", to: "/roles", permissions: ["ROLE_VIEW"] },
+      { icon: <Shield size={18} />, label: "Permissions", to: "/permissions", permissions: ["PERMISSION_VIEW"] },
       { icon: <Building2 size={18} />, label: "Departments", to: "/departments", permissions: ["DEPT_VIEW"] },
       { icon: <Briefcase size={18} />, label: "Designations", to: "/designations", permissions: ["DESIG_VIEW"] },
+      { icon: <CalendarDays size={18} />, label: "Shifts", to: "/shifts", permissions: ["SHIFT_VIEW"] },
+      { icon: <CalendarOff size={18} />, label: "Week Offs", to: "/week-offs", permissions: ["WEEK_OFF_VIEW"] },
       { icon: <FileText size={18} />, label: "Leave Types", to: "/leave-types", permissions: ["LEAVE_TYPE_VIEW"] },
       { icon: <ClipboardCheck size={18} />, label: "Approval Flows", to: "/approval-flows", permissions: ["APPROVAL_FLOW_VIEW"] },
-      { icon: <CalendarOff size={18} />, label: "Week Offs", to: "/week-offs", permissions: ["WEEK_OFF_VIEW"] },
-      { icon: <CalendarDays size={18} />, label: "Shifts", to: "/shifts", permissions: ["SHIFT_VIEW"] },
       { icon: <DollarSign size={18} />, label: "Expenses", to: "/expenses", permissions: ["EXPENSE_VIEW", "EXPENSE_MANAGE"] },
       { icon: <Settings size={18} />, label: "Settings", to: "/organization/settings", permissions: ["ORG_SETTINGS_VIEW"] },
-      { icon: <Shield size={18} />, label: "Permissions", to: "/permissions", permissions: ["PERMISSION_VIEW"] }
     ]
   },
   {

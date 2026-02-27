@@ -1,4 +1,5 @@
 const Joi = require("joi");
+const { buildNameSchema, buildEmailSchema, buildPhoneSchema } = require("../../utils/joiValidators");
 
 const objectId = Joi.string().hex().length(24);
 const rating = Joi.number().integer().min(1).max(5).allow(null);
@@ -32,10 +33,10 @@ exports.listJobsQuerySchema = Joi.object({
 
 exports.createCandidateSchema = Joi.object({
   jobId: objectId.required(),
-  firstName: Joi.string().trim().min(1).max(120).required(),
-  lastName: Joi.string().trim().max(120).allow("").optional(),
-  email: Joi.string().email().required(),
-  phone: Joi.string().trim().max(30).allow("").optional(),
+  firstName: buildNameSchema({ min: 1, max: 120, required: true }),
+  lastName: buildNameSchema({ max: 120, allowEmpty: true }),
+  email: buildEmailSchema({ required: true }),
+  phone: buildPhoneSchema({ allowEmpty: true }),
   source: Joi.string().trim().max(80).allow("").optional(),
   resumeUrl: Joi.string().uri().allow("").optional(),
   yearsExperience: Joi.number().min(0).optional(),
@@ -64,10 +65,10 @@ exports.createCandidateSchema = Joi.object({
 
 exports.updateCandidateSchema = Joi.object({
   jobId: objectId.optional(),
-  firstName: Joi.string().trim().min(1).max(120).optional(),
-  lastName: Joi.string().trim().max(120).allow("").optional(),
-  email: Joi.string().email().optional(),
-  phone: Joi.string().trim().max(30).allow("").optional(),
+  firstName: buildNameSchema({ min: 1, max: 120 }),
+  lastName: buildNameSchema({ max: 120, allowEmpty: true }),
+  email: buildEmailSchema(),
+  phone: buildPhoneSchema({ allowEmpty: true }),
   source: Joi.string().trim().max(80).allow("").optional(),
   resumeUrl: Joi.string().uri().allow("").optional(),
   yearsExperience: Joi.number().min(0).optional(),
@@ -105,6 +106,17 @@ exports.releaseOfferLetterSchema = Joi.object({
 
 exports.sendRejectionEmailSchema = Joi.object({
   note: Joi.string().trim().max(500).allow("").optional()
+});
+
+exports.convertCandidateToEmployeeSchema = Joi.object({
+  password: Joi.string().min(6).required(),
+  roleIds: Joi.array().items(objectId).min(1).required(),
+  departmentId: objectId.required(),
+  designationId: objectId.required(),
+  employmentType: Joi.string().valid("full_time", "part_time", "contract").required(),
+  dateOfJoining: Joi.date().required(),
+  managerId: objectId.allow(null, "").optional(),
+  shiftId: objectId.allow(null, "").optional()
 });
 
 exports.scheduleInterviewSchema = Joi.object({

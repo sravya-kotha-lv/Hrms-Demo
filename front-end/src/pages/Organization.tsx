@@ -286,6 +286,7 @@ const OrganizationPage = () => {
           <div className="space-y-4">
             <Input
               placeholder="Organization Name"
+              validationType="name"
               value={form.name}
               onChange={(e) =>
                 setForm({ ...form, name: e.target.value })
@@ -293,6 +294,7 @@ const OrganizationPage = () => {
             />
             <Input
               placeholder="Code"
+              validationType="code"
               value={form.code}
               disabled={isEdit} // 🔒 locked in edit mode
               className={isEdit ? "cursor-not-allowed opacity-70" : ""}

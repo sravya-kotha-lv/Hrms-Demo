@@ -1,8 +1,9 @@
 const Joi = require("joi");
+const { buildNameSchema, buildCodeSchema } = require("../../utils/joiValidators");
 
 exports.createOrganizationSchema = Joi.object({
-  name: Joi.string().required(),
-  code: Joi.string().required(),
+  name: buildNameSchema({ required: true }),
+  code: buildCodeSchema({ required: true }),
   timezone: Joi.string().required(),
   currency: Joi.string().required(),
   adminUserId: Joi.string().required(),
@@ -10,7 +11,8 @@ exports.createOrganizationSchema = Joi.object({
 });
 
 exports.updateOrganizationSchema = Joi.object({
-  name: Joi.string().optional(),
+  name: buildNameSchema(),
+  code: buildCodeSchema(),
   timezone: Joi.string().optional(),
   currency: Joi.string().optional(),
   status: Joi.string().valid("active", "inactive").optional()

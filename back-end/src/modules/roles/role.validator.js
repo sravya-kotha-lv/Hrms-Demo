@@ -1,5 +1,6 @@
 const Joi = require("joi");
 const mongoose = require("mongoose");
+const { buildNameSchema, buildSlugSchema } = require("../../utils/joiValidators");
 
 /* -------------------------------------------------------------------------- */
 /*                               COMMON HELPERS                                */
@@ -17,21 +18,8 @@ const objectId = Joi.string().custom((value, helpers) => {
 /* -------------------------------------------------------------------------- */
 
 exports.createRoleSchema = Joi.object({
-  name: Joi.string()
-    .trim()
-    .min(2)
-    .max(50)
-    .required(),
-
-  slug: Joi.string()
-    .trim()
-    .lowercase()
-    .regex(/^[a-z_]+$/)
-    .required()
-    .messages({
-      "string.pattern.base":
-        "Slug can contain only lowercase letters and underscores"
-    }),
+  name: buildNameSchema({ max: 50, required: true }),
+  slug: buildSlugSchema({ required: true }),
 
   permissionIds: Joi.array()
     .items(objectId)
@@ -46,11 +34,7 @@ exports.createRoleSchema = Joi.object({
 /* -------------------------------------------------------------------------- */
 
 exports.updateRoleSchema = Joi.object({
-  name: Joi.string()
-    .trim()
-    .min(2)
-    .max(50)
-    .optional(),
+  name: buildNameSchema({ max: 50 }),
 
   permissionIds: Joi.array()
     .items(objectId)

@@ -231,11 +231,13 @@ const LeaveTypes = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
             <Input
               placeholder="Name"
+              validationType="name"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
             <Input
               placeholder="Code"
+              validationType="code"
               value={form.code}
               onChange={(e) =>
                 setForm({ ...form, code: e.target.value.toUpperCase() })

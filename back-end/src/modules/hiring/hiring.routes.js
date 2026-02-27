@@ -14,6 +14,7 @@ const {
   updateCandidateStageSchema,
   releaseOfferLetterSchema,
   sendRejectionEmailSchema,
+  convertCandidateToEmployeeSchema,
   scheduleInterviewSchema,
   submitInterviewFeedbackSchema,
   listCandidatesQuerySchema
@@ -110,6 +111,14 @@ router.post(
   authorize("HIRING_MANAGE"),
   validate(sendRejectionEmailSchema),
   asyncHandler(controller.sendRejectionEmail)
+);
+
+router.post(
+  "/candidates/:id/convert-to-employee",
+  auth,
+  authorize("HIRING_MANAGE"),
+  validate(convertCandidateToEmployeeSchema),
+  asyncHandler(controller.convertCandidateToEmployee)
 );
 
 router.post(

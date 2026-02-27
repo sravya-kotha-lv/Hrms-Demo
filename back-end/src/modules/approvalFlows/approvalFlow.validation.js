@@ -1,5 +1,6 @@
 const Joi = require("joi");
 const mongoose = require("mongoose");
+const { buildNameSchema } = require("../../utils/joiValidators");
 
 const objectId = Joi.string().custom((value, helpers) => {
   if (!mongoose.Types.ObjectId.isValid(value)) return helpers.error("any.invalid");
@@ -23,7 +24,7 @@ const stepSchema = Joi.object({
 
 exports.createApprovalFlowSchema = Joi.object({
   moduleKey: Joi.string().valid("leave", "attendance_request").required(),
-  name: Joi.string().trim().min(2).max(120).required(),
+  name: buildNameSchema({ required: true }),
   isActive: Joi.boolean().default(true),
   minDays: Joi.number().min(0).allow(null),
   maxDays: Joi.number().min(0).allow(null),
@@ -32,10 +33,9 @@ exports.createApprovalFlowSchema = Joi.object({
 
 exports.updateApprovalFlowSchema = Joi.object({
   moduleKey: Joi.string().valid("leave", "attendance_request").optional(),
-  name: Joi.string().trim().min(2).max(120).optional(),
+  name: buildNameSchema(),
   isActive: Joi.boolean().optional(),
   minDays: Joi.number().min(0).allow(null),
   maxDays: Joi.number().min(0).allow(null),
   steps: Joi.array().items(stepSchema).min(1).optional()
 });
-
