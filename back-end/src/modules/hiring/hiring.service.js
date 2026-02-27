@@ -2,6 +2,7 @@ const HiringJob = require("./hiringJob.model");
 const HiringCandidate = require("./hiringCandidate.model");
 const Employee = require("../employees/employee.model");
 const Organization = require("../organizations/organization.model");
+const { createOrgUser } = require("../users/user.service");
 const { audit } = require("../auditLogs/auditLogs.service");
 const sendMail = require("../../utils/sendMail");
 
@@ -543,6 +544,77 @@ exports.sendRejectionEmail = async (req) => {
   });
 
   return row;
+};
+
+exports.convertCandidateToEmployee = async (req) => {
+  const organizationId = req.user.organizationId;
+  const row = await HiringCandidate.findOne({
+    _id: req.params.id,
+    organizationId
+  });
+  if (!row) throw { code: 404, message: "Candidate not found" };
+  if (row.stage !== "hired") {
+    throw { code: 400, message: "Only hired candidates can be converted to employees" };
+  }
+  if (row.convertedToEmployeeId) {
+    throw { code: 409, message: "Candidate is already converted to employee" };
+  }
+
+  const before = row.toObject();
+  const firstName = String(row.firstName || "").trim();
+  const lastName = String(row.lastName || "").trim() || "Candidate";
+  const email = String(row.email || "").toLowerCase().trim();
+  if (!firstName || !email) {
+    throw { code: 400, message: "Candidate first name and email are required for conversion" };
+  }
+
+  const createdUser = await createOrgUser({
+    email,
+    password: req.body.password,
+    roleIds: req.body.roleIds,
+    firstName,
+    lastName,
+    departmentId: req.body.departmentId,
+    designationId: req.body.designationId,
+    employmentType: req.body.employmentType,
+    dateOfJoining: req.body.dateOfJoining,
+    managerId: req.body.managerId || undefined,
+    shiftId: req.body.shiftId || undefined,
+    creator: req.user
+  });
+
+  const employee = await Employee.findOne({
+    organizationId,
+    userId: createdUser.userId
+  }).select("_id");
+
+  row.convertedToEmployeeId = employee?._id || null;
+  row.convertedAt = new Date();
+  row.convertedBy = req.user.userId;
+  row.updatedBy = req.user.userId;
+  row.stageTimeline = row.stageTimeline || [];
+  row.stageTimeline.push({
+    stage: "hired",
+    changedBy: req.user.userId,
+    note: "Converted to employee"
+  });
+  await row.save();
+
+  await audit({
+    req,
+    module: "hiring",
+    action: "CANDIDATE_CONVERT_TO_EMPLOYEE",
+    entityId: row._id,
+    before,
+    after: row.toObject()
+  });
+
+  return {
+    candidateId: row._id,
+    employeeId: row.convertedToEmployeeId,
+    userId: createdUser.userId,
+    email: createdUser.email
+  };
 };
 
 exports.scheduleInterview = async (req) => {

@@ -1,8 +1,9 @@
 const Joi = require("joi");
+const { buildNameSchema, buildCodeSchema } = require("../../utils/joiValidators");
 
 const createLeaveTypeSchema = Joi.object({
-  name: Joi.string().required(),
-  code: Joi.string().max(5).required(),
+  name: buildNameSchema({ required: true }),
+  code: buildCodeSchema({ max: 5, required: true }),
   description: Joi.string().allow(""),
   daysPerYear: Joi.number().min(0).required(),
   isCarryForward: Joi.boolean().default(false),
@@ -11,8 +12,8 @@ const createLeaveTypeSchema = Joi.object({
 });
 
 const updateLeaveTypeSchema = Joi.object({
-  name: Joi.string(),
-  code: Joi.string().max(5),
+  name: buildNameSchema(),
+  code: buildCodeSchema({ max: 5 }),
   description: Joi.string().allow(""),
   daysPerYear: Joi.number().min(0),
   isCarryForward: Joi.boolean(),

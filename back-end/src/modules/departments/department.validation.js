@@ -1,5 +1,6 @@
 const Joi = require("joi");
 const mongoose = require("mongoose");
+const { buildNameSchema, buildCodeSchema } = require("../../utils/joiValidators");
 
 const objectId = Joi.string().custom((v, h) => {
   if (!mongoose.Types.ObjectId.isValid(v)) return h.error("any.invalid");
@@ -7,16 +8,16 @@ const objectId = Joi.string().custom((v, h) => {
 });
 
 exports.createDepartmentSchema = Joi.object({
-  name: Joi.string().min(2).required(),
-  code: Joi.string().min(2).required(),
+  name: buildNameSchema({ required: true }),
+  code: buildCodeSchema({ required: true }),
   managerId: Joi.string().optional().allow(null, ""),
   status: Joi.string().valid("active", "inactive").default("active"),
   // organizationId: objectId.required(),
 });
 
 exports.updateDepartmentSchema = Joi.object({
-  name: Joi.string().min(2).optional(),
-  code: Joi.string().min(2).optional(),
+  name: buildNameSchema(),
+  code: buildCodeSchema(),
   managerId: Joi.string().optional(),
   status: Joi.string().valid("active", "inactive").required()
 });

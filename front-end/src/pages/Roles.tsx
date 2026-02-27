@@ -234,6 +234,7 @@ const Roles = () => {
           <div className="space-y-4">
             <Input
               placeholder="Role Name"
+              validationType="name"
               value={form.name}
               onChange={(e) =>
                 setForm({ ...form, name: e.target.value })
@@ -242,6 +243,7 @@ const Roles = () => {
 
             <Input
               placeholder="Slug (eg: hr, manager)"
+              validationType="slug"
               value={form.slug}
               onChange={(e) =>
                 setForm({ ...form, slug: e.target.value })

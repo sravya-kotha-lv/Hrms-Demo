@@ -187,6 +187,20 @@ const hiringCandidateSchema = new mongoose.Schema(
       ref: "users",
       default: null
     },
+    convertedToEmployeeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees",
+      default: null
+    },
+    convertedAt: {
+      type: Date,
+      default: null
+    },
+    convertedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "users",
+      default: null
+    },
     assignedTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "employees",

@@ -1,5 +1,6 @@
 const Joi = require("joi");
 const mongoose = require("mongoose");
+const { buildNameSchema, buildCodeSchema } = require("../../utils/joiValidators");
 
 const objectId = Joi.string().custom((value, helpers) => {
   if (!mongoose.Types.ObjectId.isValid(value)) {
@@ -11,8 +12,8 @@ const objectId = Joi.string().custom((value, helpers) => {
 const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 exports.createShiftSchema = Joi.object({
-  name: Joi.string().trim().min(2).max(80).required(),
-  code: Joi.string().trim().min(2).max(20).required(),
+  name: buildNameSchema({ max: 80, required: true }),
+  code: buildCodeSchema({ max: 20, required: true }),
   startTime: Joi.string().pattern(timeRegex).required(),
   endTime: Joi.string().pattern(timeRegex).required(),
   graceMinutes: Joi.number().integer().min(0).max(180).default(0),
@@ -20,8 +21,8 @@ exports.createShiftSchema = Joi.object({
 });
 
 exports.updateShiftSchema = Joi.object({
-  name: Joi.string().trim().min(2).max(80).optional(),
-  code: Joi.string().trim().min(2).max(20).optional(),
+  name: buildNameSchema({ max: 80 }),
+  code: buildCodeSchema({ max: 20 }),
   startTime: Joi.string().pattern(timeRegex).optional(),
   endTime: Joi.string().pattern(timeRegex).optional(),
   graceMinutes: Joi.number().integer().min(0).max(180).optional(),
@@ -31,4 +32,3 @@ exports.updateShiftSchema = Joi.object({
 exports.shiftIdParamSchema = Joi.object({
   id: objectId.required()
 });
-

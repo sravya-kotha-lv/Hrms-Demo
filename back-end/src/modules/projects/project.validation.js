@@ -1,4 +1,5 @@
 const Joi = require("joi");
+const { buildNameSchema, buildEmailSchema, buildPhoneSchema } = require("../../utils/joiValidators");
 const objectId = Joi.string().hex().length(24);
 const fileUploadSchema = Joi.object({
   fileName: Joi.string().required(),
@@ -9,10 +10,10 @@ const fileUploadSchema = Joi.object({
 exports.createProjectSchema = Joi.object({
   projectName: Joi.string().trim().min(2).max(120).required(),
   logoUrl: Joi.string().uri().allow("").optional(),
-  clientName: Joi.string().trim().min(2).max(120).required(),
+  clientName: buildNameSchema({ required: true }),
   clientCompany: Joi.string().trim().max(120).allow("").optional(),
-  clientEmail: Joi.string().email().allow("").optional(),
-  clientPhone: Joi.string().trim().max(30).allow("").optional(),
+  clientEmail: buildEmailSchema({ allowEmpty: true }),
+  clientPhone: buildPhoneSchema({ allowEmpty: true }),
   clientAddress: Joi.string().trim().max(500).allow("").optional(),
   actualAmount: Joi.number().min(0).required(),
   discountedAmount: Joi.number().min(0).required(),
@@ -29,10 +30,10 @@ exports.createProjectSchema = Joi.object({
 exports.updateProjectSchema = Joi.object({
   projectName: Joi.string().trim().min(2).max(120).optional(),
   logoUrl: Joi.string().uri().allow("").optional(),
-  clientName: Joi.string().trim().min(2).max(120).optional(),
+  clientName: buildNameSchema(),
   clientCompany: Joi.string().trim().max(120).allow("").optional(),
-  clientEmail: Joi.string().email().allow("").optional(),
-  clientPhone: Joi.string().trim().max(30).allow("").optional(),
+  clientEmail: buildEmailSchema({ allowEmpty: true }),
+  clientPhone: buildPhoneSchema({ allowEmpty: true }),
   clientAddress: Joi.string().trim().max(500).allow("").optional(),
   actualAmount: Joi.number().min(0).optional(),
   discountedAmount: Joi.number().min(0).optional(),

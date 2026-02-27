@@ -104,6 +104,7 @@ const AddDepartment = () => {
 
           <Input
             placeholder="Department Name"
+            validationType="name"
             value={formData.name}
             onChange={(e) =>
               setFormData({ ...formData, name: e.target.value })
@@ -113,6 +114,7 @@ const AddDepartment = () => {
 
           <Input
             placeholder="Department Code (HR, IT)"
+            validationType="code"
             value={formData.code}
             onChange={(e) =>
               setFormData({ ...formData, code: e.target.value })

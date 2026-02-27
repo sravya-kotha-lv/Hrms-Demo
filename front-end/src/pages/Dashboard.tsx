@@ -611,6 +611,7 @@ const Dashboard = () => {
             <div className="space-y-3 mt-4">
               <Input
                 placeholder="Organization Name"
+                validationType="name"
                 value={createOrgForm.name}
                 onChange={(e) =>
                   setCreateOrgForm({ ...createOrgForm, name: e.target.value })
@@ -618,6 +619,7 @@ const Dashboard = () => {
               />
               <Input
                 placeholder="Code"
+                validationType="code"
                 value={createOrgForm.code}
                 onChange={(e) =>
                   setCreateOrgForm({ ...createOrgForm, code: e.target.value })
@@ -751,6 +753,7 @@ const Dashboard = () => {
             <div className="space-y-3 mt-4">
               <Input
                 placeholder="First Name"
+                validationType="name"
                 value={createUserForm.firstName}
                 onChange={(e) =>
                   setCreateUserForm({ ...createUserForm, firstName: e.target.value })
@@ -759,6 +762,7 @@ const Dashboard = () => {
 
               <Input
                 placeholder="Last Name"
+                validationType="name"
                 value={createUserForm.lastName}
                 onChange={(e) =>
                   setCreateUserForm({ ...createUserForm, lastName: e.target.value })
@@ -767,6 +771,7 @@ const Dashboard = () => {
 
               <Input
                 placeholder="Email"
+                validationType="email"
                 value={createUserForm.email}
                 onChange={(e) =>
                   setCreateUserForm({ ...createUserForm, email: e.target.value })

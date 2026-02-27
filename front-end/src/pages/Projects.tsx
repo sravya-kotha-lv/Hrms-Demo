@@ -495,6 +495,7 @@ const Projects = () => {
             />
             <Input
               placeholder="Client Name * (e.g. Rahul Sharma)"
+              validationType="name"
               value={form.clientName}
               onChange={(e) => {
                 setForm({ ...form, clientName: e.target.value });

@@ -1,4 +1,5 @@
 const Joi = require("joi");
+const { buildNameSchema } = require("../../utils/joiValidators");
 const objectId = Joi.string().hex().length(24);
 
 const category = Joi.string().valid(
@@ -75,12 +76,12 @@ exports.uploadReceiptSchema = Joi.object({
 });
 
 exports.createVendorSchema = Joi.object({
-  name: Joi.string().trim().min(2).max(120).required(),
+  name: buildNameSchema({ required: true }),
   isActive: Joi.boolean().optional()
 });
 
 exports.updateVendorSchema = Joi.object({
-  name: Joi.string().trim().min(2).max(120).optional(),
+  name: buildNameSchema(),
   isActive: Joi.boolean().optional()
 });
 

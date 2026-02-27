@@ -1,5 +1,6 @@
 const Joi = require("joi");
 const mongoose = require("mongoose");
+const { buildNameSchema, buildEmailSchema, buildPhoneSchema } = require("../../utils/joiValidators");
 
 /* ----------------------------- helpers ----------------------------- */
 
@@ -34,18 +35,18 @@ const emergencyRelation = Joi.string().valid(
   "friend",
   "other"
 );
-const emergencyName = Joi.string().trim().pattern(/^[A-Za-z ]{2,50}$/);
-const emergencyPhone = Joi.string().trim().pattern(/^\d{10}$/);
+const emergencyName = buildNameSchema({ min: 2, max: 50, required: false });
+const emergencyPhone = buildPhoneSchema({ min: 10, max: 10, required: false });
 
 /* ------------------------------------------------------------------ */
 /* HR CREATES EMPLOYEE (MINIMUM REQUIRED DATA)                         */
 /* ------------------------------------------------------------------ */
 exports.createEmployeeByHrSchema = Joi.object({
-  email: Joi.string().email().required(),
+  email: buildEmailSchema({ required: true }),
   roleIds: Joi.array().items(objectId).min(1).required(),
 
-  firstName: Joi.string().trim().min(2).required(),
-  lastName: Joi.string().trim().min(2).required(),
+  firstName: buildNameSchema({ required: true }),
+  lastName: buildNameSchema({ required: true }),
 
   employeeCode: Joi.string().trim().optional(),
   departmentId: objectId.required(),
@@ -61,14 +62,14 @@ exports.createEmployeeByHrSchema = Joi.object({
 /* EMPLOYEE COMPLETES OWN PROFILE (FIRST LOGIN)                        */
 /* ------------------------------------------------------------------ */
 exports.completeProfileSchema = Joi.object({
-  firstName: Joi.string().trim().min(2).optional(),
-  lastName: Joi.string().trim().min(2).optional(),
+  firstName: buildNameSchema(),
+  lastName: buildNameSchema(),
   departmentId: objectId.optional(),
   designationId: objectId.optional(),
   dateOfJoining: Joi.date().optional(),
   employmentType: employmentType.optional(),
 
-  phone: Joi.string().optional(),
+  phone: buildPhoneSchema({ allowEmpty: true }),
   dob: Joi.date().optional(),
   gender: Joi.string().optional(),
 
@@ -104,12 +105,12 @@ exports.completeProfileSchema = Joi.object({
 /* HR / ADMIN UPDATES EMPLOYEE                                         */
 /* ------------------------------------------------------------------ */
 exports.updateEmployeeSchema = Joi.object({
-  email: Joi.string().email().optional(),
+  email: buildEmailSchema(),
   roleIds: Joi.array().items(objectId).min(1).optional(),
 
-  firstName: Joi.string().trim().min(2).optional(),
-  lastName: Joi.string().trim().min(2).optional(),
-  phone: Joi.string().optional(),
+  firstName: buildNameSchema(),
+  lastName: buildNameSchema(),
+  phone: buildPhoneSchema({ allowEmpty: true }),
 
   employeeCode: Joi.string().trim().optional(),
   departmentId: objectId.optional(),

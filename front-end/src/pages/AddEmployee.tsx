@@ -908,6 +908,7 @@ const AddEmployee = () => {
             Email <span className="text-red-600">*</span>
           </Label>
           <Input
+            validationType="email"
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             placeholder="employee@email.com"
@@ -928,6 +929,7 @@ const AddEmployee = () => {
           </Label>
           <Input
             value={form.firstName}
+            validationType="name"
             onChange={(e) =>
               setForm({ ...form, firstName: e.target.value })
             }
@@ -940,6 +942,7 @@ const AddEmployee = () => {
           </Label>
           <Input
             value={form.lastName}
+            validationType="name"
             onChange={(e) =>
               setForm({ ...form, lastName: e.target.value })
             }

@@ -55,6 +55,8 @@ type HiringCandidate = {
   futureConsideration?: boolean;
   offerLetterReleasedAt?: string | null;
   rejectionEmailSentAt?: string | null;
+  convertedToEmployeeId?: string | null;
+  convertedAt?: string | null;
   interviews?: {
     _id?: string;
     roundName?: string;
@@ -83,6 +85,14 @@ type EmployeeOption = {
   firstName?: string;
   lastName?: string;
   employeeCode?: string;
+};
+
+type MasterOption = {
+  _id: string;
+  name?: string;
+  slug?: string;
+  startTime?: string;
+  endTime?: string;
 };
 
 const stageOrder: CandidateStage[] = ["applied", "screening", "interview", "offer", "hired", "rejected"];
@@ -136,12 +146,17 @@ const Hiring = () => {
   const [jobs, setJobs] = useState<HiringJob[]>([]);
   const [candidates, setCandidates] = useState<HiringCandidate[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [roles, setRoles] = useState<MasterOption[]>([]);
+  const [departments, setDepartments] = useState<MasterOption[]>([]);
+  const [designations, setDesignations] = useState<MasterOption[]>([]);
+  const [shifts, setShifts] = useState<MasterOption[]>([]);
   const [loading, setLoading] = useState(false);
 
   const [jobOpen, setJobOpen] = useState(false);
   const [candidateOpen, setCandidateOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
   const [activeCandidateId, setActiveCandidateId] = useState<string>("");
   const [activeInterviewId, setActiveInterviewId] = useState<string>("");
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -169,21 +184,39 @@ const Hiring = () => {
     recommendation: "hold" as "strong_hire" | "hire" | "hold" | "reject",
     status: "completed" as "scheduled" | "completed" | "cancelled"
   });
+  const [convertForm, setConvertForm] = useState({
+    roleIds: [] as string[],
+    departmentId: "",
+    designationId: "",
+    managerId: "",
+    shiftId: "",
+    employmentType: "full_time",
+    dateOfJoining: new Date().toISOString().slice(0, 10),
+    password: ""
+  });
 
   const loadAll = async () => {
     if (!canView) return;
     setLoading(true);
     try {
-      const [overviewRes, jobsRes, candidatesRes, employeesRes] = await Promise.all([
+      const [overviewRes, jobsRes, candidatesRes, employeesRes, rolesRes, departmentsRes, designationsRes, shiftsRes] = await Promise.all([
         getApiWithToken("/hiring/overview", null, { requiredPermissions: ["HIRING_VIEW", "HIRING_MANAGE"] }),
         getApiWithToken("/hiring/jobs", null, { requiredPermissions: ["HIRING_VIEW", "HIRING_MANAGE"] }),
         getApiWithToken("/hiring/candidates", null, { requiredPermissions: ["HIRING_VIEW", "HIRING_MANAGE"] }),
-        getApiWithToken("/hiring/employees", null, { requiredPermissions: ["HIRING_VIEW", "HIRING_MANAGE"] })
+        getApiWithToken("/hiring/employees", null, { requiredPermissions: ["HIRING_VIEW", "HIRING_MANAGE"] }),
+        getApiWithToken("/roles"),
+        getApiWithToken("/departments"),
+        getApiWithToken("/designations"),
+        getApiWithToken("/shifts")
       ]);
       if (overviewRes?.success) setOverview(overviewRes.data);
       if (jobsRes?.success) setJobs(jobsRes.data || []);
       if (candidatesRes?.success) setCandidates(candidatesRes.data || []);
       if (employeesRes?.success) setEmployees(employeesRes.data || []);
+      if (rolesRes?.success) setRoles(rolesRes.data || []);
+      if (departmentsRes?.success) setDepartments(departmentsRes.data || []);
+      if (designationsRes?.success) setDesignations(designationsRes.data || []);
+      if (shiftsRes?.success) setShifts(shiftsRes.data || []);
     } finally {
       setLoading(false);
     }
@@ -219,6 +252,10 @@ const Hiring = () => {
   const selectedCandidate = useMemo(
     () => (candidates || []).find((row) => row._id === selectedCandidateId) || null,
     [candidates, selectedCandidateId]
+  );
+  const activeCandidate = useMemo(
+    () => (candidates || []).find((row) => row._id === activeCandidateId) || null,
+    [candidates, activeCandidateId]
   );
 
   const stageBuckets = useMemo(() => {
@@ -385,6 +422,81 @@ const Hiring = () => {
       return;
     }
     toast.success("Rejection email sent to candidate");
+    loadAll();
+  };
+
+  const openConvertDialog = (candidate: HiringCandidate) => {
+    const candidateJobId = typeof candidate.jobId === "object" ? candidate.jobId?._id : candidate.jobId;
+    const matchedJob = (jobs || []).find((job) => job._id === candidateJobId);
+    const matchedDepartment = (departments || []).find(
+      (dept) =>
+        String(dept.name || "").trim().toLowerCase() ===
+        String(matchedJob?.department || "").trim().toLowerCase()
+    );
+    const defaultEmployeeRole = (roles || []).find(
+      (role) =>
+        String(role.slug || "").toLowerCase() === "employee" ||
+        String(role.name || "").trim().toLowerCase() === "employee"
+    );
+    setActiveCandidateId(candidate._id);
+    setConvertForm({
+      roleIds: defaultEmployeeRole?._id ? [defaultEmployeeRole._id] : [],
+      departmentId: matchedDepartment?._id || "",
+      designationId: "",
+      managerId: "",
+      shiftId: "",
+      employmentType: (matchedJob?.employmentType as "full_time" | "part_time" | "contract") || "full_time",
+      dateOfJoining: new Date().toISOString().slice(0, 10),
+      password: ""
+    });
+    setConvertOpen(true);
+  };
+
+  const toggleConvertRole = (roleId: string) => {
+    setConvertForm((prev) => {
+      const hasRole = prev.roleIds.includes(roleId);
+      return {
+        ...prev,
+        roleIds: hasRole ? prev.roleIds.filter((id) => id !== roleId) : [...prev.roleIds, roleId]
+      };
+    });
+  };
+
+  const convertCandidateToEmployee = async () => {
+    if (!activeCandidateId) return;
+    if (
+      !convertForm.password ||
+      convertForm.roleIds.length === 0 ||
+      !convertForm.departmentId ||
+      !convertForm.designationId ||
+      !convertForm.employmentType ||
+      !convertForm.dateOfJoining
+    ) {
+      toast.error("Role, department, designation, employment type, joining date and password are required");
+      return;
+    }
+    const payload = {
+      password: convertForm.password,
+      roleIds: convertForm.roleIds,
+      departmentId: convertForm.departmentId,
+      designationId: convertForm.designationId,
+      managerId: convertForm.managerId || null,
+      shiftId: convertForm.shiftId || null,
+      employmentType: convertForm.employmentType,
+      dateOfJoining: convertForm.dateOfJoining
+    };
+    const res = await postApiWithToken(
+      `/hiring/candidates/${activeCandidateId}/convert-to-employee`,
+      payload,
+      null,
+      { requiredPermissions: ["HIRING_MANAGE"] }
+    );
+    if (!res?.success) {
+      toast.error(res?.message || "Failed to convert candidate");
+      return;
+    }
+    toast.success("Candidate converted to employee");
+    setConvertOpen(false);
     loadAll();
   };
 
@@ -631,6 +743,9 @@ const Hiring = () => {
                         {c.rejectionEmailSentAt && (
                           <Badge variant="secondary" className="mt-1 ml-1">Rejected Mail Sent</Badge>
                         )}
+                        {c.convertedToEmployeeId && (
+                          <Badge variant="secondary" className="mt-1 ml-1">Employee Created</Badge>
+                        )}
                         {latestInterview && (
                           <p className="text-xs text-muted-foreground mt-1">
                             {latestInterview.roundName || "L1"} •{" "}
@@ -694,6 +809,16 @@ const Hiring = () => {
                                 {c.rejectionEmailSentAt ? "Rejection Sent" : "Send Rejection Email"}
                               </Button>
                             )}
+                            {c.stage === "hired" && (
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs"
+                                disabled={Boolean(c.convertedToEmployeeId)}
+                                onClick={() => openConvertDialog(c)}
+                              >
+                                {c.convertedToEmployeeId ? "Converted to Employee" : "Convert to Employee"}
+                              </Button>
+                            )}
                             {!["hired", "rejected"].includes(c.stage) && (
                               <Button
                                 size="sm"
@@ -747,7 +872,7 @@ const Hiring = () => {
           </DialogHeader>
           <div className="space-y-3">
             <Input placeholder="Job title" value={jobForm.title} onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })} />
-            <Input placeholder="Department" value={jobForm.department} onChange={(e) => setJobForm({ ...jobForm, department: e.target.value })} />
+            <Input placeholder="Department" validationType="name" value={jobForm.department} onChange={(e) => setJobForm({ ...jobForm, department: e.target.value })} />
             <Input placeholder="Location" value={jobForm.location} onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })} />
             <Input type="number" min={1} placeholder="Openings" value={jobForm.openings} onChange={(e) => setJobForm({ ...jobForm, openings: Number(e.target.value || 1) })} />
             <Select value={jobForm.employmentType} onValueChange={(v) => setJobForm({ ...jobForm, employmentType: v })}>
@@ -783,10 +908,10 @@ const Hiring = () => {
               </SelectContent>
             </Select>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input placeholder="First name *" value={candidateForm.firstName} onChange={(e) => setCandidateForm({ ...candidateForm, firstName: e.target.value })} />
-              <Input placeholder="Last name" value={candidateForm.lastName} onChange={(e) => setCandidateForm({ ...candidateForm, lastName: e.target.value })} />
-              <Input placeholder="Email *" type="email" value={candidateForm.email} onChange={(e) => setCandidateForm({ ...candidateForm, email: e.target.value })} />
-              <Input placeholder="Phone" value={candidateForm.phone} onChange={(e) => setCandidateForm({ ...candidateForm, phone: e.target.value })} />
+              <Input placeholder="First name *" validationType="name" value={candidateForm.firstName} onChange={(e) => setCandidateForm({ ...candidateForm, firstName: e.target.value })} />
+              <Input placeholder="Last name" validationType="name" value={candidateForm.lastName} onChange={(e) => setCandidateForm({ ...candidateForm, lastName: e.target.value })} />
+              <Input placeholder="Email *" type="email" validationType="email" value={candidateForm.email} onChange={(e) => setCandidateForm({ ...candidateForm, email: e.target.value })} />
+              <Input placeholder="Phone" validationType="phone" value={candidateForm.phone} onChange={(e) => setCandidateForm({ ...candidateForm, phone: e.target.value })} />
               <Input placeholder="Current location" value={candidateForm.currentLocation} onChange={(e) => setCandidateForm({ ...candidateForm, currentLocation: e.target.value })} />
               <Input placeholder="Preferred location" value={candidateForm.preferredLocation} onChange={(e) => setCandidateForm({ ...candidateForm, preferredLocation: e.target.value })} />
               <Input type="number" min={0} step="0.1" placeholder="Years of experience" value={candidateForm.yearsExperience} onChange={(e) => setCandidateForm({ ...candidateForm, yearsExperience: Number(e.target.value || 0) })} />
@@ -837,6 +962,112 @@ const Hiring = () => {
               </SelectContent>
             </Select>
             <Button className="w-full" onClick={createCandidate}>Create Candidate</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto custom-scroll">
+          <DialogHeader>
+            <DialogTitle>Convert Candidate to Employee</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              Candidate: {activeCandidate ? `${activeCandidate.firstName || ""} ${activeCandidate.lastName || ""}`.trim() : "-"} ({activeCandidate?.email || "-"})
+            </div>
+            <div>
+              <p className="text-sm font-medium mb-2">Roles *</p>
+              <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                {roles.length === 0 && <p className="text-xs text-muted-foreground">No roles found</p>}
+                {roles.map((role) => {
+                  const checked = convertForm.roleIds.includes(role._id);
+                  return (
+                    <button
+                      key={role._id}
+                      type="button"
+                      className={`w-full text-left px-2 py-1 rounded text-sm border ${checked ? "bg-primary text-primary-foreground border-primary" : "bg-background"}`}
+                      onClick={() => toggleConvertRole(role._id)}
+                    >
+                      {role.name || role._id}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <Select
+              value={convertForm.departmentId || "none"}
+              onValueChange={(v) => setConvertForm({ ...convertForm, departmentId: v === "none" ? "" : v })}
+            >
+              <SelectTrigger><SelectValue placeholder="Department *" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select department</SelectItem>
+                {departments.map((row) => (
+                  <SelectItem key={row._id} value={row._id}>{row.name || row._id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={convertForm.designationId || "none"}
+              onValueChange={(v) => setConvertForm({ ...convertForm, designationId: v === "none" ? "" : v })}
+            >
+              <SelectTrigger><SelectValue placeholder="Designation *" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select designation</SelectItem>
+                {designations.map((row) => (
+                  <SelectItem key={row._id} value={row._id}>{row.name || row._id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={convertForm.employmentType} onValueChange={(v) => setConvertForm({ ...convertForm, employmentType: v })}>
+              <SelectTrigger><SelectValue placeholder="Employment type *" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full_time">Full Time</SelectItem>
+                <SelectItem value="part_time">Part Time</SelectItem>
+                <SelectItem value="contract">Contract</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="date"
+              value={convertForm.dateOfJoining}
+              onChange={(e) => setConvertForm({ ...convertForm, dateOfJoining: e.target.value })}
+            />
+            <Select
+              value={convertForm.managerId || "none"}
+              onValueChange={(v) => setConvertForm({ ...convertForm, managerId: v === "none" ? "" : v })}
+            >
+              <SelectTrigger><SelectValue placeholder="Manager (optional)" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No manager</SelectItem>
+                {employees.map((emp) => (
+                  <SelectItem key={emp._id} value={emp._id}>
+                    {`${emp.firstName || ""} ${emp.lastName || ""}`.trim() || emp.employeeCode || emp._id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={convertForm.shiftId || "none"}
+              onValueChange={(v) => setConvertForm({ ...convertForm, shiftId: v === "none" ? "" : v })}
+            >
+              <SelectTrigger><SelectValue placeholder="Shift (optional)" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No shift</SelectItem>
+                {shifts.map((row) => (
+                  <SelectItem key={row._id} value={row._id}>
+                    {row.name ? `${row.name}${row.startTime && row.endTime ? ` (${row.startTime}-${row.endTime})` : ""}` : row._id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="password"
+              placeholder="Temporary password *"
+              value={convertForm.password}
+              onChange={(e) => setConvertForm({ ...convertForm, password: e.target.value })}
+            />
+            <Button className="w-full" onClick={convertCandidateToEmployee}>
+              Convert to Employee
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

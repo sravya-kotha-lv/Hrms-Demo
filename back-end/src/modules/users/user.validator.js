@@ -1,4 +1,5 @@
 const Joi = require("joi");
+const { buildNameSchema, buildEmailSchema } = require("../../utils/joiValidators");
 
 const objectId = Joi.string().regex(/^[0-9a-fA-F]{24}$/);
 
@@ -7,17 +8,17 @@ exports.switchOrgSchema = Joi.object({
 });
 
 exports.loginSchema = Joi.object({
-  email: Joi.string().email().required(),
+  email: buildEmailSchema({ required: true }),
   password: Joi.string().required()
 });
 
 exports.createUserSchema = Joi.object({
-  email: Joi.string().email().required(),
+  email: buildEmailSchema({ required: true }),
   password: Joi.string().min(6).required(),
   roleIds: Joi.array().items(Joi.string()).min(1).required(),
 
-  firstName: Joi.string().trim().min(2).required(),
-  lastName: Joi.string().trim().min(2).required(),
+  firstName: buildNameSchema({ required: true }),
+  lastName: buildNameSchema({ required: true }),
   departmentId: objectId.optional().allow(null,""),
   designationId: objectId.optional().allow(null,""),
   employmentType: Joi.string().valid("full_time", "part_time", "contract").required(),
@@ -32,15 +33,11 @@ exports.switchOrgSchema = Joi.object({
 });
 
 exports.sendOTPUserSchema = Joi.object({
-  email: Joi.string()
-    .email()
-    .required()
+  email: buildEmailSchema({ required: true })
 });
 
 exports.validateOTPSchema = Joi.object({
-  email: Joi.string()
-    .email()
-    .required(),
+  email: buildEmailSchema({ required: true }),
 
   otp: Joi.string()
     .length(6)
@@ -48,9 +45,7 @@ exports.validateOTPSchema = Joi.object({
 });
 
 exports.resetPasswordSchema = Joi.object({
-  email: Joi.string()
-    .email()
-    .required(),
+  email: buildEmailSchema({ required: true }),
   password: Joi.string()
     .min(6)
     .required(),

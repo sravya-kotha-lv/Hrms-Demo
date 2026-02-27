@@ -236,6 +236,7 @@ const Holidays = () => {
           <div className="space-y-4">
             <Input
               placeholder="Holiday Name"
+              validationType="name"
               value={form.name}
               onChange={(e) =>
                 setForm({ ...form, name: e.target.value })
