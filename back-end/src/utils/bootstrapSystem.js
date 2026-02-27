@@ -15,7 +15,7 @@ const ensureSystemBootstrap = async () => {
   const systemOrg = await Organization.create({
     name: "SYSTEM",
     code: "SYSTEM",
-    timezone: "UTC",
+    timezone: "Asia/Kolkata",
     currency: "USD",
     status: "active"
   });

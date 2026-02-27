@@ -140,7 +140,7 @@ const getOrganizationTimeZone = async (organizationId) => {
   const organization = await Organization.findById(organizationId).select("timezone");
   if (isValidTimeZone(organization?.timezone)) return organization.timezone;
 
-  return "UTC";
+  return "Asia/Kolkata";
 };
 
 const assertLeaveApplyWindow = async ({ organizationId, fromDate, toDate, timeZone = "UTC" }) => {

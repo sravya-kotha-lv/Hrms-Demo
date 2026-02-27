@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -80,47 +80,62 @@ const NavItem = ({ icon, label, to, collapsed, children, onNavigate }: NavItemPr
     <div>
       <div
         className={cn(
-          "nav-item flex items-center justify-between cursor-pointer",
-          isActive && "nav-item-active"
+          "group flex items-center justify-between rounded-xl border border-transparent transition-all duration-300",
+          "hover:border-white/15 hover:bg-white/10",
+          isActive && "border-white/20 bg-white/16 text-white shadow-[0_8px_24px_-14px_rgba(2,6,23,0.9)]"
         )}
         onClick={() => hasChildren && setOpen(!open)}
       >
         <NavLink
           to={hasChildren ? "#" : to}
-          className="flex items-center gap-3 w-full"
+          className={cn(
+            "flex w-full items-center gap-3 px-4 py-3 text-white/85 transition-colors",
+            isActive && "text-white font-medium"
+          )}
           onClick={() => {
             if (!hasChildren) onNavigate?.();
           }}
         >
-          <span className="w-5 h-5">{icon}</span>
+          <span className={cn("h-5 w-5 transition-colors", isActive ? "text-white" : "text-white/85")}>{icon}</span>
           {!collapsed && <span>{label}</span>}
         </NavLink>
 
         {!collapsed && hasChildren && (
           <ChevronRight
             size={16}
-            className={`transition-transform ${open ? "rotate-90" : ""}`}
+            className={cn("mr-3 text-white/70 transition-transform duration-300", open && "rotate-90")}
           />
         )}
       </div>
 
-      {!collapsed && open && hasChildren && (
-        <div className="ml-8 mt-1 space-y-1">
-          {children?.map((child) => (
-            <NavLink key={child.to} to={child.to} onClick={onNavigate}>
-              <div
-                className={cn(
-                  "nav-item text-sm",
-                  location.pathname === child.to && "nav-item-active"
-                )}
-              >
-                {child.icon}
-                <span>{child.label}</span>
-              </div>
-            </NavLink>
-          ))}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {!collapsed && open && hasChildren && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -10 }}
+            animate={{ opacity: 1, height: "auto", y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -10 }}
+            transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="ml-4 mt-2 space-y-1 border-l border-white/12 pl-3">
+              {children?.map((child) => (
+                <NavLink key={child.to} to={child.to} onClick={onNavigate} className="block">
+                  <div
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm text-white/80 transition-all duration-300",
+                      "hover:border-white/14 hover:bg-white/10 hover:text-white",
+                      location.pathname === child.to && "border-white/20 bg-white/16 text-white font-medium shadow-[0_8px_20px_-16px_rgba(2,6,23,1)]"
+                    )}
+                  >
+                    {child.icon}
+                    <span>{child.label}</span>
+                  </div>
+                </NavLink>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -224,7 +239,7 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
   { icon: <FileText size={20} />, label: "Documentation", to: "/documentation", permissions: ["EMP_VIEW", "EMP_SELF_VIEW", "EMP_CREATE", "EMP_UPDATE"] }
 ];
 
-export const Sidebar = ({
+export const Sidebar = memo(({
   mobileOpen = false,
   onMobileClose,
   collapsed: controlledCollapsed,
@@ -276,7 +291,7 @@ export const Sidebar = ({
     "/documentation"
   ]);
 
-  const filteredMenuItems: MenuItem[] = menuItems(effectiveDashboardPath)
+  const filteredMenuItems: MenuItem[] = useMemo(() => menuItems(effectiveDashboardPath)
     .map((item) => {
       if (item.children) {
         const filteredChildren = item.children.filter((child) => {
@@ -297,7 +312,7 @@ export const Sidebar = ({
     .filter(
       (item): item is MenuItem =>
         Boolean(item) && (!item.permissions || hasAnyPermission(item.permissions))
-    );
+    ), [effectiveDashboardPath, hasAnyPermission, isEmployeeRole]);
 
   return (
     <>
@@ -328,8 +343,8 @@ export const Sidebar = ({
         <div className="p-4 border-b border-white/10">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
-                <UserCircle className="w-6 h-6 text-primary" />
+              <div className="w-10 h-10 rounded-xl bg-white/92 shadow-md flex items-center justify-center">
+                <UserCircle className="w-6 h-6 text-blue-600" />
               </div>
               <AnimatePresence>
                 {!effectiveCollapsed && (
@@ -347,7 +362,7 @@ export const Sidebar = ({
             <button
               onClick={() => setCollapsed(!collapsed)}
               disabled={isMobile}
-              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-50 flex items-center justify-center text-white transition-colors"
+              className="w-8 h-8 rounded-lg border border-white/12 bg-white/10 hover:bg-white/18 disabled:opacity-50 flex items-center justify-center text-white transition-all"
             >
               {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
             </button>
@@ -399,4 +414,6 @@ export const Sidebar = ({
       </motion.aside>
     </>
   );
-};
+});
+
+Sidebar.displayName = "Sidebar";
