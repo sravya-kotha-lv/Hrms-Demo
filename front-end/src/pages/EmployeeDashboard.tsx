@@ -451,8 +451,9 @@ const EmployeeDashboard = () => {
     };
   }, [weeklyEntries, attendanceToday]);
 
-  const isCheckedIn = Boolean(attendanceToday?.checkInAt) && !attendanceToday?.checkOutAt;
-  const isCheckedOut = Boolean(attendanceToday?.checkInAt) && Boolean(attendanceToday?.checkOutAt);
+  const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
+  const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
+  const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt);
 
   const checkInTimeText = attendanceToday?.checkInAt
     ? formatTimeInOrgTimeZone(attendanceToday.checkInAt)
@@ -629,12 +630,12 @@ const EmployeeDashboard = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <PermissionGate permissions={["TIMESHEET_CHECKIN_SELF"]}>
-              <Button onClick={handleCheckIn} disabled={isCheckedIn || checkinLoading}>
+              <Button onClick={handleCheckIn} disabled={hasCheckedInToday || checkinLoading}>
                 <LogIn className="w-4 h-4 mr-2" /> Check In
               </Button>
             </PermissionGate>
             <PermissionGate permissions={["TIMESHEET_CHECKOUT_SELF"]}>
-              <Button variant="outline" onClick={handleCheckOut} disabled={!isCheckedIn || checkoutLoading}>
+              <Button variant="outline" onClick={handleCheckOut} disabled={!hasCheckedInToday || checkoutLoading}>
                 <LogOut className="w-4 h-4 mr-2" /> Check Out
               </Button>
             </PermissionGate>

@@ -770,36 +770,9 @@ exports.checkIn = async (req) => {
     throwHttpError(500, "Failed to create attendance");
   }
 
-  if (existing?.checkInAt && !existing.checkOutAt) {
-    // Already in an open session for the day. Keep the first check-in as-is.
-    return existing;
-  }
-
-  if (existing.checkInAt && existing.checkOutAt) {
-    // Re-open attendance session while preserving first check-in.
-    // Final hours are always computed as (first check-in -> latest check-out).
-    existing.checkOutAt = null;
-    existing.checkInIp = checkInIp || existing.checkInIp || null;
-    existing.checkInLatitude = Number.isFinite(checkInLatitude)
-      ? Number(checkInLatitude)
-      : (existing.checkInLatitude ?? null);
-    existing.checkInLongitude = Number.isFinite(checkInLongitude)
-      ? Number(checkInLongitude)
-      : (existing.checkInLongitude ?? null);
-    if (checkInSelfieProvided) {
-      existing.checkInSelfieProvided = true;
-      existing.checkInSelfieImage = checkInSelfieImage;
-    }
-    existing.status = "checked_in";
-    existing.overriddenBy = null;
-    existing.overriddenAt = null;
-    existing.earlyCheckoutByMinutes = 0;
-    existing.overtimeMinutes = 0;
-    existing.missedCheckout = false;
-    existing.missedCheckoutMarkedAt = null;
-    existing.missedCheckoutResolvedRequestId = null;
-    await existing.save();
-    return existing;
+  if (existing?.checkInAt) {
+    // Check-in is allowed only once per attendance date/shift.
+    throw new Error("Already checked in for this shift");
   }
 
   if (!existing.checkInAt && !existing.checkOutAt) {
