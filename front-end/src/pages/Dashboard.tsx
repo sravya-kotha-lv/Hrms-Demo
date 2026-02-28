@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
-import { formatDateInOrgTimeZone } from "@/utils/timezone";
+import { formatDateInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
 import { setPermissions } from "@/utils/auth";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -46,12 +46,37 @@ import { Skeleton } from "@/components/ui/skeleton";
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
+const toOrgDateKey = (value: string | number | Date) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: getOrgTimeZone(),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(value));
+  const read = (type: "year" | "month" | "day") => parts.find((p) => p.type === type)?.value || "00";
+  return `${read("year")}-${read("month")}-${read("day")}`;
+};
+
+const shiftDateKey = (dateKey: string, deltaDays: number) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const utc = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  utc.setUTCDate(utc.getUTCDate() + deltaDays);
+  const y = utc.getUTCFullYear();
+  const m = String(utc.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(utc.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { isSuperAdmin, permissions } = useAuth();
   const today = new Date();
-  const monthValue = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-  const yearValue = today.getFullYear();
+  const todayKey = toOrgDateKey(today);
+  const [todayYearStr, todayMonthStr, todayDayStr] = todayKey.split("-");
+  const todayYear = Number(todayYearStr);
+  const todayDay = Number(todayDayStr);
+  const monthValue = `${todayYearStr}-${todayMonthStr}`;
+  const yearValue = todayYear;
 
   /* ---------- ORG STATE ---------- */
   const [showOrgPopup, setShowOrgPopup] = useState(false);
@@ -283,23 +308,38 @@ const Dashboard = () => {
 
   const kpis = useMemo(() => {
     const totalEmployees = employeeList.length;
-    const presentToday = attendanceToday.filter((a) => a.checkInAt || a.checkOutAt).length;
-    const checkedInOnly = attendanceToday.filter((a) => a.checkInAt && !a.checkOutAt).length;
-    const lateArrivals = attendanceToday.filter((a) => Number(a.lateByMinutes || 0) > 0).length;
-    const onLeaveToday = leaveList.filter((l) => {
-      const from = new Date(l.fromDate);
-      const to = new Date(l.toDate);
-      const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      return l.status === "approved" && t >= new Date(from.getFullYear(), from.getMonth(), from.getDate()) && t <= new Date(to.getFullYear(), to.getMonth(), to.getDate());
-    }).length;
-    const absentToday = attendanceMatrix.reduce((count: number, row: any) => {
-      const day = today.getDate();
-      const cell = row?.days?.[day];
-      if (!cell) return count;
-      if (cell.holidayName || cell.isWeekOff || cell.isOnLeave) return count;
-      if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") return count;
-      return count + 1;
-    }, 0);
+    let presentToday = 0;
+    let checkedInOnly = 0;
+    let lateArrivals = 0;
+    let onLeaveToday = 0;
+    let absentToday = 0;
+
+    (attendanceMatrix || []).forEach((row: any) => {
+      const cell = row?.days?.[todayDay];
+      if (!cell) return;
+      if (cell.holidayName || cell.isWeekOff) return;
+
+      if (cell.isOnLeave) {
+        onLeaveToday += 1;
+        return;
+      }
+
+      if (cell.status === "pending_checkout") {
+        presentToday += 1;
+        checkedInOnly += 1;
+        if (Number(cell.lateByMinutes || 0) > 0) lateArrivals += 1;
+        return;
+      }
+
+      if (isPresentLikeStatus(cell.status)) {
+        presentToday += 1;
+        if (Number(cell.lateByMinutes || 0) > 0) lateArrivals += 1;
+        return;
+      }
+
+      absentToday += 1;
+    });
+
     return {
       totalEmployees,
       presentToday,
@@ -308,7 +348,7 @@ const Dashboard = () => {
       lateArrivals,
       onLeaveToday
     };
-  }, [employeeList, attendanceToday, leaveList, attendanceMatrix, today]);
+  }, [employeeList, attendanceMatrix, todayDay]);
 
   const kpiHelpText = {
     total: "Total active employees only. Resigned and terminated employees are excluded.",
@@ -320,7 +360,6 @@ const Dashboard = () => {
   };
 
   const kpiEmployeeDetails = useMemo(() => {
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const employeeById = new Map(
       employeeList.map((emp: any) => [String(emp._id), emp])
     );
@@ -347,14 +386,19 @@ const Dashboard = () => {
     const totalRows = employeeList.map((emp: any) => toDisplayRow(emp));
 
     const presentRows = uniqueByEmployeeId(
-      (attendanceToday || [])
-        .filter((a: any) => a.checkInAt || a.checkOutAt)
-        .map((a: any) => {
-          const base = employeeById.get(String(a.employeeId?._id || a.employeeId)) || a.employeeId;
-          return toDisplayRow(base, {
-            id: String(base?._id || a.employeeId?._id || a.employeeId),
-            checkInAt: a.checkInAt ? formatDateInOrgTimeZone(a.checkInAt) : "-",
-            checkOutAt: a.checkOutAt ? formatDateInOrgTimeZone(a.checkOutAt) : "-"
+      (attendanceMatrix || [])
+        .filter((row: any) => {
+          const cell = row?.days?.[todayDay];
+          if (!cell || cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
+          return isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
+        })
+        .map((row: any) => {
+          const base = employeeById.get(String(row.employeeId?._id || row.employeeId));
+          const cell = row?.days?.[todayDay];
+          return toDisplayRow(base || {}, {
+            id: String(base?._id || row.employeeId?._id || row.employeeId),
+            checkInAt: cell?.checkInAt ? formatDateInOrgTimeZone(cell.checkInAt) : "-",
+            checkOutAt: cell?.checkOutAt ? formatDateInOrgTimeZone(cell.checkOutAt) : "-"
           });
         })
     );
@@ -362,11 +406,9 @@ const Dashboard = () => {
     const leaveRows = uniqueByEmployeeId(
       (leaveList || [])
         .filter((l: any) => {
-          const from = new Date(l.fromDate);
-          const to = new Date(l.toDate);
-          const fromDate = new Date(from.getFullYear(), from.getMonth(), from.getDate());
-          const toDate = new Date(to.getFullYear(), to.getMonth(), to.getDate());
-          return l.status === "approved" && todayStart >= fromDate && todayStart <= toDate;
+          const fromKey = toOrgDateKey(l.fromDate);
+          const toKey = toOrgDateKey(l.toDate);
+          return l.status === "approved" && todayKey >= fromKey && todayKey <= toKey;
         })
         .map((l: any) => {
           const base = employeeById.get(String(l.employeeId?._id || l.employeeId)) || l.employeeId;
@@ -380,7 +422,7 @@ const Dashboard = () => {
     const absentRows = uniqueByEmployeeId(
       (attendanceMatrix || [])
         .filter((row: any) => {
-          const cell = row?.days?.[todayStart.getDate()];
+          const cell = row?.days?.[todayDay];
           if (!cell) return false;
           if (cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
           if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") return false;
@@ -390,31 +432,37 @@ const Dashboard = () => {
           const base = employeeById.get(String(row.employeeId?._id || row.employeeId));
           return toDisplayRow(base || {}, {
             id: String(base?._id || row.employeeId?._id || row.employeeId),
-            absentReason: row?.days?.[todayStart.getDate()]?.holidayName ? "Holiday" : "Absent"
+            absentReason: row?.days?.[todayDay]?.holidayName ? "Holiday" : "Absent"
           });
         })
     );
 
     const lateRows = uniqueByEmployeeId(
-      (attendanceToday || [])
-        .filter((a: any) => Number(a.lateByMinutes || 0) > 0)
-        .map((a: any) => {
-          const base = employeeById.get(String(a.employeeId?._id || a.employeeId)) || a.employeeId;
-          return toDisplayRow(base, {
-            id: String(base?._id || a.employeeId?._id || a.employeeId),
-            lateByMinutes: Number(a.lateByMinutes || 0)
+      (attendanceMatrix || [])
+        .filter((row: any) => {
+          const cell = row?.days?.[todayDay];
+          if (!cell || cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
+          return Number(cell.lateByMinutes || 0) > 0;
+        })
+        .map((row: any) => {
+          const base = employeeById.get(String(row.employeeId?._id || row.employeeId));
+          const cell = row?.days?.[todayDay];
+          return toDisplayRow(base || {}, {
+            id: String(base?._id || row.employeeId?._id || row.employeeId),
+            lateByMinutes: Number(cell?.lateByMinutes || 0)
           });
         })
     );
 
     const missedRows = uniqueByEmployeeId(
-      (attendanceToday || [])
-        .filter((a: any) => a.checkInAt && !a.checkOutAt)
-        .map((a: any) => {
-          const base = employeeById.get(String(a.employeeId?._id || a.employeeId)) || a.employeeId;
-          return toDisplayRow(base, {
-            id: String(base?._id || a.employeeId?._id || a.employeeId),
-            checkInAt: a.checkInAt ? formatDateInOrgTimeZone(a.checkInAt) : "-"
+      (attendanceMatrix || [])
+        .filter((row: any) => row?.days?.[todayDay]?.status === "pending_checkout")
+        .map((row: any) => {
+          const base = employeeById.get(String(row.employeeId?._id || row.employeeId));
+          const cell = row?.days?.[todayDay];
+          return toDisplayRow(base || {}, {
+            id: String(base?._id || row.employeeId?._id || row.employeeId),
+            checkInAt: cell?.checkInAt ? formatDateInOrgTimeZone(cell.checkInAt) : "-"
           });
         })
     );
@@ -427,7 +475,7 @@ const Dashboard = () => {
       late: { title: "Late Arrivals", rows: lateRows },
       missed: { title: "Missed Checkout", rows: missedRows }
     };
-  }, [employeeList, attendanceToday, leaveList, attendanceMatrix, today]);
+  }, [employeeList, leaveList, attendanceMatrix, todayDay, todayKey]);
 
   const openKpiDialog = (key: "total" | "present" | "absent" | "leave" | "late" | "missed") => {
     setSelectedKpiKey(key);
@@ -435,7 +483,6 @@ const Dashboard = () => {
   };
 
   const monthDaySummary = useMemo(() => {
-    const day = today.getDate();
     let present = 0;
     let pendingCheckout = 0;
     let absent = 0;
@@ -445,7 +492,7 @@ const Dashboard = () => {
     let overridden = 0;
 
     attendanceMatrix.forEach((row: any) => {
-      const cell = row?.days?.[day];
+      const cell = row?.days?.[todayDay];
       if (!cell) return;
       if (cell.overriddenBy || cell.overriddenAt) overridden += 1;
       if (cell.holidayName) {
@@ -464,7 +511,7 @@ const Dashboard = () => {
     });
 
     return { present, pendingCheckout, absent, onLeave, weekOff, holiday, overridden };
-  }, [attendanceMatrix]);
+  }, [attendanceMatrix, todayDay]);
 
   const pendingApprovals = useMemo(() => {
     const pendingLeaves = leaveList.filter((l) => l.status === "pending");
@@ -476,7 +523,6 @@ const Dashboard = () => {
   }, [leaveList, weeklyList]);
 
   const departmentAnalytics = useMemo(() => {
-    const day = today.getDate();
     const byEmployeeId = new Map(attendanceMatrix.map((r: any) => [String(r.employeeId), r]));
     const grouped: Record<string, { employees: number; present: number; onLeave: number; absent: number }> = {};
 
@@ -487,7 +533,7 @@ const Dashboard = () => {
       }
       grouped[dept].employees += 1;
       const row = byEmployeeId.get(String(emp._id));
-      const cell = row?.days?.[day];
+      const cell = row?.days?.[todayDay];
       if (!cell) return;
       if (cell.isOnLeave) grouped[dept].onLeave += 1;
       else if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") grouped[dept].present += 1;
@@ -498,45 +544,61 @@ const Dashboard = () => {
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.employees - a.employees)
       .slice(0, 6);
-  }, [employeeList, attendanceMatrix]);
+  }, [employeeList, attendanceMatrix, todayDay]);
 
   const attendanceTrend = useMemo(() => {
     const totalEmployees = employeeList.length;
-    const now = new Date();
+    const matrixByEmployeeId = new Map(
+      (attendanceMatrix || []).map((row: any) => [String(row.employeeId?._id || row.employeeId), row])
+    );
     const points = Array.from({ length: 7 }).map((_, idx) => {
-      const d = new Date(now);
-      d.setDate(now.getDate() - (6 - idx));
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const key = shiftDateKey(todayKey, -(6 - idx));
+      const [, pointMonthStr, pointDayStr] = key.split("-");
+      const pointMonth = Number(pointMonthStr);
+      const pointDay = Number(pointDayStr);
+      const isCurrentMonth = pointMonth === Number(todayMonthStr);
+      let present = 0;
+      let absent = 0;
+      let excluded = 0;
+
+      if (isCurrentMonth) {
+        (employeeList || []).forEach((emp: any) => {
+          const row = matrixByEmployeeId.get(String(emp._id));
+          const cell = row?.days?.[pointDay];
+          if (!cell) return;
+          if (cell.holidayName || cell.isWeekOff || cell.isOnLeave) {
+            excluded += 1;
+            return;
+          }
+          if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") {
+            present += 1;
+            return;
+          }
+          absent += 1;
+        });
+      } else {
+        const uniqueDayEmployee = new Set<string>();
+        (attendanceLast7 || []).forEach((row: any) => {
+          const rowKey = toOrgDateKey(row.date);
+          if (rowKey !== key) return;
+          const employeeKey = `${key}-${String(row.employeeId?._id || row.employeeId || "")}`;
+          if (uniqueDayEmployee.has(employeeKey)) return;
+          uniqueDayEmployee.add(employeeKey);
+          if (row.checkInAt || row.checkOutAt) present += 1;
+        });
+        absent = Math.max(0, totalEmployees - present);
+      }
+
       return {
         key,
-        label: formatDateInOrgTimeZone(d, { weekday: "short" }),
-        present: 0,
-        absent: totalEmployees
+        label: formatDateInOrgTimeZone(new Date(`${key}T00:00:00`), { weekday: "short" }),
+        present,
+        absent,
+        excluded
       };
     });
-
-    const pointMap = new Map(points.map((p) => [p.key, p]));
-    const uniqueDayEmployee = new Set<string>();
-
-    (attendanceLast7 || []).forEach((row: any) => {
-      const d = new Date(row.date);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      const point = pointMap.get(key);
-      if (!point) return;
-      const employeeKey = `${key}-${String(row.employeeId?._id || row.employeeId || "")}`;
-      if (uniqueDayEmployee.has(employeeKey)) return;
-      uniqueDayEmployee.add(employeeKey);
-
-      if (row.checkInAt || row.checkOutAt) {
-        point.present += 1;
-      }
-    });
-
-    points.forEach((p) => {
-      p.absent = Math.max(0, totalEmployees - p.present);
-    });
     return points;
-  }, [attendanceLast7, employeeList]);
+  }, [attendanceLast7, attendanceMatrix, employeeList, todayKey, todayMonthStr]);
 
   const compliance = useMemo(() => {
     const submitted = weeklyList.filter((w) => w.status === "submitted").length;
@@ -1067,7 +1129,8 @@ const Dashboard = () => {
           <div className="space-y-3">
             {attendanceTrend.map((point) => {
               const presentPct = kpis.totalEmployees ? (point.present / kpis.totalEmployees) * 100 : 0;
-              const absentPct = Math.max(0, 100 - presentPct);
+              const absentPct = kpis.totalEmployees ? (point.absent / kpis.totalEmployees) * 100 : 0;
+              const excludedPct = Math.max(0, 100 - presentPct - absentPct);
               return (
                 <div key={point.key}>
                   <div className="flex items-center justify-between text-xs mb-1">
@@ -1080,6 +1143,7 @@ const Dashboard = () => {
                     <div className="h-full flex">
                       <div className="h-full bg-emerald-500" style={{ width: `${presentPct}%` }} />
                       <div className="h-full bg-orange-400" style={{ width: `${absentPct}%` }} />
+                      <div className="h-full bg-slate-300" style={{ width: `${excludedPct}%` }} />
                     </div>
                   </div>
                 </div>
