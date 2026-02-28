@@ -833,8 +833,9 @@ const Timesheets = () => {
     }
   };
 
-  const isCheckedIn = attendanceToday?.checkInAt && !attendanceToday?.checkOutAt;
-  const isCheckedOut = attendanceToday?.checkInAt && attendanceToday?.checkOutAt;
+  const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
+  const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
+  const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt);
 
   const canCheckIn = hasPermission("TIMESHEET_CHECKIN_SELF");
   const canCheckOut = hasPermission("TIMESHEET_CHECKOUT_SELF");
@@ -908,10 +909,10 @@ const Timesheets = () => {
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <Button onClick={handleCheckIn} disabled={!canCheckIn || isCheckedIn}>
+        <Button onClick={handleCheckIn} disabled={!canCheckIn || hasCheckedInToday}>
           Check In
         </Button>
-        <Button variant="outline" onClick={handleCheckOut} disabled={!canCheckOut || !isCheckedIn}>
+        <Button variant="outline" onClick={handleCheckOut} disabled={!canCheckOut || !hasCheckedInToday}>
           Check Out
         </Button>
         <Button
