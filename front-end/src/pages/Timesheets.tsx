@@ -300,6 +300,8 @@ const Timesheets = () => {
     attendanceGeoFenceEnabled: false,
     attendanceGeoRadiusMeters: 200
   });
+  const [checkinLoading, setCheckinLoading] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const currentEmployeeId = toIdString(profile?.employeeId);
   const currentRoleSlug = profile?.activeRole?.slug || "";
 
@@ -621,6 +623,7 @@ const Timesheets = () => {
   };
 
   const handleCheckIn = async () => {
+    if (checkinLoading) return;
     const payload: Record<string, any> = {};
 
     if (checkInPolicy.attendanceGeoFenceEnabled) {
@@ -660,12 +663,14 @@ const Timesheets = () => {
       payload.selfieImage = selfieImage;
     }
 
+    setCheckinLoading(true);
     const res = await postApiWithToken(
       "/timesheets/check-in",
       payload,
       null,
       { requiredPermissions: ["TIMESHEET_CHECKIN_SELF"] }
     );
+    setCheckinLoading(false);
     if (res?.skipped) return;
     if (res?.success) {
       toast.success("Checked in");
@@ -677,12 +682,15 @@ const Timesheets = () => {
   };
 
   const handleCheckOut = async () => {
+    if (checkoutLoading) return;
+    setCheckoutLoading(true);
     const res = await postApiWithToken(
       "/timesheets/check-out",
       {},
       null,
       { requiredPermissions: ["TIMESHEET_CHECKOUT_SELF"] }
     );
+    setCheckoutLoading(false);
     if (res?.skipped) return;
     if (res?.success) {
       toast.success("Checked out");
@@ -909,10 +917,10 @@ const Timesheets = () => {
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <Button onClick={handleCheckIn} disabled={!canCheckIn || hasCheckedInToday}>
+        <Button onClick={handleCheckIn} disabled={!canCheckIn || hasCheckedInToday || checkinLoading}>
           Check In
         </Button>
-        <Button variant="outline" onClick={handleCheckOut} disabled={!canCheckOut || !hasCheckedInToday}>
+        <Button variant="outline" onClick={handleCheckOut} disabled={!canCheckOut || !hasCheckedInToday || checkoutLoading}>
           Check Out
         </Button>
         <Button

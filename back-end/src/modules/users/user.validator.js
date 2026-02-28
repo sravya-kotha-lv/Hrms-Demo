@@ -8,7 +8,7 @@ exports.switchOrgSchema = Joi.object({
 });
 
 exports.loginSchema = Joi.object({
-  email: Joi.string().email().required(),
+  email: buildEmailSchema({ required: true }),
   password: Joi.string().required()
 }).required();
 

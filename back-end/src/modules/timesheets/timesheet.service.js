@@ -289,6 +289,107 @@ const throwHttpError = (code, message) => {
   throw { code, statusCode: code, message };
 };
 
+const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asia/Kolkata") => {
+  const grouped = new Map();
+
+  for (const row of rows || []) {
+    const source = typeof row?.toObject === "function" ? row.toObject() : row;
+    if (!source) continue;
+
+    const employeeIdValue = source.employeeId?._id || source.employeeId;
+    if (!employeeIdValue || !source.date) continue;
+    const employeeId = String(employeeIdValue);
+    const dateKey = toDateKeyInTimeZone(source.date, organizationTimeZone);
+    const key = `${employeeId}-${dateKey}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        ...source,
+        employeeId: source.employeeId
+      });
+      continue;
+    }
+
+    const existing = grouped.get(key);
+    const existingCheckIn = existing.checkInAt ? new Date(existing.checkInAt) : null;
+    const currentCheckIn = source.checkInAt ? new Date(source.checkInAt) : null;
+    const existingCheckOut = existing.checkOutAt ? new Date(existing.checkOutAt) : null;
+    const currentCheckOut = source.checkOutAt ? new Date(source.checkOutAt) : null;
+
+    // Keep first check-in of the day.
+    if (currentCheckIn && (!existingCheckIn || currentCheckIn < existingCheckIn)) {
+      existing.checkInAt = source.checkInAt;
+      existing.checkInIp = source.checkInIp || existing.checkInIp || null;
+      existing.checkInLatitude = Number.isFinite(source.checkInLatitude)
+        ? Number(source.checkInLatitude)
+        : (existing.checkInLatitude ?? null);
+      existing.checkInLongitude = Number.isFinite(source.checkInLongitude)
+        ? Number(source.checkInLongitude)
+        : (existing.checkInLongitude ?? null);
+    }
+
+    // Keep last checkout of the day.
+    if (currentCheckOut && (!existingCheckOut || currentCheckOut > existingCheckOut)) {
+      existing.checkOutAt = source.checkOutAt;
+    }
+
+    existing.totalMinutes = Math.max(
+      Number(existing.totalMinutes || 0),
+      Number(source.totalMinutes || 0)
+    );
+    existing.checkInSelfieProvided = Boolean(
+      existing.checkInSelfieProvided || source.checkInSelfieProvided
+    );
+    existing.checkInSelfieImage = existing.checkInSelfieImage || source.checkInSelfieImage || null;
+    existing.shiftId = existing.shiftId || source.shiftId || null;
+    existing.shiftName = existing.shiftName || source.shiftName || null;
+    existing.shiftCode = existing.shiftCode || source.shiftCode || null;
+    existing.shiftStartTime = existing.shiftStartTime || source.shiftStartTime || null;
+    existing.shiftEndTime = existing.shiftEndTime || source.shiftEndTime || null;
+    existing.scheduledStartAt = existing.scheduledStartAt || source.scheduledStartAt || null;
+    existing.scheduledEndAt = existing.scheduledEndAt || source.scheduledEndAt || null;
+    existing.lateByMinutes = Math.max(
+      Number(existing.lateByMinutes || 0),
+      Number(source.lateByMinutes || 0)
+    );
+    existing.earlyLoginByMinutes = Math.max(
+      Number(existing.earlyLoginByMinutes || 0),
+      Number(source.earlyLoginByMinutes || 0)
+    );
+    existing.earlyCheckoutByMinutes = Math.max(
+      Number(existing.earlyCheckoutByMinutes || 0),
+      Number(source.earlyCheckoutByMinutes || 0)
+    );
+    existing.overtimeMinutes = Math.max(
+      Number(existing.overtimeMinutes || 0),
+      Number(source.overtimeMinutes || 0)
+    );
+    existing.overriddenAt = existing.overriddenAt || source.overriddenAt || null;
+    existing.overriddenBy = existing.overriddenBy || source.overriddenBy || null;
+    existing.missedCheckout = Boolean(existing.missedCheckout || source.missedCheckout);
+    existing.missedCheckoutMarkedAt = existing.missedCheckoutMarkedAt || source.missedCheckoutMarkedAt || null;
+
+    grouped.set(key, existing);
+  }
+
+  return Array.from(grouped.values()).map((row) => {
+    const checkInAt = row.checkInAt ? new Date(row.checkInAt) : null;
+    const checkOutAt = row.checkOutAt ? new Date(row.checkOutAt) : null;
+    if (checkInAt && checkOutAt) {
+      row.totalMinutes = Math.max(
+        Number(row.totalMinutes || 0),
+        Math.max(0, Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000))
+      );
+      row.status = "checked_out";
+      row.missedCheckout = false;
+      row.missedCheckoutMarkedAt = null;
+    } else if (checkInAt) {
+      row.status = "checked_in";
+    }
+    return row;
+  });
+};
+
 const normalizeIp = (rawIp = "") => {
   let value = String(rawIp || "").trim();
   if (!value) return "";
@@ -775,8 +876,9 @@ exports.checkIn = async (req) => {
     throw new Error("Already checked in for this shift");
   }
 
-  if (!existing.checkInAt && !existing.checkOutAt) {
+  if (!existing.checkInAt) {
     existing.checkInAt = now;
+    existing.checkOutAt = null;
     existing.checkInIp = checkInIp || null;
     existing.checkInLatitude = Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null;
     existing.checkInLongitude = Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null;
@@ -804,7 +906,7 @@ exports.checkIn = async (req) => {
     return existing;
   }
 
-  return existing;
+  throwHttpError(400, "Already checked in for this shift");
 };
 
 exports.getCheckInPolicy = async (req) => {
@@ -919,11 +1021,12 @@ exports.getMyAttendance = async (req) => {
   const dayStart = startOfDayInTimeZone(queryDate, organizationTimeZone);
   const dayEnd = endOfDayInTimeZone(queryDate, organizationTimeZone);
 
-  return Attendance.find({
+  const rows = await Attendance.find({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
     date: { $gte: dayStart, $lte: dayEnd }
   }).sort({ date: -1 });
+  return mergeAttendanceRowsByEmployeeDay(rows, organizationTimeZone);
 };
 
 exports.getAttendance = async (req) => {
@@ -961,9 +1064,10 @@ exports.getAttendance = async (req) => {
     }
   }
 
-  return Attendance.find(query)
+  const rows = await Attendance.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .sort({ date: -1, checkInAt: -1 });
+  return mergeAttendanceRowsByEmployeeDay(rows, organizationTimeZone);
 };
 
 exports.getAttendanceMatrix = async (req) => {
@@ -993,7 +1097,7 @@ exports.getAttendanceMatrix = async (req) => {
   }
 
   const employeeIds = employees.map((e) => e._id);
-  const [attendanceRows, holidays, approvedLeaves, weekOffMap, orgSettings] = await Promise.all([
+  const [attendanceRowsRaw, holidays, approvedLeaves, weekOffMap, orgSettings] = await Promise.all([
     Attendance.find({
       organizationId: req.user.organizationId,
       employeeId: { $in: employeeIds },
@@ -1019,6 +1123,8 @@ exports.getAttendanceMatrix = async (req) => {
     }),
     OrgSettings.findOne({ organizationId: req.user.organizationId }).select("minHalfDayHours minWorkHoursPerDay")
   ]);
+
+  const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
 
   const holidayByDay = new Map();
   holidays.forEach((h) => {
@@ -1154,7 +1260,7 @@ exports.getMyAttendanceMatrix = async (req) => {
   );
   const employee = await getEmployeeFromReq(req);
 
-  const [attendanceRows, holidays, approvedLeaves, weekOffDays, orgSettings] = await Promise.all([
+  const [attendanceRowsRaw, holidays, approvedLeaves, weekOffDays, orgSettings] = await Promise.all([
     Attendance.find({
       organizationId: req.user.organizationId,
       employeeId: employee._id,
@@ -1180,6 +1286,8 @@ exports.getMyAttendanceMatrix = async (req) => {
     }),
     OrgSettings.findOne({ organizationId: req.user.organizationId }).select("minHalfDayHours minWorkHoursPerDay")
   ]);
+
+  const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
 
   const holidayByDay = new Map();
   holidays.forEach((h) => {
