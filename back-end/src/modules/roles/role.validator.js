@@ -48,4 +48,4 @@ exports.updateRoleSchema = Joi.object({
 
 exports.switchRoleSchema = Joi.object({
   roleId: objectId.required()
-});
+}).required();
