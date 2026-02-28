@@ -5,7 +5,7 @@ const { buildSuccessResponse } = require("../../utils/responseBuilder");
 const { rotateUserToken } = require("../../utils/tokenManager");
 
 exports.switchRole = async (req, res) => {
-  const { roleId } = req.body;
+  const { roleId } = req.body || {};
   const user = req.user;
 
   console.log(user.activeRoleId?.toString(), roleId);

@@ -62,18 +62,25 @@ const Login = () => {
     return () => window.clearInterval(timer);
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
 
-    if (!email || !password) {
+    const formData = new FormData(e.currentTarget);
+    const submittedEmail = String(formData.get("email") || email || "").trim().toLowerCase();
+    const submittedPassword = String(formData.get("password") || password || "");
+
+    if (!submittedEmail || !submittedPassword) {
       setError("Email and password are required");
       return;
     }
 
     try {
       setSubmitting(true);
-      const response: any = await postApiWithoutToken("/users/login", { email, password });
+      const response: any = await postApiWithoutToken("/users/login", {
+        email: submittedEmail,
+        password: submittedPassword
+      });
       if (response.code === 200) {
         const { roles, activeRole } = response.data;
         const resolvedActiveRole = activeRole || roles?.[0] || null;
@@ -215,6 +222,8 @@ const Login = () => {
           <form onSubmit={handleLogin} className="space-y-4">
             <Input
               type="email"
+              name="email"
+              autoComplete="username"
               placeholder="Work email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -222,6 +231,8 @@ const Login = () => {
             />
             <Input
               type="password"
+              name="password"
+              autoComplete="current-password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
