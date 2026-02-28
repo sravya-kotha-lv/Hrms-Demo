@@ -10,7 +10,9 @@ const Employee = require("../employees/employee.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
 const leaveBalanceService = require("../leaveBalances/leaveBalance.service");
 
-exports.loginUser = async ({ email, password } = {}) => {
+exports.loginUser = async ({ email, password }) => {
+  console.log("Attempting login with email:", email, password);
+  
   if (!email || !password) {
     throw {
       code: 400,

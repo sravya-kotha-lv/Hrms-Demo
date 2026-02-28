@@ -8,9 +8,9 @@ exports.switchOrgSchema = Joi.object({
 });
 
 exports.loginSchema = Joi.object({
-  email: buildEmailSchema({ required: true }),
+  email: Joi.string().email().required(),
   password: Joi.string().required()
-});
+}).required();
 
 exports.createUserSchema = Joi.object({
   email: buildEmailSchema({ required: true }),
