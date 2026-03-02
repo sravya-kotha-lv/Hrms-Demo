@@ -47,32 +47,35 @@ const dateKey = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-const getApplicableLeaveDates = ({
+const toDateKeyInOrgTz = (value, timeZone) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))
+    ? String(value)
+    : toDateKeyInTimeZone(value, timeZone);
+
+const getApplicableLeaveDateKeys = ({
   fromDate,
   toDate,
   weekOffDays,
   holidaySet,
-  sandwichRuleEnabled
+  sandwichRuleEnabled,
+  timeZone = "Asia/Kolkata"
 }) => {
   const dayMeta = [];
-  let cursor = new Date(fromDate);
-  cursor.setHours(0, 0, 0, 0);
-  const end = new Date(toDate);
-  end.setHours(0, 0, 0, 0);
+  let cursorKey = toDateKeyInOrgTz(fromDate, timeZone);
+  const endKey = toDateKeyInOrgTz(toDate, timeZone);
 
-  while (cursor <= end) {
-    const key = dateKey(cursor);
-    const isWeekOff = weekOffDays.includes(cursor.getDay());
-    const isHoliday = holidaySet.has(key);
+  while (cursorKey <= endKey) {
+    const isWeekOff = weekOffDays.includes(getDayInTimeZone(startOfDayInTimeZone(cursorKey, timeZone), timeZone));
+    const isHoliday = holidaySet.has(cursorKey);
     dayMeta.push({
-      date: new Date(cursor),
+      key: cursorKey,
       excluded: isWeekOff || isHoliday
     });
-    cursor.setDate(cursor.getDate() + 1);
+    cursorKey = addDaysToDateKey(cursorKey, 1);
   }
 
   if (!sandwichRuleEnabled) {
-    return dayMeta.filter((d) => !d.excluded).map((d) => d.date);
+    return dayMeta.filter((d) => !d.excluded).map((d) => d.key);
   }
 
   const firstWorkingIdx = dayMeta.findIndex((d) => !d.excluded);
@@ -87,7 +90,7 @@ const getApplicableLeaveDates = ({
       if (!d.excluded) return true;
       return index > firstWorkingIdx && index < lastWorkingIdx;
     })
-    .map((d) => d.date);
+    .map((d) => d.key);
 };
 
 const sendNotification = async ({ toEmail, toName, subject, message }) => {
@@ -235,6 +238,8 @@ exports.applyLeave = async (req) => {
   }
 
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const fromDateKey = toDateKeyInOrgTz(req.body.fromDate, organizationTimeZone);
+  const toDateKey = toDateKeyInOrgTz(req.body.toDate, organizationTimeZone);
   await assertLeaveApplyWindow({
     organizationId: req.user.organizationId,
     fromDate: req.body.fromDate,
@@ -258,12 +263,15 @@ exports.applyLeave = async (req) => {
     throw new Error("You already have a leave applied for these dates");
   }
 
+  const rangeStart = startOfDayInTimeZone(fromDateKey, organizationTimeZone);
+  const rangeEnd = endOfDayInTimeZone(toDateKey, organizationTimeZone);
+
   const [holidays, settings] = await Promise.all([
     Holiday.find({
       organizationId: req.user.organizationId,
       date: {
-        $gte: new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate()),
-        $lte: new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59, 999)
+        $gte: rangeStart,
+        $lte: rangeEnd
       },
       status: "active"
     }),
@@ -275,23 +283,23 @@ exports.applyLeave = async (req) => {
     organizationId: req.user.organizationId,
     shiftId: employee.shiftId
   });
-  const holidaySet = new Set((holidays || []).map((h) => dateKey(h.date)));
+  const holidaySet = new Set((holidays || []).map((h) => toDateKeyInTimeZone(h.date, organizationTimeZone)));
 
-  const validLeaveDates = getApplicableLeaveDates({
-    fromDate,
-    toDate,
+  const validLeaveDateKeys = getApplicableLeaveDateKeys({
+    fromDate: fromDateKey,
+    toDate: toDateKey,
     weekOffDays,
     holidaySet,
-    sandwichRuleEnabled
+    sandwichRuleEnabled,
+    timeZone: organizationTimeZone
   });
 
   if (
-    fromDate.getTime() === toDate.getTime() &&
-    validLeaveDates.length === 0
+    fromDateKey === toDateKey &&
+    validLeaveDateKeys.length === 0
   ) {
-    const singleDateKey = dateKey(fromDate);
-    const isHoliday = holidaySet.has(singleDateKey);
-    const isWeekOff = weekOffDays.includes(fromDate.getDay());
+    const isHoliday = holidaySet.has(fromDateKey);
+    const isWeekOff = weekOffDays.includes(getDayInTimeZone(startOfDayInTimeZone(fromDateKey, organizationTimeZone), organizationTimeZone));
 
     if (isHoliday) {
       throw new Error("Selected date is a holiday");
@@ -302,7 +310,7 @@ exports.applyLeave = async (req) => {
     throw new Error("Selected date is not a working day");
   }
 
-  if (validLeaveDates.length === 0) {
+  if (validLeaveDateKeys.length === 0) {
     throw new Error("Leave cannot be applied only on holidays or week offs without any working day");
   }
 
@@ -317,9 +325,9 @@ exports.applyLeave = async (req) => {
   if (!leaveType) throw new Error("Invalid leave type");
 
   // 3. Calculate days
-  let totalDays = validLeaveDates.length;
+  let totalDays = validLeaveDateKeys.length;
   if (duration === "half_day") {
-    if (validLeaveDates.length !== 1 || !isSameDate(validLeaveDates[0], fromDate)) {
+    if (validLeaveDateKeys.length !== 1 || validLeaveDateKeys[0] !== fromDateKey) {
       throw new Error("Half-day leave is not allowed on holidays or week offs");
     }
     totalDays = 0.5;

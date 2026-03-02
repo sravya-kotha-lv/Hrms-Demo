@@ -340,7 +340,15 @@ const Attendance = () => {
     return parts.join(" | ") || "No details";
   };
 
-  const getCellUi = (cell: DayCell) => {
+  const getCellUi = (cell: DayCell, isFuture = false) => {
+    if (isFuture) {
+      return {
+        label: "Not Marked",
+        shortLabel: "-",
+        className: "bg-slate-100 text-slate-500 border-slate-200"
+      };
+    }
+
     const isFullDayPresent = cell.status === "full_day_present";
     const isHalfDayPresent = cell.status === "half_day_present";
     const isPresent = isPresentLikeStatus(cell.status);
@@ -423,6 +431,9 @@ const Attendance = () => {
     let payrollExcludedDays = 0;
     let selfieDays = 0;
     for (let day = 1; day <= daysInMonth; day += 1) {
+      if (isFutureDay(day)) {
+        continue;
+      }
       const cell = row.days?.[day] || emptyCell;
       if (cell.checkInSelfieProvided) {
         selfieDays += 1;
@@ -662,7 +673,7 @@ const Attendance = () => {
                         }
                         const isFuture = isFutureDay(day);
                         const cell = selfRow.days?.[day] || emptyCell;
-                        const cellUi = getCellUi(cell);
+                        const cellUi = getCellUi(cell, isFuture);
                         const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
                         const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
                         const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName);
@@ -912,7 +923,7 @@ const Attendance = () => {
                           const isFuture = isFutureDay(day);
                           const cell = row.days?.[day] || emptyCell;
                           const isNonInteractive = isFuture || cell.isWeekOff;
-                          const cellUi = getCellUi(cell);
+                          const cellUi = getCellUi(cell, isFuture);
 
                           return (
                             <td key={day} className="p-1">
