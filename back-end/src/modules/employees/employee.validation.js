@@ -83,8 +83,8 @@ exports.completeProfileSchema = Joi.object({
   phone: buildPhoneSchema({ required: true }),
   dob: Joi.date().required(),
   gender: Joi.string().required(),
-  aadhaarNumber: aadhaarNumberSchema.required(),
-  panNumber: panNumberSchema.required(),
+  aadhaarNumber: aadhaarNumberSchema.optional(),
+  panNumber: panNumberSchema.optional(),
 
   address: Joi.object({
     line1: Joi.string().required(),
