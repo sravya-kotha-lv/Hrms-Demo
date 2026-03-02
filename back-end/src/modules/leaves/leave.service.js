@@ -176,9 +176,16 @@ const assertLeaveApplyWindow = async ({ organizationId, fromDate, toDate, timeZo
   const cutoffDay = Number(settings.payrollCutoffDay ?? 25);
   const currentDay = getDayInTimeZone(today, timeZone);
   const [todayYear, todayMonth] = todayKey.split("-").map(Number);
-  const periodStartKey = currentDay >= cutoffDay
-    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-01`
-    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-01`;
+  const currentMonthFirstKey = `${todayYear}-${String(todayMonth).padStart(2, "0")}-01`;
+  const previousMonthYear = todayMonth === 1 ? todayYear - 1 : todayYear;
+  const previousMonth = todayMonth === 1 ? 12 : todayMonth - 1;
+  const previousMonthFirstKey = `${previousMonthYear}-${String(previousMonth).padStart(2, "0")}-01`;
+  // payroll_cutoff rule:
+  // - once cutoff + 1 day is crossed, lock dates up to cutoff day of current month.
+  // - before that, lock dates up to cutoff day of previous month.
+  const periodStartKey = currentDay > cutoffDay
+    ? addDaysToDateKey(currentMonthFirstKey, cutoffDay)
+    : addDaysToDateKey(previousMonthFirstKey, cutoffDay);
 
   if (fromDateKey < periodStartKey || toDateKey < periodStartKey) {
     throw new Error(`Attendance is locked before payroll period start ${periodStartKey}. Leave cannot be applied for locked dates.`);
