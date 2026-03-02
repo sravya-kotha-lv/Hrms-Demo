@@ -1,6 +1,12 @@
 module.exports = (schema, property = "body") => {
   return (req, res, next) => {
-    const { error, value } = schema.validate(req[property], {
+    const rawValue = req[property];
+    const normalizedValue =
+      rawValue === undefined || rawValue === null
+        ? (property === "body" || property === "query" || property === "params" ? {} : rawValue)
+        : rawValue;
+
+    const { error, value } = schema.validate(normalizedValue, {
       abortEarly: true
     });
 
