@@ -789,7 +789,7 @@ exports.listEmployeeProfiles = async (req) => {
   const client = await pool.connect();
   try {
     const tenantId = await requireTenantId(client, req.user.organizationId);
-    const { payrollStatus, employeeExternalId, limit, offset } = req.query;
+    const { payrollStatus, employeeExternalId, includeLatest, limit, offset } = req.query;
     const params = [tenantId];
     const filters = ["tenant_id = $1"];
 
@@ -803,17 +803,69 @@ exports.listEmployeeProfiles = async (req) => {
     }
     params.push(limit, offset);
 
-    const result = await client.query(
-      `
-        SELECT *
-        FROM employee_payroll_profiles
-        WHERE ${filters.join(" AND ")}
-        ORDER BY created_at DESC
-        LIMIT $${params.length - 1}
-        OFFSET $${params.length}
-      `,
-      params
-    );
+    const baseFilters = filters
+      .map((filter) => filter.replace(/\btenant_id\b/g, "epp.tenant_id"))
+      .join(" AND ");
+
+    const queryText =
+      includeLatest === true || includeLatest === "true"
+        ? `
+            SELECT
+              epp.*,
+              latest_salary.annual_ctc,
+              latest_salary.monthly_gross,
+              latest_salary.basic_pay,
+              latest_salary.variable_pay,
+              latest_bank.account_holder_name,
+              latest_bank.bank_name,
+              latest_bank.branch_name,
+              latest_bank.account_number,
+              latest_bank.ifsc_code,
+              latest_bank.account_type,
+              latest_bank.payment_mode,
+              latest_bank.upi_id
+            FROM employee_payroll_profiles epp
+            LEFT JOIN LATERAL (
+              SELECT
+                annual_ctc,
+                monthly_gross,
+                basic_pay,
+                variable_pay
+              FROM employee_salary_structures
+              WHERE employee_payroll_profile_id = epp.id
+              ORDER BY is_current DESC, version_no DESC, effective_from DESC
+              LIMIT 1
+            ) latest_salary ON true
+            LEFT JOIN LATERAL (
+              SELECT
+                account_holder_name,
+                bank_name,
+                branch_name,
+                account_number,
+                ifsc_code,
+                account_type,
+                payment_mode,
+                upi_id
+              FROM employee_bank_details
+              WHERE employee_payroll_profile_id = epp.id
+              ORDER BY is_primary DESC, version_no DESC, effective_from DESC
+              LIMIT 1
+            ) latest_bank ON true
+            WHERE ${baseFilters}
+            ORDER BY epp.created_at DESC
+            LIMIT $${params.length - 1}
+            OFFSET $${params.length}
+          `
+        : `
+            SELECT *
+            FROM employee_payroll_profiles
+            WHERE ${filters.join(" AND ")}
+            ORDER BY created_at DESC
+            LIMIT $${params.length - 1}
+            OFFSET $${params.length}
+          `;
+
+    const result = await client.query(queryText, params);
     return result.rows;
   } finally {
     client.release();
