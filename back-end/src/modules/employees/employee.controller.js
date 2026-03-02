@@ -41,6 +41,10 @@ exports.listByOrganization = async (req, res) => {
   );
 };
 
+exports.exportCsv = async (req, res) => {
+  await service.exportCsv(req, res);
+};
+
 exports.getNextEmployeeCode = async (req, res) => {
   const data = await service.getNextEmployeeCode(req);
 

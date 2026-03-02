@@ -210,12 +210,16 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
               notifications.map((item) => (
                 <DropdownMenuItem
                   key={item._id}
-                  className={`flex flex-col items-start gap-1 py-3 ${item.isRead ? "" : "bg-muted/40"}`}
+                  className={`group flex flex-col items-start gap-1 py-3 ${item.isRead ? "" : "bg-muted/40"}`}
                   onClick={() => markOneNotificationRead(item._id)}
                 >
-                  <span className="font-medium">{item.title}</span>
-                  <span className="text-xs text-muted-foreground">{item.message}</span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="font-medium group-data-[highlighted]:text-accent-foreground">
+                    {item.title}
+                  </span>
+                  <span className="text-xs text-muted-foreground group-data-[highlighted]:text-accent-foreground/90">
+                    {item.message}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground group-data-[highlighted]:text-accent-foreground/80">
                     {formatNotificationTime(item.createdAt)}
                   </span>
                 </DropdownMenuItem>

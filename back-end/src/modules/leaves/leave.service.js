@@ -638,7 +638,14 @@ exports.getMyPendingApprovals = async (req) => {
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 
-  return rows;
+  const actorContext = await getActorApprovalContext(req);
+  return rows.filter((row) => {
+    const steps = Array.isArray(row.approvalSteps) ? row.approvalSteps : [];
+    if (!steps.length) return true;
+    const currentStep = getCurrentPendingStep(steps);
+    if (!currentStep) return false;
+    return canActorApproveStep(currentStep, actorContext);
+  });
 };
 
 exports.actionLeave = async (req) => {

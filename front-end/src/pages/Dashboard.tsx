@@ -1334,9 +1334,9 @@ const Dashboard = () => {
               Leave Pending: <span className="font-semibold">{pendingApprovals.pendingLeaves.length}</span>
             </div>
           </div>
-          <Button className="mt-3" size="sm" variant="outline" onClick={() => navigate("/organization/settings")}>
+          {/* <Button className="mt-3" size="sm" variant="outline" onClick={() => navigate("/organization/settings")}>
             Open Org Settings
-          </Button>
+          </Button> */}
         </div>
 
       </div>

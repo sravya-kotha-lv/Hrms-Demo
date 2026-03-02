@@ -44,6 +44,7 @@ import { deleteApiWithToken, getApiWithToken, postApiWithToken, putApiWithToken 
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
+import { getToken } from "@/utils/auth";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -353,12 +354,6 @@ const Employees = () => {
     }
   };
 
-  const escapeCsvValue = (value: unknown) => {
-    const normalized = String(value ?? "");
-    if (!/[",\n]/.test(normalized)) return normalized;
-    return `"${normalized.replace(/"/g, "\"\"")}"`;
-  };
-
   const buildEmployeesFilterParams = () => {
     const params = new URLSearchParams();
     if (searchQuery) params.set("search", searchQuery);
@@ -369,136 +364,6 @@ const Employees = () => {
     if (employmentTypeFilter !== "all") params.set("employmentType", employmentTypeFilter);
     if (isSuperAdmin && selectedOrgId) params.set("organizationId", selectedOrgId);
     return params;
-  };
-
-  const fetchPayrollExportData = async (items: any[]) => {
-    const payrollMap = new Map<string, any>();
-    if (!items.length) return payrollMap;
-
-    const employeeIds = new Set(items.map((employee) => String(employee?._id || "")).filter(Boolean));
-    const limit = 200;
-    let offset = 0;
-
-    while (true) {
-      const profileListRes = await getApiWithToken(
-        `/payroll/employee-profiles?includeLatest=true&limit=${limit}&offset=${offset}`
-      );
-      if (!profileListRes?.success) break;
-
-      const profiles = Array.isArray(profileListRes?.data) ? profileListRes.data : [];
-      if (!profiles.length) break;
-
-      profiles.forEach((profile: any) => {
-        const employeeId = String(profile?.employee_external_id || "");
-        if (!employeeId || !employeeIds.has(employeeId)) return;
-
-        payrollMap.set(employeeId, {
-          payrollStatus: profile?.payroll_status || "",
-          defaultPaymentMode: profile?.default_payment_mode || "",
-          annualCtc: profile?.annual_ctc ?? "",
-          monthlyGross: profile?.monthly_gross ?? "",
-          basicPay: profile?.basic_pay ?? "",
-          variablePay: profile?.variable_pay ?? "",
-          accountHolderName: profile?.account_holder_name || "",
-          bankName: profile?.bank_name || "",
-          branchName: profile?.branch_name || "",
-          accountNumber: profile?.account_number || "",
-          ifscCode: profile?.ifsc_code || "",
-          accountType: profile?.account_type || "",
-          paymentMode: profile?.payment_mode || "",
-          upiId: profile?.upi_id || ""
-        });
-      });
-
-      if (profiles.length < limit) break;
-      offset += limit;
-    }
-
-    return payrollMap;
-  };
-
-  const buildEmployeeExportRows = (items: any[], payrollMap: Map<string, any>) => {
-    const headers = [
-      "Employee Code",
-      "First Name",
-      "Last Name",
-      "Email",
-      "Phone",
-      "Department",
-      "Designation",
-      "Roles",
-      "Manager",
-      "Shift",
-      "Employment Type",
-      "Status",
-      "Lifecycle",
-      "Benefits Eligible",
-      "Profile Completed",
-      "Date Of Joining",
-      "Payroll Status",
-      "Default Payment Mode",
-      "Annual CTC",
-      "Monthly Gross",
-      "Basic Pay",
-      "Variable Pay",
-      "Bank Account Holder",
-      "Bank Name",
-      "Branch Name",
-      "Account Number",
-      "IFSC Code",
-      "Account Type",
-      "Bank Payment Mode",
-      "UPI ID"
-    ];
-
-    const rows = items.map((employee) => {
-      const payroll = payrollMap.get(String(employee?._id || "")) || {};
-      const managerName = [employee?.managerId?.firstName, employee?.managerId?.lastName]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-      const roleNames = Array.isArray(employee?.roleIds)
-        ? employee.roleIds.map((role: any) => role?.name).filter(Boolean).join(", ")
-        : "";
-      const dateOfJoining = employee?.dateOfJoining
-        ? formatDateInOrgTimeZone(employee.dateOfJoining, "yyyy-MM-dd")
-        : "";
-
-      return [
-        employee?.employeeCode || "",
-        employee?.firstName || "",
-        employee?.lastName || "",
-        employee?.userId?.email || "",
-        employee?.phone || "",
-        employee?.departmentId?.name || "",
-        employee?.designationId?.name || "",
-        roleNames,
-        managerName,
-        employee?.shiftId?.name || "",
-        employee?.employmentType || "",
-        employee?.status || "",
-        employee?.employmentLifecycleStatus || "",
-        employee?.benefitsEligible ? "Yes" : "No",
-        employee?.profileCompleted ? "Yes" : "No",
-        dateOfJoining,
-        payroll?.payrollStatus || "",
-        payroll?.defaultPaymentMode || "",
-        payroll?.annualCtc ?? "",
-        payroll?.monthlyGross ?? "",
-        payroll?.basicPay ?? "",
-        payroll?.variablePay ?? "",
-        payroll?.accountHolderName || "",
-        payroll?.bankName || "",
-        payroll?.branchName || "",
-        payroll?.accountNumber || "",
-        payroll?.ifscCode || "",
-        payroll?.accountType || "",
-        payroll?.paymentMode || "",
-        payroll?.upiId || ""
-      ];
-    });
-
-    return [headers, ...rows];
   };
 
   const handleExportEmployees = async () => {
@@ -512,47 +377,44 @@ const Employees = () => {
       const params = buildEmployeesFilterParams();
       params.set("sortBy", sortBy);
       params.set("sortOrder", sortOrder);
-
       const query = params.toString();
-      const res = await getApiWithToken(`/employees${query ? `?${query}` : ""}`, null, {
-        requiredPermissions: ["EMP_VIEW"]
+
+      const baseUrl = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+      const token = getToken();
+      const response = await fetch(`${baseUrl}/employees/export${query ? `?${query}` : ""}`, {
+        method: "GET",
+        headers: {
+          Authorization: token?.includes("Bearer") ? token : `Bearer ${token || ""}`
+        }
       });
 
-      if (!res?.success) {
-        toast.error(res?.message || "Failed to export employees");
+      if (!response.ok) {
+        let message = "Failed to export employees";
+        try {
+          const errorPayload = await response.json();
+          message = errorPayload?.message || message;
+        } catch {
+          // keep default message
+        }
+        toast.error(message);
         return;
       }
 
-      const items = Array.isArray(res?.data?.items) ? res.data.items : [];
-      if (!items.length) {
-        toast.error("No employees found to export");
-        return;
-      }
-
-      let payrollMap = new Map<string, any>();
-      if (hasAnyPermission(["PAYROLL_CONFIG_MANAGE"])) {
-        payrollMap = await fetchPayrollExportData(items);
-      } else {
-        toast.error("Payroll permission missing: exporting without salary and bank details");
-      }
-
-      const csvRows = buildEmployeeExportRows(items, payrollMap);
-      const csvContent = csvRows
-        .map((row) => row.map((cell) => escapeCsvValue(cell)).join(","))
-        .join("\n");
-
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
+      const disposition = response.headers.get("content-disposition") || "";
+      const fileNameMatch = disposition.match(/filename="([^"]+)"/i);
       const stamp = new Date().toISOString().slice(0, 10);
+      const fileName = fileNameMatch?.[1] || `employees-${stamp}.csv`;
       link.href = url;
-      link.setAttribute("download", `employees-${stamp}.csv`);
+      link.setAttribute("download", fileName);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      toast.success(`Exported ${items.length} employees`);
+      toast.success("Employees exported successfully");
     } finally {
       setExporting(false);
     }

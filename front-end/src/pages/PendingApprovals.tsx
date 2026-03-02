@@ -31,35 +31,41 @@ const PendingApprovals = () => {
   const [attendanceRows, setAttendanceRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const loadLeaveApprovals = async () => {
+    if (!canLeaveAction) {
+      setLeaveRows([]);
+      return;
+    }
+    const leaveRes = await getApiWithToken("/leaves/pending/my-approvals", null, {
+      requiredPermissions: ["LEAVE_ACTION"]
+    });
+    if (leaveRes?.success) {
+      setLeaveRows(leaveRes.data || []);
+    } else {
+      setLeaveRows([]);
+    }
+  };
+
+  const loadAttendanceApprovals = async () => {
+    if (!canAttendanceAction) {
+      setAttendanceRows([]);
+      return;
+    }
+    const attendanceRes = await getApiWithToken("/timesheets/attendance/requests/pending/my-approvals", null, {
+      requiredPermissions: ["ATTENDANCE_MANAGE"]
+    });
+    if (attendanceRes?.success) {
+      setAttendanceRows(attendanceRes.data || []);
+    } else {
+      setAttendanceRows([]);
+    }
+  };
+
   const loadData = async () => {
     if (!canViewAny) return;
     setLoading(true);
     try {
-      if (canLeaveAction) {
-        const leaveRes = await getApiWithToken("/leaves/pending/my-approvals", null, {
-          requiredPermissions: ["LEAVE_ACTION"]
-        });
-        if (leaveRes?.success) {
-          setLeaveRows(leaveRes.data || []);
-        } else {
-          setLeaveRows([]);
-        }
-      } else {
-        setLeaveRows([]);
-      }
-
-      if (canAttendanceAction) {
-        const attendanceRes = await getApiWithToken("/timesheets/attendance/requests/pending/my-approvals", null, {
-          requiredPermissions: ["ATTENDANCE_MANAGE"]
-        });
-        if (attendanceRes?.success) {
-          setAttendanceRows(attendanceRes.data || []);
-        } else {
-          setAttendanceRows([]);
-        }
-      } else {
-        setAttendanceRows([]);
-      }
+      await Promise.allSettled([loadLeaveApprovals(), loadAttendanceApprovals()]);
     } finally {
       setLoading(false);
     }
@@ -67,7 +73,7 @@ const PendingApprovals = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [canLeaveAction, canAttendanceAction, canViewAny]);
 
   const actionLeave = async (id: string, status: "approved" | "rejected") => {
     const rejectionReason = status === "rejected"

@@ -286,6 +286,9 @@ const Attendance = () => {
 
   const formatHoverInfo = (cell: DayCell) => {
     const parts: string[] = [];
+    const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
+    const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
+    const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName);
     if (cell.status === "pending_checkout") {
       parts.push("Status: Pending checkout");
     } else if (cell.status === "half_day_present") {
@@ -307,12 +310,12 @@ const Attendance = () => {
     }
     if (cell.isWeekOff) parts.push("Week Off");
     if (cell.holidayName) parts.push(`Holiday: ${cell.holidayName}`);
-    if (cell.checkInAt) parts.push(`Check-in: ${formatTimeInOrgTimeZone(cell.checkInAt)}`);
-    if (cell.checkOutAt) parts.push(`Check-out: ${formatTimeInOrgTimeZone(cell.checkOutAt)}`);
-    if (canViewSelfieData && (cell.checkInAt || cell.checkOutAt)) {
+    if (!hideTimings && cell.checkInAt) parts.push(`Check-in: ${formatTimeInOrgTimeZone(cell.checkInAt)}`);
+    if (!hideTimings && cell.checkOutAt) parts.push(`Check-out: ${formatTimeInOrgTimeZone(cell.checkOutAt)}`);
+    if (!hideTimings && canViewSelfieData && (cell.checkInAt || cell.checkOutAt)) {
       parts.push(`Selfie: ${cell.checkInSelfieProvided ? "Yes" : "No"}`);
     }
-    if (canViewSelfieData && cell.checkInIp) {
+    if (!hideTimings && canViewSelfieData && cell.checkInIp) {
       parts.push(`IP: ${cell.checkInIp}`);
     }
     if (cell.shiftName || cell.shiftCode) {
@@ -354,13 +357,6 @@ const Attendance = () => {
         className: "bg-indigo-100 text-indigo-700 border-indigo-300"
       };
     }
-    if (isLeave) {
-      return {
-        label: "Leave",
-        shortLabel: "L",
-        className: "bg-violet-100 text-violet-700 border-violet-300"
-      };
-    }
     if (isHoliday) {
       return {
         label: "Holiday",
@@ -373,6 +369,13 @@ const Attendance = () => {
         label: "Week Off",
         shortLabel: "W",
         className: "bg-sky-100 text-sky-700 border-sky-300"
+      };
+    }
+    if (isLeave) {
+      return {
+        label: "Leave",
+        shortLabel: "L",
+        className: "bg-violet-100 text-violet-700 border-violet-300"
       };
     }
     if (isPendingCheckout) {
@@ -660,6 +663,9 @@ const Attendance = () => {
                         const isFuture = isFutureDay(day);
                         const cell = selfRow.days?.[day] || emptyCell;
                         const cellUi = getCellUi(cell);
+                        const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
+                        const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
+                        const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName);
                         return (
                           <HoverCard key={day} openDelay={120} closeDelay={80}>
                             <HoverCardTrigger asChild>
@@ -674,29 +680,43 @@ const Attendance = () => {
                                   <span className="text-[10px] sm:text-[11px] font-semibold">{cellUi.shortLabel}</span>
                                 </div>
                                 <div className="mt-2 text-[10px] sm:text-[11px] leading-4 opacity-90">
-                                  <p>{cell.checkInAt ? `In ${formatTimeInOrgTimeZone(cell.checkInAt)}` : "No check-in"}</p>
-                                  <p>{cell.checkOutAt ? `Out ${formatTimeInOrgTimeZone(cell.checkOutAt)}` : "No check-out"}</p>
+                                  {hideTimings ? (
+                                    <p>
+                                      {cell.holidayName
+                                        ? `Holiday: ${cell.holidayName}`
+                                        : `Leave: ${cell.leaveType || "Approved leave"}`}
+                                    </p>
+                                  ) : (
+                                    <>
+                                      <p>{cell.checkInAt ? `In ${formatTimeInOrgTimeZone(cell.checkInAt)}` : "No check-in"}</p>
+                                      <p>{cell.checkOutAt ? `Out ${formatTimeInOrgTimeZone(cell.checkOutAt)}` : "No check-out"}</p>
+                                    </>
+                                  )}
                                 </div>
                               </button>
                             </HoverCardTrigger>
                             <HoverCardContent className="w-72">
                               <div className="space-y-1.5">
                                 <p className="text-sm font-semibold">{month}-{String(day).padStart(2, "0")} • {cellUi.label}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Check-in: {cell.checkInAt ? formatTimeInOrgTimeZone(cell.checkInAt) : "Not recorded"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Check-out: {cell.checkOutAt ? formatTimeInOrgTimeZone(cell.checkOutAt) : "Not recorded"}
-                                </p>
-                                {canViewSelfieData && (
+                                {!hideTimings && (
                                   <>
                                     <p className="text-xs text-muted-foreground">
-                                      Selfie: {cell.checkInSelfieProvided ? "Yes" : "No"}
+                                      Check-in: {cell.checkInAt ? formatTimeInOrgTimeZone(cell.checkInAt) : "Not recorded"}
                                     </p>
-                                    {cell.checkInIp && (
-                                      <p className="text-xs text-muted-foreground">
-                                        Check-in IP: {cell.checkInIp}
-                                      </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Check-out: {cell.checkOutAt ? formatTimeInOrgTimeZone(cell.checkOutAt) : "Not recorded"}
+                                    </p>
+                                    {canViewSelfieData && (
+                                      <>
+                                        <p className="text-xs text-muted-foreground">
+                                          Selfie: {cell.checkInSelfieProvided ? "Yes" : "No"}
+                                        </p>
+                                        {cell.checkInIp && (
+                                          <p className="text-xs text-muted-foreground">
+                                            Check-in IP: {cell.checkInIp}
+                                          </p>
+                                        )}
+                                      </>
                                     )}
                                   </>
                                 )}
