@@ -5,9 +5,19 @@ module.exports = (schema, property = "body") => {
     });
 
     if (error) {
+      const detail = error.details?.[0];
+      let message = detail?.message || "Validation failed";
+
+      // Joi root-level required errors can show as: "\"value\" is required"
+      if (detail?.path?.length === 0 && detail?.type === "any.required") {
+        message = property === "body"
+          ? "Request body is required"
+          : `Request ${property} is required`;
+      }
+
       return res.status(406).json({
         code: 406,
-        message: error.details[0].message,
+        message,
         data: null,
         error: []
       });
