@@ -53,7 +53,7 @@ const uploadSchema = Joi.object({
 /* HR CREATES EMPLOYEE (MINIMUM REQUIRED DATA)                         */
 /* ------------------------------------------------------------------ */
 exports.createEmployeeByHrSchema = Joi.object({
-  email: buildEmailSchema({ required: true }),
+  email: Joi.string().trim().lowercase().email().max(255).required(),
   roleIds: Joi.array().items(objectId).min(1).required(),
 
   firstName: buildNameSchema({ required: true }),
