@@ -1,4 +1,5 @@
 const Timesheet = require("./timesheet.model");
+const mongoose = require("mongoose");
 const Attendance = require("./timesheetAttendance.model");
 const AttendanceRequest = require("./attendanceRequest.model");
 const Employee = require("../employees/employee.model");
@@ -1634,9 +1635,18 @@ exports.getMyPendingAttendanceApprovals = async (req) => {
 };
 
 exports.actionAttendanceRequest = async (req) => {
+  const rawId = req.params?.id;
+  const requestId =
+    typeof rawId === "string"
+      ? rawId
+      : (rawId && typeof rawId === "object" && rawId._id ? String(rawId._id) : "");
+  if (!mongoose.Types.ObjectId.isValid(requestId)) {
+    throwHttpError(400, "Invalid attendance request id");
+  }
+
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const request = await AttendanceRequest.findOne({
-    _id: req.params.id,
+    _id: requestId,
     organizationId: req.user.organizationId
   });
   if (!request) throw new Error("Attendance request not found");

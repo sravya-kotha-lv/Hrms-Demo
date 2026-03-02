@@ -44,6 +44,7 @@ import { deleteApiWithToken, getApiWithToken, postApiWithToken, putApiWithToken 
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/AuthContext";
+import { getToken } from "@/utils/auth";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -121,6 +122,7 @@ const Employees = () => {
   const [bulkApplying, setBulkApplying] = useState(false);
   const [bulkPanelOpen, setBulkPanelOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [totalItems, setTotalItems] = useState(0);
@@ -349,6 +351,72 @@ const Employees = () => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const buildEmployeesFilterParams = () => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set("search", searchQuery);
+    if (departmentFilter !== "all") params.set("departmentId", departmentFilter);
+    if (designationFilter !== "all") params.set("designationId", designationFilter);
+    if (managerFilter !== "all") params.set("managerId", managerFilter);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (employmentTypeFilter !== "all") params.set("employmentType", employmentTypeFilter);
+    if (isSuperAdmin && selectedOrgId) params.set("organizationId", selectedOrgId);
+    return params;
+  };
+
+  const handleExportEmployees = async () => {
+    if (!canView) {
+      toast.error("You do not have permission to export employees");
+      return;
+    }
+
+    try {
+      setExporting(true);
+      const params = buildEmployeesFilterParams();
+      params.set("sortBy", sortBy);
+      params.set("sortOrder", sortOrder);
+      const query = params.toString();
+
+      const baseUrl = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+      const token = getToken();
+      const response = await fetch(`${baseUrl}/employees/export${query ? `?${query}` : ""}`, {
+        method: "GET",
+        headers: {
+          Authorization: token?.includes("Bearer") ? token : `Bearer ${token || ""}`
+        }
+      });
+
+      if (!response.ok) {
+        let message = "Failed to export employees";
+        try {
+          const errorPayload = await response.json();
+          message = errorPayload?.message || message;
+        } catch {
+          // keep default message
+        }
+        toast.error(message);
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const disposition = response.headers.get("content-disposition") || "";
+      const fileNameMatch = disposition.match(/filename="([^"]+)"/i);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const fileName = fileNameMatch?.[1] || `employees-${stamp}.csv`;
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success("Employees exported successfully");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -950,9 +1018,14 @@ const Employees = () => {
           >
             Reset
           </Button>
-              <Button variant="outline" className="gap-2">
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={handleExportEmployees}
+                disabled={exporting || !canView}
+              >
                 <Download className="w-4 h-4" />
-                Export
+                {exporting ? "Exporting..." : "Export"}
               </Button>
             </div>
           </div>

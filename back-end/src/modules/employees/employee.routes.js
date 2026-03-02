@@ -47,6 +47,14 @@ router.get(
 );
 
 router.get(
+  "/export",
+  auth,
+  authorize("EMP_VIEW"),
+  validate(listEmployeesQuerySchema, "query"),
+  asyncHandler(controller.exportCsv)
+);
+
+router.get(
   "/next-code",
   auth,
   authorize("EMP_CREATE"),

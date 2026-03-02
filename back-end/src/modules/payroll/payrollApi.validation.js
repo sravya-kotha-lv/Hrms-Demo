@@ -155,6 +155,7 @@ exports.updateEmployeePayrollProfileSchema = Joi.object({
 exports.listEmployeeProfilesQuerySchema = Joi.object({
   payrollStatus: Joi.string().valid("active", "on_hold", "exited"),
   employeeExternalId: Joi.string().pattern(objectIdPattern),
+  includeLatest: Joi.boolean().default(false),
   limit: Joi.number().integer().min(1).max(200).default(50),
   offset: Joi.number().integer().min(0).default(0)
 });

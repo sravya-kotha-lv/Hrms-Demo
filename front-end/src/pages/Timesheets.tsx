@@ -593,8 +593,13 @@ const Timesheets = () => {
     setAttendanceRequestOpen(true);
   };
 
-  const actionAttendanceRequest = async (id: string, status: "approved" | "rejected") => {
-    const request = pendingAttendanceRequests.find((r) => r._id === id);
+  const actionAttendanceRequest = async (id: any, status: "approved" | "rejected") => {
+    const requestId = toIdString(id);
+    if (!requestId || requestId === "[object Object]") {
+      toast.error("Invalid attendance request id");
+      return;
+    }
+    const request = pendingAttendanceRequests.find((r) => toIdString(r._id) === requestId);
     if (request && !canCurrentActorActionAttendanceRequest(request)) {
       toast.error("You are not the current approver for this request");
       return;
@@ -605,7 +610,7 @@ const Timesheets = () => {
       if (!rejectionReason.trim()) return;
     }
     const res = await putApiWithToken(
-      `/timesheets/attendance/requests/${id}/action`,
+      `/timesheets/attendance/requests/${encodeURIComponent(requestId)}/action`,
       { status, rejectionReason },
       null,
       { requiredPermissions: ["ATTENDANCE_MANAGE"] }
@@ -1024,10 +1029,10 @@ const Timesheets = () => {
                   <TableCell>
                     {canCurrentActorActionAttendanceRequest(r) ? (
                       <div className="flex gap-2">
-                        <Button size="sm" onClick={() => actionAttendanceRequest(r._id, "approved")}>
+                        <Button size="sm" onClick={() => actionAttendanceRequest(toIdString(r._id), "approved")}>
                           Approve
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => actionAttendanceRequest(r._id, "rejected")}>
+                        <Button size="sm" variant="outline" onClick={() => actionAttendanceRequest(toIdString(r._id), "rejected")}>
                           Reject
                         </Button>
                       </div>

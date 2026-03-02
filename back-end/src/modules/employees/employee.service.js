@@ -1,10 +1,12 @@
 const mongoose = require("mongoose");
+const { once } = require("events");
 const User = require("../users/user.model");
 const OrgUser = require("../organizations/org-user.model");
 const Employee = require("./employee.model");
 const OrganizationService = require('../organizations/organization.service');
 const Role = require("../roles/role.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
+const { getPayrollPgPool } = require("../../config/payrollDb");
 const { genHashedPassword } = require("../../utils/bcryptUtils");
 const sendMail = require("../../utils/sendMail");
 const leaveBalanceService =
@@ -529,10 +531,31 @@ async function generateEmployeeCode(organizationId, session) {
   }
 }
 
-exports.listByOrganization = async (req) => {
+const EMPLOYEE_ALLOWED_SORT_FIELDS = new Set([
+  "createdAt",
+  "firstName",
+  "lastName",
+  "employeeCode",
+  "dateOfJoining",
+  "status",
+  "employmentLifecycleStatus"
+]);
+
+const toCsvValue = (value) => {
+  const normalized = String(value ?? "");
+  if (!/[",\n]/.test(normalized)) return normalized;
+  return `"${normalized.replace(/"/g, "\"\"")}"`;
+};
+
+const toDateValue = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+};
+
+const buildEmployeeListContext = async (req) => {
   const {
-    page,
-    limit,
     search,
     departmentId,
     designationId,
@@ -543,9 +566,10 @@ exports.listByOrganization = async (req) => {
     sortBy,
     sortOrder
   } = req.query;
-
   const { organizationId, userId, activeRoleId } = req.user;
+
   const isSuperAdmin = await OrganizationService.isUserSuperAdmin(userId);
+  const effectiveOrganizationId = isSuperAdmin && orgIdOverride ? orgIdOverride : organizationId;
 
   let isManager = false;
   if (activeRoleId) {
@@ -557,23 +581,18 @@ exports.listByOrganization = async (req) => {
   }
 
   const query = {
-    organizationId: isSuperAdmin && orgIdOverride ? orgIdOverride : organizationId,
+    organizationId: effectiveOrganizationId,
     isDeleted: false
   };
 
-  /* 👔 Manager scoping */
   if (isManager) {
     const managerEmployee = await Employee.findOne({
       userId,
       organizationId
     }).select("_id");
-
-    if (managerEmployee) {
-      query.managerId = managerEmployee._id;
-    }
+    if (managerEmployee) query.managerId = managerEmployee._id;
   }
 
-  /* 🔍 Search */
   if (search) {
     query.$or = [
       { firstName: { $regex: search, $options: "i" } },
@@ -583,30 +602,140 @@ exports.listByOrganization = async (req) => {
     ];
   }
 
-  /* 🎯 Filters */
   if (departmentId) query.departmentId = departmentId;
   if (designationId) query.designationId = designationId;
   if (status) query.status = status;
   if (managerId) query.managerId = managerId;
   if (employmentType) query.employmentType = employmentType;
 
-  const allowedSortFields = new Set([
-    "createdAt",
-    "firstName",
-    "lastName",
-    "employeeCode",
-    "dateOfJoining",
-    "status",
-    "employmentLifecycleStatus"
-  ]);
-  const sortField = allowedSortFields.has(String(sortBy)) ? String(sortBy) : "employeeCode";
+  const sortField = EMPLOYEE_ALLOWED_SORT_FIELDS.has(String(sortBy))
+    ? String(sortBy)
+    : "employeeCode";
   const normalizedSortOrder = String(sortOrder || "asc").toLowerCase();
-  const sortDirection =
-    normalizedSortOrder === "asc"
-      ? 1
-      : normalizedSortOrder === "desc"
-        ? -1
-        : 1;
+  const sortDirection = normalizedSortOrder === "desc" ? -1 : 1;
+
+  return {
+    query,
+    sortField,
+    sortDirection,
+    effectiveOrganizationId
+  };
+};
+
+const buildRoleMapByUserIds = async ({ organizationId, userIds }) => {
+  if (!Array.isArray(userIds) || !userIds.length) return new Map();
+
+  const orgUsers = await OrgUser.find({
+    organizationId,
+    userId: { $in: userIds }
+  })
+    .populate("roleIds", "name")
+    .select("userId roleIds");
+
+  return new Map(
+    orgUsers.map((orgUser) => [
+      String(orgUser.userId),
+      (orgUser.roleIds || []).map((role) => ({
+        _id: role._id,
+        name: role.name
+      }))
+    ])
+  );
+};
+
+const loadPayrollExportMap = async (organizationId) => {
+  const payrollMap = new Map();
+  const pool = await getPayrollPgPool();
+  if (!pool) return payrollMap;
+
+  const client = await pool.connect();
+  try {
+    const tenantResult = await client.query(
+      `SELECT id FROM payroll_tenants WHERE organization_id = $1`,
+      [String(organizationId)]
+    );
+    const tenantId = tenantResult.rows[0]?.id;
+    if (!tenantId) return payrollMap;
+
+    const limit = 5000;
+    let offset = 0;
+
+    while (true) {
+      const result = await client.query(
+        `
+          SELECT
+            epp.employee_external_id,
+            epp.payroll_status,
+            epp.default_payment_mode,
+            latest_salary.annual_ctc,
+            latest_salary.monthly_gross,
+            latest_salary.basic_pay,
+            latest_salary.variable_pay,
+            latest_bank.account_holder_name,
+            latest_bank.bank_name,
+            latest_bank.branch_name,
+            latest_bank.account_number,
+            latest_bank.ifsc_code,
+            latest_bank.account_type,
+            latest_bank.payment_mode,
+            latest_bank.upi_id
+          FROM employee_payroll_profiles epp
+          LEFT JOIN LATERAL (
+            SELECT
+              annual_ctc,
+              monthly_gross,
+              basic_pay,
+              variable_pay
+            FROM employee_salary_structures
+            WHERE employee_payroll_profile_id = epp.id
+            ORDER BY is_current DESC, version_no DESC, effective_from DESC
+            LIMIT 1
+          ) latest_salary ON true
+          LEFT JOIN LATERAL (
+            SELECT
+              account_holder_name,
+              bank_name,
+              branch_name,
+              account_number,
+              ifsc_code,
+              account_type,
+              payment_mode,
+              upi_id
+            FROM employee_bank_details
+            WHERE employee_payroll_profile_id = epp.id
+            ORDER BY is_primary DESC, version_no DESC, effective_from DESC
+            LIMIT 1
+          ) latest_bank ON true
+          WHERE epp.tenant_id = $1
+          ORDER BY epp.created_at DESC
+          LIMIT $2
+          OFFSET $3
+        `,
+        [tenantId, limit, offset]
+      );
+
+      if (!result.rows.length) break;
+
+      for (const row of result.rows) {
+        const employeeId = String(row.employee_external_id || "");
+        if (!employeeId || payrollMap.has(employeeId)) continue;
+        payrollMap.set(employeeId, row);
+      }
+
+      if (result.rows.length < limit) break;
+      offset += limit;
+    }
+
+    return payrollMap;
+  } finally {
+    client.release();
+  }
+};
+
+exports.listByOrganization = async (req) => {
+  const { page, limit } = req.query;
+  const { query, sortField, sortDirection, effectiveOrganizationId } =
+    await buildEmployeeListContext(req);
 
   // Build query
   let employeeQuery = Employee.find(query)
@@ -641,21 +770,10 @@ exports.listByOrganization = async (req) => {
   const userIds = employees
     .map((employee) => employee.userId?._id || employee.userId)
     .filter(Boolean);
-  const orgUsers = await OrgUser.find({
-    organizationId: query.organizationId,
-    userId: { $in: userIds }
-  })
-    .populate("roleIds", "name")
-    .select("userId roleIds");
-  const roleMap = new Map(
-    orgUsers.map((orgUser) => [
-      String(orgUser.userId),
-      (orgUser.roleIds || []).map((role) => ({
-        _id: role._id,
-        name: role.name
-      }))
-    ])
-  );
+  const roleMap = await buildRoleMapByUserIds({
+    organizationId: effectiveOrganizationId,
+    userIds
+  });
   const items = employees.map((employee) => {
     const obj = employee.toObject();
     return {
@@ -670,6 +788,133 @@ exports.listByOrganization = async (req) => {
     items,
     pagination // will be null if not paginated
   };
+};
+
+exports.exportCsv = async (req, res) => {
+  const { query, sortField, sortDirection, effectiveOrganizationId } =
+    await buildEmployeeListContext(req);
+  const payrollMap = await loadPayrollExportMap(effectiveOrganizationId);
+
+  const cursor = Employee.find(query)
+    .populate("departmentId", "name")
+    .populate("designationId", "name")
+    .populate("managerId", "firstName lastName")
+    .populate("shiftId", "name")
+    .populate("userId", "email")
+    .sort({ [sortField]: sortDirection, createdAt: -1 })
+    .lean()
+    .cursor();
+
+  const orgUsers = await OrgUser.find({ organizationId: effectiveOrganizationId })
+    .populate("roleIds", "name")
+    .select("userId roleIds")
+    .lean();
+  const roleNameByUserId = new Map(
+    orgUsers.map((row) => [
+      String(row.userId),
+      (row.roleIds || [])
+        .map((role) => role?.name)
+        .filter(Boolean)
+        .join(", ")
+    ])
+  );
+
+  const fileStamp = new Date().toISOString().slice(0, 10);
+  const fileName = `employees-${fileStamp}.csv`;
+
+  res.status(200);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.setHeader("Cache-Control", "no-store");
+
+  const headers = [
+    "Employee Code",
+    "First Name",
+    "Last Name",
+    "Email",
+    "Phone",
+    "Department",
+    "Designation",
+    "Roles",
+    "Manager",
+    "Shift",
+    "Employment Type",
+    "Status",
+    "Lifecycle",
+    "Benefits Eligible",
+    "Profile Completed",
+    "Date Of Joining",
+    "Payroll Status",
+    "Default Payment Mode",
+    "Annual CTC",
+    "Monthly Gross",
+    "Basic Pay",
+    "Variable Pay",
+    "Bank Account Holder",
+    "Bank Name",
+    "Branch Name",
+    "Account Number",
+    "IFSC Code",
+    "Account Type",
+    "Bank Payment Mode",
+    "UPI ID"
+  ];
+
+  const writeRow = async (cells) => {
+    const line = `${cells.map(toCsvValue).join(",")}\n`;
+    if (!res.write(line)) {
+      await once(res, "drain");
+    }
+  };
+
+  await writeRow(headers);
+
+  for await (const employee of cursor) {
+    if (res.writableEnded || res.destroyed) break;
+
+    const employeeId = String(employee?._id || "");
+    const userId = String(employee?.userId?._id || employee?.userId || "");
+    const managerName = [employee?.managerId?.firstName, employee?.managerId?.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    const payroll = payrollMap.get(employeeId) || {};
+
+    await writeRow([
+      employee?.employeeCode || "",
+      toNameCase(employee?.firstName || ""),
+      toNameCase(employee?.lastName || ""),
+      employee?.userId?.email || "",
+      employee?.phone || "",
+      employee?.departmentId?.name || "",
+      employee?.designationId?.name || "",
+      roleNameByUserId.get(userId) || "",
+      managerName,
+      employee?.shiftId?.name || "",
+      employee?.employmentType || "",
+      employee?.status || "",
+      employee?.employmentLifecycleStatus || "",
+      employee?.benefitsEligible ? "Yes" : "No",
+      employee?.profileCompleted ? "Yes" : "No",
+      toDateValue(employee?.dateOfJoining),
+      payroll?.payroll_status || "",
+      payroll?.default_payment_mode || "",
+      payroll?.annual_ctc ?? "",
+      payroll?.monthly_gross ?? "",
+      payroll?.basic_pay ?? "",
+      payroll?.variable_pay ?? "",
+      payroll?.account_holder_name || "",
+      payroll?.bank_name || "",
+      payroll?.branch_name || "",
+      payroll?.account_number || "",
+      payroll?.ifsc_code || "",
+      payroll?.account_type || "",
+      payroll?.payment_mode || "",
+      payroll?.upi_id || ""
+    ]);
+  }
+
+  res.end();
 };
 
 exports.getNextEmployeeCode = async (req) => {
