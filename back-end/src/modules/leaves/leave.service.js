@@ -25,6 +25,7 @@ const {
   toDateKeyInTimeZone,
   addDaysToDateKey,
   startOfDayInTimeZone,
+  endOfDayInTimeZone,
   getDayInTimeZone
 } = require("../../utils/timezone");
 
