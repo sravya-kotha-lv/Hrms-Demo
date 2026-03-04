@@ -43,6 +43,16 @@ const aadhaarNumberSchema = Joi.string().pattern(/^\d{12}$/).messages({
 const panNumberSchema = Joi.string().uppercase().pattern(/^[A-Z]{5}[0-9]{4}[A-Z]$/).messages({
   "string.pattern.base": "PAN number format is invalid"
 });
+const bloodGroupSchema = Joi.string().trim().uppercase().valid(
+  "A+",
+  "A-",
+  "B+",
+  "B-",
+  "AB+",
+  "AB-",
+  "O+",
+  "O-"
+);
 const zipCodeSchema = Joi.string().trim().pattern(/^\d+$/).messages({
   "string.pattern.base": "PIN code must contain only numbers"
 });
@@ -86,6 +96,7 @@ exports.completeProfileSchema = Joi.object({
   phone: buildPhoneSchema({ required: true }),
   dob: Joi.date().required(),
   gender: Joi.string().required(),
+  bloodGroup: bloodGroupSchema.optional(),
   aadhaarNumber: aadhaarNumberSchema.optional(),
   panNumber: panNumberSchema.optional(),
 
@@ -134,6 +145,7 @@ exports.updateEmployeeSchema = Joi.object({
 
   dob: Joi.date().optional(),
   gender: Joi.string().optional(),
+  bloodGroup: bloodGroupSchema.optional(),
   aadhaarNumber: aadhaarNumberSchema.optional(),
   panNumber: panNumberSchema.optional(),
 

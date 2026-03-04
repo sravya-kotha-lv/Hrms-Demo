@@ -27,6 +27,7 @@ const RELATION_OPTIONS = [
   { label: "Friend", value: "friend" },
   { label: "Other", value: "other" }
 ];
+const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const ID_CARD_FRONT_SKELETON = (import.meta as any).env?.VITE_IDCARD_FRONT_SKELETON || "/idcard_front.jpg";
 const ID_CARD_BACK_SKELETON = (import.meta as any).env?.VITE_IDCARD_BACK_SKELETON || "/idcard_back.jpg";
 
@@ -47,6 +48,7 @@ const ProfilePage = () => {
     phone: "",
     dob: "",
     gender: "",
+    bloodGroup: "",
     address: {
       line1: "",
       line2: "",
@@ -95,6 +97,7 @@ const ProfilePage = () => {
         phone: res.data.phone || "",
         dob: res.data.dob ? new Date(res.data.dob).toISOString().slice(0, 10) : "",
         gender: res.data.gender || "",
+        bloodGroup: res.data.bloodGroup || "",
         address: res.data.address || {
           line1: "",
           line2: "",
@@ -155,6 +158,7 @@ const ProfilePage = () => {
       phone: form.phone,
       dob: form.dob,
       gender: form.gender,
+      bloodGroup: form.bloodGroup || undefined,
       address: form.address,
       emergencyContacts: form.emergencyContacts.filter((c) => c.name && c.relation && c.phone),
       profileImageUpload: form.profileImageUpload || undefined,
@@ -388,6 +392,7 @@ const ProfilePage = () => {
             <div><span className="text-muted-foreground">Phone:</span> {profile?.phone || "-"}</div>
             <div><span className="text-muted-foreground">DOB:</span> {profile?.dob ? formatDateInOrgTimeZone(profile.dob) : "-"}</div>
             <div><span className="text-muted-foreground">Gender:</span> {profile?.gender || "-"}</div>
+            <div><span className="text-muted-foreground">Blood Group:</span> {profile?.bloodGroup || "-"}</div>
             <div><span className="text-muted-foreground">Address:</span> {profile?.address?.line1 || "-"}</div>
             <div>
               <span className="text-muted-foreground">Address Proof:</span>{" "}
@@ -544,6 +549,21 @@ const ProfilePage = () => {
               value={form.gender}
               onChange={(e) => setForm({ ...form, gender: e.target.value })}
             />
+            <Select
+              value={form.bloodGroup || ""}
+              onValueChange={(value) => setForm({ ...form, bloodGroup: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Blood Group (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {BLOOD_GROUP_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Input
               placeholder="Address Line 1"
               value={form.address.line1}

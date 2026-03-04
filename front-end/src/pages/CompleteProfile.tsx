@@ -103,11 +103,11 @@ const CompleteProfile = () => {
       toast.error("Phone, DOB and gender are required");
       return;
     }
-    if (!/^\d{12}$/.test(form.aadhaarNumber.trim())) {
+    if (form.aadhaarNumber.trim() && !/^\d{12}$/.test(form.aadhaarNumber.trim())) {
       toast.error("Aadhaar number must be 12 digits");
       return;
     }
-    if (!/^[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}$/.test(form.panNumber.trim())) {
+    if (form.panNumber.trim() && !/^[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}$/.test(form.panNumber.trim())) {
       toast.error("PAN number format is invalid");
       return;
     }
@@ -123,18 +123,6 @@ const CompleteProfile = () => {
     }
     if (!/^\d+$/.test(form.address.zip.trim())) {
       toast.error("PIN/Zip code must contain only numbers");
-      return;
-    }
-    if (!form.addressProofUpload && !profile?.addressProof?.fileUrl) {
-      toast.error("Address proof is required");
-      return;
-    }
-    if (!form.aadhaarProofUpload && !profile?.aadhaarProof?.fileUrl) {
-      toast.error("Aadhaar proof upload is required");
-      return;
-    }
-    if (!form.panProofUpload && !profile?.panProof?.fileUrl) {
-      toast.error("PAN proof upload is required");
       return;
     }
     const emergency = form.emergencyContacts[0];
@@ -190,7 +178,7 @@ const CompleteProfile = () => {
                 Complete Your Profile{profile?.firstName ? `, ${profile.firstName}` : ""}
               </h2>
               <p className="mt-1 text-sm text-slate-600">
-                Add your required KYC and personal details to activate your employee account.
+                Add your personal and KYC details to activate your employee account.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -357,7 +345,7 @@ const CompleteProfile = () => {
           <h3 className="mb-4 text-base font-semibold text-slate-900">KYC Documents</h3>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="rounded-xl border border-slate-200 p-3">
-              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">Address Proof (required)</label>
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">Address Proof (optional)</label>
               <Input
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp"
@@ -385,7 +373,7 @@ const CompleteProfile = () => {
             </div>
 
             <div className="rounded-xl border border-slate-200 p-3">
-              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">Aadhaar Card (required)</label>
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">Aadhaar Card (optional)</label>
               <Input
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp"
@@ -413,7 +401,7 @@ const CompleteProfile = () => {
             </div>
 
             <div className="rounded-xl border border-slate-200 p-3">
-              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">PAN Card (required)</label>
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">PAN Card (optional)</label>
               <Input
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp"

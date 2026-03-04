@@ -62,12 +62,16 @@ const formatAddress = (address: any) => {
   return parts.length ? parts.join(", ") : "-";
 };
 
+const ID_CARD_FRONT_SKELETON = (import.meta as any).env?.VITE_IDCARD_FRONT_SKELETON || "/idcard_front.jpg";
+const ID_CARD_BACK_SKELETON = (import.meta as any).env?.VITE_IDCARD_BACK_SKELETON || "/idcard_back.jpg";
+
 const ViewEmployee = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [employee, setEmployee] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [idCardSide, setIdCardSide] = useState<"front" | "back">("front");
 
   const fetchEmployee = async () => {
     if (!id) return;
@@ -265,6 +269,73 @@ const ViewEmployee = () => {
               ) : (
                 <p className="text-sm text-muted-foreground">No emergency contacts</p>
               )}
+            </div>
+
+            <div className="stat-card space-y-4 lg:col-span-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold">Employee ID Card</h3>
+                  <p className="text-sm text-muted-foreground">Admin preview of employee digital ID card</p>
+                </div>
+                <div className="inline-flex rounded-lg border p-1 bg-muted/40">
+                  <Button
+                    size="sm"
+                    variant={idCardSide === "front" ? "default" : "ghost"}
+                    onClick={() => setIdCardSide("front")}
+                  >
+                    Front
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={idCardSide === "back" ? "default" : "ghost"}
+                    onClick={() => setIdCardSide("back")}
+                  >
+                    Back
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mx-auto max-w-[390px]">
+                <div className="relative overflow-hidden rounded-[18px] border-[4px] border-[#0f4a79] bg-[#edf2f8] w-[360px] h-[604px]">
+                  <img
+                    src={idCardSide === "front" ? ID_CARD_FRONT_SKELETON : ID_CARD_BACK_SKELETON}
+                    alt={idCardSide === "front" ? "ID card front skeleton" : "ID card back skeleton"}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+
+                  <div className="relative z-10 h-full">
+                    {idCardSide === "front" ? (
+                      <>
+                        {employee?.profileImage && (
+                          <div className="absolute left-[22.5%] top-[24.3%] w-[51.0%] h-[37.2%] overflow-hidden">
+                            <img
+                              src={employee.profileImage}
+                              alt="ID profile"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
+
+                        <div className="absolute left-[8%] right-[8%] top-[64.9%] text-center">
+                          <p className="text-[#0a4874] text-[17px] sm:text-[19px] font-extrabold uppercase tracking-[0.6px] leading-tight">
+                            {`${employee?.firstName || ""} ${employee?.lastName || ""}`.trim() || "Employee Name"}
+                          </p>
+                          <p className="text-[#0a4874] text-[13px] sm:text-[14px] font-bold uppercase mt-1 leading-tight">
+                            {employee?.designationId?.name || "Designation"}
+                          </p>
+                        </div>
+
+                        <div className="absolute left-[53.2%] top-[75.2%] text-[#0a4874] text-[12px] sm:text-[13px] font-medium leading-[1.78]">
+                          <p>{employee?.employeeCode || "-"}</p>
+                          <p>{employee?.phone || "-"}</p>
+                          <p>{employee?.emergencyContacts?.[0]?.phone || "-"}</p>
+                          <p>{employee?.bloodGroup || "-"}</p>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </>

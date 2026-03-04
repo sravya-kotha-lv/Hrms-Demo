@@ -280,6 +280,7 @@ exports.completeMyProfile = async (req) => {
     phone: req.body.phone,
     dob: req.body.dob,
     gender: req.body.gender,
+    bloodGroup: req.body.bloodGroup ? String(req.body.bloodGroup).trim().toUpperCase() : req.body.bloodGroup,
     aadhaarNumber: req.body.aadhaarNumber,
     panNumber: req.body.panNumber ? String(req.body.panNumber).trim().toUpperCase() : req.body.panNumber,
     address: req.body.address,
@@ -331,31 +332,6 @@ exports.completeMyProfile = async (req) => {
       mimeType: req.body.panProofUpload.mimeType || "",
       uploadedAt: new Date()
     };
-  }
-
-  const resolvedAddressProof = editableFields.addressProof || employee.addressProof;
-  const resolvedAadhaarProof = editableFields.aadhaarProof || employee.aadhaarProof;
-  const resolvedPanProof = editableFields.panProof || employee.panProof;
-  const resolvedAadhaarNumber = editableFields.aadhaarNumber || employee.aadhaarNumber;
-  const resolvedPanNumber = editableFields.panNumber || employee.panNumber;
-
-  // Enforce full KYC only when completing profile for the first time.
-  if (!employee.profileCompleted) {
-    if (!resolvedAadhaarNumber) {
-      throw { code: 400, message: "Aadhaar number is required" };
-    }
-    if (!resolvedPanNumber) {
-      throw { code: 400, message: "PAN number is required" };
-    }
-    if (!resolvedAddressProof?.fileUrl) {
-      throw { code: 400, message: "Address proof upload is required" };
-    }
-    if (!resolvedAadhaarProof?.fileUrl) {
-      throw { code: 400, message: "Aadhaar proof upload is required" };
-    }
-    if (!resolvedPanProof?.fileUrl) {
-      throw { code: 400, message: "PAN proof upload is required" };
-    }
   }
 
   Object.assign(employee, editableFields);
