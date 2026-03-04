@@ -14,7 +14,6 @@ exports.loginSchema = Joi.object({
   .required()
   .messages({
     "any.required": "Email and password are required",
-    "object.base": "Email and password are required"
   });
 
 exports.createUserSchema = Joi.object({
