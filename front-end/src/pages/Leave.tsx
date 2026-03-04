@@ -9,6 +9,7 @@ import {
   XCircle,
   Clock,
   Eye,
+  RefreshCw,
   Palmtree,
   Stethoscope,
   Briefcase
@@ -145,6 +146,7 @@ const Leave = () => {
   const [comment, setComment] = useState("");
   const [leaves, setLeaves] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<"all" | "my">("all");
   const [applyOpen, setApplyOpen] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
@@ -220,6 +222,15 @@ const Leave = () => {
   useEffect(() => {
     fetchLeaves();
   }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchLeaves();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const fetchLeaveTypes = async () => {
     let res = await getApiWithToken("/employees/leave-types");
@@ -428,8 +439,14 @@ const Leave = () => {
             <Download className="w-4 h-4" />
             Export
           </Button> */}
-          <Button variant="outline" className="gap-2" onClick={fetchLeaves}>
-            Refresh
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={handleRefresh}
+            disabled={loading || refreshing}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading || refreshing ? "animate-spin" : ""}`} />
+            {loading || refreshing ? "Refreshing..." : "Refresh"}
           </Button>
           <PermissionGate permissions={["LEAVE_APPLY"]}>
             <Button className="gap-2" onClick={() => navigate("/leave/apply")}>

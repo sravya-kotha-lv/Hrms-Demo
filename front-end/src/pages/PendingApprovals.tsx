@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { RefreshCw } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -30,6 +31,7 @@ const PendingApprovals = () => {
   const [leaveRows, setLeaveRows] = useState<any[]>([]);
   const [attendanceRows, setAttendanceRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadLeaveApprovals = async () => {
     if (!canLeaveAction) {
@@ -74,6 +76,15 @@ const PendingApprovals = () => {
   useEffect(() => {
     loadData();
   }, [canLeaveAction, canAttendanceAction, canViewAny]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const actionLeave = async (id: string, status: "approved" | "rejected") => {
     const rejectionReason = status === "rejected"
@@ -135,7 +146,15 @@ const PendingApprovals = () => {
       {canViewAny && (
         <>
           <div className="flex justify-end mb-4">
-            <Button variant="outline" onClick={loadData}>Refresh</Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={handleRefresh}
+              disabled={loading || refreshing}
+            >
+              <RefreshCw className={`w-4 h-4 ${loading || refreshing ? "animate-spin" : ""}`} />
+              {loading || refreshing ? "Refreshing..." : "Refresh"}
+            </Button>
           </div>
 
           {canLeaveAction && (
@@ -155,6 +174,13 @@ const PendingApprovals = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {loading && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-muted-foreground">
+                        Loading leave approvals...
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {!loading && leaveRows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-muted-foreground">
@@ -162,7 +188,7 @@ const PendingApprovals = () => {
                       </TableCell>
                     </TableRow>
                   )}
-                  {leaveRows.map((row) => (
+                  {!loading && leaveRows.map((row) => (
                     <TableRow key={row._id} className="table-row-hover">
                       <TableCell>
                         {row.employeeId
@@ -203,6 +229,13 @@ const PendingApprovals = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {loading && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-muted-foreground">
+                        Loading attendance approvals...
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {!loading && attendanceRows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-muted-foreground">
@@ -210,7 +243,7 @@ const PendingApprovals = () => {
                       </TableCell>
                     </TableRow>
                   )}
-                  {attendanceRows.map((row) => (
+                  {!loading && attendanceRows.map((row) => (
                     <TableRow key={row._id} className="table-row-hover">
                       <TableCell>
                         {row.employeeId

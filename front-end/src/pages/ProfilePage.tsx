@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,8 @@ const RELATION_OPTIONS = [
   { label: "Friend", value: "friend" },
   { label: "Other", value: "other" }
 ];
+const ID_CARD_FRONT_SKELETON = (import.meta as any).env?.VITE_IDCARD_FRONT_SKELETON || "/idcard_front.jpg";
+const ID_CARD_BACK_SKELETON = (import.meta as any).env?.VITE_IDCARD_BACK_SKELETON || "/idcard_back.jpg";
 
 const ProfilePage = () => {
   const { loadProfile } = useAuth();
@@ -35,6 +37,9 @@ const ProfilePage = () => {
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
   const canEdit = hasPermission("EMP_SELF_EDIT");
+  const [idCardSide, setIdCardSide] = useState<"front" | "back">("front");
+  const idCardRef = useRef<HTMLDivElement | null>(null);
+  const [exportingBothPdf, setExportingBothPdf] = useState(false);
   const [profilePreviewUrl, setProfilePreviewUrl] = useState("");
   const [profilePicInputKey, setProfilePicInputKey] = useState(0);
 
@@ -123,6 +128,11 @@ const ProfilePage = () => {
   }
 
   const handleSave = async () => {
+    if (form.address?.zip?.trim() && !/^\d+$/.test(form.address.zip.trim())) {
+      toast.error("PIN/Zip code must contain only numbers");
+      return;
+    }
+
     const emergency = form.emergencyContacts[0];
     const hasEmergencyValue = Boolean(emergency?.name || emergency?.relation || emergency?.phone);
     if (hasEmergencyValue) {
@@ -160,6 +170,182 @@ const ProfilePage = () => {
       await loadProfile();
     } else {
       toast.error(res?.message || "Update failed");
+    }
+  };
+
+  const collectDocumentCssText = () => {
+    let cssText = "";
+    for (const styleSheet of Array.from(document.styleSheets)) {
+      try {
+        const rules = styleSheet.cssRules;
+        for (const rule of Array.from(rules)) {
+          cssText += `${rule.cssText}\n`;
+        }
+      } catch (_) {
+        // Ignore CORS-restricted stylesheets.
+      }
+    }
+    return cssText;
+  };
+
+  const captureIdCardPngDataUrl = async () => {
+    const cardNode = idCardRef.current;
+    if (!cardNode) throw new Error("ID card not found");
+
+    const rect = cardNode.getBoundingClientRect();
+    const width = Math.ceil(rect.width);
+    const height = Math.ceil(rect.height);
+    const cssText = collectDocumentCssText();
+    const clonedNode = cardNode.cloneNode(true) as HTMLDivElement;
+    clonedNode.style.margin = "0";
+
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+        <foreignObject width="100%" height="100%">
+          <div xmlns="http://www.w3.org/1999/xhtml">
+            <style>${cssText}</style>
+            ${clonedNode.outerHTML}
+          </div>
+        </foreignObject>
+      </svg>
+    `;
+
+    const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.decoding = "async";
+    image.src = url;
+
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Image render failed"));
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width * 2;
+    canvas.height = height * 2;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas context unavailable");
+    ctx.scale(2, 2);
+    ctx.drawImage(image, 0, 0, width, height);
+    URL.revokeObjectURL(url);
+
+    return canvas.toDataURL("image/png");
+  };
+
+  const waitForCardRender = async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  };
+
+  const downloadIdCardPng = async () => {
+    try {
+      const pngDataUrl = await captureIdCardPngDataUrl();
+      const link = document.createElement("a");
+      link.href = pngDataUrl;
+      link.download = `${(profile?.employeeCode || "employee-id-card").toLowerCase()}-${idCardSide}.png`;
+      link.click();
+      toast.success("ID card PNG downloaded");
+    } catch (error) {
+      toast.error("Unable to download PNG for this card");
+    }
+  };
+
+  const downloadIdCardPdf = () => {
+    const cardNode = idCardRef.current;
+    if (!cardNode) return;
+
+    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=1000");
+    if (!printWindow) {
+      toast.error("Popup blocked. Please allow popups to download PDF.");
+      return;
+    }
+
+    const cssText = collectDocumentCssText();
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>ID Card PDF</title>
+          <style>${cssText}</style>
+          <style>
+            body { margin: 0; padding: 24px; display: flex; justify-content: center; align-items: flex-start; background: #ffffff; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>${cardNode.outerHTML}</body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 300);
+  };
+
+  const downloadBothSidesPdf = async () => {
+    const previousSide = idCardSide;
+    try {
+      setExportingBothPdf(true);
+
+      setIdCardSide("front");
+      await waitForCardRender();
+      const frontPng = await captureIdCardPngDataUrl();
+
+      setIdCardSide("back");
+      await waitForCardRender();
+      const backPng = await captureIdCardPngDataUrl();
+
+      setIdCardSide(previousSide);
+      await waitForCardRender();
+
+      const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=1200");
+      if (!printWindow) {
+        toast.error("Popup blocked. Please allow popups to download PDF.");
+        return;
+      }
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>ID Card Both Sides</title>
+            <style>
+              body { margin: 0; padding: 20px; background: #fff; font-family: Arial, sans-serif; }
+              .page { page-break-after: always; display: flex; justify-content: center; align-items: flex-start; }
+              .page:last-child { page-break-after: auto; }
+              .card { width: min(390px, 100%); border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; }
+              .label { margin: 0 0 8px; text-align: center; color: #0b3d66; font-weight: 700; font-size: 14px; }
+              img { display: block; width: 100%; height: auto; }
+              @media print { body { padding: 0; } }
+            </style>
+          </head>
+          <body>
+            <div class="page">
+              <div>
+                <p class="label">Front Side</p>
+                <div class="card"><img src="${frontPng}" alt="ID Card Front" /></div>
+              </div>
+            </div>
+            <div class="page">
+              <div>
+                <p class="label">Back Side</p>
+                <div class="card"><img src="${backPng}" alt="ID Card Back" /></div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 300);
+    } catch (error) {
+      setIdCardSide(previousSide);
+      toast.error("Unable to generate both sides PDF");
+    } finally {
+      setExportingBothPdf(false);
     }
   };
 
@@ -210,6 +396,88 @@ const ProfilePage = () => {
                   View
                 </a>
               ) : "-"}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-card rounded-xl card-shadow p-6 mt-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-lg font-semibold">Employee ID Card</h3>
+            <p className="text-sm text-muted-foreground">Digital card for employee identification</p>
+          </div>
+          <div className="inline-flex rounded-lg border p-1 bg-muted/40">
+            <Button
+              size="sm"
+              variant={idCardSide === "front" ? "default" : "ghost"}
+              onClick={() => setIdCardSide("front")}
+            >
+              Front
+            </Button>
+            <Button
+              size="sm"
+              variant={idCardSide === "back" ? "default" : "ghost"}
+              onClick={() => setIdCardSide("back")}
+            >
+              Back
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={downloadIdCardPng}>Download PNG</Button>
+            <Button size="sm" onClick={downloadIdCardPdf}>Download PDF</Button>
+            <Button size="sm" variant="secondary" onClick={downloadBothSidesPdf} disabled={exportingBothPdf}>
+              {exportingBothPdf ? "Preparing..." : "Download Both Sides PDF"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="mx-auto max-w-[390px]">
+          <div
+            ref={idCardRef}
+            className="relative overflow-hidden rounded-[18px] border-[4px] border-[#0f4a79] bg-[#edf2f8] w-[360px] h-[604px]"
+          >
+            <img
+              src={idCardSide === "front" ? ID_CARD_FRONT_SKELETON : ID_CARD_BACK_SKELETON}
+              alt={idCardSide === "front" ? "ID card front skeleton" : "ID card back skeleton"}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+
+            <div className="relative z-10 h-full">
+              {idCardSide === "front" ? (
+                <>
+                  {(profilePreviewUrl || profile?.profileImage) && (
+                    <div className="absolute left-[22.5%] top-[24.3%] w-[51.0%] h-[37.2%] overflow-hidden">
+                      <img
+                        src={profilePreviewUrl || profile?.profileImage}
+                        alt="ID profile"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+
+                  <div className="absolute left-[10%] right-[10%] top-[64.5%] h-[11%] rounded-sm" />
+                  <div className="absolute left-[8%] right-[8%] top-[64.9%] text-center">
+                    <p className="text-[#0a4874] text-[17px] sm:text-[19px] font-extrabold uppercase tracking-[0.6px] leading-tight">
+                      {`${profile?.firstName || ""} ${profile?.lastName || ""}`.trim() || "Employee Name"}
+                    </p>
+                    <p className="text-[#0a4874] text-[13px] sm:text-[14px] font-bold uppercase mt-1 leading-tight">
+                      {profile?.designationId?.name || "Designation"}
+                    </p>
+                  </div>
+
+                  <div className="absolute left-[50.5%] right-[8%] top-[75.2%] h-[13.5%] rounded-sm" />
+                  <div className="absolute left-[53.2%] top-[75.2%] text-[#0a4874] text-[12px] sm:text-[13px] font-medium leading-[1.78]">
+                    <p>{profile?.employeeCode || "-"}</p>
+                    <p>{profile?.phone || "-"}</p>
+                    <p>{profile?.emergencyContacts?.[0]?.phone || "-"}</p>
+                    <p>{profile?.bloodGroup || "-"}</p>
+                  </div>
+
+                </>
+              ) : (
+                <></>
+              )}
             </div>
           </div>
         </div>
@@ -299,7 +567,11 @@ const ProfilePage = () => {
             <Input
               placeholder="Zip"
               value={form.address.zip}
-              onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value } })}
+              inputMode="numeric"
+              onChange={(e) => setForm({
+                ...form,
+                address: { ...form.address, zip: e.target.value.replace(/\D/g, "") }
+              })}
             />
             <Input
               type="file"

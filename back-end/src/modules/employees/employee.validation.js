@@ -43,6 +43,9 @@ const aadhaarNumberSchema = Joi.string().pattern(/^\d{12}$/).messages({
 const panNumberSchema = Joi.string().uppercase().pattern(/^[A-Z]{5}[0-9]{4}[A-Z]$/).messages({
   "string.pattern.base": "PAN number format is invalid"
 });
+const zipCodeSchema = Joi.string().trim().pattern(/^\d+$/).messages({
+  "string.pattern.base": "PIN code must contain only numbers"
+});
 const uploadSchema = Joi.object({
   fileName: Joi.string().required(),
   mimeType: Joi.string().required(),
@@ -92,7 +95,7 @@ exports.completeProfileSchema = Joi.object({
     city: Joi.string().required(),
     state: Joi.string().required(),
     country: Joi.string().required(),
-    zip: Joi.string().required()
+    zip: zipCodeSchema.required()
   }).required(),
 
   emergencyContacts: Joi.array().items(
@@ -140,7 +143,7 @@ exports.updateEmployeeSchema = Joi.object({
     city: Joi.string().optional(),
     state: Joi.string().optional(),
     country: Joi.string().optional(),
-    zip: Joi.string().optional()
+    zip: zipCodeSchema.optional().allow("")
   }).optional(),
 
   emergencyContacts: Joi.array().items(

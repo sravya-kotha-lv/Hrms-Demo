@@ -339,20 +339,23 @@ exports.completeMyProfile = async (req) => {
   const resolvedAadhaarNumber = editableFields.aadhaarNumber || employee.aadhaarNumber;
   const resolvedPanNumber = editableFields.panNumber || employee.panNumber;
 
-  if (!resolvedAadhaarNumber) {
-    throw { code: 400, message: "Aadhaar number is required" };
-  }
-  if (!resolvedPanNumber) {
-    throw { code: 400, message: "PAN number is required" };
-  }
-  if (!resolvedAddressProof?.fileUrl) {
-    throw { code: 400, message: "Address proof upload is required" };
-  }
-  if (!resolvedAadhaarProof?.fileUrl) {
-    throw { code: 400, message: "Aadhaar proof upload is required" };
-  }
-  if (!resolvedPanProof?.fileUrl) {
-    throw { code: 400, message: "PAN proof upload is required" };
+  // Enforce full KYC only when completing profile for the first time.
+  if (!employee.profileCompleted) {
+    if (!resolvedAadhaarNumber) {
+      throw { code: 400, message: "Aadhaar number is required" };
+    }
+    if (!resolvedPanNumber) {
+      throw { code: 400, message: "PAN number is required" };
+    }
+    if (!resolvedAddressProof?.fileUrl) {
+      throw { code: 400, message: "Address proof upload is required" };
+    }
+    if (!resolvedAadhaarProof?.fileUrl) {
+      throw { code: 400, message: "Aadhaar proof upload is required" };
+    }
+    if (!resolvedPanProof?.fileUrl) {
+      throw { code: 400, message: "PAN proof upload is required" };
+    }
   }
 
   Object.assign(employee, editableFields);
