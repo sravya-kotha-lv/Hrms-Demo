@@ -103,6 +103,8 @@ const getApplicableLeaveDays = ({
   return dayMeta.filter((d, index) => !d.excluded || (index > firstWorkingIdx && index < lastWorkingIdx)).length;
 };
 
+const LEAVE_REASON_REGEX = /^(?=.*[A-Za-z])[A-Za-z\s.,'()&/-]+$/;
+
 const LeaveApply = () => {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -249,6 +251,23 @@ const LeaveApply = () => {
       toast.error("Leave type and both dates are required");
       return;
     }
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      toast.error("Reason is required");
+      return;
+    }
+    if (trimmedReason.length < 3) {
+      toast.error("Reason must be at least 3 characters");
+      return;
+    }
+    if (trimmedReason.length > 500) {
+      toast.error("Reason must be at most 500 characters");
+      return;
+    }
+    if (!LEAVE_REASON_REGEX.test(trimmedReason)) {
+      toast.error("Reason must contain meaningful text (letters only, no numbers)");
+      return;
+    }
     if (applicableDays <= 0) {
       toast.error("Selected dates only include holidays/week-offs");
       return;
@@ -258,7 +277,7 @@ const LeaveApply = () => {
       setSubmitting(true);
       const res = await postApiWithToken(
         "/leaves/apply",
-        { leaveTypeId, fromDate, toDate, duration, halfDaySession, reason },
+        { leaveTypeId, fromDate, toDate, duration, halfDaySession, reason: trimmedReason },
         null,
         { requiredPermissions: ["LEAVE_APPLY"] }
       );
@@ -432,7 +451,7 @@ const LeaveApply = () => {
               <Input
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Optional reason"
+                placeholder="Enter leave reason"
               />
             </div>
 

@@ -121,6 +121,10 @@ const CompleteProfile = () => {
       toast.error("Address Line 1, City, State, Country and Zip are required");
       return;
     }
+    if (!/^\d+$/.test(form.address.zip.trim())) {
+      toast.error("PIN/Zip code must contain only numbers");
+      return;
+    }
     if (!form.addressProofUpload && !profile?.addressProof?.fileUrl) {
       toast.error("Address proof is required");
       return;
@@ -337,7 +341,14 @@ const CompleteProfile = () => {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Zip</label>
-              <Input value={form.address.zip} onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value } })} />
+              <Input
+                inputMode="numeric"
+                value={form.address.zip}
+                onChange={(e) => setForm({
+                  ...form,
+                  address: { ...form.address, zip: e.target.value.replace(/\D/g, "") }
+                })}
+              />
             </div>
           </div>
         </section>
