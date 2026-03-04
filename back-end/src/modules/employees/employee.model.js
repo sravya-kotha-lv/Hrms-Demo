@@ -93,6 +93,7 @@ const employeeSchema = new mongoose.Schema(
     // 👤 Optional personal details
     dob: Date,
     gender: String,
+    bloodGroup: String,
 
     address: {
       line1: String,
