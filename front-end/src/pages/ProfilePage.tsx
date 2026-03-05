@@ -265,7 +265,7 @@ const ProfilePage = () => {
     ctx.fillText(text, xLeft, yCenter, width);
   };
 
-  const captureIdCardPngDataUrl = async () => {
+  const captureIdCardPngDataUrl = async (side: "front" | "back" = idCardSide) => {
     const cardNode = idCardRef.current;
     if (!cardNode) throw new Error("ID card not found");
 
@@ -284,13 +284,13 @@ const ProfilePage = () => {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
 
-    const templateSrc = idCardSide === "front" ? ID_CARD_FRONT_SKELETON : ID_CARD_BACK_SKELETON;
+    const templateSrc = side === "front" ? ID_CARD_FRONT_SKELETON : ID_CARD_BACK_SKELETON;
     const templateImageSrc = await getCanvasSafeImageSrc(templateSrc);
     if (!templateImageSrc) throw new Error("Card template image unavailable");
     const templateImage = await loadImage(templateImageSrc);
     ctx.drawImage(templateImage, 0, 0, width, height);
 
-    if (idCardSide === "front") {
+    if (side === "front") {
       const cardRect = cardNode.getBoundingClientRect();
       const profileSrc = profilePreviewUrl || profile?.profileImage || "";
       const profileImageSrc = await getCanvasSafeImageSrc(profileSrc);
@@ -329,7 +329,7 @@ const ProfilePage = () => {
 
   const downloadIdCardPng = async () => {
     try {
-      const pngDataUrl = await captureIdCardPngDataUrl();
+      const pngDataUrl = await captureIdCardPngDataUrl(idCardSide);
       const link = document.createElement("a");
       link.href = pngDataUrl;
       link.download = `${(profile?.employeeCode || "employee-id-card").toLowerCase()}-${idCardSide}.png`;
@@ -460,7 +460,7 @@ const ProfilePage = () => {
 
   const downloadIdCardPdf = async () => {
     try {
-      const pngDataUrl = await captureIdCardPngDataUrl();
+      const pngDataUrl = await captureIdCardPngDataUrl(idCardSide);
       await savePdfFromPngDataUrls(
         [{ pngDataUrl }],
         `${(profile?.employeeCode || "employee-id-card").toLowerCase()}-${idCardSide}.pdf`
@@ -480,11 +480,11 @@ const ProfilePage = () => {
 
       setIdCardSide("front");
       await waitForCardRender();
-      const frontPng = await captureIdCardPngDataUrl();
+      const frontPng = await captureIdCardPngDataUrl("front");
 
       setIdCardSide("back");
       await waitForCardRender();
-      const backPng = await captureIdCardPngDataUrl();
+      const backPng = await captureIdCardPngDataUrl("back");
 
       setIdCardSide(previousSide);
       await waitForCardRender();
