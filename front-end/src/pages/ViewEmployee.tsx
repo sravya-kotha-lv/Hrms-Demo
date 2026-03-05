@@ -307,7 +307,7 @@ const ViewEmployee = () => {
                     {idCardSide === "front" ? (
                       <>
                         {employee?.profileImage && (
-                          <div className="absolute left-[22.5%] top-[24.3%] w-[51.0%] h-[37.2%] overflow-hidden">
+                          <div className="absolute left-[22.2%] top-[24.3%] w-[51.2%] h-[37.2%] overflow-hidden">
                             <img
                               src={employee.profileImage}
                               alt="ID profile"
