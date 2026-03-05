@@ -614,7 +614,7 @@ const ProfilePage = () => {
                   <div className="absolute left-[10%] right-[10%] top-[64.5%] h-[11%] rounded-sm" />
                   <div className="absolute left-[8%] right-[8%] top-[64.9%] text-center">
                     <p data-idcard-name className="text-[#0a4874] text-[17px] sm:text-[19px] font-extrabold uppercase tracking-[0.6px] leading-tight">
-                      {`${profile?.firstName || ""} ${profile?.lastName || ""}`.trim() || "Employee Name"}
+                      {`${profile?.firstName || ""} ${(profile?.lastName || "").trim().charAt(0)}`.trim() || "Employee Name"}
                     </p>
                     <p data-idcard-designation className="text-[#0a4874] text-[13px] sm:text-[14px] font-bold uppercase mt-1 leading-tight">
                       {profile?.designationId?.name || "Designation"}

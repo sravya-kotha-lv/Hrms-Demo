@@ -318,7 +318,7 @@ const ViewEmployee = () => {
 
                         <div className="absolute left-[8%] right-[8%] top-[64.9%] text-center">
                           <p className="text-[#0a4874] text-[17px] sm:text-[19px] font-extrabold uppercase tracking-[0.6px] leading-tight">
-                            {`${employee?.firstName || ""} ${employee?.lastName || ""}`.trim() || "Employee Name"}
+                            {`${employee?.firstName || ""} ${(employee?.lastName || "").trim().charAt(0)}`.trim() || "Employee Name"}
                           </p>
                           <p className="text-[#0a4874] text-[13px] sm:text-[14px] font-bold uppercase mt-1 leading-tight">
                             {employee?.designationId?.name || "Designation"}
