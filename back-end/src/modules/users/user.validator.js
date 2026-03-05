@@ -16,6 +16,16 @@ exports.loginSchema = Joi.object({
     "any.required": "Email and password are required",
   });
 
+exports.loginWithSelfieSchema = Joi.object({
+  email: Joi.string().trim().lowercase().email().max(255).required(),
+  password: Joi.string().required(),
+  selfieImage: Joi.string().trim().min(32).required()
+})
+  .required()
+  .messages({
+    "any.required": "Email, password and selfie image are required",
+  });
+
 exports.createUserSchema = Joi.object({
   email: buildEmailSchema({ required: true }),
   password: Joi.string().min(6).required(),

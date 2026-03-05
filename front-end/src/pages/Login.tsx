@@ -5,7 +5,7 @@ import { getApiWithToken, postApiWithoutToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ShieldCheck, Clock3, Users2, CalendarCheck2, Sparkles } from "lucide-react";
+import { ShieldCheck, Clock3, Users2, CalendarCheck2, Sparkles, Camera } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { InlineLoader } from "@/components/ui/loaders";
 
@@ -42,6 +42,86 @@ const slides = [
   }
 ];
 
+const captureSelfieForLogin = async (): Promise<string | null> => {
+  if (!navigator.mediaDevices?.getUserMedia) return null;
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.zIndex = "9999";
+    overlay.style.background = "rgba(0,0,0,0.8)";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+
+    const card = document.createElement("div");
+    card.style.background = "#fff";
+    card.style.padding = "12px";
+    card.style.borderRadius = "12px";
+    card.style.width = "min(92vw, 420px)";
+    card.style.display = "flex";
+    card.style.flexDirection = "column";
+    card.style.gap = "10px";
+
+    const title = document.createElement("div");
+    title.textContent = "Take Selfie For Login";
+    title.style.fontWeight = "600";
+
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    video.style.width = "100%";
+    video.style.borderRadius = "8px";
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.justifyContent = "flex-end";
+
+    const cancel = document.createElement("button");
+    cancel.textContent = "Cancel";
+    cancel.style.padding = "8px 10px";
+
+    const capture = document.createElement("button");
+    capture.textContent = "Capture";
+    capture.style.padding = "8px 10px";
+
+    const cleanup = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      overlay.remove();
+    };
+
+    cancel.onclick = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    capture.onclick = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        cleanup();
+        resolve(null);
+        return;
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+      cleanup();
+      resolve(dataUrl);
+    };
+
+    actions.append(cancel, capture);
+    card.append(title, video, actions);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  });
+};
+
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -50,7 +130,7 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingMode, setSubmittingMode] = useState<null | "password" | "selfie">(null);
   const [slideIndex, setSlideIndex] = useState(0);
   const searchParams = new URLSearchParams(location.search);
   const sessionExpired = searchParams.get("reason") === "session_expired";
@@ -61,6 +141,58 @@ const Login = () => {
     }, 4500);
     return () => window.clearInterval(timer);
   }, []);
+
+  const completeLogin = async (response: any) => {
+    if (response.code !== 200) {
+      toast.warning(response.message || "Login failed");
+      return;
+    }
+
+    const { roles, activeRole } = response.data;
+    const resolvedActiveRole = activeRole || roles?.[0] || null;
+
+    setProfile({
+      ...response.data,
+      activeRole: resolvedActiveRole
+    });
+
+    const isSuperAdmin =
+      resolvedActiveRole?.slug === "superadmin" ||
+      roles?.some((role: any) => role.slug === "superadmin");
+
+    const mustChangePassword = Boolean(response?.data?.mustChangePassword);
+
+    if (mustChangePassword) {
+      setPermissions([]);
+      toast.info("Please change your password to continue.");
+      navigate("/change-password", { replace: true });
+      return;
+    }
+
+    try {
+      const [permRes] = await Promise.all([
+        getApiWithToken("/users/me/permissions"),
+        loadProfile()
+      ]);
+      if (permRes?.success) {
+        setPermissions(permRes.data || []);
+      } else {
+        setPermissions([]);
+      }
+    } catch {
+      setPermissions([]);
+    }
+    toast.success("Logged in successfully!");
+
+    if (isSuperAdmin) {
+      localStorage.setItem("isSuperAdmin", "true");
+      localStorage.setItem("adminUserId", response.data.userId);
+      localStorage.setItem("adminRoleId", response.data.roles[0]._id);
+      navigate("/dashboard", { replace: true });
+    } else {
+      navigate("/", { replace: true });
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -76,63 +208,53 @@ const Login = () => {
     }
 
     try {
-      setSubmitting(true);
+      setSubmittingMode("password");
       const response: any = await postApiWithoutToken("/users/login", {
         email: submittedEmail,
         password: submittedPassword
       });
-      if (response.code === 200) {
-        const { roles, activeRole } = response.data;
-        const resolvedActiveRole = activeRole || roles?.[0] || null;
-
-        setProfile({
-          ...response.data,
-          activeRole: resolvedActiveRole
-        });
-
-        const isSuperAdmin =
-          resolvedActiveRole?.slug === "superadmin" ||
-          roles?.some((role: any) => role.slug === "superadmin");
-
-        const mustChangePassword = Boolean(response?.data?.mustChangePassword);
-
-        if (mustChangePassword) {
-          setPermissions([]);
-          toast.info("Please change your password to continue.");
-          navigate("/change-password", { replace: true });
-          return;
-        }
-
-        try {
-          const [permRes] = await Promise.all([
-            getApiWithToken("/users/me/permissions"),
-            loadProfile()
-          ]);
-          if (permRes?.success) {
-            setPermissions(permRes.data || []);
-          } else {
-            setPermissions([]);
-          }
-        } catch {
-          setPermissions([]);
-        }
-        toast.success("Logged in successfully!");
-
-        if (isSuperAdmin) {
-          localStorage.setItem("isSuperAdmin", "true");
-          localStorage.setItem("adminUserId", response.data.userId);
-          localStorage.setItem("adminRoleId", response.data.roles[0]._id);
-          navigate("/dashboard", { replace: true });
-        } else {
-          navigate("/", { replace: true });
-        }
-      } else {
-        toast.warning(response.message || "Login failed");
-      }
+      await completeLogin(response);
     } catch {
       toast.error("Login failed");
     } finally {
-      setSubmitting(false);
+      setSubmittingMode(null);
+    }
+  };
+
+  const handleSelfieLogin = async () => {
+    setError("");
+    const submittedEmail = String(email || "").trim().toLowerCase();
+    const submittedPassword = String(password || "");
+
+    if (!submittedEmail || !submittedPassword) {
+      setError("Email and password are required");
+      return;
+    }
+
+    try {
+      setSubmittingMode("selfie");
+      const selfieImage = await captureSelfieForLogin();
+      if (!selfieImage) {
+        toast.warning("Selfie capture cancelled");
+        return;
+      }
+      const response: any = await postApiWithoutToken("/users/login/selfie", {
+        email: submittedEmail,
+        password: submittedPassword,
+        selfieImage
+      });
+      if (response?.code === 200 && response?.data?.selfieVerificationBypassed) {
+        toast.warning(
+          response?.data?.selfieVerificationBypassReason
+            ? `Face verification bypassed: ${response.data.selfieVerificationBypassReason}`
+            : "Face verification bypassed due to provider unavailability"
+        );
+      }
+      await completeLogin(response);
+    } catch {
+      toast.error("Selfie login failed");
+    } finally {
+      setSubmittingMode(null);
     }
   };
 
@@ -243,8 +365,11 @@ const Login = () => {
                 Forgot password?
               </Link>
             </div>
-            <Button type="submit" className="w-full h-11" disabled={submitting}>
-              {submitting ? <InlineLoader label="Signing in..." className="text-white" /> : "Login"}
+            {/* <Button type="submit" className="w-full h-11" disabled={Boolean(submittingMode)}>
+              {submittingMode === "password" ? <InlineLoader label="Signing in..." className="text-white" /> : "Login"}
+            </Button> */}
+            <Button type="button" variant="outline" className="w-full h-11" disabled={Boolean(submittingMode)} onClick={handleSelfieLogin}>
+              {submittingMode === "selfie" ? <InlineLoader label="Verifying selfie..." /> : <span className="inline-flex items-center gap-2"><Camera className="w-4 h-4" /> Login with Selfie</span>}
             </Button>
           </form>
 

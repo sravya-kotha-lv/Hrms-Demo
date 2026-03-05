@@ -15,6 +15,13 @@ router.post(
   asyncHandler(controller.login)
 );
 
+router.post(
+  "/login/selfie",
+  publicLimiter,
+  validate(validator.loginWithSelfieSchema),
+  asyncHandler(controller.loginWithSelfie)
+);
+
 router.get(
   "/",
   auth,

@@ -27,6 +27,29 @@ exports.login = async (req, res) => {
   }
 };
 
+exports.loginWithSelfie = async (req, res) => {
+  try {
+    const result = await userService.loginUserWithSelfie(req.body);
+    res.setHeader("Authorization", result?.token);
+    delete result.token;
+    return res.status(200).json(
+      buildSuccessResponse({
+        code: 200,
+        message: "Selfie login successful",
+        data: result
+      })
+    );
+  } catch (err) {
+    return res.status(err.code || 500).json(
+      buildFailureResponse({
+        code: err.code || 500,
+        message: err.message || "Selfie login failed",
+        error: err.error || null
+      })
+    );
+  }
+};
+
 exports.listByOrganization = async (req, res) => {
   try {
     const data = await userService.listByOrganization({
