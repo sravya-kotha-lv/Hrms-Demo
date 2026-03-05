@@ -31,6 +31,39 @@ const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const ID_CARD_FRONT_SKELETON = (import.meta as any).env?.VITE_IDCARD_FRONT_SKELETON || "/idcard_front.jpg";
 const ID_CARD_BACK_SKELETON = (import.meta as any).env?.VITE_IDCARD_BACK_SKELETON || "/idcard_back.jpg";
 const ID_CARD_INFO_ROW_NUDGES = [2.5, 1.5, 1, -1];
+const ID_CARD_NAME_MAX_LETTERS = 15;
+
+const countLetters = (value: string) => value.replace(/[^A-Za-z]/g, "").length;
+
+const takeWordsWithinLetterLimit = (value: string, maxLetters: number) => {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  const keptWords: string[] = [];
+  let used = 0;
+  for (const word of words) {
+    const letters = countLetters(word);
+    if (used + letters > maxLetters) break;
+    keptWords.push(word);
+    used += letters;
+  }
+  if (keptWords.length) return keptWords.join(" ");
+  const compact = value.replace(/\s+/g, "");
+  return compact.slice(0, maxLetters);
+};
+
+const formatIdCardName = (firstName?: string, lastName?: string) => {
+  const first = (firstName || "").trim();
+  const last = (lastName || "").trim();
+  const full = `${first} ${last}`.trim();
+  if (!full) return "Employee Name";
+  if (countLetters(full) <= ID_CARD_NAME_MAX_LETTERS) return full;
+
+  const firstWithinLimit = takeWordsWithinLetterLimit(first, ID_CARD_NAME_MAX_LETTERS);
+  const firstLetters = countLetters(firstWithinLimit);
+  const lastInitial = last.charAt(0);
+  if (!lastInitial) return firstWithinLimit || "Employee Name";
+  if (firstLetters + 1 > ID_CARD_NAME_MAX_LETTERS) return firstWithinLimit || "Employee Name";
+  return `${firstWithinLimit} ${lastInitial}`.trim();
+};
 
 const ProfilePage = () => {
   const { loadProfile } = useAuth();
@@ -614,7 +647,7 @@ const ProfilePage = () => {
                   <div className="absolute left-[10%] right-[10%] top-[64.5%] h-[11%] rounded-sm" />
                   <div className="absolute left-[8%] right-[8%] top-[64.9%] text-center">
                     <p data-idcard-name className="text-[#0a4874] text-[17px] sm:text-[19px] font-extrabold uppercase tracking-[0.6px] leading-tight">
-                      {`${profile?.firstName || ""} ${profile?.lastName || ""}`.trim() || "Employee Name"}
+                      {formatIdCardName(profile?.firstName, profile?.lastName)}
                     </p>
                     <p data-idcard-designation className="text-[#0a4874] text-[13px] sm:text-[14px] font-bold uppercase mt-1 leading-tight">
                       {profile?.designationId?.name || "Designation"}
