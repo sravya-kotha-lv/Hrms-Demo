@@ -10,9 +10,73 @@ const Employee = require("../employees/employee.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
 const leaveBalanceService = require("../leaveBalances/leaveBalance.service");
 
-exports.loginUser = async ({ email, password }) => {
-  console.log("Attempting login with email:", email, password);
-  
+const FACEPP_COMPARE_URL = process.env.FACEPP_COMPARE_URL || "https://api-us.faceplusplus.com/facepp/v3/compare";
+const FACE_MATCH_MIN_CONFIDENCE = Number(process.env.FACE_MATCH_MIN_CONFIDENCE || 70);
+const FACE_LOGIN_ALLOW_PASSWORD_FALLBACK = String(process.env.FACE_LOGIN_ALLOW_PASSWORD_FALLBACK || "false").toLowerCase() === "true";
+
+const extractBase64Payload = (value = "") => {
+  if (!value || typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("data:")) {
+    const commaIndex = trimmed.indexOf(",");
+    return commaIndex >= 0 ? trimmed.slice(commaIndex + 1) : "";
+  }
+  return trimmed;
+};
+
+const compareFacesWithFacePP = async ({ profileImageUrl, selfieImage }) => {
+  const apiKey = process.env.FACEPP_API_KEY;
+  const apiSecret = process.env.FACEPP_API_SECRET;
+  if (!apiKey || !apiSecret) {
+    throw {
+      code: 503,
+      message: "Selfie login provider is not configured. Set FACEPP_API_KEY and FACEPP_API_SECRET."
+    };
+  }
+
+  const selfieBase64 = extractBase64Payload(selfieImage);
+  if (!selfieBase64) {
+    throw {
+      code: 400,
+      message: "Invalid selfie image payload"
+    };
+  }
+
+  const body = new URLSearchParams();
+  body.set("api_key", apiKey);
+  body.set("api_secret", apiSecret);
+  body.set("image_url1", profileImageUrl);
+  body.set("image_base64_2", selfieBase64);
+
+  let responseJson;
+  try {
+    const response = await fetch(FACEPP_COMPARE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString()
+    });
+    responseJson = await response.json();
+  } catch {
+    throw {
+      code: 502,
+      message: "Face verification service is unreachable"
+    };
+  }
+
+  if (responseJson?.error_message) {
+    throw {
+      code: 400,
+      message: `Face verification failed: ${responseJson.error_message}`
+    };
+  }
+
+  const confidence = Number(responseJson?.confidence || 0);
+  const passed = confidence >= FACE_MATCH_MIN_CONFIDENCE;
+  return { passed, confidence };
+};
+
+const resolveLoginContext = async ({ email, password }) => {
   if (!email || !password) {
     throw {
       code: 400,
@@ -81,11 +145,21 @@ exports.loginUser = async ({ email, password }) => {
   }
 
   const activeRole = m.roleIds[0] || null;
+  return {
+    user,
+    membership: m,
+    activeRole
+  };
+};
+
+exports.loginUser = async ({ email, password }) => {
+  console.log("Attempting login with email:", email, password);
+  const { user, membership, activeRole } = await resolveLoginContext({ email, password });
 
   const token = createJwtToken({
     userId: user._id,
-    organizationId: m.organizationId._id,
-    roleIds: m.roleIds.map(r => r._id),
+    organizationId: membership.organizationId._id,
+    roleIds: membership.roleIds.map(r => r._id),
     activeRoleId: activeRole?._id
   });
 
@@ -94,10 +168,77 @@ exports.loginUser = async ({ email, password }) => {
   return {
     token,
     userId: user._id,
-    organization: m.organizationId,
-    roles: m.roleIds,
+    organization: membership.organizationId,
+    roles: membership.roleIds,
     activeRole,
     mustChangePassword: Boolean(user.passwordChangeRequired)
+  };
+};
+
+exports.loginUserWithSelfie = async ({ email, password, selfieImage }) => {
+  if (!selfieImage || typeof selfieImage !== "string" || selfieImage.trim().length < 32) {
+    throw {
+      code: 400,
+      message: "Valid selfie image is required"
+    };
+  }
+
+  const { user, membership, activeRole } = await resolveLoginContext({ email, password });
+  const employee = await Employee.findOne({
+    userId: user._id,
+    organizationId: membership.organizationId?._id || membership.organizationId,
+    isDeleted: false
+  }).select("profileImage");
+
+  if (!employee?.profileImage) {
+    throw {
+      code: 400,
+      message: "Profile photo is not available. Contact admin before using selfie login."
+    };
+  }
+
+  let faceResult = null;
+  let selfieVerificationBypassed = false;
+  let selfieVerificationBypassReason = null;
+
+  try {
+    faceResult = await compareFacesWithFacePP({
+      profileImageUrl: employee.profileImage,
+      selfieImage
+    });
+  } catch (err) {
+    const shouldFallback = FACE_LOGIN_ALLOW_PASSWORD_FALLBACK && [502, 503].includes(err?.code);
+    if (!shouldFallback) throw err;
+    selfieVerificationBypassed = true;
+    selfieVerificationBypassReason = err?.message || "Face verification unavailable";
+  }
+
+  if (!selfieVerificationBypassed && faceResult && !faceResult.passed) {
+    throw {
+      code: 401,
+      message: `Face match failed (confidence ${faceResult.confidence.toFixed(2)}). Please try again.`
+    };
+  }
+
+  const token = createJwtToken({
+    userId: user._id,
+    organizationId: membership.organizationId._id,
+    roleIds: membership.roleIds.map(r => r._id),
+    activeRoleId: activeRole?._id
+  });
+
+  await rotateUserToken(User, user._id, token);
+
+  return {
+    token,
+    userId: user._id,
+    organization: membership.organizationId,
+    roles: membership.roleIds,
+    activeRole,
+    mustChangePassword: Boolean(user.passwordChangeRequired),
+    selfieVerificationBypassed,
+    selfieVerificationBypassReason,
+    faceMatchConfidence: faceResult?.confidence ?? null
   };
 };
 
