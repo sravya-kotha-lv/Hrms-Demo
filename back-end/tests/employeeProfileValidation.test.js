@@ -26,6 +26,17 @@ test("completeProfileSchema accepts numeric zip", () => {
   assert.equal(error, undefined);
 });
 
+test("completeProfileSchema accepts empty address line 2", () => {
+  const { error } = completeProfileSchema.validate({
+    ...validCompleteProfilePayload,
+    address: {
+      ...validCompleteProfilePayload.address,
+      line2: ""
+    }
+  });
+  assert.equal(error, undefined);
+});
+
 test("completeProfileSchema rejects alphabetic zip", () => {
   const { error } = completeProfileSchema.validate({
     ...validCompleteProfilePayload,
@@ -44,4 +55,13 @@ test("updateEmployeeSchema rejects alphabetic zip", () => {
     }
   });
   assert.ok(error);
+});
+
+test("updateEmployeeSchema accepts empty address line 2", () => {
+  const { error } = updateEmployeeSchema.validate({
+    address: {
+      line2: ""
+    }
+  });
+  assert.equal(error, undefined);
 });
