@@ -36,7 +36,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         if (rawValue !== nextValue) nextMessage = "Only letters and spaces are allowed";
       } else if (validationType === "designationName") {
         nextValue = sanitizeDesignationNameInput(rawValue);
-        if (rawValue !== nextValue) nextMessage = "Only letters, spaces and & are allowed";
+        if (rawValue !== nextValue) nextMessage = "Only letters, spaces, & and - are allowed";
       } else if (validationType === "email") {
         nextValue = sanitizeEmailInput(rawValue);
         if (rawValue !== nextValue) nextMessage = "Email cannot contain spaces and will be lowercase";
