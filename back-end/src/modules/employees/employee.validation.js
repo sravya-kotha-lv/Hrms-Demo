@@ -102,7 +102,7 @@ exports.completeProfileSchema = Joi.object({
 
   address: Joi.object({
     line1: Joi.string().required(),
-    line2: Joi.string().optional(),
+    line2: Joi.string().optional().allow(""),
     city: Joi.string().required(),
     state: Joi.string().required(),
     country: Joi.string().required(),
@@ -151,7 +151,7 @@ exports.updateEmployeeSchema = Joi.object({
 
   address: Joi.object({
     line1: Joi.string().optional(),
-    line2: Joi.string().optional(),
+    line2: Joi.string().optional().allow(""),
     city: Joi.string().optional(),
     state: Joi.string().optional(),
     country: Joi.string().optional(),
