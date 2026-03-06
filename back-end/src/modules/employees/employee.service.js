@@ -1030,6 +1030,7 @@ exports.updateByHr = async (req) => {
     panNumber,
     address,
     emergencyContacts,
+    profileImageUpload,
     addressProofUpload,
     aadhaarProofUpload,
     panProofUpload
@@ -1112,6 +1113,14 @@ exports.updateByHr = async (req) => {
 
   if (employee.employmentLifecycleStatus === "terminated") {
     employee.status = "resigned";
+  }
+
+  if (profileImageUpload?.base64Data && profileImageUpload?.mimeType) {
+    const imageDataUri = `data:${profileImageUpload.mimeType};base64,${profileImageUpload.base64Data}`;
+    const uploadedImage = await uploadDataUri(imageDataUri, {
+      folder: "hrms/employee-profile-images"
+    });
+    employee.profileImage = uploadedImage?.secure_url || null;
   }
 
   if (addressProofUpload?.base64Data && addressProofUpload?.mimeType) {

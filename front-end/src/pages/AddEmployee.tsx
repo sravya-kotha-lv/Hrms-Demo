@@ -34,6 +34,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { hasAnyPermission } from "@/utils/auth";
 import { Switch } from "@/components/ui/switch";
 
+const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
 /* ================= TYPES ================= */
 
 interface Option {
@@ -96,6 +99,11 @@ const AddEmployee = () => {
       || "LV")
   );
   const [profileImageUrl, setProfileImageUrl] = useState("");
+  const [profileImageUpload, setProfileImageUpload] = useState<null | {
+    fileName: string;
+    mimeType: string;
+    base64Data: string;
+  }>(null);
   const [originalLifecycleStatus, setOriginalLifecycleStatus] = useState("confirmed");
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("employee");
@@ -223,6 +231,30 @@ const AddEmployee = () => {
     }
   }, []);
 
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || "");
+        const base64 = result.includes(",") ? result.split(",")[1] : result;
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const validateProfileImage = (file: File) => {
+    if (!PROFILE_IMAGE_TYPES.includes(file.type)) {
+      toast.error("Invalid profile image format");
+      return false;
+    }
+    if (file.size > PROFILE_IMAGE_MAX_BYTES) {
+      toast.error("Profile image size should be under 2MB");
+      return false;
+    }
+    return true;
+  };
+
   const fetchEmployee = async () => {
     if (!id) return;
     const res = await getApiWithToken(`/employees/${id}`);
@@ -251,6 +283,7 @@ const AddEmployee = () => {
         (employee.status === "resigned" ? "notice" : "confirmed")
       );
       setProfileImageUrl(employee.profileImage || "");
+      setProfileImageUpload(null);
     } else {
       toast.error(res?.message || "Failed to load employee");
     }
@@ -519,6 +552,7 @@ const AddEmployee = () => {
       shiftId: form.shiftId || undefined,
       employmentType: form.employmentType,
       dateOfJoining: form.dateOfJoining,
+      ...(profileImageUpload ? { profileImageUpload } : {}),
       ...(isEdit && form.employmentLifecycleStatus === "probation"
         ? { employmentLifecycleStatus: "probation" }
         : {}),
@@ -920,6 +954,34 @@ const AddEmployee = () => {
                 {profileImageUrl ? "Current profile image is shown." : "No profile image uploaded yet."}
               </p>
             </div>
+          </div>
+        )}
+
+        {isEdit && (
+          <div className="md:col-span-2">
+            <Label>Profile Picture</Label>
+            <Input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (!validateProfileImage(file)) {
+                  e.target.value = "";
+                  return;
+                }
+                const base64Data = await fileToBase64(file);
+                setProfileImageUpload({
+                  fileName: file.name,
+                  mimeType: file.type,
+                  base64Data
+                });
+                setProfileImageUrl(URL.createObjectURL(file));
+              }}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Admin can replace the employee profile picture. JPG, PNG, or WebP up to 2MB.
+            </p>
           </div>
         )}
 
