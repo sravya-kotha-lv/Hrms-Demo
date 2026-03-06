@@ -65,3 +65,14 @@ test("updateEmployeeSchema accepts empty address line 2", () => {
   });
   assert.equal(error, undefined);
 });
+
+test("updateEmployeeSchema accepts profile image upload payload", () => {
+  const { error } = updateEmployeeSchema.validate({
+    profileImageUpload: {
+      fileName: "avatar.png",
+      mimeType: "image/png",
+      base64Data: "ZmFrZS1pbWFnZS1ieXRlcw=="
+    }
+  });
+  assert.equal(error, undefined);
+});

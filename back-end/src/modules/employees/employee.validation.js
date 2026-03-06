@@ -165,6 +165,7 @@ exports.updateEmployeeSchema = Joi.object({
       phone: emergencyPhone.required()
     })
   ).optional(),
+  profileImageUpload: uploadSchema.optional(),
   addressProofUpload: uploadSchema.optional(),
   aadhaarProofUpload: uploadSchema.optional(),
   panProofUpload: uploadSchema.optional()
