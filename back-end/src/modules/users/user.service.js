@@ -11,6 +11,7 @@ const OrgSettings = require("../orgSettings/orgSettings.model");
 const leaveBalanceService = require("../leaveBalances/leaveBalance.service");
 
 const FACEPP_COMPARE_URL = process.env.FACEPP_COMPARE_URL || "https://api-us.faceplusplus.com/facepp/v3/compare";
+const FACEPP_DETECT_URL = process.env.FACEPP_DETECT_URL || "https://api-us.faceplusplus.com/facepp/v3/detect";
 const FACE_MATCH_MIN_CONFIDENCE = Number(process.env.FACE_MATCH_MIN_CONFIDENCE || 70);
 const FACE_LOGIN_ALLOW_PASSWORD_FALLBACK = String(process.env.FACE_LOGIN_ALLOW_PASSWORD_FALLBACK || "false").toLowerCase() === "true";
 
@@ -74,6 +75,77 @@ const compareFacesWithFacePP = async ({ profileImageUrl, selfieImage }) => {
   const confidence = Number(responseJson?.confidence || 0);
   const passed = confidence >= FACE_MATCH_MIN_CONFIDENCE;
   return { passed, confidence };
+};
+
+const detectEyesWithFacePP = async ({ selfieImage }) => {
+  const apiKey = process.env.FACEPP_API_KEY;
+  const apiSecret = process.env.FACEPP_API_SECRET;
+  if (!apiKey || !apiSecret) {
+    throw {
+      code: 503,
+      message: "Selfie login provider is not configured. Set FACEPP_API_KEY and FACEPP_API_SECRET."
+    };
+  }
+
+  const selfieBase64 = extractBase64Payload(selfieImage);
+  if (!selfieBase64) {
+    throw {
+      code: 400,
+      message: "Invalid selfie image payload"
+    };
+  }
+
+  const body = new URLSearchParams();
+  body.set("api_key", apiKey);
+  body.set("api_secret", apiSecret);
+  body.set("image_base64", selfieBase64);
+  body.set("return_attributes", "eyestatus");
+
+  let responseJson;
+  try {
+    const response = await fetch(FACEPP_DETECT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString()
+    });
+    responseJson = await response.json();
+  } catch {
+    throw {
+      code: 502,
+      message: "Face liveness service is unreachable"
+    };
+  }
+
+  if (responseJson?.error_message) {
+    throw {
+      code: 400,
+      message: `Face liveness failed: ${responseJson.error_message}`
+    };
+  }
+
+  const face = responseJson?.faces?.[0];
+  if (!face?.attributes?.eyestatus) {
+    throw {
+      code: 400,
+      message: "No clear face detected for liveness check"
+    };
+  }
+
+  const left = face.attributes.eyestatus.left_eye_status || {};
+  const right = face.attributes.eyestatus.right_eye_status || {};
+  const pickMax = (obj = {}, keys = []) => Math.max(...keys.map((k) => Number(obj[k] || 0)));
+  const openKeys = ["no_glass_eye_open", "normal_glass_eye_open", "dark_glasses"];
+  const closeKeys = ["no_glass_eye_close", "normal_glass_eye_close"];
+  const openScore = Math.min(
+    pickMax(left, openKeys),
+    pickMax(right, openKeys)
+  );
+  const closeScore = Math.min(
+    pickMax(left, closeKeys),
+    pickMax(right, closeKeys)
+  );
+
+  return { openScore, closeScore };
 };
 
 const resolveLoginContext = async ({ email, password }) => {
@@ -175,11 +247,17 @@ exports.loginUser = async ({ email, password }) => {
   };
 };
 
-exports.loginUserWithSelfie = async ({ email, password, selfieImage }) => {
+exports.loginUserWithSelfie = async ({ email, password, selfieImage, livenessSelfieImage }) => {
   if (!selfieImage || typeof selfieImage !== "string" || selfieImage.trim().length < 32) {
     throw {
       code: 400,
       message: "Valid selfie image is required"
+    };
+  }
+  if (!livenessSelfieImage || typeof livenessSelfieImage !== "string" || livenessSelfieImage.trim().length < 32) {
+    throw {
+      code: 400,
+      message: "Liveness selfie image is required"
     };
   }
 
@@ -202,6 +280,21 @@ exports.loginUserWithSelfie = async ({ email, password, selfieImage }) => {
   let selfieVerificationBypassReason = null;
 
   try {
+    const openEyes = await detectEyesWithFacePP({ selfieImage });
+    if (openEyes.openScore < 50 || openEyes.openScore <= openEyes.closeScore) {
+      throw {
+        code: 401,
+        message: "Liveness check failed: first selfie must have eyes open"
+      };
+    }
+    const closedEyes = await detectEyesWithFacePP({ selfieImage: livenessSelfieImage });
+    if (closedEyes.closeScore < 50 || closedEyes.closeScore <= closedEyes.openScore) {
+      throw {
+        code: 401,
+        message: "Liveness check failed: second selfie must have eyes closed"
+      };
+    }
+
     faceResult = await compareFacesWithFacePP({
       profileImageUrl: employee.profileImage,
       selfieImage

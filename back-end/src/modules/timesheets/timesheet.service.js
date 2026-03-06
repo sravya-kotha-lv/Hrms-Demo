@@ -41,6 +41,8 @@ const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "superadmin"
 ]);
 const ATTENDANCE_SELFIE_VIEW_ROLE_SLUGS = new Set(["hr", "org-admin"]);
+const FACEPP_COMPARE_URL = process.env.FACEPP_COMPARE_URL || "https://api-us.faceplusplus.com/facepp/v3/compare";
+const FACE_MATCH_MIN_CONFIDENCE = Number(process.env.FACE_MATCH_MIN_CONFIDENCE || 70);
 
 const parseDateValue = (value) => {
   if (value instanceof Date) return new Date(value);
@@ -116,6 +118,56 @@ const parseTimeToMinutes = (timeString) => {
   if (!timeString || !/^\d{2}:\d{2}$/.test(timeString)) return null;
   const [hh, mm] = timeString.split(":").map(Number);
   return hh * 60 + mm;
+};
+
+const extractBase64Payload = (value = "") => {
+  if (!value || typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("data:")) {
+    const commaIndex = trimmed.indexOf(",");
+    return commaIndex >= 0 ? trimmed.slice(commaIndex + 1) : "";
+  }
+  return trimmed;
+};
+
+const compareFacesWithFacePP = async ({ profileImageUrl, selfieImage }) => {
+  const apiKey = process.env.FACEPP_API_KEY;
+  const apiSecret = process.env.FACEPP_API_SECRET;
+  if (!apiKey || !apiSecret) {
+    throwHttpError(503, "Selfie face verification is not configured. Contact admin.");
+  }
+
+  const selfieBase64 = extractBase64Payload(selfieImage);
+  if (!selfieBase64) {
+    throwHttpError(400, "Invalid selfie image payload");
+  }
+
+  const body = new URLSearchParams();
+  body.set("api_key", apiKey);
+  body.set("api_secret", apiSecret);
+  body.set("image_url1", profileImageUrl);
+  body.set("image_base64_2", selfieBase64);
+
+  let responseJson;
+  try {
+    const response = await fetch(FACEPP_COMPARE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString()
+    });
+    responseJson = await response.json();
+  } catch (_) {
+    throwHttpError(502, "Face verification service is unreachable");
+  }
+
+  if (responseJson?.error_message) {
+    throwHttpError(400, `Face verification failed: ${responseJson.error_message}`);
+  }
+
+  const confidence = Number(responseJson?.confidence || 0);
+  const passed = confidence >= FACE_MATCH_MIN_CONFIDENCE;
+  return { passed, confidence };
 };
 
 const buildScheduledDateTime = (dateValue, minutesFromMidnight) => {
@@ -756,6 +808,22 @@ exports.checkIn = async (req) => {
 
   if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && !checkInSelfieProvided) {
     throwHttpError(403, "Selfie is required for check-in");
+  }
+
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && checkInSelfieProvided) {
+    if (!employee?.profileImage) {
+      throwHttpError(400, "Profile photo is not available. Contact admin before selfie check-in.");
+    }
+    const faceResult = await compareFacesWithFacePP({
+      profileImageUrl: employee.profileImage,
+      selfieImage: checkInSelfieImage
+    });
+    if (!faceResult.passed) {
+      throwHttpError(
+        403,
+        `Face match failed (confidence ${faceResult.confidence.toFixed(2)}). Check-in denied.`
+      );
+    }
   }
 
   if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceGeoFenceEnabled) {
