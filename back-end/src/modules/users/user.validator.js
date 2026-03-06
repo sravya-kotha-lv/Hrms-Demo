@@ -19,7 +19,8 @@ exports.loginSchema = Joi.object({
 exports.loginWithSelfieSchema = Joi.object({
   email: Joi.string().trim().lowercase().email().max(255).required(),
   password: Joi.string().required(),
-  selfieImage: Joi.string().trim().min(32).required()
+  selfieImage: Joi.string().trim().min(32).required(),
+  livenessSelfieImage: Joi.string().trim().min(32).required()
 })
   .required()
   .messages({

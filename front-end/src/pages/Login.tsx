@@ -42,7 +42,7 @@ const slides = [
   }
 ];
 
-const captureSelfieForLogin = async (): Promise<string | null> => {
+const captureSelfieForLogin = async (titleText = "Take Selfie For Login"): Promise<string | null> => {
   if (!navigator.mediaDevices?.getUserMedia) return null;
 
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
@@ -66,7 +66,7 @@ const captureSelfieForLogin = async (): Promise<string | null> => {
     card.style.gap = "10px";
 
     const title = document.createElement("div");
-    title.textContent = "Take Selfie For Login";
+    title.textContent = titleText;
     title.style.fontWeight = "600";
 
     const video = document.createElement("video");
@@ -233,15 +233,21 @@ const Login = () => {
 
     try {
       setSubmittingMode("selfie");
-      const selfieImage = await captureSelfieForLogin();
+      const selfieImage = await captureSelfieForLogin("Step 1/2: Capture selfie with eyes open");
       if (!selfieImage) {
         toast.warning("Selfie capture cancelled");
+        return;
+      }
+      const livenessSelfieImage = await captureSelfieForLogin("Step 2/2: Capture selfie with eyes closed");
+      if (!livenessSelfieImage) {
+        toast.warning("Liveness selfie capture cancelled");
         return;
       }
       const response: any = await postApiWithoutToken("/users/login/selfie", {
         email: submittedEmail,
         password: submittedPassword,
-        selfieImage
+        selfieImage,
+        livenessSelfieImage
       });
       if (response?.code === 200 && response?.data?.selfieVerificationBypassed) {
         toast.warning(
@@ -365,9 +371,9 @@ const Login = () => {
                 Forgot password?
               </Link>
             </div>
-            {/* <Button type="submit" className="w-full h-11" disabled={Boolean(submittingMode)}>
+            <Button type="submit" className="w-full h-11" disabled={Boolean(submittingMode)}>
               {submittingMode === "password" ? <InlineLoader label="Signing in..." className="text-white" /> : "Login"}
-            </Button> */}
+            </Button>
             <Button type="button" variant="outline" className="w-full h-11" disabled={Boolean(submittingMode)} onClick={handleSelfieLogin}>
               {submittingMode === "selfie" ? <InlineLoader label="Verifying selfie..." /> : <span className="inline-flex items-center gap-2"><Camera className="w-4 h-4" /> Login with Selfie</span>}
             </Button>
