@@ -24,6 +24,15 @@ test("updateDesignationSchema accepts ampersand in designation name", () => {
   assert.equal(error, undefined);
 });
 
+test("createDesignationSchema accepts hyphen in designation name", () => {
+  const { error } = createDesignationSchema.validate({
+    name: "Vice-President",
+    departmentId: "dept-1",
+    status: "active"
+  });
+  assert.equal(error, undefined);
+});
+
 test("createDesignationSchema rejects unsupported symbols in designation name", () => {
   const { error } = createDesignationSchema.validate({
     name: "QA/Dev",

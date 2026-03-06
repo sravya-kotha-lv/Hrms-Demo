@@ -4,8 +4,8 @@ export const sanitizeNameInput = (value: string): string => {
 };
 
 export const sanitizeDesignationNameInput = (value: string): string => {
-  const lettersSpacesAmpersandOnly = String(value || "").replace(/[^A-Za-z&\s]/g, "");
-  return lettersSpacesAmpersandOnly.replace(/\s{2,}/g, " ");
+  const allowedDesignationCharsOnly = String(value || "").replace(/[^A-Za-z&\-\s]/g, "");
+  return allowedDesignationCharsOnly.replace(/\s{2,}/g, " ");
 };
 
 export const sanitizeEmailInput = (value: string): string =>

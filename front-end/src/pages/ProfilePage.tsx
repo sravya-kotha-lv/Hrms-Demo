@@ -812,10 +812,10 @@ const ProfilePage = () => {
             {form.addressProofUpload?.fileName && (
               <p className="text-xs text-muted-foreground">{form.addressProofUpload.fileName}</p>
             )}
-
+          <h3 className="mb-4 text-base font-semibold text-slate-900">Emergency Contact</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <Input
-                placeholder="Emergency Contact Name"
+                placeholder="Name"
                 value={form.emergencyContacts[0]?.name || ""}
                 onChange={(e) => setForm({
                   ...form,

@@ -9,11 +9,13 @@ const buildNameSchema = ({
   max = 120,
   required = false,
   allowEmpty = false,
-  allowAmpersand = false
+  allowAmpersand = false,
+  allowHyphen = false
 } = {}) => {
-  const pattern = allowAmpersand ? /^[A-Za-z &]+$/ : NAME_REGEX;
-  const patternMessage = allowAmpersand
-    ? "Only letters, spaces and & are allowed"
+  const allowDesignationSymbols = allowAmpersand || allowHyphen;
+  const pattern = allowDesignationSymbols ? /^[A-Za-z &-]+$/ : NAME_REGEX;
+  const patternMessage = allowDesignationSymbols
+    ? "Only letters, spaces, & and - are allowed"
     : "Only letters and spaces are allowed";
   let schema = Joi.string()
     .trim()
