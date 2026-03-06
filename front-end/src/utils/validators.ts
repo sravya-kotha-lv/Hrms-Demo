@@ -3,6 +3,11 @@ export const sanitizeNameInput = (value: string): string => {
   return lettersAndSpacesOnly.replace(/\s{2,}/g, " ");
 };
 
+export const sanitizeDesignationNameInput = (value: string): string => {
+  const lettersSpacesAmpersandOnly = String(value || "").replace(/[^A-Za-z&\s]/g, "");
+  return lettersSpacesAmpersandOnly.replace(/\s{2,}/g, " ");
+};
+
 export const sanitizeEmailInput = (value: string): string =>
   String(value || "").toLowerCase().replace(/\s+/g, "");
 

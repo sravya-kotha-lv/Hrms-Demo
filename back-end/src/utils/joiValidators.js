@@ -8,15 +8,20 @@ const buildNameSchema = ({
   min = 2,
   max = 120,
   required = false,
-  allowEmpty = false
+  allowEmpty = false,
+  allowAmpersand = false
 } = {}) => {
+  const pattern = allowAmpersand ? /^[A-Za-z &]+$/ : NAME_REGEX;
+  const patternMessage = allowAmpersand
+    ? "Only letters, spaces and & are allowed"
+    : "Only letters and spaces are allowed";
   let schema = Joi.string()
     .trim()
     .min(min)
     .max(max)
-    .pattern(NAME_REGEX)
+    .pattern(pattern)
     .messages({
-      "string.pattern.base": "Only letters and spaces are allowed"
+      "string.pattern.base": patternMessage
     });
 
   if (allowEmpty) {
