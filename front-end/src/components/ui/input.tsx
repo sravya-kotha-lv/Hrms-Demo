@@ -4,6 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   sanitizeCodeInput,
+  sanitizeDesignationNameInput,
   sanitizeEmailInput,
   sanitizeNameInput,
   sanitizePhoneInput,
@@ -11,7 +12,7 @@ import {
 } from "@/utils/validators";
 
 type InputProps = React.ComponentProps<"input"> & {
-  validationType?: "name" | "email" | "phone" | "code" | "slug";
+  validationType?: "name" | "designationName" | "email" | "phone" | "code" | "slug";
 };
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
@@ -33,6 +34,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       if (validationType === "name") {
         nextValue = sanitizeNameInput(rawValue);
         if (rawValue !== nextValue) nextMessage = "Only letters and spaces are allowed";
+      } else if (validationType === "designationName") {
+        nextValue = sanitizeDesignationNameInput(rawValue);
+        if (rawValue !== nextValue) nextMessage = "Only letters, spaces and & are allowed";
       } else if (validationType === "email") {
         nextValue = sanitizeEmailInput(rawValue);
         if (rawValue !== nextValue) nextMessage = "Email cannot contain spaces and will be lowercase";
