@@ -143,11 +143,11 @@ exports.updateEmployeeSchema = Joi.object({
   managerId: objectId.optional(),
   shiftId: objectId.optional().allow(null, ""),
 
-  dob: Joi.date().optional(),
-  gender: Joi.string().optional(),
-  bloodGroup: bloodGroupSchema.optional(),
-  aadhaarNumber: aadhaarNumberSchema.optional(),
-  panNumber: panNumberSchema.optional(),
+  dob: Joi.date().optional().allow(""),
+  gender: Joi.string().optional().allow(""),
+  bloodGroup: bloodGroupSchema.optional().allow(""),
+  aadhaarNumber: aadhaarNumberSchema.optional().allow(""),
+  panNumber: panNumberSchema.optional().allow(""),
 
   address: Joi.object({
     line1: Joi.string().optional(),

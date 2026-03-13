@@ -36,6 +36,19 @@ import { Switch } from "@/components/ui/switch";
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const RELATION_OPTIONS = [
+  { label: "Father", value: "father" },
+  { label: "Mother", value: "mother" },
+  { label: "Spouse", value: "spouse" },
+  { label: "Brother", value: "brother" },
+  { label: "Sister", value: "sister" },
+  { label: "Son", value: "son" },
+  { label: "Daughter", value: "daughter" },
+  { label: "Guardian", value: "guardian" },
+  { label: "Friend", value: "friend" },
+  { label: "Other", value: "other" }
+];
 
 /* ================= TYPES ================= */
 
@@ -76,6 +89,23 @@ const emptyForm = {
   employmentType: "",
   dateOfJoining: "",
   employmentLifecycleStatus: "confirmed",
+  phone: "",
+  dob: "",
+  gender: "",
+  bloodGroup: "",
+  aadhaarNumber: "",
+  panNumber: "",
+  address: {
+    line1: "",
+    line2: "",
+    city: "",
+    state: "",
+    country: "",
+    zip: ""
+  },
+  emergencyContacts: [
+    { name: "", relation: "", phone: "" }
+  ]
 };
 
 /* ================= COMPONENT ================= */
@@ -277,6 +307,16 @@ const AddEmployee = () => {
         employmentLifecycleStatus:
           employee.employmentLifecycleStatus ||
           (employee.status === "resigned" ? "notice" : "confirmed"),
+        phone: employee.phone || "",
+        dob: employee.dob ? new Date(employee.dob).toISOString().slice(0, 10) : "",
+        gender: employee.gender || "",
+        bloodGroup: employee.bloodGroup || "",
+        aadhaarNumber: employee.aadhaarNumber || "",
+        panNumber: employee.panNumber || "",
+        address: employee.address || emptyForm.address,
+        emergencyContacts: employee.emergencyContacts?.length
+          ? employee.emergencyContacts
+          : emptyForm.emergencyContacts
       });
       setOriginalLifecycleStatus(
         employee.employmentLifecycleStatus ||
@@ -540,6 +580,41 @@ const AddEmployee = () => {
       return;
     }
 
+    if (isEdit && form.phone.trim() && !/^\d{10,15}$/.test(form.phone.trim())) {
+      toast.error("Phone must be 10-15 digits");
+      return;
+    }
+    if (isEdit && form.aadhaarNumber.trim() && !/^\d{12}$/.test(form.aadhaarNumber.trim())) {
+      toast.error("Aadhaar number must be 12 digits");
+      return;
+    }
+    if (isEdit && form.panNumber.trim() && !/^[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}$/.test(form.panNumber.trim())) {
+      toast.error("PAN number format is invalid");
+      return;
+    }
+    if (isEdit && form.address.zip.trim() && !/^\d+$/.test(form.address.zip.trim())) {
+      toast.error("PIN/Zip code must contain only numbers");
+      return;
+    }
+    if (isEdit) {
+      const emergency = form.emergencyContacts[0];
+      const hasEmergencyValue = Boolean(emergency?.name || emergency?.relation || emergency?.phone);
+      if (hasEmergencyValue) {
+        if (!emergency?.name || !emergency?.relation || !emergency?.phone) {
+          toast.error("Complete all emergency contact fields");
+          return;
+        }
+        if (!/^[A-Za-z ]{2,50}$/.test(emergency.name.trim())) {
+          toast.error("Emergency contact name should contain only letters (2-50 chars)");
+          return;
+        }
+        if (!/^\d{10}$/.test(emergency.phone.trim())) {
+          toast.error("Emergency contact mobile number must be 10 digits");
+          return;
+        }
+      }
+    }
+
     const payload = {
       email: form.email,
       roleIds: form.roleIds,
@@ -553,6 +628,18 @@ const AddEmployee = () => {
       employmentType: form.employmentType,
       dateOfJoining: form.dateOfJoining,
       ...(profileImageUpload ? { profileImageUpload } : {}),
+      ...(isEdit
+        ? {
+            phone: form.phone.trim(),
+            dob: form.dob || undefined,
+            gender: form.gender || undefined,
+            bloodGroup: form.bloodGroup || undefined,
+            aadhaarNumber: form.aadhaarNumber.trim(),
+            panNumber: form.panNumber.trim().toUpperCase(),
+            address: form.address,
+            emergencyContacts: form.emergencyContacts.filter((c) => c.name && c.relation && c.phone)
+          }
+        : {}),
       ...(isEdit && form.employmentLifecycleStatus === "probation"
         ? { employmentLifecycleStatus: "probation" }
         : {}),
@@ -1301,6 +1388,211 @@ const AddEmployee = () => {
               >
                 Terminate without Notice
               </Button>
+            </div>
+          </div>
+        )}
+
+        {isEdit && (
+          <div className="md:col-span-2 mt-2 rounded-md border p-4">
+            <div className="mb-4">
+              <h3 className="text-base font-semibold">Personal Details</h3>
+              <p className="text-sm text-muted-foreground">
+                Admin can update phone, KYC, address, and emergency contact details.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Phone</Label>
+                <Input
+                  validationType="phone"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="10-15 digit phone number"
+                />
+              </div>
+
+              <div>
+                <Label>Date of Birth</Label>
+                <Input
+                  type="date"
+                  value={form.dob}
+                  onChange={(e) => setForm({ ...form, dob: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <Label>Gender</Label>
+                <Select
+                  value={form.gender || "none"}
+                  onValueChange={(v) => setForm({ ...form, gender: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not set</SelectItem>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Blood Group</Label>
+                <Select
+                  value={form.bloodGroup || "none"}
+                  onValueChange={(v) => setForm({ ...form, bloodGroup: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select blood group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not set</SelectItem>
+                    {BLOOD_GROUP_OPTIONS.map((group) => (
+                      <SelectItem key={group} value={group}>
+                        {group}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Aadhaar Number</Label>
+                <Input
+                  value={form.aadhaarNumber}
+                  onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value.replace(/\D/g, "").slice(0, 12) })}
+                  placeholder="12 digit Aadhaar number"
+                />
+              </div>
+
+              <div>
+                <Label>PAN Number</Label>
+                <Input
+                  value={form.panNumber}
+                  onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })}
+                  placeholder="ABCDE1234F"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <Label>Address Line 1</Label>
+                <Input
+                  value={form.address.line1}
+                  onChange={(e) => setForm({ ...form, address: { ...form.address, line1: e.target.value } })}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <Label>Address Line 2</Label>
+                <Input
+                  value={form.address.line2}
+                  onChange={(e) => setForm({ ...form, address: { ...form.address, line2: e.target.value } })}
+                />
+              </div>
+
+              <div>
+                <Label>City</Label>
+                <Input
+                  value={form.address.city}
+                  onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })}
+                />
+              </div>
+
+              <div>
+                <Label>State</Label>
+                <Input
+                  value={form.address.state}
+                  onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value } })}
+                />
+              </div>
+
+              <div>
+                <Label>Country</Label>
+                <Input
+                  value={form.address.country}
+                  onChange={(e) => setForm({ ...form, address: { ...form.address, country: e.target.value } })}
+                />
+              </div>
+
+              <div>
+                <Label>Zip</Label>
+                <Input
+                  inputMode="numeric"
+                  value={form.address.zip}
+                  onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value.replace(/\D/g, "") } })}
+                />
+              </div>
+
+              <div>
+                <Label>Emergency Contact Name</Label>
+                <Input
+                  validationType="name"
+                  value={form.emergencyContacts[0]?.name || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      emergencyContacts: [
+                        {
+                          ...(form.emergencyContacts[0] || { name: "", relation: "", phone: "" }),
+                          name: e.target.value
+                        }
+                      ]
+                    })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Emergency Relation</Label>
+                <Select
+                  value={form.emergencyContacts[0]?.relation || "none"}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...form,
+                      emergencyContacts: [
+                        {
+                          ...(form.emergencyContacts[0] || { name: "", relation: "", phone: "" }),
+                          relation: v === "none" ? "" : v
+                        }
+                      ]
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select relation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not set</SelectItem>
+                    {RELATION_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Emergency Contact Phone</Label>
+                <Input
+                  validationType="phone"
+                  value={form.emergencyContacts[0]?.phone || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      emergencyContacts: [
+                        {
+                          ...(form.emergencyContacts[0] || { name: "", relation: "", phone: "" }),
+                          phone: e.target.value
+                        }
+                      ]
+                    })
+                  }
+                />
+              </div>
             </div>
           </div>
         )}
