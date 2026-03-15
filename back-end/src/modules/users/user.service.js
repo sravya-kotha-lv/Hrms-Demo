@@ -216,7 +216,10 @@ const resolveLoginContext = async ({ email, password }) => {
     }
   }
 
-  const activeRole = m.roleIds[0] || null;
+  const activeRole =
+    m.roleIds.find((role) => role?._id?.toString() === user.lastActiveRoleId?.toString()) ||
+    m.roleIds[0] ||
+    null;
   return {
     user,
     membership: m,
@@ -236,6 +239,11 @@ exports.loginUser = async ({ email, password }) => {
   });
 
   await rotateUserToken(User, user._id, token);
+  await User.findByIdAndUpdate(user._id, {
+    activeOrganizationId: membership.organizationId._id,
+    lastActiveRoleId: activeRole?._id || null,
+    lastLoginAt: new Date()
+  });
 
   return {
     token,
@@ -321,6 +329,11 @@ exports.loginUserWithSelfie = async ({ email, password, selfieImage, livenessSel
   });
 
   await rotateUserToken(User, user._id, token);
+  await User.findByIdAndUpdate(user._id, {
+    activeOrganizationId: membership.organizationId._id,
+    lastActiveRoleId: activeRole?._id || null,
+    lastLoginAt: new Date()
+  });
 
   return {
     token,
@@ -662,7 +675,8 @@ exports.switchOrgAndRole = async ({
   });
 
   await User.findByIdAndUpdate(user.userId, {
-    activeOrganizationId: organizationId
+    activeOrganizationId: organizationId,
+    lastActiveRoleId: activeRoleId
   });
 
   await rotateUserToken(User, user.userId, token);
