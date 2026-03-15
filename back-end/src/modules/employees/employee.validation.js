@@ -56,6 +56,12 @@ const bloodGroupSchema = Joi.string().trim().uppercase().valid(
 const zipCodeSchema = Joi.string().trim().pattern(/^\d+$/).messages({
   "string.pattern.base": "PIN code must contain only numbers"
 });
+const placeNameSchema = Joi.string()
+  .trim()
+  .pattern(/^[A-Za-z]+(?:[A-Za-z .'-]*[A-Za-z])?$/)
+  .messages({
+    "string.pattern.base": "City, state and country must contain only letters"
+  });
 const uploadSchema = Joi.object({
   fileName: Joi.string().required(),
   mimeType: Joi.string().required(),
@@ -103,9 +109,9 @@ exports.completeProfileSchema = Joi.object({
   address: Joi.object({
     line1: Joi.string().required(),
     line2: Joi.string().optional().allow(""),
-    city: Joi.string().required(),
-    state: Joi.string().required(),
-    country: Joi.string().required(),
+    city: placeNameSchema.required(),
+    state: placeNameSchema.required(),
+    country: placeNameSchema.required(),
     zip: zipCodeSchema.required()
   }).required(),
 
@@ -152,9 +158,9 @@ exports.updateEmployeeSchema = Joi.object({
   address: Joi.object({
     line1: Joi.string().optional(),
     line2: Joi.string().optional().allow(""),
-    city: Joi.string().optional(),
-    state: Joi.string().optional(),
-    country: Joi.string().optional(),
+    city: placeNameSchema.optional(),
+    state: placeNameSchema.optional(),
+    country: placeNameSchema.optional(),
     zip: zipCodeSchema.optional().allow("")
   }).optional(),
 

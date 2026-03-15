@@ -19,6 +19,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -31,7 +32,7 @@ import { getApiWithToken, postApiWithToken, putApiWithToken, deleteApiWithToken 
 import { useAuth } from "@/context/AuthContext";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { toast } from "sonner";
-import { Pencil, Trash2, Plus, Link as LinkIcon } from "lucide-react";
+import { Pencil, Trash2, Plus, Link as LinkIcon, RefreshCw } from "lucide-react";
 
 const categoryOptions = [
   { value: "assets", label: "Assets" },
@@ -547,86 +548,125 @@ const Expenses = () => {
 
       {canView && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="stat-card">
-              <p className="text-sm text-muted-foreground mb-1">Total Expense</p>
-              <p className="text-2xl font-bold">{formatMoney(computedSummary.totals.totalAmount)}</p>
-            </div>
-            <div className="stat-card">
-              <p className="text-sm text-muted-foreground mb-1">Total Tax</p>
-              <p className="text-2xl font-bold">{formatMoney(computedSummary.totals.totalTax)}</p>
-            </div>
-            <div className="stat-card">
-              <p className="text-sm text-muted-foreground mb-1">Net Spend</p>
-              <p className="text-2xl font-bold">{formatMoney(computedSummary.totals.netSpend)}</p>
-            </div>
-            <div className="stat-card">
-              <p className="text-sm text-muted-foreground mb-1">This Month Spend</p>
-              <p className="text-2xl font-bold">{formatMoney(computedSummary.thisMonth.netSpend)}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-            <div className="bg-card rounded-xl card-shadow p-4 lg:col-span-2 overflow-x-auto">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">Top Vendors</h3>
-                <span className="text-xs text-muted-foreground">Vendor-wise spend analytics</span>
+          {loading ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                {Array.from({ length: 4 }).map((_, idx) => (
+                  <div key={`expense-stat-skeleton-${idx}`} className="stat-card space-y-3">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-8 w-32" />
+                  </div>
+                ))}
               </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Count</TableHead>
-                    <TableHead>Net Spend</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(vendorAnalytics.length ? vendorAnalytics.slice(0, 6) : []).map((row: any) => (
-                    <TableRow key={row.vendorKey || row.vendor}>
-                      <TableCell>{row.vendor || "Unspecified"}</TableCell>
-                      <TableCell>{row.count || 0}</TableCell>
-                      <TableCell>{formatMoney(row.netSpend || 0)}</TableCell>
-                    </TableRow>
-                  ))}
-                  {(!vendorAnalytics || vendorAnalytics.length === 0) && (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-muted-foreground">No vendor analytics yet</TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
 
-            {canManage && (
-              <div className="bg-card rounded-xl card-shadow p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">Vendor Master</h3>
-                  <Button size="sm" onClick={openVendorCreate}>
-                    <Plus className="w-4 h-4 mr-1" /> Add
-                  </Button>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                <div className="bg-card rounded-xl card-shadow p-4 lg:col-span-2 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-5 w-28" />
+                    <Skeleton className="h-4 w-36" />
+                  </div>
+                  {Array.from({ length: 4 }).map((_, idx) => (
+                    <Skeleton key={`vendor-analytics-skeleton-${idx}`} className="h-10 w-full rounded-md" />
+                  ))}
                 </div>
-                <div className="space-y-2 max-h-52 overflow-auto">
-                  {vendors.length === 0 && (
-                    <p className="text-sm text-muted-foreground">No vendors added</p>
-                  )}
-                  {vendors.map((vendor) => (
-                    <div key={vendor._id} className="border rounded-lg p-2 flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium">{vendor.name}</p>
-                        <Badge variant="outline" className="mt-1">
-                          {vendor.isActive ? "active" : "inactive"}
-                        </Badge>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => openVendorEdit(vendor)}>Edit</Button>
-                        <Button size="sm" variant="outline" onClick={() => deleteVendor(vendor._id)}>Delete</Button>
-                      </div>
+
+                {canManage && (
+                  <div className="bg-card rounded-xl card-shadow p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Skeleton className="h-5 w-28" />
+                      <Skeleton className="h-8 w-16" />
                     </div>
-                  ))}
+                    {Array.from({ length: 3 }).map((_, idx) => (
+                      <Skeleton key={`vendor-master-skeleton-${idx}`} className="h-14 w-full rounded-md" />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="stat-card">
+                  <p className="text-sm text-muted-foreground mb-1">Total Expense</p>
+                  <p className="text-2xl font-bold">{formatMoney(computedSummary.totals.totalAmount)}</p>
+                </div>
+                <div className="stat-card">
+                  <p className="text-sm text-muted-foreground mb-1">Total Tax</p>
+                  <p className="text-2xl font-bold">{formatMoney(computedSummary.totals.totalTax)}</p>
+                </div>
+                <div className="stat-card">
+                  <p className="text-sm text-muted-foreground mb-1">Net Spend</p>
+                  <p className="text-2xl font-bold">{formatMoney(computedSummary.totals.netSpend)}</p>
+                </div>
+                <div className="stat-card">
+                  <p className="text-sm text-muted-foreground mb-1">This Month Spend</p>
+                  <p className="text-2xl font-bold">{formatMoney(computedSummary.thisMonth.netSpend)}</p>
                 </div>
               </div>
-            )}
-          </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                <div className="bg-card rounded-xl card-shadow p-4 lg:col-span-2 overflow-x-auto">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold">Top Vendors</h3>
+                    <span className="text-xs text-muted-foreground">Vendor-wise spend analytics</span>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Vendor</TableHead>
+                        <TableHead>Count</TableHead>
+                        <TableHead>Net Spend</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(vendorAnalytics.length ? vendorAnalytics.slice(0, 6) : []).map((row: any) => (
+                        <TableRow key={row.vendorKey || row.vendor}>
+                          <TableCell>{row.vendor || "Unspecified"}</TableCell>
+                          <TableCell>{row.count || 0}</TableCell>
+                          <TableCell>{formatMoney(row.netSpend || 0)}</TableCell>
+                        </TableRow>
+                      ))}
+                      {(!vendorAnalytics || vendorAnalytics.length === 0) && (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-muted-foreground">No vendor analytics yet</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {canManage && (
+                  <div className="bg-card rounded-xl card-shadow p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold">Vendor Master</h3>
+                      <Button size="sm" onClick={openVendorCreate}>
+                        <Plus className="w-4 h-4 mr-1" /> Add
+                      </Button>
+                    </div>
+                    <div className="space-y-2 max-h-52 overflow-auto">
+                      {vendors.length === 0 && (
+                        <p className="text-sm text-muted-foreground">No vendors added</p>
+                      )}
+                      {vendors.map((vendor) => (
+                        <div key={vendor._id} className="border rounded-lg p-2 flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-medium">{vendor.name}</p>
+                            <Badge variant="outline" className="mt-1">
+                              {vendor.isActive ? "active" : "inactive"}
+                            </Badge>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => openVendorEdit(vendor)}>Edit</Button>
+                            <Button size="sm" variant="outline" onClick={() => deleteVendor(vendor._id)}>Delete</Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           <div className="flex flex-wrap items-end gap-3 mb-6">
             <div>
@@ -710,8 +750,9 @@ const Expenses = () => {
             <Button variant="outline" onClick={() => { setStartDate(""); setEndDate(""); setCategoryFilter("all"); setStatusFilter("all"); setEmployeeFilter("all"); setReimbursementStatusFilter("all"); setRecordFilter("active"); }}>
               Reset
             </Button>
-            <Button variant="outline" onClick={fetchData}>
-              Refresh
+            <Button variant="outline" onClick={fetchData} disabled={loading} className="gap-2">
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              {loading ? "Refreshing..." : "Refresh"}
             </Button>
             {canManage && (
               <Button onClick={openCreate} className="ml-auto">
@@ -739,17 +780,21 @@ const Expenses = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && (
-                  <TableRow>
-                    <TableCell colSpan={(canManage || canAction) ? 12 : 11}>Loading...</TableCell>
+                {loading && Array.from({ length: 6 }).map((_, idx) => (
+                  <TableRow key={`expense-skeleton-${idx}`}>
+                    {Array.from({ length: (canManage || canAction) ? 12 : 11 }).map((__, colIdx) => (
+                      <TableCell key={colIdx}>
+                        <Skeleton className="h-4 w-full" />
+                      </TableCell>
+                    ))}
                   </TableRow>
-                )}
+                ))}
                 {!loading && visibleRows.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={(canManage || canAction) ? 12 : 11} className="text-muted-foreground">No expenses found</TableCell>
                   </TableRow>
                 )}
-                {visibleRows.map((row) => (
+                {!loading && visibleRows.map((row) => (
                   <TableRow key={row._id} className="table-row-hover">
                     <TableCell>{row.expenseDate ? formatDateInOrgTimeZone(row.expenseDate) : "-"}</TableCell>
                     <TableCell>

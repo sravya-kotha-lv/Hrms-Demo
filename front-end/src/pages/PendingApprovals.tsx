@@ -11,10 +11,35 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
+
+const toIdString = (value: unknown): string => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && value.every((item) => Number.isInteger(item))) {
+    return value.map((item) => Number(item).toString(16).padStart(2, "0")).join("");
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record._actionId === "string") return record._actionId;
+    if (record._id) return toIdString(record._id);
+    if (record.id) return toIdString(record.id);
+    if (typeof record.$oid === "string") return record.$oid;
+    if (record.buffer) return toIdString(record.buffer);
+    if (typeof (record as { toHexString?: unknown }).toHexString === "function") {
+      return String((record as { toHexString: () => string }).toHexString());
+    }
+    if (typeof record.toString === "function" && record.toString !== Object.prototype.toString) {
+      const asString = record.toString();
+      if (asString && asString !== "[object Object]") return asString;
+    }
+  }
+  return String(value);
+};
 
 const getStatusBadge = (status: string) => {
   if (status === "approved") return <Badge className="status-badge status-active">Approved</Badge>;
@@ -57,7 +82,12 @@ const PendingApprovals = () => {
       requiredPermissions: ["ATTENDANCE_MANAGE"]
     });
     if (attendanceRes?.success) {
-      setAttendanceRows(attendanceRes.data || []);
+      setAttendanceRows(
+        (attendanceRes.data || []).map((row: any) => ({
+          ...row,
+          _actionId: toIdString(row?._id || row?.id)
+        }))
+      );
     } else {
       setAttendanceRows([]);
     }
@@ -109,7 +139,12 @@ const PendingApprovals = () => {
     }
   };
 
-  const actionAttendance = async (id: string, status: "approved" | "rejected") => {
+  const actionAttendance = async (requestRow: any, status: "approved" | "rejected") => {
+    const id = toIdString(requestRow);
+    if (!id || id === "[object Object]") {
+      toast.error("Invalid attendance request id");
+      return;
+    }
     const rejectionReason = status === "rejected"
       ? (window.prompt("Enter rejection reason") || "").trim()
       : "";
@@ -174,13 +209,15 @@ const PendingApprovals = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-muted-foreground">
-                        Loading leave approvals...
-                      </TableCell>
+                  {loading && Array.from({ length: 4 }).map((_, idx) => (
+                    <TableRow key={`leave-approval-skeleton-${idx}`}>
+                      {Array.from({ length: 6 }).map((__, colIdx) => (
+                        <TableCell key={colIdx}>
+                          <Skeleton className="h-4 w-full" />
+                        </TableCell>
+                      ))}
                     </TableRow>
-                  )}
+                  ))}
                   {!loading && leaveRows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-muted-foreground">
@@ -229,13 +266,15 @@ const PendingApprovals = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-muted-foreground">
-                        Loading attendance approvals...
-                      </TableCell>
+                  {loading && Array.from({ length: 4 }).map((_, idx) => (
+                    <TableRow key={`attendance-approval-skeleton-${idx}`}>
+                      {Array.from({ length: 6 }).map((__, colIdx) => (
+                        <TableCell key={colIdx}>
+                          <Skeleton className="h-4 w-full" />
+                        </TableCell>
+                      ))}
                     </TableRow>
-                  )}
+                  ))}
                   {!loading && attendanceRows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-muted-foreground">
@@ -244,7 +283,7 @@ const PendingApprovals = () => {
                     </TableRow>
                   )}
                   {!loading && attendanceRows.map((row) => (
-                    <TableRow key={row._id} className="table-row-hover">
+                    <TableRow key={row._actionId || row._id || row.id} className="table-row-hover">
                       <TableCell>
                         {row.employeeId
                           ? `${row.employeeId.firstName || ""} ${row.employeeId.lastName || ""}`.trim()
@@ -256,8 +295,8 @@ const PendingApprovals = () => {
                       <TableCell>{getStatusBadge(row.status)}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
-                          <Button size="sm" onClick={() => actionAttendance(row._id, "approved")}>Approve</Button>
-                          <Button size="sm" variant="outline" onClick={() => actionAttendance(row._id, "rejected")}>Reject</Button>
+                          <Button size="sm" onClick={() => actionAttendance(row, "approved")}>Approve</Button>
+                          <Button size="sm" variant="outline" onClick={() => actionAttendance(row, "rejected")}>Reject</Button>
                         </div>
                       </TableCell>
                     </TableRow>

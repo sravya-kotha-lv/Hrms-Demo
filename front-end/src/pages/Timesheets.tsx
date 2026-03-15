@@ -116,6 +116,7 @@ const getStatusBadge = (status: string) => {
 
 type AttendanceRequest = {
   _id: string;
+  _actionId?: string;
   date: string;
   requestType: "missed_checkout" | "correction";
   requestedCheckInTime?: string | null;
@@ -171,7 +172,27 @@ const approvalProgressLabel = (request: AttendanceRequest) => {
 const toIdString = (value: any) => {
   if (!value) return "";
   if (typeof value === "string") return value;
-  if (typeof value === "object" && value._id) return String(value._id);
+  if (Array.isArray(value) && value.every((item) => Number.isInteger(item))) {
+    return value.map((item) => Number(item).toString(16).padStart(2, "0")).join("");
+  }
+  if (typeof value === "object" && typeof value._actionId === "string") return value._actionId;
+  if (typeof value === "object" && value._id) return toIdString(value._id);
+  if (typeof value === "object" && value.id) return toIdString(value.id);
+  if (typeof value === "object" && typeof value.$oid === "string") return value.$oid;
+  if (typeof value === "object" && value.buffer) {
+    if (Array.isArray(value.buffer)) return toIdString(value.buffer);
+    if (typeof value.buffer === "object") {
+      const bytes = Object.values(value.buffer)
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item >= 0);
+      if (bytes.length) return toIdString(bytes);
+    }
+  }
+  if (typeof value === "object" && typeof value.toHexString === "function") return value.toHexString();
+  if (typeof value === "object" && typeof value.toString === "function" && value.toString !== Object.prototype.toString) {
+    const asString = value.toString();
+    if (asString && asString !== "[object Object]") return asString;
+  }
   return String(value);
 };
 
@@ -495,7 +516,14 @@ const Timesheets = () => {
       requiredPermissions: ["TIMESHEET_VIEW_SELF"]
     });
     if (res?.skipped) return;
-    if (res?.success) setMyAttendanceRequests(res.data || []);
+    if (res?.success) {
+      setMyAttendanceRequests(
+        (res.data || []).map((request: AttendanceRequest & { id?: string }) => ({
+          ...request,
+          _actionId: toIdString(request?._id || request?.id)
+        }))
+      );
+    }
   };
 
   const loadPendingAttendanceRequests = async () => {
@@ -503,7 +531,14 @@ const Timesheets = () => {
       requiredPermissions: ["ATTENDANCE_MANAGE"]
     });
     if (res?.skipped) return;
-    if (res?.success) setPendingAttendanceRequests(res.data || []);
+    if (res?.success) {
+      setPendingAttendanceRequests(
+        (res.data || []).map((request: AttendanceRequest & { id?: string }) => ({
+          ...request,
+          _actionId: toIdString(request?._id || request?.id)
+        }))
+      );
+    }
   };
 
   const loadCheckInPolicy = async () => {
@@ -593,13 +628,15 @@ const Timesheets = () => {
     setAttendanceRequestOpen(true);
   };
 
-  const actionAttendanceRequest = async (id: any, status: "approved" | "rejected") => {
-    const requestId = toIdString(id);
+  const actionAttendanceRequest = async (requestRow: any, status: "approved" | "rejected") => {
+    console.log(requestRow);
+    
+    const requestId = toIdString(requestRow);
     if (!requestId || requestId === "[object Object]") {
       toast.error("Invalid attendance request id");
       return;
     }
-    const request = pendingAttendanceRequests.find((r) => toIdString(r._id) === requestId);
+    const request = pendingAttendanceRequests.find((r) => toIdString(r) === requestId);
     if (request && !canCurrentActorActionAttendanceRequest(request)) {
       toast.error("You are not the current approver for this request");
       return;
@@ -968,7 +1005,7 @@ const Timesheets = () => {
               </TableRow>
             )}
             {myAttendanceRequests.map((r) => (
-              <TableRow key={r._id} className="table-row-hover">
+              <TableRow key={r._actionId || toIdString(r._id)} className="table-row-hover">
                 <TableCell>{formatDateInOrgTimeZone(r.date)}</TableCell>
                 <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
                 <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
@@ -1013,7 +1050,7 @@ const Timesheets = () => {
                 </TableRow>
               )}
               {pendingAttendanceRequests.map((r) => (
-                <TableRow key={r._id} className="table-row-hover">
+                <TableRow key={r._actionId || r._id} className="table-row-hover">
                   <TableCell>
                     {r.employeeId
                       ? `${r.employeeId.firstName || ""} ${r.employeeId.lastName || ""}`.trim()
@@ -1029,10 +1066,10 @@ const Timesheets = () => {
                   <TableCell>
                     {canCurrentActorActionAttendanceRequest(r) ? (
                       <div className="flex gap-2">
-                        <Button size="sm" onClick={() => actionAttendanceRequest(toIdString(r._id), "approved")}>
+                        <Button size="sm" onClick={() => actionAttendanceRequest(r, "approved")}>
                           Approve
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => actionAttendanceRequest(toIdString(r._id), "rejected")}>
+                        <Button size="sm" variant="outline" onClick={() => actionAttendanceRequest(r, "rejected")}>
                           Reject
                         </Button>
                       </div>
@@ -1085,7 +1122,7 @@ const Timesheets = () => {
                   </TableRow>
                 )}
                 {onlineList.map((item) => (
-                  <TableRow key={item._id} className="table-row-hover">
+                  <TableRow key={toIdString(item._id || item.id || item.employeeId)} className="table-row-hover">
                     <TableCell>
                       {item.employeeId
                         ? `${item.employeeId.firstName || ""} ${item.employeeId.lastName || ""}`.trim()
@@ -1142,7 +1179,7 @@ const Timesheets = () => {
                   </TableRow>
                 )}
                 {onLeaveList.map((item) => (
-                  <TableRow key={item._id} className="table-row-hover">
+                  <TableRow key={toIdString(item._id || item.id || item.employeeId)} className="table-row-hover">
                     <TableCell>
                       {item.employeeId
                         ? `${item.employeeId.firstName || ""} ${item.employeeId.lastName || ""}`.trim()
@@ -1383,8 +1420,10 @@ const Timesheets = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {weeklyList.map((item) => (
-                  <TableRow key={item._id} className="table-row-hover">
+                {weeklyList.map((item) => {
+                  const weeklyRowId = toIdString(item._id || item.id || item.employeeId);
+                  return (
+                  <TableRow key={weeklyRowId} className="table-row-hover">
                     <TableCell>
                       {item.employeeId
                         ? `${item.employeeId.firstName || ""} ${item.employeeId.lastName || ""}`.trim()
@@ -1414,7 +1453,7 @@ const Timesheets = () => {
 
                           return (
                             <span
-                              key={`${item._id}-${idx}`}
+                              key={`${weeklyRowId}-${idx}`}
                               className={`${base} ${tone}`}
                               title={`${label}: ${status.label} (${Number(entry.hours || 0)}h)`}
                             >
@@ -1443,9 +1482,10 @@ const Timesheets = () => {
                       >
                         Reject
                       </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

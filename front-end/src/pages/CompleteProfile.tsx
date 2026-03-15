@@ -23,6 +23,8 @@ const RELATION_OPTIONS = [
   { label: "Friend", value: "friend" },
   { label: "Other", value: "other" }
 ];
+const sanitizePlaceName = (value: string) => value.replace(/[^A-Za-z .'-]/g, "");
+const isValidPlaceName = (value: string) => /^[A-Za-z]+(?:[A-Za-z .'-]*[A-Za-z])?$/.test(value.trim());
 
 const CompleteProfile = () => {
   const navigate = useNavigate();
@@ -123,6 +125,18 @@ const CompleteProfile = () => {
     }
     if (!/^\d+$/.test(form.address.zip.trim())) {
       toast.error("PIN/Zip code must contain only numbers");
+      return;
+    }
+    if (!isValidPlaceName(form.address.city)) {
+      toast.error("City must contain only letters");
+      return;
+    }
+    if (!isValidPlaceName(form.address.state)) {
+      toast.error("State must contain only letters");
+      return;
+    }
+    if (!isValidPlaceName(form.address.country)) {
+      toast.error("Country must contain only letters");
       return;
     }
     const emergency = form.emergencyContacts[0];
@@ -283,6 +297,7 @@ const CompleteProfile = () => {
                 <Input
                   type="file"
                   accept="image/*"
+                  aria-label="Choose profile picture file"
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
@@ -299,6 +314,7 @@ const CompleteProfile = () => {
                     });
                   }}
                 />
+                <p className="mt-1 text-xs text-slate-500">Choose profile picture file (JPG, PNG, WEBP up to 2MB)</p>
               </div>
             </div>
           </section>
@@ -317,15 +333,27 @@ const CompleteProfile = () => {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">City</label>
-              <Input value={form.address.city} onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })} />
+              <Input
+                value={form.address.city}
+                placeholder="Enter city"
+                onChange={(e) => setForm({ ...form, address: { ...form.address, city: sanitizePlaceName(e.target.value) } })}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">State</label>
-              <Input value={form.address.state} onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value } })} />
+              <Input
+                value={form.address.state}
+                placeholder="Enter state"
+                onChange={(e) => setForm({ ...form, address: { ...form.address, state: sanitizePlaceName(e.target.value) } })}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Country</label>
-              <Input value={form.address.country} onChange={(e) => setForm({ ...form, address: { ...form.address, country: e.target.value } })} />
+              <Input
+                value={form.address.country}
+                placeholder="Enter country"
+                onChange={(e) => setForm({ ...form, address: { ...form.address, country: sanitizePlaceName(e.target.value) } })}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Zip</label>
@@ -349,6 +377,7 @@ const CompleteProfile = () => {
               <Input
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp"
+                aria-label="Choose address proof file"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -364,6 +393,7 @@ const CompleteProfile = () => {
                   });
                 }}
               />
+              <p className="mt-2 text-xs text-slate-500">Choose address proof file (PDF, JPG, PNG, WEBP up to 5MB)</p>
               {form.addressProofUpload?.fileName && (
                 <p className="mt-2 text-xs text-slate-600">{form.addressProofUpload.fileName}</p>
               )}
@@ -377,6 +407,7 @@ const CompleteProfile = () => {
               <Input
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp"
+                aria-label="Choose Aadhaar proof file"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -392,6 +423,7 @@ const CompleteProfile = () => {
                   });
                 }}
               />
+              <p className="mt-2 text-xs text-slate-500">Choose Aadhaar proof file (PDF, JPG, PNG, WEBP up to 5MB)</p>
               {form.aadhaarProofUpload?.fileName && (
                 <p className="mt-2 text-xs text-slate-600">{form.aadhaarProofUpload.fileName}</p>
               )}
@@ -405,6 +437,7 @@ const CompleteProfile = () => {
               <Input
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp"
+                aria-label="Choose PAN proof file"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -420,6 +453,7 @@ const CompleteProfile = () => {
                   });
                 }}
               />
+              <p className="mt-2 text-xs text-slate-500">Choose PAN proof file (PDF, JPG, PNG, WEBP up to 5MB)</p>
               {form.panProofUpload?.fileName && (
                 <p className="mt-2 text-xs text-slate-600">{form.panProofUpload.fileName}</p>
               )}

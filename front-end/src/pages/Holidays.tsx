@@ -17,7 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, RefreshCw } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import {
@@ -49,21 +50,27 @@ const Holidays = () => {
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<HolidayForm>(emptyHoliday);
+  const [loading, setLoading] = useState(false);
   const canView = hasAnyPermission(["HOLIDAY_VIEW", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]);
   const canManage = hasAnyPermission(["HOLIDAY_MANAGE"]);
 
   const fetchHolidays = async () => {
-    const res = await getApiWithToken(`/holidays?year=${year}`, null, {
-      requiredPermissions: ["HOLIDAY_VIEW", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]
-    });
-    if (res?.skipped) {
-      setHolidays([]);
-      return;
-    }
-    if (res?.success) {
-      setHolidays(res.data || []);
-    } else {
-      toast.error(res?.message || "Failed to load holidays");
+    setLoading(true);
+    try {
+      const res = await getApiWithToken(`/holidays?year=${year}`, null, {
+        requiredPermissions: ["HOLIDAY_VIEW", "LEAVE_VIEW_SELF", "LEAVE_APPLY"]
+      });
+      if (res?.skipped) {
+        setHolidays([]);
+        return;
+      }
+      if (res?.success) {
+        setHolidays(res.data || []);
+      } else {
+        toast.error(res?.message || "Failed to load holidays");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -144,8 +151,9 @@ const Holidays = () => {
             placeholder="Year"
             className="w-28"
           />
-          <Button variant="outline" onClick={fetchHolidays}>
-            Refresh
+          <Button variant="outline" onClick={fetchHolidays} disabled={loading} className="gap-2">
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            {loading ? "Refreshing..." : "Refresh"}
           </Button>
         </div>
         <PermissionGate permissions={["HOLIDAY_MANAGE"]}>
@@ -173,14 +181,29 @@ const Holidays = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {holidays.length === 0 && (
+            {loading && Array.from({ length: 5 }).map((_, idx) => (
+              <TableRow key={`holiday-skeleton-${idx}`}>
+                <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                {canManage && (
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-3">
+                      <Skeleton className="h-4 w-4" />
+                      <Skeleton className="h-4 w-4" />
+                    </div>
+                  </TableCell>
+                )}
+              </TableRow>
+            ))}
+            {!loading && holidays.length === 0 && (
               <TableRow>
                 <TableCell colSpan={4} className="text-center py-10">
                   No holidays found
                 </TableCell>
               </TableRow>
             )}
-            {holidays.map((h) => (
+            {!loading && holidays.map((h) => (
               <TableRow key={h._id}>
                 <TableCell>{h.name}</TableCell>
                 <TableCell>

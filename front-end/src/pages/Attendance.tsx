@@ -79,6 +79,55 @@ type AttendanceSnapshot = {
   checkInSelfieImage?: string | null;
 } | null;
 
+const toEmployeeIdString = (value: unknown): string => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record._id === "string") return record._id;
+    if (typeof record.employeeId === "string") return record.employeeId;
+    if (typeof (record as { toHexString?: unknown }).toHexString === "function") {
+      return String((record as { toHexString: () => string }).toHexString());
+    }
+    if (typeof record.$oid === "string") return record.$oid;
+    if (record._id && typeof record._id === "object") {
+      const nested = record._id as Record<string, unknown>;
+      if (typeof (nested as { toHexString?: unknown }).toHexString === "function") {
+        return String((nested as { toHexString: () => string }).toHexString());
+      }
+      if (typeof nested.$oid === "string") return nested.$oid;
+      if (typeof nested.toString === "function") return nested.toString();
+    }
+  }
+  return String(value);
+};
+
+const normalizeEmployeeIds = (values: unknown[]): string[] =>
+  Array.from(
+    new Set(
+      values
+        .map((value) => toEmployeeIdString(value).trim())
+        .filter(Boolean)
+    )
+  );
+
+const buildUpdatedCell = (cell: DayCell, status: "present" | "absent"): DayCell => ({
+  ...cell,
+  status,
+  checkInAt: status === "present" ? (cell.checkInAt || new Date().toISOString()) : null,
+  checkOutAt: status === "present" ? (cell.checkOutAt || new Date().toISOString()) : null,
+  isOpenSession: false,
+  excludeFromPayroll: false,
+  payrollReconciledByLeave: false,
+  missedCheckout: false,
+  missedCheckoutMarkedAt: null,
+  lateByMinutes: 0,
+  earlyLoginByMinutes: 0,
+  earlyCheckoutByMinutes: 0,
+  overtimeMinutes: 0,
+  overriddenAt: new Date().toISOString()
+});
+
 const currentMonth = () => {
   const now = new Date();
   const y = now.getFullYear();
@@ -161,10 +210,15 @@ const Attendance = () => {
         return;
       }
 
-      setRows(res.data?.employees || []);
+      const nextRows = (res.data?.employees || []).map((employee: EmployeeRow & { employeeId: unknown }) => ({
+        ...employee,
+        employeeId: toEmployeeIdString(employee.employeeId)
+      }));
+
+      setRows(nextRows);
       setDaysInMonth(res.data?.daysInMonth || 31);
       setSelectedEmployeeIds((prev) => {
-        const validIds = new Set((res.data?.employees || []).map((e: EmployeeRow) => e.employeeId));
+        const validIds = new Set(nextRows.map((e: EmployeeRow) => e.employeeId));
         return prev.filter((id) => validIds.has(id));
       });
     } finally {
@@ -184,6 +238,11 @@ const Attendance = () => {
       return name.includes(q) || code.includes(q);
     });
   }, [rows, search]);
+
+  const filteredRowIds = useMemo(
+    () => filteredRows.map((row) => toEmployeeIdString(row.employeeId)).join("|"),
+    [filteredRows]
+  );
 
   useEffect(() => {
     if (loading) {
@@ -214,7 +273,7 @@ const Attendance = () => {
       cancelled = true;
       if (frameId !== null) window.cancelAnimationFrame(frameId);
     };
-  }, [loading, filteredRows]);
+  }, [loading, filteredRows.length, filteredRowIds, search, month]);
 
   const visibleRows = useMemo(
     () => filteredRows.slice(0, Math.min(visibleRowCount, filteredRows.length)),
@@ -242,8 +301,9 @@ const Attendance = () => {
     try {
       setHistoryLoading(true);
       const date = `${month}-${String(day).padStart(2, "0")}`;
+      const employeeId = toEmployeeIdString(row.employeeId);
       const endpoint = canViewAll
-        ? `/timesheets/attendance/matrix/history?employeeId=${row.employeeId}&date=${date}`
+        ? `/timesheets/attendance/matrix/history?employeeId=${employeeId}&date=${date}`
         : `/timesheets/attendance/matrix/history/my?date=${date}`;
       const requiredPermissions = canViewAll
         ? ["ATTENDANCE_VIEW_ALL"]
@@ -261,11 +321,12 @@ const Attendance = () => {
   const saveOverride = async () => {
     if (!selectedEmployee || !selectedDay) return;
     const date = `${month}-${String(selectedDay).padStart(2, "0")}`;
+    const employeeId = toEmployeeIdString(selectedEmployee.employeeId);
 
     try {
       setSaving(true);
       const res = await putApiWithToken(
-        `/timesheets/attendance/matrix/${selectedEmployee.employeeId}`,
+        `/timesheets/attendance/matrix/${employeeId}`,
         { date, status: selectedStatus },
         null,
         { requiredPermissions: ["ATTENDANCE_MANAGE"] }
@@ -277,8 +338,31 @@ const Attendance = () => {
       }
 
       toast.success("Attendance updated");
+      setRows((prev) =>
+        prev.map((row) => {
+          if (toEmployeeIdString(row.employeeId) !== employeeId) return row;
+          const currentCell = row.days?.[selectedDay] || emptyCell;
+          return {
+            ...row,
+            days: {
+              ...row.days,
+              [selectedDay]: buildUpdatedCell(currentCell, selectedStatus)
+            }
+          };
+        })
+      );
+      setSelectedEmployee((prev) => (
+        prev && toEmployeeIdString(prev.employeeId) === employeeId
+          ? {
+              ...prev,
+              days: {
+                ...prev.days,
+                [selectedDay]: buildUpdatedCell(prev.days?.[selectedDay] || emptyCell, selectedStatus)
+              }
+            }
+          : prev
+      ));
       setOpen(false);
-      fetchMatrix();
     } finally {
       setSaving(false);
     }
@@ -534,26 +618,31 @@ const Attendance = () => {
   };
 
   const toggleEmployeeSelection = (employeeId: string) => {
-    setSelectedEmployeeIds((prev) =>
-      prev.includes(employeeId)
-        ? prev.filter((id) => id !== employeeId)
-        : [...prev, employeeId]
-    );
+    const normalizedEmployeeId = toEmployeeIdString(employeeId).trim();
+    if (!normalizedEmployeeId) return;
+
+    setSelectedEmployeeIds((prev) => {
+      const next = normalizeEmployeeIds(prev);
+      return next.includes(normalizedEmployeeId)
+        ? next.filter((id) => id !== normalizedEmployeeId)
+        : [...next, normalizedEmployeeId];
+    });
   };
 
   const toggleSelectAllFiltered = () => {
-    const filteredIds = filteredRows.map((r) => r.employeeId);
+    const filteredIds = normalizeEmployeeIds(filteredRows.map((r) => r.employeeId));
     const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedEmployeeIds.includes(id));
     if (allSelected) {
-      setSelectedEmployeeIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+      setSelectedEmployeeIds((prev) => normalizeEmployeeIds(prev).filter((id) => !filteredIds.includes(id)));
     } else {
-      setSelectedEmployeeIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+      setSelectedEmployeeIds((prev) => normalizeEmployeeIds([...prev, ...filteredIds]));
     }
   };
 
   const runBulkUpdate = async () => {
     if (!canEdit) return;
-    if (!bulkDate || selectedEmployeeIds.length === 0) {
+    const employeeIds = normalizeEmployeeIds(selectedEmployeeIds);
+    if (!bulkDate || employeeIds.length === 0) {
       toast.error("Select employees and date for bulk update");
       return;
     }
@@ -562,7 +651,7 @@ const Attendance = () => {
       const res = await postApiWithToken(
         "/timesheets/attendance/matrix/bulk",
         {
-          employeeIds: selectedEmployeeIds,
+          employeeIds,
           date: bulkDate,
           status: bulkStatus
         },
@@ -575,6 +664,7 @@ const Attendance = () => {
         return;
       }
       toast.success(`Attendance updated for ${res.data?.updatedCount || 0} employees`);
+      setSelectedEmployeeIds([]);
       fetchMatrix();
     } finally {
       setBulkSaving(false);

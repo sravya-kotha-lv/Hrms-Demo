@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
@@ -480,13 +481,19 @@ const Leave = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && (
-              <TableRow>
-                <TableCell colSpan={9} className="text-center py-10">
-                  Loading...
-                </TableCell>
+            {loading && Array.from({ length: 6 }).map((_, idx) => (
+              <TableRow key={`leave-skeleton-${idx}`}>
+                <TableCell><Skeleton className="h-10 w-40" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-20" /></TableCell>
               </TableRow>
-            )}
+            ))}
             {!loading && filteredLeaves.length === 0 && (
               <TableRow>
                 <TableCell colSpan={9} className="text-center py-10">
@@ -494,7 +501,7 @@ const Leave = () => {
                 </TableCell>
               </TableRow>
             )}
-            {filteredLeaves.map((leave) => {
+            {!loading && filteredLeaves.map((leave) => {
               const employeeName = leave.employeeId
                 ? `${leave.employeeId.firstName || ""} ${leave.employeeId.lastName || ""}`.trim()
                 : "You";
