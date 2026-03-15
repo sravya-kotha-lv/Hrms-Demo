@@ -801,15 +801,16 @@ const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone 
   const currentDay = getDayInTimeZone(today, timeZone);
 
   // payroll_cutoff mode policy:
-  // - Before cutoff day: allow current + previous month edits.
-  // - On/after cutoff day: lock previous month; allow only current month dates.
+  // - Before or on cutoff day: dates after the previous month's cutoff remain editable.
+  // - After cutoff day: dates after the current month's cutoff remain editable.
+  // This means once the cutoff is crossed, the cutoff day and any older dates are locked.
   const [todayYear, todayMonth] = todayKey.split("-").map(Number);
-  const periodStartKey = currentDay >= cutoffDay
-    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-01`
-    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-01`;
+  const lockUntilKey = currentDay > cutoffDay
+    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`
+    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
 
-  if (targetKey < periodStartKey) {
-    throw new Error(`Attendance is locked before payroll period start ${periodStartKey}`);
+  if (targetKey <= lockUntilKey) {
+    throw new Error(`Attendance is locked through payroll cutoff date ${lockUntilKey}`);
   }
 };
 

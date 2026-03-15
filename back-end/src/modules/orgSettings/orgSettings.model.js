@@ -26,7 +26,7 @@ const orgSettingsSchema = new mongoose.Schema(
     },
     attendanceLockEnabled: {
       type: Boolean,
-      default: false
+      default: true
     },
     attendanceLockAfterDays: {
       type: Number,
@@ -35,7 +35,7 @@ const orgSettingsSchema = new mongoose.Schema(
     attendanceLockMode: {
       type: String,
       enum: ["days_window", "payroll_cutoff"],
-      default: "days_window"
+      default: "payroll_cutoff"
     },
     timezone: {
       type: String,

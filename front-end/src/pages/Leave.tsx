@@ -151,6 +151,7 @@ const Leave = () => {
   const [viewMode, setViewMode] = useState<"all" | "my">("all");
   const [applyOpen, setApplyOpen] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
+  const [leaveApplyWindow, setLeaveApplyWindow] = useState<any | null>(null);
   const [applyForm, setApplyForm] = useState({
     leaveTypeId: "",
     fromDate: "",
@@ -166,6 +167,24 @@ const Leave = () => {
   const canAction = hasAnyPermission(["LEAVE_ACTION"]);
   const currentEmployeeId = toIdString(profile?.employeeId);
   const currentRoleSlug = profile?.activeRole?.slug || "";
+  const applyDateError = useMemo(() => {
+    if (!applyForm.fromDate || !applyForm.toDate) return "";
+    if (applyForm.fromDate > applyForm.toDate) {
+      return "Please check the selected dates. From Date cannot be greater than To Date.";
+    }
+    if (leaveApplyWindow?.earliestAllowedDateKey) {
+      if (
+        applyForm.fromDate < leaveApplyWindow.earliestAllowedDateKey ||
+        applyForm.toDate < leaveApplyWindow.earliestAllowedDateKey
+      ) {
+        if (leaveApplyWindow.attendanceLockMode === "payroll_cutoff") {
+          return `Leave cannot be applied before ${leaveApplyWindow.earliestAllowedDateKey}.`;
+        }
+        return `Leave cannot be applied for dates older than ${leaveApplyWindow.attendanceLockAfterDays || 0} days.`;
+      }
+    }
+    return "";
+  }, [applyForm.fromDate, applyForm.toDate, leaveApplyWindow]);
 
   const canCurrentActorActionLeave = (leave: any) => {
     const steps = Array.isArray(leave?.approvalSteps) ? leave.approvalSteps : [];
@@ -234,6 +253,15 @@ const Leave = () => {
   };
 
   const fetchLeaveTypes = async () => {
+    const applyContextRes = await getApiWithToken("/leaves/apply-context", null, {
+      requiredPermissions: ["LEAVE_APPLY"]
+    });
+    if (applyContextRes?.success) {
+      setLeaveTypes(applyContextRes?.data?.leaveTypes || []);
+      setLeaveApplyWindow(applyContextRes?.data?.leaveApplyWindow || null);
+      return;
+    }
+
     let res = await getApiWithToken("/employees/leave-types");
     if (!res?.success) {
       res = await getApiWithToken("/leave-types", null, {
@@ -252,6 +280,10 @@ const Leave = () => {
   const submitApply = async () => {
     if (!applyForm.leaveTypeId || !applyForm.fromDate || !applyForm.toDate) {
       toast.error("Leave type and dates are required");
+      return;
+    }
+    if (applyDateError) {
+      toast.error(applyDateError);
       return;
     }
 
@@ -735,6 +767,7 @@ const Leave = () => {
                 <Label>From Date</Label>
                 <Input
                   type="date"
+                  min={leaveApplyWindow?.earliestAllowedDateKey || undefined}
                   value={applyForm.fromDate}
                   onChange={(e) =>
                     setApplyForm((prev) => ({
@@ -750,6 +783,7 @@ const Leave = () => {
                 <Input
                   type="date"
                   value={applyForm.toDate}
+                  min={applyForm.fromDate || leaveApplyWindow?.earliestAllowedDateKey || undefined}
                   disabled={applyForm.duration === "half_day"}
                   onChange={(e) =>
                     setApplyForm({ ...applyForm, toDate: e.target.value })
@@ -757,6 +791,15 @@ const Leave = () => {
                 />
               </div>
             </div>
+
+            {applyDateError && <p className="text-sm text-destructive">{applyDateError}</p>}
+            {!applyDateError && leaveApplyWindow?.attendanceLockEnabled && leaveApplyWindow?.earliestAllowedDateKey && (
+              <p className="text-sm text-muted-foreground">
+                {leaveApplyWindow.attendanceLockMode === "payroll_cutoff"
+                  ? `You can apply leave from ${leaveApplyWindow.earliestAllowedDateKey} onwards based on payroll cutoff day ${leaveApplyWindow.payrollCutoffDay}.`
+                  : `You can apply leave for dates within the last ${leaveApplyWindow.attendanceLockAfterDays || 0} days.`}
+              </p>
+            )}
 
             <div>
               <Label>Reason</Label>
@@ -774,7 +817,9 @@ const Leave = () => {
             <Button variant="outline" onClick={() => setApplyOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={submitApply}>Submit</Button>
+            <Button onClick={submitApply} disabled={Boolean(applyDateError)}>
+              Submit
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
