@@ -3,6 +3,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -653,7 +654,8 @@ const Payroll = () => {
             disabled={loadingRuns}
             className="gap-2"
           >
-            <RefreshCcw className="w-4 h-4" /> Refresh
+            <RefreshCcw className={`w-4 h-4 ${loadingRuns ? "animate-spin" : ""}`} />
+            {loadingRuns ? "Refreshing..." : "Refresh"}
           </Button>
         </div>
 
@@ -766,7 +768,19 @@ const Payroll = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {runs.map((run) => (
+                {loadingRuns && Array.from({ length: 5 }).map((_, idx) => (
+                  <TableRow key={`payroll-run-skeleton-${idx}`}>
+                    <TableCell>
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-3 w-32" />
+                        <Skeleton className="h-3 w-16" />
+                      </div>
+                    </TableCell>
+                    <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                  </TableRow>
+                ))}
+                {!loadingRuns && runs.map((run) => (
                   <TableRow
                     key={run.id}
                     className={`cursor-pointer ${selectedRunId === run.id ? "bg-muted/40" : ""}`}
@@ -869,134 +883,165 @@ const Payroll = () => {
             </div>
           </div>
 
-          <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 border-b">
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Gross</p>
-              <p className="font-semibold">{formatCurrency(Number(runDetail?.gross_total || runPreview?.gross_total || 0))}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Deductions</p>
-              <p className="font-semibold">
-                {formatCurrency(Number(runDetail?.deduction_total || runPreview?.deduction_total || 0))}
-              </p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Net Pay</p>
-              <p className="font-semibold text-green-600">
-                {formatCurrency(Number(runDetail?.net_pay_total || runPreview?.net_pay_total || 0))}
-              </p>
-            </div>
-          </div>
-
-          <div className="p-4 border-b">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-              <p className="font-medium">Validation Errors ({validationRows.length})</p>
-            </div>
-            {!validationRows.length ? (
-              <p className="text-sm text-muted-foreground">No validation errors in selected run.</p>
-            ) : (
-              <div className="space-y-2 max-h-36 overflow-auto">
-                {validationRows.slice(0, 8).map((row) => (
-                  <div key={row.id} className="text-sm rounded border p-2 bg-red-50 text-red-700">
-                    <span className="font-medium">{getEmployeeLabel(row.employee_external_id)}:</span>{" "}
-                    {row.error_message}
+          {loadingRunDetail ? (
+            <>
+              <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 border-b">
+                {Array.from({ length: 3 }).map((_, idx) => (
+                  <div key={`payroll-detail-stat-skeleton-${idx}`} className="rounded-lg border p-3 space-y-2">
+                    <Skeleton className="h-3 w-20" />
+                    <Skeleton className="h-6 w-28" />
                   </div>
                 ))}
               </div>
-            )}
-          </div>
 
-          <div className="p-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-              <p className="font-medium">Employee Breakdown</p>
-              <div className="relative w-full sm:w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search employee/status"
-                />
+              <div className="p-4 border-b space-y-3">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-12 w-full rounded-md" />
+                <Skeleton className="h-12 w-full rounded-md" />
               </div>
-            </div>
 
-            <div className="max-h-[420px] overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Payable Days</TableHead>
-                    <TableHead className="text-right">LOP</TableHead>
-                    <TableHead className="text-right">Gross</TableHead>
-                    <TableHead className="text-right">Net</TableHead>
-                    <TableHead>Issues</TableHead>
-                    <TableHead className="w-12" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {runEmployees.map((row) => {
-                    const warnings = normalizeWarnings(row.warnings);
-                    return (
-                      <TableRow key={row.id}>
-                        <TableCell>
-                          <p className="font-medium">
-                            {employeeNameMap[row.employee_external_id] || "Employee"}
-                          </p>
-                          <p className="font-mono text-xs text-muted-foreground">
-                            {row.employee_external_id}
-                          </p>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(row.payroll_status)}</TableCell>
-                        <TableCell className="text-right">{Number(row.payable_days || 0).toFixed(2)}</TableCell>
-                        <TableCell className="text-right text-red-600">{Number(row.lop_days || 0).toFixed(2)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(Number(row.gross_earnings || 0))}</TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {formatCurrency(Number(row.net_pay || 0))}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {row.error_message ? (
-                              <Badge className="bg-red-600 text-white gap-1">
-                                <AlertTriangle className="w-3 h-3" /> Error
-                              </Badge>
-                            ) : warnings.length ? (
-                              <Badge className="bg-amber-600 text-white gap-1">
-                                <Clock3 className="w-3 h-3" /> {warnings.length} warning
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-green-600 text-white gap-1">
-                                <CheckCircle2 className="w-3 h-3" /> OK
-                              </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => onViewPayslip(row.employee_external_id)}
-                            disabled={!canViewPayslip}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </TableCell>
+              <div className="p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-10 w-full sm:w-72" />
+                </div>
+                {Array.from({ length: 5 }).map((_, idx) => (
+                  <Skeleton key={`payroll-employee-skeleton-${idx}`} className="h-12 w-full rounded-md" />
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 border-b">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Gross</p>
+                  <p className="font-semibold">{formatCurrency(Number(runDetail?.gross_total || runPreview?.gross_total || 0))}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Deductions</p>
+                  <p className="font-semibold">
+                    {formatCurrency(Number(runDetail?.deduction_total || runPreview?.deduction_total || 0))}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Net Pay</p>
+                  <p className="font-semibold text-green-600">
+                    {formatCurrency(Number(runDetail?.net_pay_total || runPreview?.net_pay_total || 0))}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 border-b">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <p className="font-medium">Validation Errors ({validationRows.length})</p>
+                </div>
+                {!validationRows.length ? (
+                  <p className="text-sm text-muted-foreground">No validation errors in selected run.</p>
+                ) : (
+                  <div className="space-y-2 max-h-36 overflow-auto">
+                    {validationRows.slice(0, 8).map((row) => (
+                      <div key={row.id} className="text-sm rounded border p-2 bg-red-50 text-red-700">
+                        <span className="font-medium">{getEmployeeLabel(row.employee_external_id)}:</span>{" "}
+                        {row.error_message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                  <p className="font-medium">Employee Breakdown</p>
+                  <div className="relative w-full sm:w-72">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      className="pl-9"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search employee/status"
+                    />
+                  </div>
+                </div>
+
+                <div className="max-h-[420px] overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Employee</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Payable Days</TableHead>
+                        <TableHead className="text-right">LOP</TableHead>
+                        <TableHead className="text-right">Gross</TableHead>
+                        <TableHead className="text-right">Net</TableHead>
+                        <TableHead>Issues</TableHead>
+                        <TableHead className="w-12" />
                       </TableRow>
-                    );
-                  })}
+                    </TableHeader>
+                    <TableBody>
+                      {runEmployees.map((row) => {
+                        const warnings = normalizeWarnings(row.warnings);
+                        return (
+                          <TableRow key={row.id}>
+                            <TableCell>
+                              <p className="font-medium">
+                                {employeeNameMap[row.employee_external_id] || "Employee"}
+                              </p>
+                              <p className="font-mono text-xs text-muted-foreground">
+                                {row.employee_external_id}
+                              </p>
+                            </TableCell>
+                            <TableCell>{getStatusBadge(row.payroll_status)}</TableCell>
+                            <TableCell className="text-right">{Number(row.payable_days || 0).toFixed(2)}</TableCell>
+                            <TableCell className="text-right text-red-600">{Number(row.lop_days || 0).toFixed(2)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(Number(row.gross_earnings || 0))}</TableCell>
+                            <TableCell className="text-right font-semibold">
+                              {formatCurrency(Number(row.net_pay || 0))}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {row.error_message ? (
+                                  <Badge className="bg-red-600 text-white gap-1">
+                                    <AlertTriangle className="w-3 h-3" /> Error
+                                  </Badge>
+                                ) : warnings.length ? (
+                                  <Badge className="bg-amber-600 text-white gap-1">
+                                    <Clock3 className="w-3 h-3" /> {warnings.length} warning
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-green-600 text-white gap-1">
+                                    <CheckCircle2 className="w-3 h-3" /> OK
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => onViewPayslip(row.employee_external_id)}
+                                disabled={!canViewPayslip}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
 
-                  {!runEmployees.length && !loadingRunDetail && (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground">
-                        No employee rows for selected run
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
+                      {!runEmployees.length && !loadingRunDetail && (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center text-muted-foreground">
+                            No employee rows for selected run
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

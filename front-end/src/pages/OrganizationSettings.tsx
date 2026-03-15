@@ -30,9 +30,9 @@ const OrganizationSettings = () => {
   const [leaveCreditFrequency, setLeaveCreditFrequency] = useState("monthly");
   const [leaveTypeCreditMode, setLeaveTypeCreditMode] = useState("current_month_onwards");
   const [sandwichRuleEnabled, setSandwichRuleEnabled] = useState(false);
-  const [attendanceLockEnabled, setAttendanceLockEnabled] = useState(false);
+  const [attendanceLockEnabled, setAttendanceLockEnabled] = useState(true);
   const [attendanceLockAfterDays, setAttendanceLockAfterDays] = useState(7);
-  const [attendanceLockMode, setAttendanceLockMode] = useState("days_window");
+  const [attendanceLockMode, setAttendanceLockMode] = useState("payroll_cutoff");
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
@@ -59,11 +59,13 @@ const OrganizationSettings = () => {
       setLeaveCreditFrequency(res.data?.leaveCreditFrequency || "monthly");
       setLeaveTypeCreditMode(res.data?.leaveTypeCreditMode || "current_month_onwards");
       setSandwichRuleEnabled(Boolean(res.data?.sandwichRuleEnabled));
-      setAttendanceLockEnabled(Boolean(res.data?.attendanceLockEnabled));
+      setAttendanceLockEnabled(
+        typeof res.data?.attendanceLockEnabled === "boolean" ? res.data.attendanceLockEnabled : true
+      );
       setAttendanceLockAfterDays(
         typeof res.data?.attendanceLockAfterDays === "number" ? res.data.attendanceLockAfterDays : 7
       );
-      setAttendanceLockMode(res.data?.attendanceLockMode || "days_window");
+      setAttendanceLockMode(res.data?.attendanceLockMode || "payroll_cutoff");
       setTimezone(res.data?.timezone || "Asia/Kolkata");
       if (res.data?.timezone) {
         setOrgTimeZone(res.data.timezone);

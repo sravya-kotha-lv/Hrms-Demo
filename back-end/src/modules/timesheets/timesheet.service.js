@@ -342,6 +342,30 @@ const throwHttpError = (code, message) => {
   throw { code, statusCode: code, message };
 };
 
+const normalizeObjectIdLike = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object") {
+    if (typeof value._id === "string") return value._id.trim();
+    if (typeof value.employeeId === "string") return value.employeeId.trim();
+    if (value._id && typeof value._id === "object" && typeof value._id.toString === "function") {
+      return value._id.toString().trim();
+    }
+    if (typeof value.toString === "function" && value.toString !== Object.prototype.toString) {
+      return value.toString().trim();
+    }
+  }
+  return String(value).trim();
+};
+
+const assertValidObjectIdLike = (value, fieldName) => {
+  const normalized = normalizeObjectIdLike(value);
+  if (!mongoose.Types.ObjectId.isValid(normalized)) {
+    throwHttpError(400, `Invalid ${fieldName}`);
+  }
+  return normalized;
+};
+
 const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asia/Kolkata") => {
   const grouped = new Map();
 
@@ -636,6 +660,22 @@ const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, min
   return "absent";
 };
 
+const isActiveOvernightSession = (attendanceRow, organizationTimeZone = "Asia/Kolkata") => {
+  if (!attendanceRow?.checkInAt || attendanceRow?.checkOutAt || !attendanceRow?.scheduledEndAt) {
+    return false;
+  }
+
+  const scheduledEndAt = new Date(attendanceRow.scheduledEndAt);
+  const now = new Date();
+  if (now > scheduledEndAt) {
+    return false;
+  }
+
+  const attendanceDayKey = toDateKeyInTimeZone(attendanceRow.date, organizationTimeZone);
+  const scheduledEndDayKey = toDateKeyInTimeZone(scheduledEndAt, organizationTimeZone);
+  return attendanceDayKey !== scheduledEndDayKey;
+};
+
 const getEmployeeFromReq = async (req) => {
   const employee = await Employee.findOne({
     userId: req.user.userId,
@@ -761,15 +801,16 @@ const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone 
   const currentDay = getDayInTimeZone(today, timeZone);
 
   // payroll_cutoff mode policy:
-  // - Before cutoff day: allow current + previous month edits.
-  // - On/after cutoff day: lock previous month; allow only current month dates.
+  // - Before or on cutoff day: dates after the previous month's cutoff remain editable.
+  // - After cutoff day: dates after the current month's cutoff remain editable.
+  // This means once the cutoff is crossed, the cutoff day and any older dates are locked.
   const [todayYear, todayMonth] = todayKey.split("-").map(Number);
-  const periodStartKey = currentDay >= cutoffDay
-    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-01`
-    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-01`;
+  const lockUntilKey = currentDay > cutoffDay
+    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`
+    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
 
-  if (targetKey < periodStartKey) {
-    throw new Error(`Attendance is locked before payroll period start ${periodStartKey}`);
+  if (targetKey <= lockUntilKey) {
+    throw new Error(`Attendance is locked through payroll cutoff date ${lockUntilKey}`);
   }
 };
 
@@ -1142,6 +1183,7 @@ exports.getAttendance = async (req) => {
 exports.getAttendanceMatrix = async (req) => {
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const canViewSelfie = await canActorViewAttendanceSelfie(req);
+  const todayKey = toDateKeyInTimeZone(new Date(), organizationTimeZone);
   const { year, month, start, end, daysInMonth } = parseMonthRangeInTimeZone(
     req.query.month,
     organizationTimeZone
@@ -1235,6 +1277,20 @@ exports.getAttendanceMatrix = async (req) => {
       earlyCheckoutByMinutes: Number(row.earlyCheckoutByMinutes || 0),
       overtimeMinutes: Number(row.overtimeMinutes || 0)
     });
+
+    if (isActiveOvernightSession(row, organizationTimeZone)) {
+      const spilloverDayKey = toDateKeyInTimeZone(row.scheduledEndAt, organizationTimeZone);
+      if (spilloverDayKey === todayKey) {
+        const spilloverDay = getDayInTimeZone(row.scheduledEndAt, organizationTimeZone);
+        const spilloverKey = `${row.employeeId.toString()}-${spilloverDay}`;
+        attendanceMap.set(spilloverKey, {
+          ...attendanceMap.get(key),
+          status: "pending_checkout",
+          isOpenSession: true,
+          excludeFromPayroll: true
+        });
+      }
+    }
   });
 
   const leaveMap = new Map();
@@ -1309,7 +1365,7 @@ exports.getAttendanceMatrix = async (req) => {
       days[day].holidayName = holidayName;
     }
     return {
-      employeeId: emp._id,
+      employeeId: String(emp._id),
       firstName: emp.firstName,
       lastName: emp.lastName,
       employeeCode: emp.employeeCode,
@@ -1323,6 +1379,7 @@ exports.getAttendanceMatrix = async (req) => {
 exports.getMyAttendanceMatrix = async (req) => {
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const canViewSelfie = await canActorViewAttendanceSelfie(req);
+  const todayKey = toDateKeyInTimeZone(new Date(), organizationTimeZone);
   const { year, month, start, end, daysInMonth } = parseMonthRangeInTimeZone(
     req.query.month,
     organizationTimeZone
@@ -1335,7 +1392,7 @@ exports.getMyAttendanceMatrix = async (req) => {
       employeeId: employee._id,
       date: { $gte: start, $lte: end }
     })
-      .select("date checkInAt checkOutAt checkInIp checkInSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
+      .select("employeeId date checkInAt checkOutAt checkInIp checkInSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
       .populate("overriddenBy", "firstName lastName"),
     Holiday.find({
       organizationId: req.user.organizationId,
@@ -1430,6 +1487,20 @@ exports.getMyAttendanceMatrix = async (req) => {
       earlyCheckoutByMinutes: Number(row.earlyCheckoutByMinutes || 0),
       overtimeMinutes: Number(row.overtimeMinutes || 0)
     };
+
+    if (isActiveOvernightSession(row, organizationTimeZone)) {
+      const spilloverDayKey = toDateKeyInTimeZone(row.scheduledEndAt, organizationTimeZone);
+      if (spilloverDayKey === todayKey) {
+        const spilloverDay = getDayInTimeZone(row.scheduledEndAt, organizationTimeZone);
+        days[spilloverDay] = {
+          ...days[spilloverDay],
+          ...days[day],
+          status: "pending_checkout",
+          isOpenSession: true,
+          excludeFromPayroll: true
+        };
+      }
+    }
   });
 
   approvedLeaves.forEach((leave) => {
@@ -1460,7 +1531,7 @@ exports.getMyAttendanceMatrix = async (req) => {
     month,
     daysInMonth,
     employees: [{
-      employeeId: employee._id,
+      employeeId: String(employee._id),
       firstName: employee.firstName,
       lastName: employee.lastName,
       employeeCode: employee.employeeCode,
@@ -1703,14 +1774,7 @@ exports.getMyPendingAttendanceApprovals = async (req) => {
 };
 
 exports.actionAttendanceRequest = async (req) => {
-  const rawId = req.params?.id;
-  const requestId =
-    typeof rawId === "string"
-      ? rawId
-      : (rawId && typeof rawId === "object" && rawId._id ? String(rawId._id) : "");
-  if (!mongoose.Types.ObjectId.isValid(requestId)) {
-    throwHttpError(400, "Invalid attendance request id");
-  }
+  const requestId = assertValidObjectIdLike(req.params?.id, "attendance request id");
 
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const request = await AttendanceRequest.findOne({
@@ -1927,8 +1991,10 @@ exports.overrideAttendance = async (req) => {
     organizationId: req.user.organizationId
   }).select("_id");
 
+  const employeeId = assertValidObjectIdLike(req.params.employeeId, "employeeId");
+
   const employee = await Employee.findOne({
-    _id: req.params.employeeId,
+    _id: employeeId,
     organizationId: req.user.organizationId
   }).select("_id");
 
@@ -2078,7 +2144,10 @@ exports.bulkOverrideAttendance = async (req) => {
   const employeeIds = req.body.employeeIds || [];
   let updatedCount = 0;
 
-  for (const empId of employeeIds) {
+  for (const rawEmployeeId of employeeIds) {
+    const empId = normalizeObjectIdLike(rawEmployeeId);
+    if (!mongoose.Types.ObjectId.isValid(empId)) continue;
+
     const employee = await Employee.findOne({
       _id: empId,
       organizationId: req.user.organizationId

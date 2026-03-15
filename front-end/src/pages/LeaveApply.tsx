@@ -42,6 +42,14 @@ type CalendarLeave = {
   status: "pending" | "approved";
 };
 
+type LeaveApplyWindow = {
+  attendanceLockEnabled?: boolean;
+  attendanceLockMode?: "days_window" | "payroll_cutoff";
+  payrollCutoffDay?: number;
+  attendanceLockAfterDays?: number;
+  earliestAllowedDateKey?: string | null;
+};
+
 type DayMeta = {
   date: Date;
   excluded: boolean;
@@ -114,6 +122,7 @@ const LeaveApply = () => {
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
   const [holidayKeys, setHolidayKeys] = useState<Set<string>>(new Set());
   const [sandwichRuleEnabled, setSandwichRuleEnabled] = useState(false);
+  const [leaveApplyWindow, setLeaveApplyWindow] = useState<LeaveApplyWindow | null>(null);
   const [leaveTypeId, setLeaveTypeId] = useState("");
   const [reason, setReason] = useState("");
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>();
@@ -122,6 +131,7 @@ const LeaveApply = () => {
   const [duration, setDuration] = useState<LeaveDuration>("full_day");
   const [halfDaySession, setHalfDaySession] = useState<HalfDaySession>("first_half");
   const [isMobile, setIsMobile] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(new Date());
 
   const loadContext = async () => {
     try {
@@ -140,6 +150,7 @@ const LeaveApply = () => {
       setMyLeaves(data.myLeaves || []);
       setWeekOffDays(data.weekOffDays || []);
       setSandwichRuleEnabled(Boolean(data.sandwichRuleEnabled));
+      setLeaveApplyWindow(data.leaveApplyWindow || null);
       setBalances(data.balances || []);
       setHolidayKeys(new Set((data.holidays || []).map((h: any) => dateKey(new Date(h.date)))));
     } finally {
@@ -157,6 +168,13 @@ const LeaveApply = () => {
     window.addEventListener("resize", updateMobile);
     return () => window.removeEventListener("resize", updateMobile);
   }, []);
+
+  useEffect(() => {
+    const startDate = selectedRange?.from || parseDateInput(fromDate);
+    if (startDate) {
+      setVisibleMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
+    }
+  }, [selectedRange?.from, fromDate]);
 
   const approvedDates = useMemo(() => {
     const result: Date[] = [];
@@ -188,7 +206,9 @@ const LeaveApply = () => {
   const disabledMatcher = (date: Date) => {
     const weekOff = weekOffDays.includes(date.getDay());
     const holiday = holidayKeys.has(dateKey(date));
-    return weekOff || holiday;
+    const lockedByWindow =
+      Boolean(leaveApplyWindow?.earliestAllowedDateKey) && dateKey(date) < leaveApplyWindow!.earliestAllowedDateKey!;
+    return weekOff || holiday || lockedByWindow;
   };
 
   const applicableDays = useMemo(() => {
@@ -202,6 +222,22 @@ const LeaveApply = () => {
     if (duration === "half_day" && days > 0) return 0.5;
     return days;
   }, [selectedRange, weekOffDays, holidayKeys, sandwichRuleEnabled, duration]);
+
+  const dateError = useMemo(() => {
+    if (!fromDate || !toDate) return "";
+    if (fromDate > toDate) {
+      return "Please check the selected dates. From Date cannot be greater than To Date.";
+    }
+    if (leaveApplyWindow?.earliestAllowedDateKey) {
+      if (fromDate < leaveApplyWindow.earliestAllowedDateKey || toDate < leaveApplyWindow.earliestAllowedDateKey) {
+        if (leaveApplyWindow.attendanceLockMode === "payroll_cutoff") {
+          return `Leave cannot be applied before ${leaveApplyWindow.earliestAllowedDateKey}.`;
+        }
+        return `Leave cannot be applied for dates older than ${leaveApplyWindow.attendanceLockAfterDays || 0} days.`;
+      }
+    }
+    return "";
+  }, [fromDate, toDate, leaveApplyWindow]);
 
   const onRangeChange = (range: DateRange | undefined) => {
     if (duration === "half_day") {
@@ -249,6 +285,10 @@ const LeaveApply = () => {
   const submit = async () => {
     if (!leaveTypeId || !fromDate || !toDate) {
       toast.error("Leave type and both dates are required");
+      return;
+    }
+    if (dateError) {
+      toast.error(dateError);
       return;
     }
     const trimmedReason = reason.trim();
@@ -319,6 +359,8 @@ const LeaveApply = () => {
                     mode="range"
                     selected={selectedRange}
                     onSelect={onRangeChange}
+                    month={visibleMonth}
+                    onMonthChange={setVisibleMonth}
                     numberOfMonths={isMobile ? 1 : 2}
                     disabled={disabledMatcher}
                     classNames={{
@@ -433,18 +475,33 @@ const LeaveApply = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>From Date</Label>
-                <Input type="date" value={fromDate} onChange={(e) => onFromDateChange(e.target.value)} />
+                <Input
+                  type="date"
+                  min={leaveApplyWindow?.earliestAllowedDateKey || undefined}
+                  value={fromDate}
+                  onChange={(e) => onFromDateChange(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>To Date</Label>
                 <Input
                   type="date"
+                  min={fromDate || leaveApplyWindow?.earliestAllowedDateKey || undefined}
                   value={toDate}
                   disabled={duration === "half_day"}
                   onChange={(e) => onToDateChange(e.target.value)}
                 />
               </div>
             </div>
+
+            {dateError && <p className="text-sm text-destructive">{dateError}</p>}
+            {!dateError && leaveApplyWindow?.attendanceLockEnabled && leaveApplyWindow?.earliestAllowedDateKey && (
+              <p className="text-sm text-muted-foreground">
+                {leaveApplyWindow.attendanceLockMode === "payroll_cutoff"
+                  ? `You can apply leave from ${leaveApplyWindow.earliestAllowedDateKey} onwards based on payroll cutoff day ${leaveApplyWindow.payrollCutoffDay}.`
+                  : `You can apply leave for dates within the last ${leaveApplyWindow.attendanceLockAfterDays} days.`}
+              </p>
+            )}
 
             <div className="space-y-2">
               <Label>Reason</Label>
@@ -461,7 +518,7 @@ const LeaveApply = () => {
             </div>
 
             <div className="flex justify-start sm:justify-end">
-              <Button onClick={submit} disabled={submitting || loading}>
+              <Button onClick={submit} disabled={submitting || loading || Boolean(dateError)}>
                 {submitting ? "Applying..." : "Apply Leave"}
               </Button>
             </div>

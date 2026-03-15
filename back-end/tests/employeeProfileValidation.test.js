@@ -76,3 +76,14 @@ test("updateEmployeeSchema accepts profile image upload payload", () => {
   });
   assert.equal(error, undefined);
 });
+
+test("updateEmployeeSchema accepts empty optional personal fields", () => {
+  const { error } = updateEmployeeSchema.validate({
+    dob: "",
+    gender: "",
+    bloodGroup: "",
+    aadhaarNumber: "",
+    panNumber: ""
+  });
+  assert.equal(error, undefined);
+});

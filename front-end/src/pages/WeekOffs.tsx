@@ -6,6 +6,7 @@ import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/context/AuthContext";
 import PermissionGate from "@/components/PermissionGate";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -13,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
+import { RefreshCw } from "lucide-react";
 
 const DAYS = [
   { label: "Sunday", value: 0 },
@@ -30,6 +32,7 @@ const WeekOffs = () => {
   const [shifts, setShifts] = useState<any[]>([]);
   const [selectedShiftId, setSelectedShiftId] = useState<string>("default");
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const { hasAnyPermission } = useAuth();
   const canView = hasAnyPermission(["WEEK_OFF_VIEW"]);
   const canManage = hasAnyPermission(["WEEK_OFF_MANAGE"]);
@@ -78,7 +81,16 @@ const WeekOffs = () => {
   }, []);
 
   useEffect(() => {
-    fetchConfigForSelection(selectedShiftId);
+    const loadSelection = async () => {
+      setLoading(true);
+      try {
+        await fetchConfigForSelection(selectedShiftId);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSelection();
   }, [selectedShiftId]);
 
   const toggleDay = (value: number) => {
@@ -95,7 +107,7 @@ const WeekOffs = () => {
       return;
     }
     try {
-      setLoading(true);
+      setSaving(true);
       const payload: any = { weekOffDays };
       if (selectedShiftId !== "default") {
         payload.shiftId = selectedShiftId;
@@ -110,6 +122,15 @@ const WeekOffs = () => {
       } else {
         toast.error(res?.message || "Save failed");
       }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([fetchConfigForSelection(selectedShiftId), fetchConfigs()]);
     } finally {
       setLoading(false);
     }
@@ -148,26 +169,38 @@ const WeekOffs = () => {
           </Select>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          {DAYS.map((day) => (
-            <label key={day.value} className="flex items-center gap-3">
-              <Checkbox
-                checked={weekOffDays.includes(day.value)}
-                onCheckedChange={() => toggleDay(day.value)}
-                disabled={!canManage}
-              />
-              <span>{day.label}</span>
-            </label>
-          ))}
-        </div>
+        {loading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {DAYS.map((day) => (
+              <div key={day.value} className="flex items-center gap-3">
+                <Skeleton className="h-4 w-4 rounded-sm" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {DAYS.map((day) => (
+              <label key={day.value} className="flex items-center gap-3">
+                <Checkbox
+                  checked={weekOffDays.includes(day.value)}
+                  onCheckedChange={() => toggleDay(day.value)}
+                  disabled={!canManage}
+                />
+                <span>{day.label}</span>
+              </label>
+            ))}
+          </div>
+        )}
 
         <div className="flex gap-3 mt-6">
-          <Button variant="outline" onClick={() => fetchConfigForSelection(selectedShiftId)}>
-            Refresh
+          <Button variant="outline" onClick={handleRefresh} disabled={loading} className="gap-2">
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            {loading ? "Refreshing..." : "Refresh"}
           </Button>
           <PermissionGate permissions={["WEEK_OFF_MANAGE"]}>
-            <Button onClick={saveConfig} disabled={loading}>
-              Save
+            <Button onClick={saveConfig} disabled={loading || saving}>
+              {saving ? "Saving..." : "Save"}
             </Button>
           </PermissionGate>
         </div>
@@ -175,10 +208,16 @@ const WeekOffs = () => {
         <div className="mt-6 border-t pt-4">
           <h4 className="font-medium mb-2">Configured Policies</h4>
           <div className="space-y-2">
-            {configs.length === 0 && (
+            {loading && Array.from({ length: 3 }).map((_, idx) => (
+              <div key={`weekoff-skeleton-${idx}`} className="rounded-md border p-3 space-y-2">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-4 w-64" />
+              </div>
+            ))}
+            {!loading && configs.length === 0 && (
               <p className="text-sm text-muted-foreground">No week off configuration yet.</p>
             )}
-            {configs.map((cfg: any) => (
+            {!loading && configs.map((cfg: any) => (
               <div key={cfg._id} className="rounded-md border p-3 text-sm">
                 <p className="font-medium">
                   {cfg.shiftId ? `${cfg.shiftId.name} (${cfg.shiftId.code})` : "Default (All Shifts)"}

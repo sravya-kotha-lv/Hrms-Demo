@@ -28,6 +28,11 @@ const userSchema = new mongoose.Schema(
       ref: "organizations"
     },
 
+    lastActiveRoleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "roles"
+    },
+
     otp: String,
     otpTimestamp: Date,
     otpAttempts: { type: Number, default: 0 },

@@ -88,6 +88,15 @@ const getLifecycleBadge = (status: string) => {
   }
 };
 
+const toIdString = (value: any) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value._id) return String(value._id);
+  return String(value);
+};
+
+const getEmployeeId = (employee: any) => toIdString(employee?._id || employee?.employeeId || employee);
+
 const Employees = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -344,7 +353,7 @@ const Employees = () => {
         setTotalItems(Number(pagination?.total || nextEmployees.length));
         setTotalPages(Math.max(1, Number(pagination?.totalPages || 1)));
         setSelectedEmployeeIds((prev) =>
-          prev.filter((id) => nextEmployees.some((emp: any) => emp._id === id))
+          prev.filter((id) => nextEmployees.some((emp: any) => getEmployeeId(emp) === id))
         );
       } else {
         toast.error(res?.message || "Failed to load employees");
@@ -679,30 +688,38 @@ const Employees = () => {
   };
 
   const allVisibleSelected =
-    employees.length > 0 && employees.every((emp) => selectedEmployeeIds.includes(emp._id));
+    employees.length > 0 && employees.every((emp) => selectedEmployeeIds.includes(getEmployeeId(emp)));
 
   const toggleSelectAllVisible = (checked: boolean) => {
     if (checked) {
-      setSelectedEmployeeIds(employees.map((emp) => emp._id));
+      setSelectedEmployeeIds(employees.map((emp) => getEmployeeId(emp)).filter(Boolean));
     } else {
       setSelectedEmployeeIds([]);
     }
   };
 
-  const toggleSelectOne = (employeeId: string, checked: boolean) => {
+  const toggleSelectOne = (employeeId: any, checked: boolean) => {
+    const normalizedEmployeeId = toIdString(employeeId);
+    if (!normalizedEmployeeId) return;
     setSelectedEmployeeIds((prev) =>
-      checked ? Array.from(new Set([...prev, employeeId])) : prev.filter((id) => id !== employeeId)
+      checked
+        ? Array.from(new Set([...prev, normalizedEmployeeId]))
+        : prev.filter((id) => id !== normalizedEmployeeId)
     );
   };
 
   const handleBulkUpdate = async () => {
-    if (!selectedEmployeeIds.length) {
+    const normalizedEmployeeIds = Array.from(
+      new Set(selectedEmployeeIds.map((id) => toIdString(id)).filter(Boolean))
+    );
+
+    if (!normalizedEmployeeIds.length) {
       toast.error("Select at least one employee");
       return;
     }
 
     const payload: any = {
-      employeeIds: selectedEmployeeIds
+      employeeIds: normalizedEmployeeIds
     };
 
     if (bulkShiftId !== "none") payload.shiftId = bulkShiftId === "clear" ? null : bulkShiftId;
@@ -722,7 +739,7 @@ const Employees = () => {
     setBulkApplying(false);
 
     if (res?.success) {
-      toast.success(`Updated ${res?.data?.updatedCount || selectedEmployeeIds.length} employees`);
+      toast.success(`Updated ${res?.data?.updatedCount || normalizedEmployeeIds.length} employees`);
 
       const selectedDepartment = bulkDepartmentId !== "none"
         ? departments.find((d: any) => d._id === bulkDepartmentId)
@@ -737,7 +754,7 @@ const Employees = () => {
         ? managers.find((m: any) => m._id === bulkManagerId)
         : null;
 
-      patchEmployeesInList(selectedEmployeeIds, (emp) => {
+      patchEmployeesInList(normalizedEmployeeIds, (emp) => {
         const patch: Record<string, any> = {};
         if (bulkShiftId !== "none") {
           patch.shiftId = bulkShiftId === "clear"
@@ -1277,8 +1294,8 @@ const Employees = () => {
                   <div className="flex items-center gap-3">
                     {canEdit && (
                       <Checkbox
-                        checked={selectedEmployeeIds.includes(employee._id)}
-                        onCheckedChange={(value) => toggleSelectOne(employee._id, Boolean(value))}
+                        checked={selectedEmployeeIds.includes(getEmployeeId(employee))}
+                        onCheckedChange={(value) => toggleSelectOne(getEmployeeId(employee), Boolean(value))}
                       />
                     )}
                     <Avatar>

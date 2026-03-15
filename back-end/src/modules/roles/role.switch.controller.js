@@ -55,6 +55,9 @@ exports.switchRole = async (req, res) => {
   });
 
   await rotateUserToken(UserModel, user.userId, token);
+  await UserModel.findByIdAndUpdate(user.userId, {
+    lastActiveRoleId: role._id
+  });
   // ✅ Send token in header
   res.setHeader("Authorization", `Bearer ${token}`);
 

@@ -147,11 +147,58 @@ const getOrganizationTimeZone = async (organizationId) => {
   return "Asia/Kolkata";
 };
 
-const assertLeaveApplyWindow = async ({ organizationId, fromDate, toDate, timeZone = "UTC" }) => {
+const getLeaveApplyWindowMeta = async ({ organizationId, timeZone = "UTC" }) => {
   const settings = await OrgSettings.findOne({ organizationId })
     .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay");
 
-  if (!settings?.attendanceLockEnabled) return;
+  if (!settings?.attendanceLockEnabled) {
+    return {
+      attendanceLockEnabled: false,
+      attendanceLockMode: settings?.attendanceLockMode || "days_window",
+      payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+      attendanceLockAfterDays: Number(settings?.attendanceLockAfterDays ?? 7),
+      earliestAllowedDateKey: null
+    };
+  }
+
+  const today = startOfDayInTimeZone(new Date(), timeZone);
+  const todayKey = toDateKeyInTimeZone(today, timeZone);
+  const mode = settings.attendanceLockMode || "days_window";
+
+  if (mode === "days_window") {
+    const attendanceLockAfterDays = Number(settings.attendanceLockAfterDays ?? 7);
+    return {
+      attendanceLockEnabled: true,
+      attendanceLockMode: mode,
+      payrollCutoffDay: Number(settings.payrollCutoffDay ?? 25),
+      attendanceLockAfterDays,
+      earliestAllowedDateKey: addDaysToDateKey(todayKey, -attendanceLockAfterDays)
+    };
+  }
+
+  const payrollCutoffDay = Number(settings.payrollCutoffDay ?? 25);
+  const currentDay = getDayInTimeZone(today, timeZone);
+  const [todayYear, todayMonth] = todayKey.split("-").map(Number);
+  const currentMonthFirstKey = `${todayYear}-${String(todayMonth).padStart(2, "0")}-01`;
+  const previousMonthYear = todayMonth === 1 ? todayYear - 1 : todayYear;
+  const previousMonth = todayMonth === 1 ? 12 : todayMonth - 1;
+  const previousMonthFirstKey = `${previousMonthYear}-${String(previousMonth).padStart(2, "0")}-01`;
+  const earliestAllowedDateKey = currentDay > payrollCutoffDay
+    ? addDaysToDateKey(currentMonthFirstKey, payrollCutoffDay)
+    : addDaysToDateKey(previousMonthFirstKey, payrollCutoffDay);
+
+  return {
+    attendanceLockEnabled: true,
+    attendanceLockMode: mode,
+    payrollCutoffDay,
+    attendanceLockAfterDays: Number(settings.attendanceLockAfterDays ?? 7),
+    earliestAllowedDateKey
+  };
+};
+
+const assertLeaveApplyWindow = async ({ organizationId, fromDate, toDate, timeZone = "UTC" }) => {
+  const windowMeta = await getLeaveApplyWindowMeta({ organizationId, timeZone });
+  if (!windowMeta.attendanceLockEnabled) return;
 
   const fromDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(fromDate || ""))
     ? String(fromDate)
@@ -160,35 +207,17 @@ const assertLeaveApplyWindow = async ({ organizationId, fromDate, toDate, timeZo
     ? String(toDate)
     : toDateKeyInTimeZone(toDate, timeZone);
 
-  const today = startOfDayInTimeZone(new Date(), timeZone);
-  const todayKey = toDateKeyInTimeZone(today, timeZone);
-  const mode = settings.attendanceLockMode || "days_window";
+  if (!windowMeta.earliestAllowedDateKey) return;
 
-  if (mode === "days_window") {
-    const lockAfterDays = Number(settings.attendanceLockAfterDays ?? 7);
-    const earliestAllowedKey = addDaysToDateKey(todayKey, -lockAfterDays);
-    if (fromDateKey < earliestAllowedKey || toDateKey < earliestAllowedKey) {
-      throw new Error(`Attendance is locked for dates older than ${lockAfterDays} days. Leave cannot be applied for locked dates.`);
+  if (fromDateKey < windowMeta.earliestAllowedDateKey || toDateKey < windowMeta.earliestAllowedDateKey) {
+    if (windowMeta.attendanceLockMode === "payroll_cutoff") {
+      throw new Error(
+        `Leave cannot be applied before ${windowMeta.earliestAllowedDateKey}. Dates up to payroll cutoff ${windowMeta.payrollCutoffDay} are locked.`
+      );
     }
-    return;
-  }
-
-  const cutoffDay = Number(settings.payrollCutoffDay ?? 25);
-  const currentDay = getDayInTimeZone(today, timeZone);
-  const [todayYear, todayMonth] = todayKey.split("-").map(Number);
-  const currentMonthFirstKey = `${todayYear}-${String(todayMonth).padStart(2, "0")}-01`;
-  const previousMonthYear = todayMonth === 1 ? todayYear - 1 : todayYear;
-  const previousMonth = todayMonth === 1 ? 12 : todayMonth - 1;
-  const previousMonthFirstKey = `${previousMonthYear}-${String(previousMonth).padStart(2, "0")}-01`;
-  // payroll_cutoff rule:
-  // - once cutoff + 1 day is crossed, lock dates up to cutoff day of current month.
-  // - before that, lock dates up to cutoff day of previous month.
-  const periodStartKey = currentDay > cutoffDay
-    ? addDaysToDateKey(currentMonthFirstKey, cutoffDay)
-    : addDaysToDateKey(previousMonthFirstKey, cutoffDay);
-
-  if (fromDateKey < periodStartKey || toDateKey < periodStartKey) {
-    throw new Error(`Attendance is locked before payroll period start ${periodStartKey}. Leave cannot be applied for locked dates.`);
+    throw new Error(
+      `Attendance is locked for dates older than ${windowMeta.attendanceLockAfterDays} days. Leave cannot be applied for locked dates.`
+    );
   }
 };
 
@@ -467,7 +496,7 @@ exports.getApplyContext = async (req) => {
     throw new Error("Only confirmed employees can apply leave");
   }
 
-  const [holidays, leaveTypes, balances, myLeaves, settings, weekOffConfigs] = await Promise.all([
+  const [holidays, leaveTypes, balances, myLeaves, settings, weekOffConfigs, organizationTimeZone] = await Promise.all([
     Holiday.find({
       organizationId: req.user.organizationId,
       status: "active",
@@ -496,8 +525,14 @@ exports.getApplyContext = async (req) => {
     OrgSettings.findOne({ organizationId: req.user.organizationId }).select("sandwichRuleEnabled"),
     WeekOff.find({ organizationId: req.user.organizationId })
       .populate("shiftId", "name code status")
-      .select("weekOffDays shiftId")
+      .select("weekOffDays shiftId"),
+    getOrganizationTimeZone(req.user.organizationId)
   ]);
+
+  const leaveApplyWindow = await getLeaveApplyWindowMeta({
+    organizationId: req.user.organizationId,
+    timeZone: organizationTimeZone
+  });
 
   const defaultWeekOffDays = weekOffConfigs.find((cfg) => !cfg.shiftId)?.weekOffDays || [];
   const shiftWeekOffDays =
@@ -520,6 +555,7 @@ exports.getApplyContext = async (req) => {
         }))
     },
     sandwichRuleEnabled: Boolean(settings?.sandwichRuleEnabled),
+    leaveApplyWindow,
     holidays: holidays.map((h) => ({ _id: h._id, name: h.name, date: h.date })),
     leaveTypes,
     balances: balances.map((b) => ({

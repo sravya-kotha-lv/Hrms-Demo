@@ -32,6 +32,8 @@ const ID_CARD_FRONT_SKELETON = (import.meta as any).env?.VITE_IDCARD_FRONT_SKELE
 const ID_CARD_BACK_SKELETON = (import.meta as any).env?.VITE_IDCARD_BACK_SKELETON || "/idcard_back.jpg";
 const ID_CARD_INFO_ROW_NUDGES = [2.5, 1.5, 1, -1];
 const ID_CARD_NAME_MAX_LETTERS = 15;
+const sanitizePlaceName = (value: string) => value.replace(/[^A-Za-z .'-]/g, "");
+const isValidPlaceName = (value: string) => /^[A-Za-z]+(?:[A-Za-z .'-]*[A-Za-z])?$/.test(value.trim());
 
 const countLetters = (value: string) => value.replace(/[^A-Za-z]/g, "").length;
 
@@ -167,6 +169,18 @@ const ProfilePage = () => {
   const handleSave = async () => {
     if (form.address?.zip?.trim() && !/^\d+$/.test(form.address.zip.trim())) {
       toast.error("PIN/Zip code must contain only numbers");
+      return;
+    }
+    if (form.address.city.trim() && !isValidPlaceName(form.address.city)) {
+      toast.error("City must contain only letters");
+      return;
+    }
+    if (form.address.state.trim() && !isValidPlaceName(form.address.state)) {
+      toast.error("State must contain only letters");
+      return;
+    }
+    if (form.address.country.trim() && !isValidPlaceName(form.address.country)) {
+      toast.error("Country must contain only letters");
       return;
     }
 
@@ -700,6 +714,7 @@ const ProfilePage = () => {
                     key={profilePicInputKey}
                     type="file"
                     accept="image/*"
+                    aria-label="Choose profile picture file"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
@@ -717,7 +732,7 @@ const ProfilePage = () => {
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
-                    JPG, PNG, WEBP up to 2MB
+                    Choose profile picture file. JPG, PNG, WEBP up to 2MB
                   </p>
                   {form.profileImageUpload?.fileName && (
                     <p className="text-xs text-muted-foreground">{form.profileImageUpload.fileName}</p>
@@ -770,17 +785,17 @@ const ProfilePage = () => {
             <Input
               placeholder="City"
               value={form.address.city}
-              onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })}
+              onChange={(e) => setForm({ ...form, address: { ...form.address, city: sanitizePlaceName(e.target.value) } })}
             />
             <Input
               placeholder="State"
               value={form.address.state}
-              onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value } })}
+              onChange={(e) => setForm({ ...form, address: { ...form.address, state: sanitizePlaceName(e.target.value) } })}
             />
             <Input
               placeholder="Country"
               value={form.address.country}
-              onChange={(e) => setForm({ ...form, address: { ...form.address, country: e.target.value } })}
+              onChange={(e) => setForm({ ...form, address: { ...form.address, country: sanitizePlaceName(e.target.value) } })}
             />
             <Input
               placeholder="Zip"
@@ -794,6 +809,7 @@ const ProfilePage = () => {
             <Input
               type="file"
               accept=".pdf,.png,.jpg,.jpeg,.webp"
+              aria-label="Choose address proof file"
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
@@ -809,6 +825,9 @@ const ProfilePage = () => {
                 });
               }}
             />
+            <p className="text-xs text-muted-foreground">
+              Choose address proof file. PDF, JPG, PNG, WEBP up to 5MB
+            </p>
             {form.addressProofUpload?.fileName && (
               <p className="text-xs text-muted-foreground">{form.addressProofUpload.fileName}</p>
             )}

@@ -308,45 +308,47 @@ const Dashboard = () => {
 
   const kpis = useMemo(() => {
     const totalEmployees = employeeList.length;
-    let presentToday = 0;
-    let checkedInOnly = 0;
-    let lateArrivals = 0;
-    let onLeaveToday = 0;
-    let absentToday = 0;
+    const presentTodayIds = new Set<string>();
+    const checkedInOnlyIds = new Set<string>();
+    const lateArrivalIds = new Set<string>();
+    const onLeaveTodayIds = new Set<string>();
+    const absentTodayIds = new Set<string>();
 
     (attendanceMatrix || []).forEach((row: any) => {
       const cell = row?.days?.[todayDay];
+      const employeeId = String(row?.employeeId?._id || row?.employeeId || "");
+      if (!cell || !employeeId) return;
       if (!cell) return;
       if (cell.holidayName || cell.isWeekOff) return;
 
       if (cell.isOnLeave) {
-        onLeaveToday += 1;
+        onLeaveTodayIds.add(employeeId);
         return;
       }
 
       if (cell.status === "pending_checkout") {
-        presentToday += 1;
-        checkedInOnly += 1;
-        if (Number(cell.lateByMinutes || 0) > 0) lateArrivals += 1;
+        presentTodayIds.add(employeeId);
+        checkedInOnlyIds.add(employeeId);
+        if (Number(cell.lateByMinutes || 0) > 0) lateArrivalIds.add(employeeId);
         return;
       }
 
       if (isPresentLikeStatus(cell.status)) {
-        presentToday += 1;
-        if (Number(cell.lateByMinutes || 0) > 0) lateArrivals += 1;
+        presentTodayIds.add(employeeId);
+        if (Number(cell.lateByMinutes || 0) > 0) lateArrivalIds.add(employeeId);
         return;
       }
 
-      absentToday += 1;
+      absentTodayIds.add(employeeId);
     });
 
     return {
       totalEmployees,
-      presentToday,
-      absentToday,
-      checkedInOnly,
-      lateArrivals,
-      onLeaveToday
+      presentToday: presentTodayIds.size,
+      absentToday: absentTodayIds.size,
+      checkedInOnly: checkedInOnlyIds.size,
+      lateArrivals: lateArrivalIds.size,
+      onLeaveToday: onLeaveTodayIds.size
     };
   }, [employeeList, attendanceMatrix, todayDay]);
 
