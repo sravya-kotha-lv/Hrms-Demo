@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://10.0.2.2:8000/api';
+const API_BASE_URL = 'https://www.upanayahr.com/api';
 
 type ApiResponse<T> = {
   success?: boolean;
@@ -11,25 +11,45 @@ type ApiResponse<T> = {
 const normalizeToken = (token: string) =>
   token.toLowerCase().startsWith('bearer') ? token : `Bearer ${token}`;
 
-const getAuthHeader = (token: string | null) => {
+const getAuthHeader = (token: string | null): Record<string, string> => {
   if (!token) return {};
   return { Authorization: normalizeToken(token) };
 };
 
+const buildHeaders = (token: string | null) => ({
+  'Content-Type': 'application/json',
+  ...getAuthHeader(token),
+});
+
 const extractAuthToken = (headers: Headers) =>
   headers.get('authorization') || headers.get('Authorization');
 
-const safeJson = async <T>(response: Response): Promise<ApiResponse<T>> => {
-  try {
-    return (await response.json()) as ApiResponse<T>;
-  } catch {
-    return {
-      success: false,
-      code: response.status,
-      message: 'Invalid server response',
-    };
-  }
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null) => {
+  unauthorizedHandler = handler;
 };
+
+const handleUnauthorized = (response: Response) => {
+  if (response.status === 401) {
+    unauthorizedHandler?.();
+    return true;
+  }
+  return false;
+};
+
+const safeJson = async <T>(response: Response): Promise<ApiResponse<T>> => {
+    try {
+      return (await response.json()) as ApiResponse<T>;
+    } catch {
+      return {
+        success: false,
+        code: response.status,
+        message: 'Invalid server response',
+      };
+    }
+  };
 
 export const postApiWithoutToken = async <T>(
   path: string,
@@ -62,11 +82,15 @@ export const getApiWithToken = async <T>(path: string, token: string) => {
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeader(token),
-      },
+      headers: buildHeaders(token),
     });
+    if (handleUnauthorized(response)) {
+      return {
+        success: false,
+        code: 401,
+        message: 'Your session has expired. Please log in again.',
+      } as ApiResponse<T>;
+    }
     return await safeJson<T>(response);
   } catch {
     return {
@@ -85,12 +109,16 @@ export const postApiWithToken = async <T>(
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeader(token),
-      },
+      headers: buildHeaders(token),
       body: JSON.stringify(payload),
     });
+    if (handleUnauthorized(response)) {
+      return {
+        success: false,
+        code: 401,
+        message: 'Your session has expired. Please log in again.',
+      } as ApiResponse<T>;
+    }
     return await safeJson<T>(response);
   } catch {
     return {
@@ -109,12 +137,19 @@ export const postApiWithTokenAndAuth = async <T>(
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeader(token),
-      },
+      headers: buildHeaders(token),
       body: JSON.stringify(payload),
     });
+    if (handleUnauthorized(response)) {
+      return {
+        json: {
+          success: false,
+          code: 401,
+          message: 'Your session has expired. Please log in again.',
+        } as ApiResponse<T>,
+        token: null,
+      };
+    }
     const json = await safeJson<T>(response);
     return {
       json,
@@ -140,12 +175,16 @@ export const putApiWithToken = async <T>(
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeader(token),
-      },
+      headers: buildHeaders(token),
       body: JSON.stringify(payload),
     });
+    if (handleUnauthorized(response)) {
+      return {
+        success: false,
+        code: 401,
+        message: 'Your session has expired. Please log in again.',
+      } as ApiResponse<T>;
+    }
     return await safeJson<T>(response);
   } catch {
     return {
@@ -170,6 +209,13 @@ export const patchApiWithToken = async <T>(
       },
       body: JSON.stringify(payload),
     });
+    if (handleUnauthorized(response)) {
+      return {
+        success: false,
+        code: 401,
+        message: 'Your session has expired. Please log in again.',
+      } as ApiResponse<T>;
+    }
     return await safeJson<T>(response);
   } catch {
     return {

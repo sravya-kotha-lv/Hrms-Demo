@@ -10,6 +10,7 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import AttendanceTab from '../components/AttendanceTab';
 import { AttendanceDay } from '../types/attendance';
 import { getApiWithToken } from '../services/api';
@@ -128,6 +129,14 @@ function AttendanceScreen() {
     if (!token) return;
     loadHolidays();
   }, [loadHolidays, token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) return;
+      loadAttendance(referenceDate);
+      loadHolidays();
+    }, [token, referenceDate, loadAttendance, loadHolidays])
+  );
 
   const handleRefresh = () => {
     loadAttendance(referenceDate, true);
