@@ -14,12 +14,16 @@ type AuthContextValue = {
   updatePermissions: (permissions: string[]) => void;
   updateToken: (token: string) => void;
   logout: () => void;
+  sessionExpiredMessage: string | null;
+  setSessionExpiredMessage: (message: string | null) => void;
+  clearSessionExpiredMessage: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<SessionPayload | null>(null);
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
 
   const updateProfile = (profile: any | null) => {
     setSession((current) => (current ? { ...current, profile } : current));
@@ -35,9 +39,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = () => setSession(null);
 
+  const clearSessionExpiredMessage = () => setSessionExpiredMessage(null);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ session, setSession, updateProfile, updatePermissions, updateToken, logout }),
-    [session]
+    () => ({
+      session,
+      setSession,
+      updateProfile,
+      updatePermissions,
+      updateToken,
+      logout,
+      sessionExpiredMessage,
+      setSessionExpiredMessage,
+      clearSessionExpiredMessage,
+    }),
+    [session, sessionExpiredMessage]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

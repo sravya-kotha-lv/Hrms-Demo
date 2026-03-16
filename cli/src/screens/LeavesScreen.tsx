@@ -264,20 +264,13 @@ function LeavesScreen() {
       end={{ x: 1, y: 1 }}
       style={styles.container}
     >
+      
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
           { paddingTop: Math.max(safeAreaInsets.top, 16) },
         ]}
       >
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.headerButton}>
-            <MaterialCommunityIcons name="chevron-left" size={22} color="#0f172a" />
-          </Pressable>
-          <Text style={styles.headerTitle}>My Leaves</Text>
-          <View style={styles.headerButton} />
-        </View>
-
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Text style={styles.statTitle}>Pending Requests</Text>
@@ -649,18 +642,6 @@ function LeavesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 120, gap: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
   card: {
     backgroundColor: '#ffffff',
     borderRadius: 18,

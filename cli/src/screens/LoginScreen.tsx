@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -24,7 +24,7 @@ const isEmployeeRole = (role: any) => {
 
 function LoginScreen() {
   const navigation = useNavigation<any>();
-  const { setSession } = useAuth();
+  const { setSession, sessionExpiredMessage, clearSessionExpiredMessage } = useAuth();
   const safeAreaInsets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isWide = width >= 900;
@@ -34,6 +34,14 @@ function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    if (sessionExpiredMessage) {
+      setNotice(sessionExpiredMessage);
+      clearSessionExpiredMessage();
+    }
+  }, [sessionExpiredMessage, clearSessionExpiredMessage]);
 
   const handleLogin = async () => {
     const trimmedEmail = email.trim().toLowerCase();
@@ -156,6 +164,7 @@ function LoginScreen() {
                 Manage attendance, leaves, approvals, and people operations in one place.
               </Text>
 
+              {notice ? <View style={styles.noticeBox}><Text style={styles.noticeText}>{notice}</Text></View> : null}
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
               <View style={styles.form}>
@@ -336,6 +345,17 @@ const styles = StyleSheet.create({
   form: {
     marginTop: 16,
     gap: 12,
+  },
+  noticeBox: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#fef3c7',
+  },
+  noticeText: {
+    color: '#92400e',
+    fontSize: 12,
+    fontWeight: '600',
   },
   errorText: {
     marginTop: 12,
