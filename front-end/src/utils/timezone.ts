@@ -1,12 +1,24 @@
 const ORG_TIMEZONE_KEY = "org_timezone";
+const DEFAULT_ORG_TIMEZONE = "Asia/Kolkata";
+
+const isValidTimeZone = (timeZone?: string | null) => {
+  try {
+    if (!timeZone) return false;
+    new Intl.DateTimeFormat(undefined, { timeZone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export const setOrgTimeZone = (timeZone: string) => {
-  if (!timeZone) return;
+  if (!isValidTimeZone(timeZone)) return;
   localStorage.setItem(ORG_TIMEZONE_KEY, timeZone);
 };
 
 export const getOrgTimeZone = () => {
-  return localStorage.getItem(ORG_TIMEZONE_KEY) || "Asia/Kolkata";
+  const storedTimeZone = localStorage.getItem(ORG_TIMEZONE_KEY);
+  return isValidTimeZone(storedTimeZone) ? storedTimeZone : DEFAULT_ORG_TIMEZONE;
 };
 
 const toDate = (value: string | number | Date) =>

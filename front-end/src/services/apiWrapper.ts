@@ -8,6 +8,14 @@ const api = axios.create({
 });
 
 let sessionExpiryHandled = false;
+
+const syncOrgTimeZoneFromResponse = (response: any) => {
+  const data = response?.data?.data;
+  const timeZone = data?.timezone || data?.orgSettings?.timezone;
+  if (typeof timeZone === "string" && timeZone) {
+    setOrgTimeZone(timeZone);
+  }
+};
 /* ================= REQUEST ================= */
 api.interceptors.request.use((config) => {
   const token = getToken();
@@ -25,13 +33,7 @@ api.interceptors.response.use(
     if (authHeader) {
       setToken(authHeader);
     }
-    const responseUrl = response?.config?.url || "";
-    if (responseUrl.includes("/org-settings")) {
-      const timeZone = response?.data?.data?.timezone;
-      if (typeof timeZone === "string" && timeZone) {
-        setOrgTimeZone(timeZone);
-      }
-    }
+    syncOrgTimeZoneFromResponse(response);
     return response;
   },
   (error) => {
