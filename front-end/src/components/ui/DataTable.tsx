@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
+import type { RefObject, UIEventHandler } from "react";
 
 export interface Column<T> {
   header: string;
@@ -48,6 +49,8 @@ interface DataTableProps<T> {
   hideFooter?: boolean;
   containerClassName?: string;
   viewportClassName?: string;
+  viewportRef?: RefObject<HTMLDivElement | null>;
+  onViewportScroll?: UIEventHandler<HTMLDivElement>;
 }
 
 export function DataTable<T>({
@@ -63,6 +66,8 @@ export function DataTable<T>({
   hideFooter = false,
   containerClassName,
   viewportClassName,
+  viewportRef,
+  onViewportScroll,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -145,7 +150,11 @@ export function DataTable<T>({
       )}
 
       {/* 📋 Table */}
-      <div className={cn("min-h-0 flex-1 overflow-auto max-h-[60vh]", viewportClassName)}>
+      <div
+        ref={viewportRef}
+        onScroll={onViewportScroll}
+        className={cn("min-h-0 flex-1 overflow-auto max-h-[60vh]", viewportClassName)}
+      >
         <Table className={tableClassName || "w-full min-w-[600px] border-collapse"}>
           <TableHeader className="sticky top-0 z-30 bg-card">
             {renderHeader ? (

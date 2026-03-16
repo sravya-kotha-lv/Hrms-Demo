@@ -9,6 +9,8 @@ const api = axios.create({
 
 let sessionExpiryHandled = false;
 const inflightGetRequests = new Map<string, Promise<any>>();
+const recentGetResponses = new Map<string, { expiresAt: number; data: any }>();
+const RECENT_GET_TTL_MS = 1500;
 
 const getRequestCacheKey = (apiUrl: string, headers: Record<string, any> = {}) =>
   JSON.stringify({
@@ -20,6 +22,28 @@ const getRequestCacheKey = (apiUrl: string, headers: Record<string, any> = {}) =
         return acc;
       }, {} as Record<string, any>)
   });
+
+const clearGetCaches = () => {
+  inflightGetRequests.clear();
+  recentGetResponses.clear();
+};
+
+const readRecentGetResponse = (cacheKey: string) => {
+  const cached = recentGetResponses.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    recentGetResponses.delete(cacheKey);
+    return null;
+  }
+  return cached.data;
+};
+
+const rememberRecentGetResponse = (cacheKey: string, data: any) => {
+  recentGetResponses.set(cacheKey, {
+    data,
+    expiresAt: Date.now() + RECENT_GET_TTL_MS
+  });
+};
 
 const syncOrgTimeZoneFromResponse = (response: any) => {
   const data = response?.data?.data;
@@ -89,6 +113,7 @@ export const registerUser = async (formData: any) => {
 // Login
 export const LoginUser = async (values: any) => {
   const response = await api.post("/users/login", values);
+  clearGetCaches();
   return response.data;
 };
 
@@ -100,6 +125,7 @@ export const postApiWithoutToken = async (apiUrl: string, params: any) => {
         "Content-Type": "application/json",
       },
     });
+    clearGetCaches();
     return response.data;
   } catch (error: any) {
     if (error.response) return error.response.data;
@@ -143,6 +169,10 @@ export const getApiWithToken = async (
     const headers = _headers
       ? { "Content-Type": undefined }
       : { "Content-Type": "application/json" };
+    const cachedResponse = readRecentGetResponse(getRequestCacheKey(apiUrl, headers));
+    if (cachedResponse !== null) {
+      return cachedResponse;
+    }
     const cacheKey = getRequestCacheKey(apiUrl, headers);
     const existingRequest = inflightGetRequests.get(cacheKey);
     if (existingRequest) {
@@ -151,7 +181,10 @@ export const getApiWithToken = async (
 
     const requestPromise = api
       .get(apiUrl, { headers })
-      .then((response) => response.data)
+      .then((response) => {
+        rememberRecentGetResponse(cacheKey, response.data);
+        return response.data;
+      })
       .finally(() => {
         inflightGetRequests.delete(cacheKey);
       });
@@ -177,6 +210,7 @@ export const putApiWithToken = async (
       ? { "Content-Type": undefined }
       : { "Content-Type": "application/json" };
     const response = await api.put(apiUrl, params, { headers });
+    clearGetCaches();
     return response.data;
   } catch (error: any) {
     return error.response?.data || error;
@@ -197,6 +231,7 @@ export const patchApiWithToken = async (
       ? { "Content-Type": undefined }
       : { "Content-Type": "application/json" };
     const response = await api.patch(apiUrl, params, { headers });
+    clearGetCaches();
     return response.data;
   } catch (error: any) {
     return error.response?.data || error;
@@ -209,6 +244,10 @@ export const getApiWithOutToken = async (apiUrl: string) => {
   try {
     const headers = { "Content-Type": "application/json" };
     const cacheKey = getRequestCacheKey(apiUrl, headers);
+    const cachedResponse = readRecentGetResponse(cacheKey);
+    if (cachedResponse !== null) {
+      return cachedResponse;
+    }
     const existingRequest = inflightGetRequests.get(cacheKey);
     if (existingRequest) {
       return existingRequest;
@@ -216,7 +255,10 @@ export const getApiWithOutToken = async (apiUrl: string) => {
 
     const requestPromise = api
       .get(apiUrl, { headers })
-      .then((response) => response.data)
+      .then((response) => {
+        rememberRecentGetResponse(cacheKey, response.data);
+        return response.data;
+      })
       .finally(() => {
         inflightGetRequests.delete(cacheKey);
       });
@@ -234,6 +276,7 @@ export const deleteApiWithToken = async (apiUrl: string) => {
     const response = await api.delete(apiUrl, {
       headers: { "Content-Type": "application/json" },
     });
+    clearGetCaches();
     return response.data;
   } catch (error: any) {
     return error.response?.data || error;
@@ -271,5 +314,6 @@ export function parseLocalISO(iso: string | null | undefined): Date | null {
 // placeholder (safe)
 export const switchRole = async (roleId: number) => {
   const response = await api.post("/roles/switch", { roleId });
+  clearGetCaches();
   return response.data;
 };

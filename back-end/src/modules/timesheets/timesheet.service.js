@@ -1236,6 +1236,8 @@ exports.getAttendanceMatrix = async (req) => {
   const shouldPaginate = Boolean(req.query.page || req.query.limit);
   const page = parsePositiveInt(req.query.page, 1);
   const limit = Math.min(200, parsePositiveInt(req.query.limit, 50));
+  const sortBy = String(req.query.sortBy || "employeeCode");
+  const sortOrder = String(req.query.sortOrder || "asc").toLowerCase() === "desc" ? -1 : 1;
 
   const employeeQuery = {
     organizationId: req.user.organizationId,
@@ -1260,7 +1262,13 @@ exports.getAttendanceMatrix = async (req) => {
 
   let employeeCursor = Employee.find(employeeQuery)
     .select("_id firstName lastName employeeCode shiftId")
-    .sort({ firstName: 1, lastName: 1 });
+    .sort(
+      sortBy === "firstName"
+        ? { firstName: sortOrder, lastName: sortOrder, employeeCode: 1 }
+        : sortBy === "lastName"
+          ? { lastName: sortOrder, firstName: sortOrder, employeeCode: 1 }
+          : { employeeCode: sortOrder, firstName: 1, lastName: 1 }
+    );
 
   if (shouldPaginate) {
     employeeCursor = employeeCursor.skip((page - 1) * limit).limit(limit);
@@ -2607,16 +2615,42 @@ exports.getMyWeekly = async (req) => {
     }).populate("employeeId", "firstName lastName employeeCode");
   }
 
-  return Timesheet.find({
+  const pageRequested = req.query.page !== undefined || req.query.limit !== undefined;
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 20), 100);
+  const query = {
     organizationId: req.user.organizationId,
     employeeId: employee._id
-  })
+  };
+  const baseQuery = Timesheet.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .sort({ weekStart: -1 });
+
+  if (!pageRequested) {
+    return baseQuery;
+  }
+
+  const [items, total] = await Promise.all([
+    baseQuery.skip((page - 1) * limit).limit(limit),
+    Timesheet.countDocuments(query)
+  ]);
+
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit))
+    }
+  };
 };
 
 exports.getAllWeekly = async (req) => {
   const query = { organizationId: req.user.organizationId };
+  const pageRequested = req.query.page !== undefined || req.query.limit !== undefined;
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 20), 100);
 
   if (req.user.activeRoleId) {
     const role = await Role.findOne({
@@ -2640,9 +2674,28 @@ exports.getAllWeekly = async (req) => {
     }
   }
 
-  return Timesheet.find(query)
+  const baseQuery = Timesheet.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .sort({ weekStart: -1 });
+
+  if (!pageRequested) {
+    return baseQuery;
+  }
+
+  const [items, total] = await Promise.all([
+    baseQuery.skip((page - 1) * limit).limit(limit),
+    Timesheet.countDocuments(query)
+  ]);
+
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit))
+    }
+  };
 };
 
 exports.actionWeekly = async (req) => {

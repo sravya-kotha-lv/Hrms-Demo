@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
 import {
@@ -196,6 +196,19 @@ const toIdString = (value: any) => {
   return String(value);
 };
 
+const mergeTimesheetPages = (existing: any[], incoming: any[]) => {
+  const merged = new Map<string, any>();
+  existing.forEach((item) => {
+    const itemId = toIdString(item?._id || item?.id);
+    if (itemId) merged.set(itemId, item);
+  });
+  incoming.forEach((item) => {
+    const itemId = toIdString(item?._id || item?.id);
+    if (itemId) merged.set(itemId, item);
+  });
+  return Array.from(merged.values());
+};
+
 const captureSelfieFromCamera = async (): Promise<string | null> => {
   if (!navigator.mediaDevices?.getUserMedia) return null;
 
@@ -290,6 +303,11 @@ const Timesheets = () => {
   const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState<"all" | "my">("my");
   const [weeklyList, setWeeklyList] = useState<any[]>([]);
+  const [teamCurrentPage, setTeamCurrentPage] = useState(1);
+  const [teamTotalPages, setTeamTotalPages] = useState(1);
+  const [teamTotalItems, setTeamTotalItems] = useState(0);
+  const [teamPageSize] = useState(15);
+  const [teamLoadingMore, setTeamLoadingMore] = useState(false);
   const [onlineList, setOnlineList] = useState<any[]>([]);
   const [onLeaveList, setOnLeaveList] = useState<any[]>([]);
   const [myLeaveDates, setMyLeaveDates] = useState<string[]>([]);
@@ -323,8 +341,19 @@ const Timesheets = () => {
   });
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const teamTableViewportRef = useRef<HTMLDivElement | null>(null);
+  const teamLoadingMoreRef = useRef(false);
   const currentEmployeeId = toIdString(profile?.employeeId);
   const currentRoleSlug = profile?.activeRole?.slug || "";
+  const canCheckIn = hasPermission("TIMESHEET_CHECKIN_SELF");
+  const canCheckOut = hasPermission("TIMESHEET_CHECKOUT_SELF");
+  const canSubmit = hasPermission("TIMESHEET_SUBMIT_SELF");
+  const canEdit = hasPermission("TIMESHEET_EDIT_SELF");
+  const canCreate = hasPermission("TIMESHEET_CREATE_SELF");
+  const canAction = hasPermission("TIMESHEET_ACTION");
+  const canRecall = hasPermission("TIMESHEET_RECALL_SELF");
+  const canViewOnline = hasPermission("TIMESHEET_VIEW_ONLINE");
+  const canViewAll = hasPermission("TIMESHEET_VIEW_ALL");
 
   const canCurrentActorActionAttendanceRequest = (request: AttendanceRequest) => {
     const steps = Array.isArray(request.approvalSteps) ? request.approvalSteps : [];
@@ -379,6 +408,35 @@ const Timesheets = () => {
     return { label: "A", tone: "bad" };
   };
 
+  const loadTeamTimesheets = async (pageToLoad = 1) => {
+    if (pageToLoad > 1) {
+      setTeamLoadingMore(true);
+    }
+    const resAll = await getApiWithToken(`/timesheets/weekly?page=${pageToLoad}&limit=${teamPageSize}`, null, {
+      requiredPermissions: ["TIMESHEET_VIEW_ALL"]
+    });
+    if (resAll?.skipped) return;
+    if (resAll?.success) {
+      const payload = resAll.data;
+      const nextItems = Array.isArray(payload) ? payload : (payload?.items || []);
+      const pagination = Array.isArray(payload)
+        ? { page: 1, totalPages: 1, total: nextItems.length }
+        : payload?.pagination;
+      setWeeklyList((prev) => (pageToLoad > 1 ? mergeTimesheetPages(prev, nextItems) : nextItems));
+      setTeamCurrentPage(Number(pagination?.page || pageToLoad));
+      setTeamTotalPages(Math.max(1, Number(pagination?.totalPages || 1)));
+      setTeamTotalItems(Number(pagination?.total || nextItems.length));
+      setViewMode("all");
+    } else {
+      setWeeklyList([]);
+      setTeamCurrentPage(1);
+      setTeamTotalPages(1);
+      setTeamTotalItems(0);
+    }
+    teamLoadingMoreRef.current = false;
+    setTeamLoadingMore(false);
+  };
+
   const loadAttendanceToday = async () => {
     const res = await getApiWithToken(
       `/timesheets/attendance/my?date=${selectedDate}`,
@@ -397,26 +455,12 @@ const Timesheets = () => {
     setTimesheet(null);
     setEntries(normalizeEntries(weekDates, []));
     if (hasPermission("TIMESHEET_VIEW_ALL")) {
-      const resAll = await getApiWithToken("/timesheets/weekly", null, {
-        requiredPermissions: ["TIMESHEET_VIEW_ALL"]
-      });
-      if (resAll?.success) {
-        setWeeklyList(resAll.data || []);
-        setViewMode("all");
-      } else {
-        setWeeklyList([]);
-      }
+      await loadTeamTimesheets(1);
     } else {
-      const resMy = await getApiWithToken("/timesheets/weekly/my", null, {
-        requiredPermissions: ["TIMESHEET_VIEW_SELF"]
-      });
-      if (resMy?.skipped) {
-        setWeekLoading(false);
-        return;
-      }
-      if (resMy?.success) {
-        setWeeklyList(resMy.data || []);
-      }
+      setWeeklyList([]);
+      setTeamCurrentPage(1);
+      setTeamTotalPages(1);
+      setTeamTotalItems(0);
       setViewMode("my");
     }
 
@@ -568,6 +612,32 @@ const Timesheets = () => {
     loadPendingAttendanceRequests();
     loadCheckInPolicy();
   }, [weekStart.getTime()]);
+
+  const hasMoreTeamTimesheets = teamCurrentPage < teamTotalPages;
+
+  useEffect(() => {
+    if (teamCurrentPage <= 1 || !canViewAll) return;
+    loadTeamTimesheets(teamCurrentPage);
+  }, [canViewAll, teamCurrentPage]);
+
+  const handleTeamTimesheetsScroll = () => {
+    const viewport = teamTableViewportRef.current;
+    if (!viewport || weekLoading || teamLoadingMore || teamLoadingMoreRef.current || !hasMoreTeamTimesheets || viewMode !== "all" || !showTeamTimesheets) {
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    if (scrollTop <= 0 || scrollHeight <= clientHeight) return;
+    const progress = (scrollTop + clientHeight) / scrollHeight;
+    if (progress < 0.5) return;
+    teamLoadingMoreRef.current = true;
+    setTeamCurrentPage((prev) => {
+      if (prev >= teamTotalPages) {
+        teamLoadingMoreRef.current = false;
+        return prev;
+      }
+      return prev + 1;
+    });
+  };
 
   const submitAttendanceRequest = async () => {
     if (!attendanceRequestForm.reason.trim()) {
@@ -886,16 +956,6 @@ const Timesheets = () => {
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
   const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt);
-
-  const canCheckIn = hasPermission("TIMESHEET_CHECKIN_SELF");
-  const canCheckOut = hasPermission("TIMESHEET_CHECKOUT_SELF");
-  const canSubmit = hasPermission("TIMESHEET_SUBMIT_SELF");
-  const canEdit = hasPermission("TIMESHEET_EDIT_SELF");
-  const canCreate = hasPermission("TIMESHEET_CREATE_SELF");
-  const canAction = hasPermission("TIMESHEET_ACTION");
-  const canRecall = hasPermission("TIMESHEET_RECALL_SELF");
-  const canViewOnline = hasPermission("TIMESHEET_VIEW_ONLINE");
-  const canViewAll = hasPermission("TIMESHEET_VIEW_ALL");
 
   const timesheetLocked =
     timesheet?.status && ["submitted", "approved"].includes(timesheet.status);
@@ -1408,86 +1468,103 @@ const Timesheets = () => {
             </Button>
           </div>
           {showTeamTimesheets && (
-            <Table>
-              <TableHeader>
-                <TableRow className="table-header">
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Week</TableHead>
-                  <TableHead>Days</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Total Hours</TableHead>
-                  <TableHead className="w-36">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {weeklyList.map((item) => {
-                  const weeklyRowId = toIdString(item._id || item.id || item.employeeId);
-                  return (
-                  <TableRow key={weeklyRowId} className="table-row-hover">
-                    <TableCell>
-                      {item.employeeId
-                        ? `${item.employeeId.firstName || ""} ${item.employeeId.lastName || ""}`.trim()
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {toDateInput(new Date(item.weekStart))} - {toDateInput(new Date(item.weekEnd))}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1 text-xs">
-                        {(item.entries || []).map((entry: any, idx: number) => {
-                          const status = getDayStatus(entry.date, Number(entry.hours || 0));
-                          const base =
-                            "px-1.5 py-0.5 rounded border text-[10px] leading-4";
-                          const tone =
-                            status.tone === "good"
-                              ? "bg-green-50 text-green-700 border-green-200"
-                              : status.tone === "warn"
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : status.tone === "bad"
-                                  ? "bg-red-50 text-red-700 border-red-200"
-                                  : "bg-muted text-muted-foreground";
-
-                          const label = formatDateInOrgTimeZone(entry.date, {
-                            weekday: "short"
-                          });
-
-                          return (
-                            <span
-                              key={`${weeklyRowId}-${idx}`}
-                              className={`${base} ${tone}`}
-                              title={`${label}: ${status.label} (${Number(entry.hours || 0)}h)`}
-                            >
-                              {label[0]}
-                              {status.label}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(item.status)}</TableCell>
-                    <TableCell>{item.totalHours || 0}</TableCell>
-                    <TableCell className="flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => openActionDialog(item, "approve")}
-                        disabled={item.status !== "submitted"}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openActionDialog(item, "reject")}
-                        disabled={item.status !== "submitted"}
-                      >
-                        Reject
-                      </Button>
+            <>
+              <div
+                ref={teamTableViewportRef}
+                onScroll={handleTeamTimesheetsScroll}
+                className="h-[420px] overflow-y-auto overflow-x-auto"
+              >
+              <Table>
+                <TableHeader>
+                  <TableRow className="table-header">
+                    <TableHead>Employee</TableHead>
+                    <TableHead>Week</TableHead>
+                    <TableHead>Days</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Total Hours</TableHead>
+                    <TableHead className="w-36">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {weeklyList.map((item) => {
+                    const weeklyRowId = toIdString(item._id || item.id || item.employeeId);
+                    return (
+                    <TableRow key={weeklyRowId} className="table-row-hover">
+                      <TableCell>
+                        {item.employeeId
+                          ? `${item.employeeId.firstName || ""} ${item.employeeId.lastName || ""}`.trim()
+                          : "-"}
                       </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                      <TableCell className="text-muted-foreground">
+                        {toDateInput(new Date(item.weekStart))} - {toDateInput(new Date(item.weekEnd))}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 text-xs">
+                          {(item.entries || []).map((entry: any, idx: number) => {
+                            const status = getDayStatus(entry.date, Number(entry.hours || 0));
+                            const base =
+                              "px-1.5 py-0.5 rounded border text-[10px] leading-4";
+                            const tone =
+                              status.tone === "good"
+                                ? "bg-green-50 text-green-700 border-green-200"
+                                : status.tone === "warn"
+                                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                                  : status.tone === "bad"
+                                    ? "bg-red-50 text-red-700 border-red-200"
+                                    : "bg-muted text-muted-foreground";
+
+                            const label = formatDateInOrgTimeZone(entry.date, {
+                              weekday: "short"
+                            });
+
+                            return (
+                              <span
+                                key={`${weeklyRowId}-${idx}`}
+                                className={`${base} ${tone}`}
+                                title={`${label}: ${status.label} (${Number(entry.hours || 0)}h)`}
+                              >
+                                {label[0]}
+                                {status.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(item.status)}</TableCell>
+                      <TableCell>{item.totalHours || 0}</TableCell>
+                      <TableCell className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => openActionDialog(item, "approve")}
+                          disabled={item.status !== "submitted"}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openActionDialog(item, "reject")}
+                          disabled={item.status !== "submitted"}
+                        >
+                          Reject
+                        </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              </div>
+              <div className="border-t border-border px-6 py-3 text-sm text-muted-foreground">
+                {weekLoading && weeklyList.length > 0
+                  ? "Loading more timesheets..."
+                  : teamLoadingMore
+                    ? "Loading more timesheets..."
+                    : hasMoreTeamTimesheets
+                    ? `Showing ${weeklyList.length} of ${teamTotalItems} team timesheets. Scroll down to load more.`
+                    : `Showing ${weeklyList.length} team timesheets.`}
+              </div>
+            </>
           )}
         </motion.div>
       )}
