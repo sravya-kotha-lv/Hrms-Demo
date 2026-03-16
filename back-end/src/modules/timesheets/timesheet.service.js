@@ -84,6 +84,14 @@ const getWeekEnd = (weekStart) => {
   return d;
 };
 
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+};
+
+const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const buildWeekDates = (weekStart) => {
   const dates = [];
   for (let i = 0; i < 7; i += 1) {
@@ -1225,23 +1233,54 @@ exports.getAttendanceMatrix = async (req) => {
     req.query.month,
     organizationTimeZone
   );
+  const shouldPaginate = Boolean(req.query.page || req.query.limit);
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(200, parsePositiveInt(req.query.limit, 50));
 
   const employeeQuery = {
     organizationId: req.user.organizationId,
     status: "active"
   };
+  const search = String(req.query.search || "").trim();
+  if (search) {
+    const searchRegex = new RegExp(escapeRegex(search), "i");
+    employeeQuery.$or = [
+      { firstName: searchRegex },
+      { lastName: searchRegex },
+      { employeeCode: searchRegex }
+    ];
+  }
 
   const scopedEmployeeIds = await getScopedEmployeeIdsForViewer(req);
   if (Array.isArray(scopedEmployeeIds)) {
     employeeQuery._id = { $in: scopedEmployeeIds };
   }
 
-  const employees = await Employee.find(employeeQuery)
+  const totalEmployees = await Employee.countDocuments(employeeQuery);
+
+  let employeeCursor = Employee.find(employeeQuery)
     .select("_id firstName lastName employeeCode shiftId")
     .sort({ firstName: 1, lastName: 1 });
 
+  if (shouldPaginate) {
+    employeeCursor = employeeCursor.skip((page - 1) * limit).limit(limit);
+  }
+
+  const employees = await employeeCursor;
+
   if (!employees.length) {
-    return { year, month, daysInMonth, employees: [] };
+    return {
+      year,
+      month,
+      daysInMonth,
+      employees: [],
+      pagination: {
+        total: totalEmployees,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(totalEmployees / limit))
+      }
+    };
   }
 
   const employeeIds = employees.map((e) => e._id);
@@ -1413,7 +1452,18 @@ exports.getAttendanceMatrix = async (req) => {
     };
   });
 
-  return { year, month, daysInMonth, employees: data };
+  return {
+    year,
+    month,
+    daysInMonth,
+    employees: data,
+    pagination: {
+      total: totalEmployees,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(totalEmployees / limit))
+    }
+  };
 };
 
 exports.getMyAttendanceMatrix = async (req) => {

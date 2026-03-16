@@ -17,6 +17,14 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious
+} from "@/components/ui/pagination";
+import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger
@@ -24,7 +32,7 @@ import {
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
+import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type DayCell = {
@@ -78,6 +86,13 @@ type AttendanceSnapshot = {
   checkInSelfieProvided?: boolean;
   checkInSelfieImage?: string | null;
 } | null;
+
+type MatrixPagination = {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
 
 const toEmployeeIdString = (value: unknown): string => {
   if (!value) return "";
@@ -160,6 +175,17 @@ const emptyCell: DayCell = {
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
+const toOrgDateKey = (value: string | number | Date) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: getOrgTimeZone(),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(value));
+  const read = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value || "00";
+  return `${read("year")}-${read("month")}-${read("day")}`;
+};
+
 const Attendance = () => {
   const { hasAnyPermission, profile } = useAuth();
   const canViewAll = hasAnyPermission(["ATTENDANCE_VIEW_ALL"]);
@@ -174,6 +200,10 @@ const Attendance = () => {
   const [daysInMonth, setDaysInMonth] = useState(31);
   const [loading, setLoading] = useState(false);
   const [visibleRowCount, setVisibleRowCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [pagination, setPagination] = useState<MatrixPagination | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const [open, setOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
@@ -197,7 +227,7 @@ const Attendance = () => {
     try {
       setLoading(true);
       const endpoint = canViewAll
-        ? `/timesheets/attendance/matrix?month=${month}`
+        ? `/timesheets/attendance/matrix?month=${month}&page=${currentPage}&limit=${pageSize}&search=${encodeURIComponent(searchTerm.trim())}`
         : `/timesheets/attendance/matrix/my?month=${month}`;
       const permission = canViewAll ? ["ATTENDANCE_VIEW_ALL"] : ["ATTENDANCE_VIEW_SELF"];
 
@@ -217,6 +247,7 @@ const Attendance = () => {
 
       setRows(nextRows);
       setDaysInMonth(res.data?.daysInMonth || 31);
+      setPagination(res.data?.pagination || null);
       setSelectedEmployeeIds((prev) => {
         const validIds = new Set(nextRows.map((e: EmployeeRow) => e.employeeId));
         return prev.filter((id) => validIds.has(id));
@@ -228,16 +259,13 @@ const Attendance = () => {
 
   useEffect(() => {
     fetchMatrix();
-  }, [month, canViewAll, canViewSelf]);
+  }, [month, canViewAll, canViewSelf, currentPage, pageSize, searchTerm]);
 
-  const filteredRows = useMemo(() => {
-    return (rows || []).filter((r) => {
-      const name = `${r.firstName || ""} ${r.lastName || ""}`.trim().toLowerCase();
-      const code = (r.employeeCode || "").toLowerCase();
-      const q = search.toLowerCase();
-      return name.includes(q) || code.includes(q);
-    });
-  }, [rows, search]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [month, pageSize, searchTerm]);
+
+  const filteredRows = useMemo(() => rows || [], [rows]);
 
   const filteredRowIds = useMemo(
     () => filteredRows.map((row) => toEmployeeIdString(row.employeeId)).join("|"),
@@ -281,11 +309,9 @@ const Attendance = () => {
   );
 
   const isFutureDay = (day: number) => {
-    const date = new Date(`${month}-${String(day).padStart(2, "0")}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return date.getTime() > today.getTime();
+    const dateKey = `${month}-${String(day).padStart(2, "0")}`;
+    const todayKey = toOrgDateKey(new Date());
+    return dateKey > todayKey;
   };
 
   const openCellDetails = async (row: EmployeeRow, day: number) => {
@@ -876,7 +902,11 @@ const Attendance = () => {
                     <Input
                       placeholder="Search employee..."
                       value={search}
-                      onChange={(e) => setSearch(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setSearch(value);
+                        setSearchTerm(value);
+                      }}
                       className="w-full sm:w-72 bg-white/90"
                     />
                     <Button variant="outline" className="bg-white/90" onClick={fetchMatrix}>
@@ -1069,6 +1099,63 @@ const Attendance = () => {
                   </table>
                 </div>
               </div>
+
+              {canViewAll && pagination && (
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <span>
+                      Showing {rows.length === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1}
+                      {" - "}
+                      {(pagination.page - 1) * pagination.limit + rows.length}
+                      {" of "}
+                      {pagination.total}
+                    </span>
+                    <Select
+                      value={String(pageSize)}
+                      onValueChange={(value) => setPageSize(Number(value))}
+                    >
+                      <SelectTrigger className="h-8 w-[120px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="25">25 rows</SelectItem>
+                        <SelectItem value="50">50 rows</SelectItem>
+                        <SelectItem value="100">100 rows</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Pagination className="justify-end">
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (pagination.page > 1) setCurrentPage((prev) => prev - 1);
+                          }}
+                          className={pagination.page <= 1 ? "pointer-events-none opacity-50" : ""}
+                        />
+                      </PaginationItem>
+                      <PaginationItem>
+                        <PaginationLink href="#" isActive>
+                          {pagination.page}/{Math.max(1, pagination.totalPages)}
+                        </PaginationLink>
+                      </PaginationItem>
+                      <PaginationItem>
+                        <PaginationNext
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (pagination.page < pagination.totalPages) setCurrentPage((prev) => prev + 1);
+                          }}
+                          className={pagination.page >= pagination.totalPages ? "pointer-events-none opacity-50" : ""}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center gap-2 text-xs mt-3">
                 <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
