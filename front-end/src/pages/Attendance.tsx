@@ -425,14 +425,6 @@ const Attendance = () => {
   };
 
   const getCellUi = (cell: DayCell, isFuture = false) => {
-    if (isFuture) {
-      return {
-        label: "Not Marked",
-        shortLabel: "-",
-        className: "bg-slate-100 text-slate-500 border-slate-200"
-      };
-    }
-
     const isFullDayPresent = cell.status === "full_day_present";
     const isHalfDayPresent = cell.status === "half_day_present";
     const isPresent = isPresentLikeStatus(cell.status);
@@ -461,6 +453,13 @@ const Attendance = () => {
         label: "Week Off",
         shortLabel: "W",
         className: "bg-sky-100 text-sky-700 border-sky-300"
+      };
+    }
+    if (isFuture) {
+      return {
+        label: "Not Marked",
+        shortLabel: "-",
+        className: "bg-slate-100 text-slate-500 border-slate-200"
       };
     }
     if (isLeave) {

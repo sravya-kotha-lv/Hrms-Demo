@@ -95,6 +95,8 @@ const approverLabel = (step: FlowStep) => {
   return `Employee: ${step.employeeId || "-"}`;
 };
 
+const sanitizeFlowName = (value: string) => value.replace(/[^A-Za-z ]+/g, "").replace(/\s{2,}/g, " ");
+
 const ApprovalFlows = () => {
   const { hasAnyPermission } = useAuth();
   const [flows, setFlows] = useState<ApprovalFlow[]>([]);
@@ -241,6 +243,10 @@ const ApprovalFlows = () => {
     }
     if (!form.name.trim()) {
       toast.error("Flow name is required");
+      return;
+    }
+    if (!/^[A-Za-z ]+$/.test(form.name.trim())) {
+      toast.error("Flow name can contain only letters and spaces");
       return;
     }
     if (!stepRows.length) {
@@ -430,7 +436,9 @@ const ApprovalFlows = () => {
             <Input
               placeholder="Flow name"
               value={form.name}
-              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, name: sanitizeFlowName(e.target.value) }))
+              }
             />
 
             <Select
