@@ -723,6 +723,11 @@ const EmployeeDashboard = () => {
                 Session is open and excluded from payroll until check-out.
               </p>
             )}
+            {isCheckedOut && (
+              <p className="text-xs text-emerald-700 mt-1">
+                Check-in is allowed only once today. You can update the checkout time again if needed.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <PermissionGate permissions={["TIMESHEET_CHECKIN_SELF"]}>

@@ -1040,6 +1040,11 @@ const Timesheets = () => {
               Pending checkout. This session stays excluded from payroll until checkout is completed.
             </div>
           )}
+          {isCheckedOut && (
+            <div className="text-xs text-emerald-700 mt-2">
+              Check-in is allowed only once today. You can update the checkout time again if needed.
+            </div>
+          )}
         </motion.div>
 
         <motion.div
@@ -1082,6 +1087,11 @@ const Timesheets = () => {
           Today: {toDateInput(new Date())}
         </div>
       </div>
+      {isCheckedOut && (
+        <div className="mb-6 text-xs text-emerald-700">
+          Check-in is disabled because only one check-in is allowed per day. You can still update checkout time again today.
+        </div>
+      )}
 
       <motion.div
         className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
