@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -281,15 +281,19 @@ export const Sidebar = memo(({
       : "/employee-dashboard";
 
   const effectiveDashboardPath = isSuperAdmin ? "/superadmin" : dashboardPath;
-  const allowedPathsForEmployee = new Set([
-    "/",
-    "/employee-dashboard",
-    "/attendance",
-    "/leave",
-    "/timesheets",
-    "/holidays",
-    "/documentation"
-  ]);
+  const allowedPathsForEmployee = useMemo(
+    () =>
+      new Set([
+        "/",
+        "/employee-dashboard",
+        "/attendance",
+        "/leave",
+        "/timesheets",
+        "/holidays",
+        "/documentation"
+      ]),
+    []
+  );
 
   const filteredMenuItems: MenuItem[] = useMemo(() => menuItems(effectiveDashboardPath)
     .map((item) => {
@@ -312,7 +316,7 @@ export const Sidebar = memo(({
     .filter(
       (item): item is MenuItem =>
         Boolean(item) && (!item.permissions || hasAnyPermission(item.permissions))
-    ), [effectiveDashboardPath, hasAnyPermission, isEmployeeRole]);
+    ), [allowedPathsForEmployee, effectiveDashboardPath, hasAnyPermission, isEmployeeRole]);
 
   return (
     <>

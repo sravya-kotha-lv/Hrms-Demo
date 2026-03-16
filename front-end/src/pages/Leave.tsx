@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
 import {
@@ -53,9 +53,52 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { useNavigate } from "react-router-dom";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
+
+type PersonRef = {
+  _id?: string;
+  firstName?: string;
+  lastName?: string;
+  employeeCode?: string;
+};
+
+type ApprovalStep = {
+  stepNumber?: number;
+  approverType?: "manager" | "role" | "employee";
+  approverRoleSlug?: string;
+  approverEmployeeId?: PersonRef | null;
+  status?: "queued" | "pending" | "approved" | "rejected";
+  actionBy?: PersonRef | null;
+};
+
+type LeaveTypeRef = {
+  _id?: string;
+  name?: string;
+};
+
+type LeaveRecord = {
+  _id?: string;
+  employeeId?: PersonRef | null;
+  leaveTypeId?: LeaveTypeRef | null;
+  leaveTypeName?: string;
+  fromDate?: string;
+  toDate?: string;
+  totalDays?: number;
+  duration?: "full_day" | "half_day";
+  halfDaySession?: "first_half" | "second_half";
+  status?: "pending" | "approved" | "rejected";
+  reason?: string;
+  rejectionReason?: string;
+  approvalSteps?: ApprovalStep[];
+};
+
+type LeaveApplyWindow = {
+  earliestAllowedDateKey?: string;
+  attendanceLockMode?: string;
+  attendanceLockAfterDays?: number;
+};
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -95,41 +138,41 @@ const getLeaveTypeIcon = (type: string) => {
   }
 };
 
-const toActorName = (employee: any) => {
+const toActorName = (employee: PersonRef | null | undefined) => {
   if (!employee) return "-";
   const full = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
   return employee.employeeCode ? `${full || "Employee"} (${employee.employeeCode})` : full || "Employee";
 };
 
-const getStepApproverLabel = (step: any) => {
+const getStepApproverLabel = (step: ApprovalStep | null | undefined) => {
   if (!step) return "-";
   if (step.approverType === "manager") return "Reporting Manager";
   if (step.approverType === "role") return step.approverRoleSlug ? `Role: ${step.approverRoleSlug}` : "Role";
   return step.approverEmployeeId ? `Employee: ${toActorName(step.approverEmployeeId)}` : "Employee";
 };
 
-const getApprovalProgressLabel = (record: any) => {
+const getApprovalProgressLabel = (record: LeaveRecord) => {
   const steps = Array.isArray(record?.approvalSteps) ? record.approvalSteps : [];
   if (!steps.length) return "Single-step";
-  const pending = steps.find((s: any) => s.status === "pending");
+  const pending = steps.find((s) => s.status === "pending");
   if (record?.status === "approved") return `Completed (${steps.length} steps)`;
   if (record?.status === "rejected") {
-    const rejectedStep = steps.find((s: any) => s.status === "rejected");
+    const rejectedStep = steps.find((s) => s.status === "rejected");
     return rejectedStep ? `Rejected at S${rejectedStep.stepNumber}` : "Rejected";
   }
   if (!pending) return "Pending";
   return `S${pending.stepNumber}/${steps.length} • ${getStepApproverLabel(pending)}`;
 };
 
-const toIdString = (value: any) => {
+const toIdString = (value: unknown) => {
   if (!value) return "";
   if (typeof value === "string") return value;
-  if (typeof value === "object" && value._id) return String(value._id);
+  if (typeof value === "object" && value !== null && "_id" in value) return String((value as { _id?: string })._id || "");
   return String(value);
 };
 
-const mergeLeavePages = (existing: any[], incoming: any[]) => {
-  const merged = new Map<string, any>();
+const mergeLeavePages = (existing: LeaveRecord[], incoming: LeaveRecord[]) => {
+  const merged = new Map<string, LeaveRecord>();
   existing.forEach((item) => {
     const itemId = toIdString(item?._id);
     if (itemId) merged.set(itemId, item);
@@ -141,7 +184,7 @@ const mergeLeavePages = (existing: any[], incoming: any[]) => {
   return Array.from(merged.values());
 };
 
-const getLeaveDurationLabel = (leave: any) => {
+const getLeaveDurationLabel = (leave: LeaveRecord) => {
   const duration = leave?.duration || "full_day";
   if (duration !== "half_day") return "Full Day";
   const session = leave?.halfDaySession === "second_half" ? "Second Half" : "First Half";
@@ -155,10 +198,10 @@ const Leave = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [selectedLeave, setSelectedLeave] = useState<any | null>(null);
+  const [selectedLeave, setSelectedLeave] = useState<LeaveRecord | null>(null);
   const [actionType, setActionType] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
-  const [leaves, setLeaves] = useState<any[]>([]);
+  const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -172,8 +215,8 @@ const Leave = () => {
   const resetPaginationRef = useRef(false);
   const [viewMode, setViewMode] = useState<"all" | "my">("all");
   const [applyOpen, setApplyOpen] = useState(false);
-  const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
-  const [leaveApplyWindow, setLeaveApplyWindow] = useState<any | null>(null);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeRef[]>([]);
+  const [leaveApplyWindow, setLeaveApplyWindow] = useState<LeaveApplyWindow | null>(null);
   const [applyForm, setApplyForm] = useState({
     leaveTypeId: "",
     fromDate: "",
@@ -208,10 +251,10 @@ const Leave = () => {
     return "";
   }, [applyForm.fromDate, applyForm.toDate, leaveApplyWindow]);
 
-  const canCurrentActorActionLeave = (leave: any) => {
+  const canCurrentActorActionLeave = (leave: LeaveRecord) => {
     const steps = Array.isArray(leave?.approvalSteps) ? leave.approvalSteps : [];
     if (!steps.length) return true;
-    const pendingStep = steps.find((s: any) => s.status === "pending");
+    const pendingStep = steps.find((s) => s.status === "pending");
     if (!pendingStep) return false;
 
     if (pendingStep.approverType === "role") {
@@ -221,16 +264,7 @@ const Leave = () => {
     return Boolean(stepEmployeeId && currentEmployeeId && stepEmployeeId === currentEmployeeId);
   };
 
-  const refreshLeaveList = async () => {
-    setLeaves([]);
-    if (currentPage === 1) {
-      await fetchLeaves(1);
-      return;
-    }
-    setCurrentPage(1);
-  };
-
-  const fetchLeaves = async (pageToLoad = 1) => {
+  const fetchLeaves = useCallback(async (pageToLoad = 1) => {
     try {
       const isLoadMoreRequest = pageToLoad > 1;
       if (isLoadMoreRequest) setLoadingMore(true);
@@ -295,7 +329,16 @@ const Leave = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, [canViewAny, leavePageSize, searchQuery, statusFilter]);
+
+  const refreshLeaveList = useCallback(async () => {
+    setLeaves([]);
+    if (currentPage === 1) {
+      await fetchLeaves(1);
+      return;
+    }
+    setCurrentPage(1);
+  }, [currentPage, fetchLeaves]);
 
   useEffect(() => {
     resetPaginationRef.current = true;
@@ -315,7 +358,7 @@ const Leave = () => {
       resetPaginationRef.current = false;
     }
     fetchLeaves(currentPage);
-  }, [currentPage, searchQuery, statusFilter]);
+  }, [currentPage, fetchLeaves]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -405,7 +448,7 @@ const Leave = () => {
     });
   };
 
-  const handleAction = (leave: any, action: "approve" | "reject") => {
+  const handleAction = (leave: LeaveRecord, action: "approve" | "reject") => {
     if (!canCurrentActorActionLeave(leave)) {
       toast.error("You are not the current approver for this request");
       return;
@@ -415,7 +458,7 @@ const Leave = () => {
     setActionDialogOpen(true);
   };
 
-  const handleView = (leave: any) => {
+  const handleView = (leave: LeaveRecord) => {
     setSelectedLeave(leave);
     setViewDialogOpen(true);
   };
@@ -427,7 +470,7 @@ const Leave = () => {
       return;
     }
 
-    const payload: any = {
+    const payload: { status: "approved" | "rejected"; rejectionReason?: string } = {
       status: actionType === "approve" ? "approved" : "rejected",
     };
     if (actionType === "reject") {
@@ -749,8 +792,8 @@ const Leave = () => {
                   <p className="font-medium mb-1">Approval Steps</p>
                   <div className="space-y-1 text-xs text-muted-foreground">
                     {[...selectedLeave.approvalSteps]
-                      .sort((a: any, b: any) => Number(a.stepNumber) - Number(b.stepNumber))
-                      .map((step: any) => (
+                      .sort((a, b) => Number(a.stepNumber) - Number(b.stepNumber))
+                      .map((step) => (
                         <div key={`leave-step-${selectedLeave._id}-${step.stepNumber}`}>
                           {`S${step.stepNumber} • ${getStepApproverLabel(step)} • ${step.status}${step.actionBy ? ` • by ${toActorName(step.actionBy)}` : ""}`}
                         </div>

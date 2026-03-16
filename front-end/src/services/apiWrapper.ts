@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosError, AxiosResponse, RawAxiosRequestHeaders } from "axios";
 import { toast } from "sonner";
 import { getToken, setToken, hasAnyPermission, clearAuth } from "../utils/auth";
 import { setOrgTimeZone } from "../utils/timezone";
@@ -8,11 +8,24 @@ const api = axios.create({
 });
 
 let sessionExpiryHandled = false;
-const inflightGetRequests = new Map<string, Promise<any>>();
-const recentGetResponses = new Map<string, { expiresAt: number; data: any }>();
+
+export type ApiResponseEnvelope<TData = unknown> = {
+  success?: boolean;
+  code?: number;
+  message?: string;
+  data?: TData;
+  skipped?: boolean;
+};
+
+type PermissionOptions = { requiredPermissions?: string[] };
+type RequestHeaders = RawAxiosRequestHeaders | null;
+type CachedResponse = ApiResponseEnvelope<unknown>;
+
+const inflightGetRequests = new Map<string, Promise<CachedResponse>>();
+const recentGetResponses = new Map<string, { expiresAt: number; data: CachedResponse }>();
 const RECENT_GET_TTL_MS = 1500;
 
-const getRequestCacheKey = (apiUrl: string, headers: Record<string, any> = {}) =>
+const getRequestCacheKey = (apiUrl: string, headers: Record<string, string | undefined> = {}) =>
   JSON.stringify({
     apiUrl,
     headers: Object.keys(headers)
@@ -20,7 +33,7 @@ const getRequestCacheKey = (apiUrl: string, headers: Record<string, any> = {}) =
       .reduce((acc, key) => {
         acc[key] = headers[key];
         return acc;
-      }, {} as Record<string, any>)
+      }, {} as Record<string, string | undefined>)
   });
 
 const clearGetCaches = () => {
@@ -38,19 +51,41 @@ const readRecentGetResponse = (cacheKey: string) => {
   return cached.data;
 };
 
-const rememberRecentGetResponse = (cacheKey: string, data: any) => {
+const rememberRecentGetResponse = (cacheKey: string, data: CachedResponse) => {
   recentGetResponses.set(cacheKey, {
     data,
     expiresAt: Date.now() + RECENT_GET_TTL_MS
   });
 };
 
-const syncOrgTimeZoneFromResponse = (response: any) => {
+const syncOrgTimeZoneFromResponse = (response: AxiosResponse<ApiResponseEnvelope<{ timezone?: string; orgSettings?: { timezone?: string } }>>) => {
   const data = response?.data?.data;
   const timeZone = data?.timezone || data?.orgSettings?.timezone;
   if (typeof timeZone === "string" && timeZone) {
     setOrgTimeZone(timeZone);
   }
+};
+
+const getHeaders = (headers: RequestHeaders) =>
+  headers ? { "Content-Type": undefined } : { "Content-Type": "application/json" };
+
+const permissionDeniedResponse = (): ApiResponseEnvelope<null> => ({
+  success: false,
+  code: 403,
+  message: "Permission denied",
+  skipped: true,
+  data: null
+});
+
+const normalizeApiError = (error: unknown): ApiResponseEnvelope<unknown> => {
+  if (axios.isAxiosError(error)) {
+    const axiosError = error as AxiosError<ApiResponseEnvelope<unknown>>;
+    return axiosError.response?.data || { code: 500, message: axiosError.message || "Unknown error occurred" };
+  }
+  if (error && typeof error === "object") {
+    return error as ApiResponseEnvelope<unknown>;
+  }
+  return { code: 500, message: "Unknown error occurred" };
 };
 /* ================= REQUEST ================= */
 api.interceptors.request.use((config) => {
@@ -105,75 +140,72 @@ api.interceptors.response.use(
 ================================ */
 
 // User registration
-export const registerUser = async (formData: any) => {
+export const registerUser = async <TResponse = unknown, TPayload = unknown>(formData: TPayload) => {
   const response = await api.post("/users/register-lender", formData);
-  return response;
+  return response as AxiosResponse<TResponse>;
 };
 
 // Login
-export const LoginUser = async (values: any) => {
-  const response = await api.post("/users/login", values);
+export const LoginUser = async <TResponse = unknown, TPayload = unknown>(values: TPayload) => {
+  const response = await api.post<TResponse>("/users/login", values);
   clearGetCaches();
   return response.data;
 };
 
 // POST without token
-export const postApiWithoutToken = async (apiUrl: string, params: any) => {
+export const postApiWithoutToken = async <TResponse = unknown, TPayload = unknown>(
+  apiUrl: string,
+  params: TPayload
+) => {
   try {
-    const response = await api.post(apiUrl, params, {
+    const response = await api.post<TResponse>(apiUrl, params, {
       headers: {
         "Content-Type": "application/json",
       },
     });
     clearGetCaches();
     return response.data;
-  } catch (error: any) {
-    if (error.response) return error.response.data;
-    return { code: 500, message: "Unknown error occurred" };
+  } catch (error) {
+    return normalizeApiError(error) as TResponse;
   }
 };
 
 // POST with token
 export const postApiWithToken = async (
   apiUrl: string,
-  params: any,
-  _headers: any = null,
-  options: { requiredPermissions?: string[] } = {}
+  params: unknown,
+  _headers: RequestHeaders = null,
+  options: PermissionOptions = {}
 ) => {
   try {
     if (options.requiredPermissions && !hasAnyPermission(options.requiredPermissions)) {
-      return { success: false, code: 403, message: "Permission denied", skipped: true };
+      return permissionDeniedResponse();
     }
-    const headers = _headers
-      ? { "Content-Type": undefined }
-      : { "Content-Type": "application/json" };
+    const headers = getHeaders(_headers);
 
     const response = await api.post(apiUrl, params, { headers });
     return response.data;
-  } catch (error: any) {
-    if (error.response) return error.response.data;
-    return { code: 500, message: "Unknown error occurred" };
+  } catch (error) {
+    return normalizeApiError(error);
   }
 };
 
 // GET with token
 export const getApiWithToken = async (
   apiUrl: string,
-  _headers: any = null,
-  options: { requiredPermissions?: string[] } = {}
+  _headers: RequestHeaders = null,
+  options: PermissionOptions = {}
 ) => {
   try {
     if (options.requiredPermissions && !hasAnyPermission(options.requiredPermissions)) {
-      return { success: false, code: 403, message: "Permission denied", skipped: true };
+      return permissionDeniedResponse();
     }
-    const headers = _headers
-      ? { "Content-Type": undefined }
-      : { "Content-Type": "application/json" };
-    const cachedResponse = readRecentGetResponse(getRequestCacheKey(apiUrl, headers));
+    const headers = getHeaders(_headers);
+    const cacheKey = getRequestCacheKey(apiUrl, headers);
+    const cachedResponse = readRecentGetResponse(cacheKey);
     if (cachedResponse !== null) {
       return cachedResponse;
     }
-    const cacheKey = getRequestCacheKey(apiUrl, headers);
     const existingRequest = inflightGetRequests.get(cacheKey);
     if (existingRequest) {
       return existingRequest;
@@ -191,50 +223,46 @@ export const getApiWithToken = async (
 
     inflightGetRequests.set(cacheKey, requestPromise);
     return requestPromise;
-  } catch (error: any) {
-    return error.response?.data || error;
+  } catch (error) {
+    return normalizeApiError(error);
   }
 };
 
 export const putApiWithToken = async (
   apiUrl: string,
-  params: any,
-  _headers: any = null,
-  options: { requiredPermissions?: string[] } = {}
+  params: unknown,
+  _headers: RequestHeaders = null,
+  options: PermissionOptions = {}
 ) => {
   try {
     if (options.requiredPermissions && !hasAnyPermission(options.requiredPermissions)) {
-      return { success: false, code: 403, message: "Permission denied", skipped: true };
+      return permissionDeniedResponse();
     }
-    const headers = _headers
-      ? { "Content-Type": undefined }
-      : { "Content-Type": "application/json" };
+    const headers = getHeaders(_headers);
     const response = await api.put(apiUrl, params, { headers });
     clearGetCaches();
     return response.data;
-  } catch (error: any) {
-    return error.response?.data || error;
+  } catch (error) {
+    return normalizeApiError(error);
   }     
 };
 
 export const patchApiWithToken = async (
   apiUrl: string,
-  params: any = {},
-  _headers: any = null,
-  options: { requiredPermissions?: string[] } = {}
+  params: unknown = {},
+  _headers: RequestHeaders = null,
+  options: PermissionOptions = {}
 ) => {
   try {
     if (options.requiredPermissions && !hasAnyPermission(options.requiredPermissions)) {
-      return { success: false, code: 403, message: "Permission denied", skipped: true };
+      return permissionDeniedResponse();
     }
-    const headers = _headers
-      ? { "Content-Type": undefined }
-      : { "Content-Type": "application/json" };
+    const headers = getHeaders(_headers);
     const response = await api.patch(apiUrl, params, { headers });
     clearGetCaches();
     return response.data;
-  } catch (error: any) {
-    return error.response?.data || error;
+  } catch (error) {
+    return normalizeApiError(error);
   }
 };
 
@@ -265,8 +293,8 @@ export const getApiWithOutToken = async (apiUrl: string) => {
 
     inflightGetRequests.set(cacheKey, requestPromise);
     return requestPromise;
-  } catch (error: any) {
-    return error.response?.data || error;
+  } catch (error) {
+    return normalizeApiError(error);
   }
 };
 
@@ -278,8 +306,8 @@ export const deleteApiWithToken = async (apiUrl: string) => {
     });
     clearGetCaches();
     return response.data;
-  } catch (error: any) {
-    return error.response?.data || error;
+  } catch (error) {
+    return normalizeApiError(error);
   }
 };
 /* ================================

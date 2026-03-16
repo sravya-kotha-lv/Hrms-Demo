@@ -39,7 +39,7 @@ const shouldExposeMetrics = process.env.ENABLE_HTTP_METRICS === "true" || proces
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-const allowedOrigins = [
+const defaultAllowedOrigins = [
   "http://localhost:3000",
   "http://localhost:8080",
   "http://localhost:8081",
@@ -47,7 +47,14 @@ const allowedOrigins = [
   "http://localhost:3001",
   "https://upanaya.vercel.app",
   "https://upanaya-new.vercel.app",
+  "https://upanayahr.com",
+  "https://www.upanayahr.com"
 ];
+const configuredAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowedOrigins = configuredAllowedOrigins.length ? configuredAllowedOrigins : defaultAllowedOrigins;
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
 

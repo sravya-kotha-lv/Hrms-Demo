@@ -29,7 +29,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { getApiWithToken, postApiWithToken, putApiWithToken, deleteApiWithToken } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { toast } from "sonner";
 import { Pencil, Trash2, Plus, Link as LinkIcon, RefreshCw } from "lucide-react";

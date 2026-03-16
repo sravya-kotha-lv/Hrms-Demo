@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,6 +112,14 @@ type EmployeeOption = {
   employeeCode?: string;
 };
 
+type EmployeeListPayload = {
+  items?: EmployeeOption[];
+  pagination?: {
+    page?: number;
+    totalPages?: number;
+  };
+};
+
 const emptyPayGroupForm: PayGroupForm = {
   code: "",
   name: "",
@@ -220,7 +228,35 @@ const Payroll = () => {
     }
   };
 
-  const loadPayGroups = async () => {
+  const fetchAllEmployees = useCallback(async () => {
+    const allEmployees: EmployeeOption[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    do {
+      const res = await getApiWithToken(`/employees?page=${page}&limit=500`);
+      if (!res?.success) {
+        return {
+          success: false,
+          message: res?.message || "Failed to load employees",
+          items: [] as EmployeeOption[]
+        };
+      }
+
+      const payload = (res.data || {}) as EmployeeListPayload;
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      allEmployees.push(...items);
+      totalPages = Math.max(1, Number(payload.pagination?.totalPages || 1));
+      page += 1;
+    } while (page <= totalPages);
+
+    return {
+      success: true,
+      items: allEmployees
+    };
+  }, []);
+
+  const loadPayGroups = useCallback(async () => {
     if (!canManageConfig) return;
     const res = await getApiWithToken("/payroll/pay-groups?includeInactive=true", null, {
       requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
@@ -230,9 +266,9 @@ const Payroll = () => {
     } else if (!res?.skipped) {
       toast.error(res?.message || "Failed to load pay groups");
     }
-  };
+  }, [canManageConfig]);
 
-  const loadRuns = async (month: string) => {
+  const loadRuns = useCallback(async (month: string) => {
     setLoadingRuns(true);
     try {
       const res = await getApiWithToken(`/payroll/runs?payMonth=${month}`);
@@ -249,9 +285,9 @@ const Payroll = () => {
     } finally {
       setLoadingRuns(false);
     }
-  };
+  }, [selectedRunId]);
 
-  const loadRunDetail = async (runId: string) => {
+  const loadRunDetail = useCallback(async (runId: string) => {
     if (!runId) {
       setRunDetail(null);
       setRunPreview(null);
@@ -283,16 +319,16 @@ const Payroll = () => {
     } finally {
       setLoadingRunDetail(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadSettings();
     loadPayGroups();
-  }, []);
+  }, [loadPayGroups]);
 
   useEffect(() => {
     loadRuns(monthFilter);
-  }, [monthFilter]);
+  }, [loadRuns, monthFilter]);
 
   useEffect(() => {
     if (selectedRunId) {
@@ -301,7 +337,7 @@ const Payroll = () => {
       setRunDetail(null);
       setRunPreview(null);
     }
-  }, [selectedRunId]);
+  }, [loadRunDetail, selectedRunId]);
 
   useEffect(() => {
     const runRows: PayrollRunEmployee[] = Array.isArray(runDetail?.employees)
@@ -311,10 +347,10 @@ const Payroll = () => {
 
     let active = true;
     const loadEmployeeNames = async () => {
-      const res = await getApiWithToken("/employees?page=1&limit=500");
+      const res = await fetchAllEmployees();
       if (!active || !res?.success) return;
 
-      const items = Array.isArray(res?.data?.items) ? res.data.items : [];
+      const items = res.items;
       if (!items.length) return;
 
       const nextMap: Record<string, string> = {};
@@ -334,7 +370,7 @@ const Payroll = () => {
     return () => {
       active = false;
     };
-  }, [runDetail?.employees]);
+  }, [fetchAllEmployees, runDetail?.employees]);
 
   useEffect(() => {
     if (location.pathname !== "/payroll/employee-breakdown") return;
@@ -448,13 +484,12 @@ const Payroll = () => {
     setCreateRunDialogOpen(true);
     setLoadingEmployeePicker(true);
     try {
-      const res = await getApiWithToken("/employees?page=1&limit=500");
+      const res = await fetchAllEmployees();
       if (!res?.success) {
         toast.error(res?.message || "Failed to load employees for run selection");
         return;
       }
-      const items = Array.isArray(res?.data?.items) ? res.data.items : [];
-      setEligibleEmployees(items);
+      setEligibleEmployees(res.items);
     } finally {
       setLoadingEmployeePicker(false);
     }

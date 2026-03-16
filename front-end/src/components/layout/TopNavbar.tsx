@@ -17,7 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { getApiWithToken, patchApiWithToken, switchRole } from "@/services/apiWrapper";
 import { clearAuth, setToken, updateActiveRoleInProfile } from "@/utils/auth";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
 
 interface TopNavbarProps {

@@ -43,7 +43,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { deleteApiWithToken, getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { getToken } from "@/utils/auth";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { Checkbox } from "@/components/ui/checkbox";

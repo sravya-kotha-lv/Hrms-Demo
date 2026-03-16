@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 const { getRedisClient, isRedisEnabled } = require("../config/redis");
 
@@ -35,6 +36,22 @@ const sharedLimiterOptions = {
   store: createRedisStore()
 };
 
+const buildAuthRateLimitKey = (req) => {
+  const authHeader = typeof req.headers.authorization === "string"
+    ? req.headers.authorization.trim()
+    : "";
+
+  if (authHeader.toLowerCase().startsWith("bearer ")) {
+    const token = authHeader.slice(7).trim();
+    if (token) {
+      const digest = crypto.createHash("sha256").update(token).digest("hex");
+      return `token:${digest}`;
+    }
+  }
+
+  return req.ip;
+};
+
 /**
  * Public APIs (login, register, otp, etc.)
  */
@@ -56,6 +73,7 @@ const publicLimiter = rateLimit({
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 3000,
+  keyGenerator: buildAuthRateLimitKey,
   ...sharedLimiterOptions
 });
 
