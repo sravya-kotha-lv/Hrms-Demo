@@ -486,6 +486,11 @@ const buildAttendanceRangeFilter = (organizationId, employeeFilter, startDate, e
   ]
 });
 
+const getAttendanceRowDayKey = (row, organizationTimeZone = "Asia/Kolkata") => {
+  const anchorDate = row?.checkInAt || row?.checkOutAt || row?.date || row?.createdAt;
+  return anchorDate ? toDateKeyInTimeZone(anchorDate, organizationTimeZone) : "";
+};
+
 const normalizeIp = (rawIp = "") => {
   let value = String(rawIp || "").trim();
   if (!value) return "";
@@ -707,6 +712,14 @@ const canCheckOutAttendance = (attendanceRow, organizationTimeZone = "Asia/Kolka
   const todayKey = toDateKeyInTimeZone(now, organizationTimeZone);
   const yesterdayKey = addDaysToDateKey(todayKey, -1);
   return attendanceDateKey === todayKey || attendanceDateKey === yesterdayKey;
+};
+
+const canUpdateClosedCheckout = (attendanceRow, organizationTimeZone = "Asia/Kolkata", now = new Date()) => {
+  if (!attendanceRow?.checkInAt || !attendanceRow?.checkOutAt) return false;
+
+  const attendanceDateKey = toDateKeyInTimeZone(attendanceRow.date, organizationTimeZone);
+  const todayKey = toDateKeyInTimeZone(now, organizationTimeZone);
+  return attendanceDateKey === todayKey;
 };
 
 const getEmployeeFromReq = async (req) => {
@@ -1095,12 +1108,9 @@ exports.checkOut = async (req) => {
       throw new Error("You are not checked in");
     }
 
-    const attendanceDateKey = toDateKeyInTimeZone(attendance.date, organizationTimeZone);
-    const todayKey = toDateKeyInTimeZone(now, organizationTimeZone);
-    const yesterdayKey = addDaysToDateKey(todayKey, -1);
-    const isRecentClosedAttendance = [todayKey, yesterdayKey].includes(attendanceDateKey);
+    const isClosedCheckoutUpdate = canUpdateClosedCheckout(attendance, organizationTimeZone, now);
     const isValidOpenOvernight = canCheckOutAttendance(attendance, organizationTimeZone, now);
-    if (!isRecentClosedAttendance && !isValidOpenOvernight) {
+    if (!isClosedCheckoutUpdate && !isValidOpenOvernight) {
       throw new Error("You are not checked in");
     }
   }
@@ -1110,6 +1120,10 @@ exports.checkOut = async (req) => {
     0,
     Math.round((now.getTime() - attendance.checkInAt.getTime()) / 60000)
   );
+
+  if (totalMinutes > 24 * 60) {
+    throw new Error("Checkout duration exceeds 24 hours. Please contact admin to resolve the stale attendance record.");
+  }
 
   const scheduledEnd = attendance.scheduledEndAt
     ? new Date(attendance.scheduledEndAt)
@@ -1169,6 +1183,7 @@ exports.getMyAttendance = async (req) => {
   const queryDate = req.query.date ? new Date(req.query.date) : new Date();
   const dayStart = startOfDayInTimeZone(queryDate, organizationTimeZone);
   const dayEnd = endOfDayInTimeZone(queryDate, organizationTimeZone);
+  const requestedDayKey = toDateKeyInTimeZone(queryDate, organizationTimeZone);
 
   const rows = await Attendance.find(
     buildAttendanceRangeFilter(
@@ -1178,7 +1193,8 @@ exports.getMyAttendance = async (req) => {
       dayEnd
     )
   ).sort({ date: -1, checkInAt: -1 });
-  return mergeAttendanceRowsByEmployeeDay(rows, organizationTimeZone);
+  return mergeAttendanceRowsByEmployeeDay(rows, organizationTimeZone)
+    .filter((row) => getAttendanceRowDayKey(row, organizationTimeZone) === requestedDayKey);
 };
 
 exports.getAttendance = async (req) => {
