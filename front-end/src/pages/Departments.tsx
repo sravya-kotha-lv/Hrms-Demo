@@ -26,7 +26,7 @@ import {
   postApiWithToken,
   putApiWithToken,
 } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 
 /* ================= TYPES ================= */
 

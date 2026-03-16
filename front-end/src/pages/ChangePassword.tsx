@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { useNavigate } from "react-router-dom";
 
 type Step = "send" | "verify" | "update";

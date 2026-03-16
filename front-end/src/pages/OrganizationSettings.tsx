@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { setOrgTimeZone } from "@/utils/timezone";
 import { Clock3, MapPin, Save, ShieldCheck, Sparkles } from "lucide-react";
 

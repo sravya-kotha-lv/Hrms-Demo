@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
 import {
@@ -33,7 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { InlineLoader } from "@/components/ui/loaders";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
@@ -64,8 +64,36 @@ const buildWeekDates = (weekStart: Date) => {
   return dates;
 };
 
-const normalizeEntries = (weekDates: Date[], rawEntries: any[]) => {
-  const byDate = new Map<string, any>();
+type WeeklyEntry = {
+  date?: string;
+  hours?: number;
+  notes?: string;
+};
+
+type EmployeeSummary = {
+  _id?: string;
+  firstName?: string;
+  lastName?: string;
+  employeeCode?: string;
+};
+
+type TeamTimesheet = {
+  _id?: string;
+  id?: string;
+  employeeId?: EmployeeSummary | null;
+  weekStart?: string;
+  weekEnd?: string;
+  status?: string;
+  entries?: WeeklyEntry[];
+};
+
+type AttendanceTodayRecord = {
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+};
+
+const normalizeEntries = (weekDates: Date[], rawEntries: WeeklyEntry[]) => {
+  const byDate = new Map<string, WeeklyEntry>();
   (rawEntries || []).forEach((entry) => {
     const key = toDateInput(new Date(entry.date));
     if (!byDate.has(key)) {
@@ -143,13 +171,13 @@ type CheckInPolicy = {
   attendanceGeoRadiusMeters: number;
 };
 
-const toPersonLabel = (employee: any) => {
+const toPersonLabel = (employee: EmployeeSummary | null | undefined) => {
   if (!employee) return "-";
   const name = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
   return employee.employeeCode ? `${name || "Employee"} (${employee.employeeCode})` : name || "Employee";
 };
 
-const approverLabel = (step: any) => {
+const approverLabel = (step: AttendanceRequest["approvalSteps"] extends Array<infer T> ? T : never) => {
   if (!step) return "-";
   if (step.approverType === "manager") return "Reporting Manager";
   if (step.approverType === "role") return step.approverRoleSlug ? `Role: ${step.approverRoleSlug}` : "Role";
@@ -169,26 +197,33 @@ const approvalProgressLabel = (request: AttendanceRequest) => {
   return `S${pending.stepNumber}/${steps.length} • ${approverLabel(pending)}`;
 };
 
-const toIdString = (value: any) => {
+const toIdString = (value: unknown) => {
   if (!value) return "";
   if (typeof value === "string") return value;
   if (Array.isArray(value) && value.every((item) => Number.isInteger(item))) {
     return value.map((item) => Number(item).toString(16).padStart(2, "0")).join("");
   }
-  if (typeof value === "object" && typeof value._actionId === "string") return value._actionId;
-  if (typeof value === "object" && value._id) return toIdString(value._id);
-  if (typeof value === "object" && value.id) return toIdString(value.id);
-  if (typeof value === "object" && typeof value.$oid === "string") return value.$oid;
-  if (typeof value === "object" && value.buffer) {
-    if (Array.isArray(value.buffer)) return toIdString(value.buffer);
-    if (typeof value.buffer === "object") {
-      const bytes = Object.values(value.buffer)
+  if (typeof value === "object" && value !== null && "_actionId" in value && typeof (value as { _actionId?: string })._actionId === "string") {
+    return (value as { _actionId: string })._actionId;
+  }
+  if (typeof value === "object" && value !== null && "_id" in value) return toIdString((value as { _id?: unknown })._id);
+  if (typeof value === "object" && value !== null && "id" in value) return toIdString((value as { id?: unknown }).id);
+  if (typeof value === "object" && value !== null && "$oid" in value && typeof (value as { $oid?: string }).$oid === "string") {
+    return (value as { $oid: string }).$oid;
+  }
+  if (typeof value === "object" && value !== null && "buffer" in value) {
+    const buffer = (value as { buffer?: unknown }).buffer;
+    if (Array.isArray(buffer)) return toIdString(buffer);
+    if (typeof buffer === "object" && buffer !== null) {
+      const bytes = Object.values(buffer)
         .map((item) => Number(item))
         .filter((item) => Number.isInteger(item) && item >= 0);
       if (bytes.length) return toIdString(bytes);
     }
   }
-  if (typeof value === "object" && typeof value.toHexString === "function") return value.toHexString();
+  if (typeof value === "object" && value !== null && "toHexString" in value && typeof (value as { toHexString?: () => string }).toHexString === "function") {
+    return (value as { toHexString: () => string }).toHexString();
+  }
   if (typeof value === "object" && typeof value.toString === "function" && value.toString !== Object.prototype.toString) {
     const asString = value.toString();
     if (asString && asString !== "[object Object]") return asString;
@@ -196,8 +231,8 @@ const toIdString = (value: any) => {
   return String(value);
 };
 
-const mergeTimesheetPages = (existing: any[], incoming: any[]) => {
-  const merged = new Map<string, any>();
+const mergeTimesheetPages = (existing: TeamTimesheet[], incoming: TeamTimesheet[]) => {
+  const merged = new Map<string, TeamTimesheet>();
   existing.forEach((item) => {
     const itemId = toIdString(item?._id || item?.id);
     if (itemId) merged.set(itemId, item);
@@ -297,19 +332,19 @@ const Timesheets = () => {
   const { profile } = useAuth();
   const [selectedDate] = useState(toDateInput(new Date()));
   const [weekStartDate, setWeekStartDate] = useState(getWeekStart(new Date()));
-  const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
-  const [timesheet, setTimesheet] = useState<any | null>(null);
-  const [entries, setEntries] = useState<any[]>([]);
+  const [attendanceToday, setAttendanceToday] = useState<AttendanceTodayRecord | null>(null);
+  const [timesheet, setTimesheet] = useState<TeamTimesheet | null>(null);
+  const [entries, setEntries] = useState<WeeklyEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState<"all" | "my">("my");
-  const [weeklyList, setWeeklyList] = useState<any[]>([]);
+  const [weeklyList, setWeeklyList] = useState<TeamTimesheet[]>([]);
   const [teamCurrentPage, setTeamCurrentPage] = useState(1);
   const [teamTotalPages, setTeamTotalPages] = useState(1);
   const [teamTotalItems, setTeamTotalItems] = useState(0);
   const [teamPageSize] = useState(15);
   const [teamLoadingMore, setTeamLoadingMore] = useState(false);
-  const [onlineList, setOnlineList] = useState<any[]>([]);
-  const [onLeaveList, setOnLeaveList] = useState<any[]>([]);
+  const [onlineList, setOnlineList] = useState<TeamTimesheet[]>([]);
+  const [onLeaveList, setOnLeaveList] = useState<TeamTimesheet[]>([]);
   const [myLeaveDates, setMyLeaveDates] = useState<string[]>([]);
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
@@ -317,7 +352,7 @@ const Timesheets = () => {
   const [weekLoading, setWeekLoading] = useState(false);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [actionType, setActionType] = useState<"approve" | "reject">("approve");
-  const [selectedTimesheet, setSelectedTimesheet] = useState<any | null>(null);
+  const [selectedTimesheet, setSelectedTimesheet] = useState<TeamTimesheet | null>(null);
   const [comment, setComment] = useState("");
   const [showOnlineCard, setShowOnlineCard] = useState(true);
   const [showOnLeaveCard, setShowOnLeaveCard] = useState(true);
@@ -408,7 +443,7 @@ const Timesheets = () => {
     return { label: "A", tone: "bad" };
   };
 
-  const loadTeamTimesheets = async (pageToLoad = 1) => {
+  const loadTeamTimesheets = useCallback(async (pageToLoad = 1) => {
     if (pageToLoad > 1) {
       setTeamLoadingMore(true);
     }
@@ -435,9 +470,9 @@ const Timesheets = () => {
     }
     teamLoadingMoreRef.current = false;
     setTeamLoadingMore(false);
-  };
+  }, [teamPageSize]);
 
-  const loadAttendanceToday = async () => {
+  const loadAttendanceToday = useCallback(async () => {
     const res = await getApiWithToken(
       `/timesheets/attendance/my?date=${selectedDate}`,
       null,
@@ -448,9 +483,9 @@ const Timesheets = () => {
       const record = (res.data || [])[0];
       setAttendanceToday(record || null);
     }
-  };
+  }, [selectedDate]);
 
-  const loadWeekly = async () => {
+  const loadWeekly = useCallback(async () => {
     setWeekLoading(true);
     setTimesheet(null);
     setEntries(normalizeEntries(weekDates, []));
@@ -482,9 +517,9 @@ const Timesheets = () => {
       setEntries(normalizeEntries(weekDates, []));
     }
     setWeekLoading(false);
-  };
+  }, [loadTeamTimesheets, weekDates, weekStart]);
 
-  const loadOnline = async () => {
+  const loadOnline = useCallback(async () => {
     const res = await getApiWithToken("/timesheets/online", null, {
       requiredPermissions: ["TIMESHEET_VIEW_ONLINE"]
     });
@@ -492,9 +527,9 @@ const Timesheets = () => {
     if (res?.success) {
       setOnlineList(res.data || []);
     }
-  };
+  }, []);
 
-  const loadOnLeave = async () => {
+  const loadOnLeave = useCallback(async () => {
     const res = await getApiWithToken("/timesheets/on-leave", null, {
       requiredPermissions: ["TIMESHEET_VIEW_ALL"]
     });
@@ -502,9 +537,9 @@ const Timesheets = () => {
     if (res?.success) {
       setOnLeaveList(res.data || []);
     }
-  };
+  }, []);
 
-  const loadMyLeavesForWeek = async () => {
+  const loadMyLeavesForWeek = useCallback(async () => {
     const start = toDateInput(weekStart);
     const end = toDateInput(weekDates[6]);
     const res = await getApiWithToken(
@@ -515,7 +550,7 @@ const Timesheets = () => {
     if (res?.skipped) return;
     if (res?.success) {
       const dates: string[] = [];
-      (res.data || []).forEach((leave: any) => {
+      (res.data || []).forEach((leave: { fromDate?: string; toDate?: string }) => {
         const from = new Date(leave.fromDate);
         const to = new Date(leave.toDate);
         const current = new Date(from);
@@ -528,9 +563,9 @@ const Timesheets = () => {
     } else {
       setMyLeaveDates([]);
     }
-  };
+  }, [weekDates, weekStart]);
 
-  const loadWeekOffs = async () => {
+  const loadWeekOffs = useCallback(async () => {
     const res = await getApiWithToken("/week-offs", null, {
       requiredPermissions: ["WEEK_OFF_VIEW"]
     });
@@ -538,9 +573,9 @@ const Timesheets = () => {
     if (res?.success) {
       setWeekOffDays(res.data?.weekOffDays || []);
     }
-  };
+  }, []);
 
-  const loadOrgSettings = async () => {
+  const loadOrgSettings = useCallback(async () => {
     const res = await getApiWithToken("/org-settings", null, {
       requiredPermissions: ["ORG_SETTINGS_VIEW"]
     });
@@ -553,9 +588,9 @@ const Timesheets = () => {
         typeof res.data?.minHalfDayHours === "number" ? res.data.minHalfDayHours : 4
       );
     }
-  };
+  }, []);
 
-  const loadMyAttendanceRequests = async () => {
+  const loadMyAttendanceRequests = useCallback(async () => {
     const res = await getApiWithToken("/timesheets/attendance/requests/my", null, {
       requiredPermissions: ["TIMESHEET_VIEW_SELF"]
     });
@@ -568,9 +603,9 @@ const Timesheets = () => {
         }))
       );
     }
-  };
+  }, []);
 
-  const loadPendingAttendanceRequests = async () => {
+  const loadPendingAttendanceRequests = useCallback(async () => {
     const res = await getApiWithToken("/timesheets/attendance/requests?status=pending", null, {
       requiredPermissions: ["ATTENDANCE_MANAGE"]
     });
@@ -583,9 +618,9 @@ const Timesheets = () => {
         }))
       );
     }
-  };
+  }, []);
 
-  const loadCheckInPolicy = async () => {
+  const loadCheckInPolicy = useCallback(async () => {
     const res = await getApiWithToken("/timesheets/checkin-policy", null, {
       requiredPermissions: ["TIMESHEET_CHECKIN_SELF"]
     });
@@ -598,7 +633,7 @@ const Timesheets = () => {
         attendanceGeoRadiusMeters: Number(res.data.attendanceGeoRadiusMeters || 200)
       });
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadAttendanceToday();
@@ -611,14 +646,25 @@ const Timesheets = () => {
     loadMyAttendanceRequests();
     loadPendingAttendanceRequests();
     loadCheckInPolicy();
-  }, [weekStart.getTime()]);
+  }, [
+    loadAttendanceToday,
+    loadWeekly,
+    loadOnline,
+    loadOnLeave,
+    loadWeekOffs,
+    loadOrgSettings,
+    loadMyLeavesForWeek,
+    loadMyAttendanceRequests,
+    loadPendingAttendanceRequests,
+    loadCheckInPolicy
+  ]);
 
   const hasMoreTeamTimesheets = teamCurrentPage < teamTotalPages;
 
   useEffect(() => {
     if (teamCurrentPage <= 1 || !canViewAll) return;
     loadTeamTimesheets(teamCurrentPage);
-  }, [canViewAll, teamCurrentPage]);
+  }, [canViewAll, loadTeamTimesheets, teamCurrentPage]);
 
   const handleTeamTimesheetsScroll = () => {
     const viewport = teamTableViewportRef.current;
@@ -698,7 +744,7 @@ const Timesheets = () => {
     setAttendanceRequestOpen(true);
   };
 
-  const actionAttendanceRequest = async (requestRow: any, status: "approved" | "rejected") => {
+  const actionAttendanceRequest = async (requestRow: AttendanceRequest | string, status: "approved" | "rejected") => {
     console.log(requestRow);
     
     const requestId = toIdString(requestRow);
@@ -736,7 +782,7 @@ const Timesheets = () => {
 
   const handleCheckIn = async () => {
     if (checkinLoading) return;
-    const payload: Record<string, any> = {};
+    const payload: Record<string, unknown> = {};
 
     if (checkInPolicy.attendanceGeoFenceEnabled) {
       if (!navigator.geolocation) {
@@ -813,7 +859,7 @@ const Timesheets = () => {
     }
   };
 
-  const handleEntryChange = (index: number, field: string, value: any) => {
+  const handleEntryChange = (index: number, field: keyof WeeklyEntry, value: string | number) => {
     setEntries((prev) =>
       prev.map((entry, idx) =>
         idx === index ? { ...entry, [field]: value } : entry
@@ -925,7 +971,7 @@ const Timesheets = () => {
     }
   };
 
-  const openActionDialog = (ts: any, type: "approve" | "reject") => {
+  const openActionDialog = (ts: TeamTimesheet, type: "approve" | "reject") => {
     setSelectedTimesheet(ts);
     setActionType(type);
     setComment("");
@@ -934,7 +980,7 @@ const Timesheets = () => {
 
   const submitAction = async () => {
     if (!selectedTimesheet?._id) return;
-    const payload: any = { status: actionType === "approve" ? "approved" : "rejected" };
+    const payload: { status: "approved" | "rejected"; rejectionReason?: string } = { status: actionType === "approve" ? "approved" : "rejected" };
     if (payload.status === "rejected") payload.rejectionReason = comment;
 
     const res = await putApiWithToken(
@@ -1500,7 +1546,7 @@ const Timesheets = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1 text-xs">
-                          {(item.entries || []).map((entry: any, idx: number) => {
+                          {(item.entries || []).map((entry: WeeklyEntry, idx: number) => {
                             const status = getDayStatus(entry.date, Number(entry.hours || 0));
                             const base =
                               "px-1.5 py-0.5 rounded border text-[10px] leading-4";

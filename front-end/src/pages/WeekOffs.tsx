@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import PermissionGate from "@/components/PermissionGate";
 import { Skeleton } from "@/components/ui/skeleton";
 import {

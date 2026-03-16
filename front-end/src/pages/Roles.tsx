@@ -13,7 +13,7 @@ import {
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import {
   getApiWithToken,
   postApiWithToken,

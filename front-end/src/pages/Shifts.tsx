@@ -10,7 +10,7 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Info } from "lucide-react";
 import { getApiWithToken, postApiWithToken, putApiWithToken, deleteApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import PermissionGate from "@/components/PermissionGate";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 

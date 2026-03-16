@@ -6,7 +6,7 @@ import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { TableCell, TableHead, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 
 type RoleRow = {
   _id: string;

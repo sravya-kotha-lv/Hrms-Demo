@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { hasPermission } from "@/utils/auth";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { PageLoader } from "@/components/ui/loaders";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 

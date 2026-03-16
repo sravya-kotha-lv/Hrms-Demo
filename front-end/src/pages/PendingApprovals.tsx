@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 

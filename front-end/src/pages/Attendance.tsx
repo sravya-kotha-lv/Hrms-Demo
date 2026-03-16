@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import {
   HoverCardTrigger
 } from "@/components/ui/hover-card";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
 import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -224,7 +224,7 @@ const Attendance = () => {
   const [history, setHistory] = useState<AttendanceHistoryItem[]>([]);
   const [selectedAttendanceSnapshot, setSelectedAttendanceSnapshot] = useState<AttendanceSnapshot>(null);
 
-  const fetchMatrix = async () => {
+  const fetchMatrix = useCallback(async () => {
     if (!canView) {
       setRows([]);
       return;
@@ -265,7 +265,7 @@ const Attendance = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, [canView, currentPage, canViewAll, month, pageSize, searchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
     resetPaginationRef.current = true;
@@ -285,7 +285,7 @@ const Attendance = () => {
       resetPaginationRef.current = false;
     }
     fetchMatrix();
-  }, [month, canViewAll, canViewSelf, currentPage, pageSize, searchTerm, sortBy, sortOrder]);
+  }, [currentPage, fetchMatrix]);
   const filteredRows = useMemo(() => rows || [], [rows]);
   const visibleRows = filteredRows;
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getApiWithToken } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { PageLoader } from "@/components/ui/loaders";
 
 interface RequireProfileProps {

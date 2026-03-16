@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
 import { getApiWithToken, postApiWithoutToken } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ShieldCheck, Clock3, Users2, CalendarCheck2, Sparkles, Camera } from "lucide-react";
