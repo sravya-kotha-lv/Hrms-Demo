@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
-import { formatDateInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
+import { formatDateInOrgTimeZone, formatTimeInOrgTimeZone, getOrgTimeZone, setOrgTimeZone } from "@/utils/timezone";
 import { setPermissions } from "@/utils/auth";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
+
+const getEmployeeId = (value: any) =>
+  String(value?._id || value?.employeeId?._id || value?.employeeId || value || "");
+
+const hasAttendanceActivity = (row: any) => Boolean(row?.checkInAt || row?.checkOutAt);
 
 const toOrgDateKey = (value: string | number | Date) => {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -144,6 +149,8 @@ const Dashboard = () => {
   const [weeklyList, setWeeklyList] = useState<any[]>([]);
   const [holidays, setHolidays] = useState<any[]>([]);
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
+  const [todayStatusList, setTodayStatusList] = useState<any[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
   const [orgSettings, setOrgSettings] = useState<any>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -231,6 +238,9 @@ const Dashboard = () => {
       }
 
       const data = summaryRes.data || {};
+      if (typeof data?.orgSettings?.timezone === "string" && data.orgSettings.timezone) {
+        setOrgTimeZone(data.orgSettings.timezone);
+      }
       setEmployeeList(data.employeeList || []);
       setAttendanceToday(data.attendanceToday || []);
       setAttendanceLast7(data.attendanceLast7 || []);
@@ -239,6 +249,8 @@ const Dashboard = () => {
       setWeeklyList(data.weeklyList || []);
       setHolidays(data.holidays || []);
       setWeekOffDays(data.weekOffDays || []);
+      setTodayStatusList(data.todayStatusList || []);
+      setDashboardStats(data.dashboardStats || null);
       setOrgSettings(data.orgSettings || null);
       setNotifications(data.notifications || []);
     } finally {
@@ -328,64 +340,16 @@ const Dashboard = () => {
   };
 
   const kpis = useMemo(() => {
-    const totalEmployees = employeeList.length;
-    const presentTodayIds = new Set<string>();
-    const checkedInOnlyIds = new Set<string>();
-    const lateArrivalIds = new Set<string>();
-    const onLeaveTodayIds = new Set<string>();
-    const absentTodayIds = new Set<string>();
-    const employeeById = new Map(employeeList.map((employee: any) => [String(employee._id), employee]));
-
-    const shouldCountAsAbsentToday = (employeeId: string, cell: any) => {
-      if (!cell || cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
-      if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") return false;
-      const employee = employeeById.get(employeeId);
-      const shiftStartTime = cell?.shiftStartTime || employee?.shiftId?.startTime || null;
-      const graceMinutes = Number(employee?.shiftId?.graceMinutes || 0);
-      const shiftStartMinutes = parseTimeToMinutes(shiftStartTime);
-      if (shiftStartMinutes === null) return true;
-      return currentOrgMinutes >= shiftStartMinutes + graceMinutes;
-    };
-
-    (attendanceMatrix || []).forEach((row: any) => {
-      const cell = row?.days?.[todayDay];
-      const employeeId = String(row?.employeeId?._id || row?.employeeId || "");
-      if (!cell || !employeeId) return;
-      if (!cell) return;
-      if (cell.holidayName || cell.isWeekOff) return;
-
-      if (cell.isOnLeave) {
-        onLeaveTodayIds.add(employeeId);
-        return;
-      }
-
-      if (cell.status === "pending_checkout") {
-        presentTodayIds.add(employeeId);
-        checkedInOnlyIds.add(employeeId);
-        if (Number(cell.lateByMinutes || 0) > 0) lateArrivalIds.add(employeeId);
-        return;
-      }
-
-      if (isPresentLikeStatus(cell.status)) {
-        presentTodayIds.add(employeeId);
-        if (Number(cell.lateByMinutes || 0) > 0) lateArrivalIds.add(employeeId);
-        return;
-      }
-
-      if (shouldCountAsAbsentToday(employeeId, cell)) {
-        absentTodayIds.add(employeeId);
-      }
-    });
-
+    if (dashboardStats?.kpis) return dashboardStats.kpis;
     return {
-      totalEmployees,
-      presentToday: presentTodayIds.size,
-      absentToday: absentTodayIds.size,
-      checkedInOnly: checkedInOnlyIds.size,
-      lateArrivals: lateArrivalIds.size,
-      onLeaveToday: onLeaveTodayIds.size
+      totalEmployees: employeeList.length,
+      presentToday: todayStatusList.filter((item: any) => item.present).length,
+      absentToday: todayStatusList.filter((item: any) => item.absent).length,
+      checkedInOnly: todayStatusList.filter((item: any) => item.pendingCheckout).length,
+      lateArrivals: todayStatusList.filter((item: any) => item.present && Number(item.lateByMinutes || 0) > 0).length,
+      onLeaveToday: todayStatusList.filter((item: any) => item.isOnLeave).length
     };
-  }, [employeeList, attendanceMatrix, todayDay, currentOrgMinutes]);
+  }, [dashboardStats, employeeList.length, todayStatusList]);
 
   const kpiHelpText = {
     total: "Total active employees only. Resigned and terminated employees are excluded.",
@@ -400,17 +364,9 @@ const Dashboard = () => {
     const employeeById = new Map(
       employeeList.map((emp: any) => [String(emp._id), emp])
     );
-
-    const shouldCountAsAbsentToday = (employeeId: string, cell: any) => {
-      if (!cell || cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
-      if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") return false;
-      const employee = employeeById.get(employeeId);
-      const shiftStartTime = cell?.shiftStartTime || employee?.shiftId?.startTime || null;
-      const graceMinutes = Number(employee?.shiftId?.graceMinutes || 0);
-      const shiftStartMinutes = parseTimeToMinutes(shiftStartTime);
-      if (shiftStartMinutes === null) return true;
-      return currentOrgMinutes >= shiftStartMinutes + graceMinutes;
-    };
+    const todayStatusByEmployeeId = new Map(
+      (todayStatusList || []).map((item: any) => [String(item.employeeId), item])
+    );
 
     const toDisplayRow = (employee: any, extra: Record<string, any> = {}) => ({
       id: String(employee?._id || employee?.employeeId || `${employee?.firstName || ""}-${employee?.lastName || ""}`),
@@ -434,19 +390,20 @@ const Dashboard = () => {
     const totalRows = employeeList.map((emp: any) => toDisplayRow(emp));
 
     const presentRows = uniqueByEmployeeId(
-      (attendanceMatrix || [])
-        .filter((row: any) => {
-          const cell = row?.days?.[todayDay];
-          if (!cell || cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
-          return isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
+      employeeList
+        .filter((employee: any) => {
+          const employeeId = String(employee?._id || "");
+          const status = todayStatusByEmployeeId.get(employeeId);
+          if (!status || status.holidayName || status.isWeekOff || status.isOnLeave) return false;
+          return Boolean(status.present);
         })
-        .map((row: any) => {
-          const base = employeeById.get(String(row.employeeId?._id || row.employeeId));
-          const cell = row?.days?.[todayDay];
-          return toDisplayRow(base || {}, {
-            id: String(base?._id || row.employeeId?._id || row.employeeId),
-            checkInAt: cell?.checkInAt ? formatDateInOrgTimeZone(cell.checkInAt) : "-",
-            checkOutAt: cell?.checkOutAt ? formatDateInOrgTimeZone(cell.checkOutAt) : "-"
+        .map((employee: any) => {
+          const employeeId = String(employee?._id || "");
+          const status = todayStatusByEmployeeId.get(employeeId);
+          return toDisplayRow(employee || {}, {
+            id: employeeId,
+            checkInAt: status?.checkInAt ? formatTimeInOrgTimeZone(status.checkInAt, { hour: "2-digit", minute: "2-digit" }) : "-",
+            checkOutAt: status?.checkOutAt ? formatTimeInOrgTimeZone(status.checkOutAt, { hour: "2-digit", minute: "2-digit" }) : "-"
           });
         })
     );
@@ -468,47 +425,51 @@ const Dashboard = () => {
     );
 
     const absentRows = uniqueByEmployeeId(
-      (attendanceMatrix || [])
-        .filter((row: any) => {
-          const cell = row?.days?.[todayDay];
-          if (!cell) return false;
-          return shouldCountAsAbsentToday(String(row.employeeId?._id || row.employeeId || ""), cell);
+      employeeList
+        .filter((employee: any) => {
+          const status = todayStatusByEmployeeId.get(String(employee?._id || ""));
+          return Boolean(status?.absent);
         })
-        .map((row: any) => {
-          const base = employeeById.get(String(row.employeeId?._id || row.employeeId));
-          return toDisplayRow(base || {}, {
-            id: String(base?._id || row.employeeId?._id || row.employeeId),
-            absentReason: row?.days?.[todayDay]?.holidayName ? "Holiday" : "Absent"
+        .map((employee: any) => {
+          const employeeId = String(employee?._id || "");
+          return toDisplayRow(employee || {}, {
+            id: employeeId,
+            absentReason: "Absent"
           });
         })
     );
 
     const lateRows = uniqueByEmployeeId(
-      (attendanceMatrix || [])
-        .filter((row: any) => {
-          const cell = row?.days?.[todayDay];
-          if (!cell || cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
-          return Number(cell.lateByMinutes || 0) > 0;
+      employeeList
+        .filter((employee: any) => {
+          const employeeId = String(employee?._id || "");
+          const status = todayStatusByEmployeeId.get(employeeId);
+          if (!status || status.holidayName || status.isWeekOff || status.isOnLeave) return false;
+          return Boolean(status.present) && Number(status.lateByMinutes || 0) > 0;
         })
-        .map((row: any) => {
-          const base = employeeById.get(String(row.employeeId?._id || row.employeeId));
-          const cell = row?.days?.[todayDay];
-          return toDisplayRow(base || {}, {
-            id: String(base?._id || row.employeeId?._id || row.employeeId),
-            lateByMinutes: Number(cell?.lateByMinutes || 0)
+        .map((employee: any) => {
+          const employeeId = String(employee?._id || "");
+          const status = todayStatusByEmployeeId.get(employeeId);
+          return toDisplayRow(employee || {}, {
+            id: employeeId,
+            lateByMinutes: Number(status?.lateByMinutes || 0)
           });
         })
     );
 
     const missedRows = uniqueByEmployeeId(
-      (attendanceMatrix || [])
-        .filter((row: any) => row?.days?.[todayDay]?.status === "pending_checkout")
-        .map((row: any) => {
-          const base = employeeById.get(String(row.employeeId?._id || row.employeeId));
-          const cell = row?.days?.[todayDay];
-          return toDisplayRow(base || {}, {
-            id: String(base?._id || row.employeeId?._id || row.employeeId),
-            checkInAt: cell?.checkInAt ? formatDateInOrgTimeZone(cell.checkInAt) : "-"
+      employeeList
+        .filter((employee: any) => {
+          const employeeId = String(employee?._id || "");
+          const status = todayStatusByEmployeeId.get(employeeId);
+          return Boolean(status?.pendingCheckout);
+        })
+        .map((employee: any) => {
+          const employeeId = String(employee?._id || "");
+          const status = todayStatusByEmployeeId.get(employeeId);
+          return toDisplayRow(employee || {}, {
+            id: employeeId,
+            checkInAt: status?.checkInAt ? formatTimeInOrgTimeZone(status.checkInAt, { hour: "2-digit", minute: "2-digit" }) : "-"
           });
         })
     );
@@ -521,7 +482,7 @@ const Dashboard = () => {
       late: { title: "Late Arrivals", rows: lateRows },
       missed: { title: "Missed Checkout", rows: missedRows }
     };
-  }, [employeeList, leaveList, attendanceMatrix, todayDay, todayKey, currentOrgMinutes]);
+  }, [employeeList, leaveList, todayKey, todayStatusList]);
 
   const openKpiDialog = (key: "total" | "present" | "absent" | "leave" | "late" | "missed") => {
     setSelectedKpiKey(key);
@@ -529,43 +490,17 @@ const Dashboard = () => {
   };
 
   const monthDaySummary = useMemo(() => {
-    const employeeById = new Map(employeeList.map((employee: any) => [String(employee._id), employee]));
-    let present = 0;
-    let pendingCheckout = 0;
-    let absent = 0;
-    let onLeave = 0;
-    let weekOff = 0;
-    let holiday = 0;
-    let overridden = 0;
-
-    attendanceMatrix.forEach((row: any) => {
-      const cell = row?.days?.[todayDay];
-      if (!cell) return;
-      const employeeId = String(row?.employeeId?._id || row?.employeeId || "");
-      if (cell.overriddenBy || cell.overriddenAt) overridden += 1;
-      if (cell.holidayName) {
-        holiday += 1;
-      } else if (cell.isWeekOff) {
-        weekOff += 1;
-      } else if (cell.isOnLeave) {
-        onLeave += 1;
-      } else if (cell.status === "pending_checkout") {
-        pendingCheckout += 1;
-      } else if (isPresentLikeStatus(cell.status)) {
-        present += 1;
-      } else {
-        const employee = employeeById.get(employeeId);
-        const shiftStartTime = cell?.shiftStartTime || employee?.shiftId?.startTime || null;
-        const graceMinutes = Number(employee?.shiftId?.graceMinutes || 0);
-        const shiftStartMinutes = parseTimeToMinutes(shiftStartTime);
-        if (shiftStartMinutes === null || currentOrgMinutes >= shiftStartMinutes + graceMinutes) {
-          absent += 1;
-        }
-      }
-    });
-
-    return { present, pendingCheckout, absent, onLeave, weekOff, holiday, overridden };
-  }, [attendanceMatrix, employeeList, todayDay, currentOrgMinutes]);
+    if (dashboardStats?.monthDaySummary) return dashboardStats.monthDaySummary;
+    return {
+      present: todayStatusList.filter((item: any) => item.present && !item.pendingCheckout).length,
+      pendingCheckout: todayStatusList.filter((item: any) => item.pendingCheckout).length,
+      absent: todayStatusList.filter((item: any) => item.absent).length,
+      onLeave: todayStatusList.filter((item: any) => item.isOnLeave).length,
+      weekOff: todayStatusList.filter((item: any) => item.isWeekOff).length,
+      holiday: todayStatusList.filter((item: any) => Boolean(item.holidayName)).length,
+      overridden: todayStatusList.filter((item: any) => item.overriddenBy || item.overriddenAt).length
+    };
+  }, [dashboardStats, todayStatusList]);
 
   const pendingApprovals = useMemo(() => {
     const pendingLeaves = leaveList.filter((l) => l.status === "pending");
@@ -577,101 +512,28 @@ const Dashboard = () => {
   }, [leaveList, weeklyList]);
 
   const departmentAnalytics = useMemo(() => {
-    const byEmployeeId = new Map(attendanceMatrix.map((r: any) => [String(r.employeeId), r]));
-    const grouped: Record<string, { employees: number; present: number; onLeave: number; absent: number }> = {};
-
-    const shouldCountAsAbsentToday = (employee: any, cell: any) => {
-      if (!cell || cell.holidayName || cell.isWeekOff || cell.isOnLeave) return false;
-      if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") return false;
-      const shiftStartTime = cell?.shiftStartTime || employee?.shiftId?.startTime || null;
-      const graceMinutes = Number(employee?.shiftId?.graceMinutes || 0);
-      const shiftStartMinutes = parseTimeToMinutes(shiftStartTime);
-      if (shiftStartMinutes === null) return true;
-      return currentOrgMinutes >= shiftStartMinutes + graceMinutes;
-    };
-
-    employeeList.forEach((emp: any) => {
-      const dept = emp.departmentId?.name || "Unassigned";
-      if (!grouped[dept]) {
-        grouped[dept] = { employees: 0, present: 0, onLeave: 0, absent: 0 };
-      }
+    if (dashboardStats?.departmentAnalytics) return dashboardStats.departmentAnalytics;
+    const grouped: Record<string, { name: string; employees: number; present: number; onLeave: number; absent: number }> = {};
+    employeeList.forEach((employee: any) => {
+      const dept = employee.departmentId?.name || "Unassigned";
+      if (!grouped[dept]) grouped[dept] = { name: dept, employees: 0, present: 0, onLeave: 0, absent: 0 };
       grouped[dept].employees += 1;
-      const row = byEmployeeId.get(String(emp._id));
-      const cell = row?.days?.[todayDay];
-      if (!cell) return;
-      if (cell.isOnLeave) grouped[dept].onLeave += 1;
-      else if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") grouped[dept].present += 1;
-      else if (shouldCountAsAbsentToday(emp, cell)) grouped[dept].absent += 1;
+      const status = todayStatusList.find((item: any) => item.employeeId === String(employee._id));
+      if (!status) return;
+      if (status.isOnLeave) grouped[dept].onLeave += 1;
+      else if (status.present) grouped[dept].present += 1;
+      else if (status.absent) grouped[dept].absent += 1;
     });
-
-    return Object.entries(grouped)
-      .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => b.employees - a.employees)
-      .slice(0, 6);
-  }, [employeeList, attendanceMatrix, todayDay, currentOrgMinutes]);
+    return Object.values(grouped).sort((a, b) => b.employees - a.employees).slice(0, 6);
+  }, [dashboardStats, employeeList, todayStatusList]);
 
   const attendanceTrend = useMemo(() => {
-    const totalEmployees = employeeList.length;
-    const matrixByEmployeeId = new Map(
-      (attendanceMatrix || []).map((row: any) => [String(row.employeeId?._id || row.employeeId), row])
-    );
-    const points = Array.from({ length: 7 }).map((_, idx) => {
-      const key = shiftDateKey(todayKey, -(6 - idx));
-      const [, pointMonthStr, pointDayStr] = key.split("-");
-      const pointMonth = Number(pointMonthStr);
-      const pointDay = Number(pointDayStr);
-      const isCurrentMonth = pointMonth === Number(todayMonthStr);
-      let present = 0;
-      let absent = 0;
-      let excluded = 0;
-
-      if (isCurrentMonth) {
-        (employeeList || []).forEach((emp: any) => {
-          const row = matrixByEmployeeId.get(String(emp._id));
-          const cell = row?.days?.[pointDay];
-          if (!cell) return;
-          if (cell.holidayName || cell.isWeekOff || cell.isOnLeave) {
-            excluded += 1;
-            return;
-          }
-          if (isPresentLikeStatus(cell.status) || cell.status === "pending_checkout") {
-            present += 1;
-            return;
-          }
-          if (key !== todayKey) {
-            absent += 1;
-            return;
-          }
-          const shiftStartTime = cell?.shiftStartTime || emp?.shiftId?.startTime || null;
-          const graceMinutes = Number(emp?.shiftId?.graceMinutes || 0);
-          const shiftStartMinutes = parseTimeToMinutes(shiftStartTime);
-          if (shiftStartMinutes === null || currentOrgMinutes >= shiftStartMinutes + graceMinutes) {
-            absent += 1;
-          }
-        });
-      } else {
-        const uniqueDayEmployee = new Set<string>();
-        (attendanceLast7 || []).forEach((row: any) => {
-          const rowKey = toOrgDateKey(row.date);
-          if (rowKey !== key) return;
-          const employeeKey = `${key}-${String(row.employeeId?._id || row.employeeId || "")}`;
-          if (uniqueDayEmployee.has(employeeKey)) return;
-          uniqueDayEmployee.add(employeeKey);
-          if (row.checkInAt || row.checkOutAt) present += 1;
-        });
-        absent = Math.max(0, totalEmployees - present);
-      }
-
-      return {
-        key,
-        label: formatDateInOrgTimeZone(new Date(`${key}T00:00:00`), { weekday: "short" }),
-        present,
-        absent,
-        excluded
-      };
-    });
-    return points;
-  }, [attendanceLast7, attendanceMatrix, employeeList, todayKey, todayMonthStr, currentOrgMinutes]);
+    const points = dashboardStats?.attendanceTrend || [];
+    return points.map((point: any) => ({
+      ...point,
+      label: point.label || formatDateInOrgTimeZone(new Date(`${point.key}T00:00:00`), { weekday: "short" })
+    }));
+  }, [dashboardStats]);
 
   const compliance = useMemo(() => {
     const submitted = weeklyList.filter((w) => w.status === "submitted").length;

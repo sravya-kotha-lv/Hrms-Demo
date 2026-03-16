@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from "react";
 import { getApiWithToken } from "@/services/apiWrapper";
 import {
   getPermissions,
@@ -58,13 +58,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setPermissionsState(getPermissions());
   };
 
-  const hasAnyPermission = (codes: string[]) => {
+  const hasAnyPermission = useCallback((codes: string[]) => {
     if (!codes || codes.length === 0) return true;
     if (permissions.includes("*")) return true;
     return codes.some((code) => permissions.includes(code));
-  };
+  }, [permissions]);
 
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     try {
       const res = await getApiWithToken("/users/me/profile");
       if (res?.success && res?.data) {
@@ -75,9 +75,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch {
       // no-op
     }
-  };
+  }, []);
 
-  const loadPermissions = async () => {
+  const loadPermissions = useCallback(async () => {
     try {
       const res = await getApiWithToken("/users/me/permissions");
       if (res?.success) {
@@ -86,7 +86,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch {
       // no-op
     }
-  };
+  }, []);
 
   useEffect(() => {
     const token = sessionStorage.getItem("token");
@@ -94,16 +94,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       loadProfile();
       loadPermissions();
     }
-  }, []);
+  }, [loadPermissions, loadProfile]);
 
   const lastRoleIdRef = useRef<string | null>(null);
+  const bootstrappedPermissionsRef = useRef(false);
   useEffect(() => {
     const roleId = profile?.activeRole?._id || null;
-    if (roleId && roleId !== lastRoleIdRef.current) {
+    if (!roleId) return;
+    if (!bootstrappedPermissionsRef.current) {
+      bootstrappedPermissionsRef.current = true;
+      lastRoleIdRef.current = roleId;
+      return;
+    }
+    if (roleId !== lastRoleIdRef.current) {
       lastRoleIdRef.current = roleId;
       loadPermissions();
     }
-  }, [profile?.activeRole?._id]);
+  }, [loadPermissions, profile?.activeRole?._id]);
 
   return (
     <AuthContext.Provider

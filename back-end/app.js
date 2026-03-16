@@ -28,6 +28,8 @@ const app = express();
 /* -------------------------------------------------------------------------- */
 
 const PORT = process.env.PORT || 4000;
+const shouldExposeSwagger = process.env.ENABLE_SWAGGER_UI === "true" || process.env.NODE_ENV !== "production";
+const shouldExposeMetrics = process.env.ENABLE_HTTP_METRICS === "true" || process.env.NODE_ENV !== "production";
 
 /* -------------------------------------------------------------------------- */
 /*                               MIDDLEWARES                                  */
@@ -71,7 +73,7 @@ if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
 
-if (process.env.ENABLE_HTTP_METRICS !== "false") {
+if (shouldExposeMetrics) {
   app.use(metricsMiddleware);
 }
 
@@ -90,7 +92,9 @@ if (process.env.ENABLE_RATE_LIMIT !== "false") {
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./swagger");
 
-app.use("/swagger-ui", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+if (shouldExposeSwagger) {
+  app.use("/swagger-ui", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 /* -------------------------------------------------------------------------- */
 /*                               ROUTES                                       */
@@ -131,7 +135,7 @@ app.get("/ready", async (req, res) => {
   });
 });
 
-if (process.env.ENABLE_HTTP_METRICS !== "false") {
+if (shouldExposeMetrics) {
   app.get("/metrics", metricsHandler);
 }
 
@@ -215,7 +219,9 @@ const startServer = async () => {
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📄 Swagger docs: http://localhost:${PORT}/swagger-ui`);
+    if (shouldExposeSwagger) {
+      console.log(`📄 Swagger docs: http://localhost:${PORT}/swagger-ui`);
+    }
   });
 };
 

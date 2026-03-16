@@ -13,6 +13,8 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const { isSuperAdmin, hasAnyPermission, profile } = useAuth();
+  const roleId = profile?.activeRole?._id || "";
+  const profileCheckKey = `${location.pathname}:${roleId}:${isSuperAdmin ? "superadmin" : "standard"}`;
 
   useEffect(() => {
     const run = async () => {
@@ -62,7 +64,7 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
     };
 
     run();
-  }, [location.pathname, navigate, isSuperAdmin, hasAnyPermission, profile]);
+  }, [profileCheckKey, location.pathname, navigate, isSuperAdmin, hasAnyPermission, profile?.roles]);
 
   if (loading) return <PageLoader label="Preparing your workspace..." />;
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
 import {
@@ -49,15 +49,6 @@ import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-  PaginationEllipsis
-} from "@/components/ui/pagination";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -97,6 +88,19 @@ const toIdString = (value: any) => {
 
 const getEmployeeId = (employee: any) => toIdString(employee?._id || employee?.employeeId || employee);
 
+const mergeEmployeePages = (existing: any[], incoming: any[]) => {
+  const merged = new Map<string, any>();
+  existing.forEach((employee) => {
+    const employeeId = getEmployeeId(employee);
+    if (employeeId) merged.set(employeeId, employee);
+  });
+  incoming.forEach((employee) => {
+    const employeeId = getEmployeeId(employee);
+    if (employeeId) merged.set(employeeId, employee);
+  });
+  return Array.from(merged.values());
+};
+
 const Employees = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -131,14 +135,18 @@ const Employees = () => {
   const [bulkApplying, setBulkApplying] = useState(false);
   const [bulkPanelOpen, setBulkPanelOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(15);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [sortBy, setSortBy] = useState("employeeCode");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [skipInitialFetch, setSkipInitialFetch] = useState(false);
+  const tableViewportRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
+  const resetPaginationRef = useRef(false);
   const [formMode, setFormMode] = useState<"add" | "edit" | null>(null);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [formSaving, setFormSaving] = useState(false);
@@ -308,9 +316,14 @@ const Employees = () => {
     }
   };
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = async (pageToLoad = currentPage) => {
     try {
-      setLoading(true);
+      const isLoadMoreRequest = pageToLoad > 1;
+      if (isLoadMoreRequest) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
       if (!canView) {
         setEmployees([]);
         return;
@@ -335,7 +348,7 @@ const Employees = () => {
       if (isSuperAdmin && selectedOrgId) {
         params.set("organizationId", selectedOrgId);
       }
-      params.set("page", String(currentPage));
+      params.set("page", String(pageToLoad));
       params.set("limit", String(pageSize));
       params.set("sortBy", sortBy);
       params.set("sortOrder", sortOrder);
@@ -348,18 +361,22 @@ const Employees = () => {
       if (res?.skipped) return;
       if (res?.success) {
         const nextEmployees = res?.data?.items || [];
-        setEmployees(nextEmployees);
+        setEmployees((prev) => (pageToLoad > 1 ? mergeEmployeePages(prev, nextEmployees) : nextEmployees));
         const pagination = res?.data?.pagination;
         setTotalItems(Number(pagination?.total || nextEmployees.length));
         setTotalPages(Math.max(1, Number(pagination?.totalPages || 1)));
-        setSelectedEmployeeIds((prev) =>
-          prev.filter((id) => nextEmployees.some((emp: any) => getEmployeeId(emp) === id))
-        );
+        if (pageToLoad === 1) {
+          setSelectedEmployeeIds((prev) =>
+            prev.filter((id) => nextEmployees.some((emp: any) => getEmployeeId(emp) === id))
+          );
+        }
       } else {
         toast.error(res?.message || "Failed to load employees");
       }
     } finally {
+      loadingMoreRef.current = false;
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -617,7 +634,13 @@ const Employees = () => {
   }, [selectedOrgId]);
 
   useEffect(() => {
+    resetPaginationRef.current = true;
+    loadingMoreRef.current = false;
+    if (tableViewportRef.current) {
+      tableViewportRef.current.scrollTop = 0;
+    }
     setCurrentPage(1);
+    setEmployees([]);
   }, [
     searchQuery,
     departmentFilter,
@@ -636,8 +659,14 @@ const Employees = () => {
       setSkipInitialFetch(false);
       return;
     }
+    if (resetPaginationRef.current && currentPage !== 1) {
+      return;
+    }
+    if (resetPaginationRef.current && currentPage === 1) {
+      resetPaginationRef.current = false;
+    }
     const timer = setTimeout(() => {
-      fetchEmployees();
+      fetchEmployees(currentPage);
     }, 300);
     return () => clearTimeout(timer);
   }, [
@@ -654,6 +683,30 @@ const Employees = () => {
     sortOrder,
     skipInitialFetch
   ]);
+
+  const hasMoreEmployees = currentPage < totalPages;
+
+  const handleTableScroll = () => {
+    const viewport = tableViewportRef.current;
+    if (!viewport || loading || loadingMore || loadingMoreRef.current || !hasMoreEmployees || formMode) return;
+
+    const scrollTop = viewport.scrollTop;
+    const scrollHeight = viewport.scrollHeight;
+    const clientHeight = viewport.clientHeight;
+    if (scrollTop <= 0 || scrollHeight <= clientHeight) return;
+
+    const progress = (scrollTop + clientHeight) / scrollHeight;
+    if (progress < 0.5) return;
+
+    loadingMoreRef.current = true;
+    setCurrentPage((prev) => {
+      if (prev >= totalPages) {
+        loadingMoreRef.current = false;
+        return prev;
+      }
+      return prev + 1;
+    });
+  };
 
   const handleDelete = (employee: any) => {
     setSelectedEmployee(employee);
@@ -820,20 +873,6 @@ const Employees = () => {
         </div>
       </TableHead>
     );
-  };
-
-  const getPageItems = () => {
-    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
-
-    const items: (number | "ellipsis-left" | "ellipsis-right")[] = [1];
-    const start = Math.max(2, currentPage - 1);
-    const end = Math.min(totalPages - 1, currentPage + 1);
-
-    if (start > 2) items.push("ellipsis-left");
-    for (let page = start; page <= end; page += 1) items.push(page);
-    if (end < totalPages - 1) items.push("ellipsis-right");
-    items.push(totalPages);
-    return items;
   };
 
   const columns: Column<any>[] = [
@@ -1228,7 +1267,7 @@ const Employees = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        {loading && (
+        {loading && employees.length === 0 && (
           <div className="p-5 space-y-3">
             {Array.from({ length: 10 }).map((_, idx) => (
               <div key={`emp-skeleton-${idx}`} className="grid grid-cols-6 gap-3">
@@ -1241,7 +1280,7 @@ const Employees = () => {
             ))}
           </div>
         )}
-        {!loading && (
+        {(!loading || employees.length > 0) && (
           <div className="min-h-0 flex-1">
           <DataTable
             columns={columns}
@@ -1251,6 +1290,8 @@ const Employees = () => {
             tableClassName="min-w-[1650px]"
             containerClassName="h-full border-0 rounded-none shadow-none bg-transparent"
             viewportClassName="h-full overflow-y-auto overflow-x-auto [&>div]:overflow-visible"
+            viewportRef={tableViewportRef}
+            onViewportScroll={handleTableScroll}
             columnsCountOverride={tableColumnCount}
             renderHeader={() => (
               <TableRow className="table-header sticky top-0 z-30 bg-card">
@@ -1391,7 +1432,7 @@ const Employees = () => {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <p className="text-sm text-muted-foreground">
-                Showing page {currentPage} of {totalPages} ({totalItems} total)
+                Showing {employees.length} of {totalItems} employees
               </p>
               <Select
                 value={String(pageSize)}
@@ -1402,65 +1443,20 @@ const Employees = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="10">10 rows</SelectItem>
-                  <SelectItem value="25">25 rows</SelectItem>
-                  <SelectItem value="50">50 rows</SelectItem>
+                  <SelectItem value="20">20 rows</SelectItem>
+                  <SelectItem value="30">30 rows</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <Pagination className="justify-end">
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (currentPage > 1) setCurrentPage((p) => p - 1);
-                    }}
-                    className={currentPage <= 1 ? "pointer-events-none opacity-50" : ""}
-                  />
-                </PaginationItem>
-                {getPageItems().map((item, index) => (
-                  <PaginationItem key={`${item}-${index}`}>
-                    {typeof item === "number" ? (
-                      <PaginationLink
-                        href="#"
-                        isActive={item === currentPage}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setCurrentPage(item);
-                        }}
-                      >
-                        {item}
-                      </PaginationLink>
-                    ) : (
-                      <PaginationEllipsis />
-                    )}
-                  </PaginationItem>
-                ))}
-                <PaginationItem>
-                  <PaginationNext
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (currentPage < totalPages) setCurrentPage((p) => p + 1);
-                    }}
-                    className={currentPage >= totalPages ? "pointer-events-none opacity-50" : ""}
-                  />
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationLink
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setCurrentPage(totalPages);
-                    }}
-                    className={currentPage >= totalPages ? "pointer-events-none opacity-50" : ""}
-                  >
-                    Last
-                  </PaginationLink>
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
+            <p className="text-sm text-muted-foreground">
+              {loading && employees.length > 0
+                ? "Loading employees..."
+                : loadingMore
+                  ? "Loading more employees..."
+                : hasMoreEmployees
+                  ? "Scroll down to load more"
+                  : "You have reached the end"}
+            </p>
           </div>
         </div>
       </motion.div>

@@ -52,7 +52,6 @@ const Hiring = React.lazy(() => import("./pages/Hiring"));
 
 const queryClient = new QueryClient();
 const App = () => (
-  <React.StrictMode>
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -478,7 +477,6 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
-  </React.StrictMode>
 );
 
 export default App;
