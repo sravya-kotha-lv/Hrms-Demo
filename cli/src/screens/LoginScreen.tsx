@@ -24,7 +24,14 @@ const isEmployeeRole = (role: any) => {
 
 function LoginScreen() {
   const navigation = useNavigation<any>();
-  const { setSession, sessionExpiredMessage, clearSessionExpiredMessage } = useAuth();
+  const {
+    setSession,
+    sessionExpiredMessage,
+    clearSessionExpiredMessage,
+    setLoginSuccessMessage,
+    logoutSuccessMessage,
+    clearLogoutSuccessMessage,
+  } = useAuth();
   const safeAreaInsets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isWide = width >= 900;
@@ -42,6 +49,13 @@ function LoginScreen() {
       clearSessionExpiredMessage();
     }
   }, [sessionExpiredMessage, clearSessionExpiredMessage]);
+
+  useEffect(() => {
+    if (logoutSuccessMessage) {
+      setNotice(logoutSuccessMessage);
+      clearLogoutSuccessMessage();
+    }
+  }, [logoutSuccessMessage, clearLogoutSuccessMessage]);
 
   const handleLogin = async () => {
     const trimmedEmail = email.trim().toLowerCase();
@@ -102,6 +116,7 @@ function LoginScreen() {
         profile,
         permissions,
       });
+      setLoginSuccessMessage('Login successful. Welcome back.');
       // Navigation will switch via session state in AppNavigator.
     } catch {
       setError('Login failed.');

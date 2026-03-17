@@ -17,6 +17,12 @@ type AuthContextValue = {
   sessionExpiredMessage: string | null;
   setSessionExpiredMessage: (message: string | null) => void;
   clearSessionExpiredMessage: () => void;
+  loginSuccessMessage: string | null;
+  setLoginSuccessMessage: (message: string | null) => void;
+  clearLoginSuccessMessage: () => void;
+  logoutSuccessMessage: string | null;
+  setLogoutSuccessMessage: (message: string | null) => void;
+  clearLogoutSuccessMessage: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -24,6 +30,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
+  const [loginSuccessMessage, setLoginSuccessMessage] = useState<string | null>(null);
+  const [logoutSuccessMessage, setLogoutSuccessMessage] = useState<string | null>(null);
 
   const updateProfile = (profile: any | null) => {
     setSession((current) => (current ? { ...current, profile } : current));
@@ -40,6 +48,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const logout = () => setSession(null);
 
   const clearSessionExpiredMessage = () => setSessionExpiredMessage(null);
+  const clearLoginSuccessMessage = () => setLoginSuccessMessage(null);
+  const clearLogoutSuccessMessage = () => setLogoutSuccessMessage(null);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -52,8 +62,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       sessionExpiredMessage,
       setSessionExpiredMessage,
       clearSessionExpiredMessage,
+      loginSuccessMessage,
+      setLoginSuccessMessage,
+      clearLoginSuccessMessage,
+      logoutSuccessMessage,
+      setLogoutSuccessMessage,
+      clearLogoutSuccessMessage,
     }),
-    [session, sessionExpiredMessage]
+    [session, sessionExpiredMessage, loginSuccessMessage, logoutSuccessMessage]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

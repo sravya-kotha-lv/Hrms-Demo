@@ -61,7 +61,13 @@ const currentYear = today.getFullYear();
 function EmployeeDashboardScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { session, logout } = useAuth();
+  const {
+    session,
+    logout,
+    loginSuccessMessage,
+    clearLoginSuccessMessage,
+    setLogoutSuccessMessage,
+  } = useAuth();
   const token = session?.token || '';
   const profile = session?.profile || session?.loginData || null;
   const permissions = session?.permissions || [];
@@ -98,6 +104,7 @@ function EmployeeDashboardScreen() {
   const [policyWarning, setPolicyWarning] = useState('');
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [showLoginToast, setShowLoginToast] = useState(false);
 
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
   
@@ -458,6 +465,18 @@ function EmployeeDashboardScreen() {
     setActiveTab(nextTab);
   }, [route?.params?.initialTab]);
 
+  useEffect(() => {
+    if (!loginSuccessMessage) return;
+
+    setShowLoginToast(true);
+    const timer = setTimeout(() => {
+      setShowLoginToast(false);
+      clearLoginSuccessMessage();
+    }, 2600);
+
+    return () => clearTimeout(timer);
+  }, [loginSuccessMessage, clearLoginSuccessMessage]);
+
   return (
     <LinearGradient
       colors={['#f3f5f9', '#f3f5f9', '#eef1f6']}
@@ -507,33 +526,6 @@ function EmployeeDashboardScreen() {
                 </Pressable>
               </View>
             </View>
-            <View style={styles.tabs}>
-              <Pressable
-                style={[styles.tab, activeTab === 'overview' && styles.tabActive]}
-                onPress={() => setActiveTab('overview')}
-              >
-                <Text style={activeTab === 'overview' ? styles.tabTextActive : styles.tabText}>
-                  Overview
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.tab, activeTab === 'attendance' && styles.tabActive]}
-                onPress={() => setActiveTab('attendance')}
-              >
-                <Text style={activeTab === 'attendance' ? styles.tabTextActive : styles.tabText}>
-                  Attendance
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.tab, activeTab === 'planning' && styles.tabActive]}
-                onPress={() => setActiveTab('planning')}
-              >
-                <Text style={activeTab === 'planning' ? styles.tabTextActive : styles.tabText}>
-                  Planning
-                </Text>
-              </Pressable>
-            </View>
-
             {loading ? (
               <View style={styles.loadingCard}>
                 <ActivityIndicator />
@@ -614,13 +606,6 @@ function EmployeeDashboardScreen() {
                         <Text style={styles.cardSubText}>Total remaining</Text>
                       </View>
                       <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>Weekly Timesheet</Text>
-                        <Text style={styles.statValue}>{weeklyProgress.completedIncludingToday.toFixed(1)}h</Text>
-                        <Text style={styles.cardSubText}>
-                          {weeklyStatus ? `Status: ${weeklyStatus}` : 'No weekly sheet'}
-                        </Text>
-                      </View>
-                      <View style={styles.statCard}>
                         <Text style={styles.statLabel}>Team</Text>
                         <Text style={styles.statValue}>{onlineList.length}</Text>
                         <Text style={styles.cardSubText}>Online now</Text>
@@ -674,84 +659,6 @@ function EmployeeDashboardScreen() {
                           );
                         })
                       )}
-                    </View>
-
-                    <View style={[styles.card, styles.timesheetCard]}>
-                      <View style={styles.timesheetCardHeader}>
-                        <Text style={styles.cardTitle}>Weekly Timesheet</Text>
-                        <View style={styles.timesheetNav}>
-                          <Pressable style={styles.timesheetNavButton} disabled>
-                            <MaterialCommunityIcons name="chevron-left" size={16} color="#64748b" />
-                          </Pressable>
-                          <Pressable style={styles.timesheetNavButton} disabled>
-                            <MaterialCommunityIcons name="chevron-right" size={16} color="#64748b" />
-                          </Pressable>
-                        </View>
-                      </View>
-                      <View style={styles.timesheetWorkedRow}>
-                        <Text style={styles.timesheetWorkedLabel}>Worked hours:</Text>
-                        <View style={styles.timesheetWorkedBadge}>
-                          <Text style={styles.timesheetWorkedValue}>{workedHoursText}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.timesheetRangeText}>{weeklyRangeLabel}</Text>
-                      <View style={styles.timesheetStatusPill}>
-                        <Text style={styles.timesheetStatusText}>{weekStatusLabel}</Text>
-                      </View>
-                      <View style={styles.timesheetTableHeader}>
-                        <View style={styles.timesheetTableField}>
-                          <Text style={styles.timesheetTableHeaderText}>Field</Text>
-                        </View>
-                        {timesheetDays.map((day) => (
-                          <View key={`header-${toDateInput(day.date)}`} style={styles.timesheetTableDayCell}>
-                            <Text style={styles.timesheetDayLabel}>{day.dayName}</Text>
-                            <Text style={styles.timesheetDayDate}>
-                              {formatDate(day.date)}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                      <View style={styles.timesheetTableRow}>
-                        <View style={styles.timesheetTableField}>
-                          <Text style={styles.timesheetFieldLabel}>Hours</Text>
-                        </View>
-                        {timesheetDays.map((day) => (
-                          <View key={`hours-${toDateInput(day.date)}`} style={styles.timesheetTableCell}>
-                            <Text style={styles.timesheetCellValue}>
-                              {Number(day.timesheetHours || 0).toFixed(2)}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                      <View style={styles.timesheetTableRow}>
-                        <View style={styles.timesheetTableField}>
-                          <Text style={styles.timesheetFieldLabel}>Notes</Text>
-                        </View>
-                        {timesheetDays.map((day) => (
-                          <View key={`notes-${toDateInput(day.date)}`} style={styles.timesheetTableCell}>
-                            <Text style={styles.timesheetCellNote}>
-                              {day.notes || '-'}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                      <Text style={styles.timesheetFooterText}>
-                        Full day: 8h • Half day: 4h • Minimum weekly hours: {requiredWeeklyHours}h
-                      </Text>
-                      <View style={styles.timesheetActions}>
-                        <Pressable
-                          style={styles.timesheetButtonOutline}
-                          onPress={() => navigation.navigate('Timesheets')}
-                        >
-                          <Text style={styles.timesheetButtonOutlineText}>Save Draft</Text>
-                        </Pressable>
-                        <Pressable
-                          style={styles.timesheetButtonPrimary}
-                          onPress={() => navigation.navigate('Timesheets')}
-                        >
-                          <Text style={styles.timesheetButtonPrimaryText}>Submit Timesheet</Text>
-                        </Pressable>
-                      </View>
                     </View>
 
                     <View style={styles.card}>
@@ -973,6 +880,7 @@ function EmployeeDashboardScreen() {
                 style={styles.profileMenuItem}
                 onPress={() => {
                   setProfileMenuOpen(false);
+                  setLogoutSuccessMessage('Logout successful. See you again soon.');
                   logout();
                 }}
               >
@@ -981,6 +889,15 @@ function EmployeeDashboardScreen() {
             </View>
           </>
         )}
+
+        {showLoginToast && loginSuccessMessage ? (
+          <View pointerEvents="none" style={styles.loginToastWrap}>
+            <View style={styles.loginToast}>
+              <MaterialCommunityIcons name="check-circle" size={16} color="#22c55e" />
+              <Text style={styles.loginToastText}>{loginSuccessMessage}</Text>
+            </View>
+          </View>
+        ) : null}
       </View>
     </LinearGradient>
   );
@@ -1834,6 +1751,38 @@ const styles = StyleSheet.create({
   refreshText: {
     fontSize: 11,
     color: '#64748b',
+  },
+  loginToastWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 90,
+    alignItems: 'center',
+    zIndex: 80,
+  },
+  loginToast: {
+    minHeight: 44,
+    maxWidth: 360,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  loginToastText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a',
   },
 });
 
