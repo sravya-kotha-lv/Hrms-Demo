@@ -77,26 +77,6 @@ const isActiveEmployee = (employee) => {
   return employee.status !== "resigned" && employee.employmentLifecycleStatus !== "terminated";
 };
 
-const parseTimeToMinutes = (value) => {
-  const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
-  return hours * 60 + minutes;
-};
-
-const getCurrentOrgMinutes = (timeZone) => {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23"
-  }).formatToParts(new Date());
-  const read = (type) => Number(parts.find((part) => part.type === type)?.value || "0");
-  return read("hour") * 60 + read("minute");
-};
-
 const isApprovedLeaveOnDate = (leave, dateKey, timeZone) => {
   if (leave?.status !== "approved") return false;
   const fromKey = toDateKeyInTimeZone(leave.fromDate, timeZone);
@@ -130,7 +110,6 @@ const buildDashboardStats = ({
   timeZone,
   todayKey
 }) => {
-  const currentOrgMinutes = getCurrentOrgMinutes(timeZone);
   const holidayKeyMap = new Map(
     (holidays || []).map((holiday) => [toDateKeyInTimeZone(holiday.date, timeZone), holiday.name])
   );
@@ -159,14 +138,10 @@ const buildDashboardStats = ({
     );
     const hasAttendance = Boolean(attendance?.checkInAt || attendance?.checkOutAt);
     const isPendingCheckout = Boolean(attendance?.checkInAt && !attendance?.checkOutAt);
-    const shiftStartTime = attendance?.shiftStartTime || employee?.shiftId?.startTime || null;
-    const graceMinutes = Number(employee?.shiftId?.graceMinutes || 0);
-    const shiftStartMinutes = parseTimeToMinutes(shiftStartTime);
     const countAsAbsent = !holidayName
       && !isWeekOff
       && !isOnLeave
-      && !hasAttendance
-      && (shiftStartMinutes === null || currentOrgMinutes >= shiftStartMinutes + graceMinutes);
+      && !hasAttendance;
 
     return {
       employeeId,
@@ -176,7 +151,7 @@ const buildDashboardStats = ({
       checkInAt: attendance?.checkInAt || null,
       checkOutAt: attendance?.checkOutAt || null,
       lateByMinutes: Number(attendance?.lateByMinutes || 0),
-      shiftStartTime,
+      shiftStartTime: attendance?.shiftStartTime || employee?.shiftId?.startTime || null,
       overriddenBy: attendance?.overriddenBy || null,
       overriddenAt: attendance?.overriddenAt || null,
       present: hasAttendance,
@@ -243,16 +218,6 @@ const buildDashboardStats = ({
 
       if (attendance?.checkInAt || attendance?.checkOutAt) {
         present += 1;
-        return;
-      }
-
-      if (key === todayKey) {
-        const shiftStartTime = attendance?.shiftStartTime || employee?.shiftId?.startTime || null;
-        const graceMinutes = Number(employee?.shiftId?.graceMinutes || 0);
-        const shiftStartMinutes = parseTimeToMinutes(shiftStartTime);
-        if (shiftStartMinutes === null || currentOrgMinutes >= shiftStartMinutes + graceMinutes) {
-          absent += 1;
-        }
         return;
       }
 
