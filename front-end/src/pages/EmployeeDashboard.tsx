@@ -26,7 +26,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   formatDateInOrgTimeZone,
   formatDateTimeInOrgTimeZone,
-  formatTimeInOrgTimeZone
+  formatTimeInOrgTimeZone,
+  toDateKeyInOrgTimeZone
 } from "@/utils/timezone";
 
 const toDateInput = (value: Date) => {
@@ -270,7 +271,7 @@ const EmployeeDashboard = () => {
 
   const loadDashboard = useCallback(async (silent = false) => {
     if (!silent) setDashboardLoading(true);
-    const todayIso = toDateInput(new Date());
+    const todayIso = toDateKeyInOrgTimeZone(new Date());
     const weekStartIso = toDateInput(weekStart);
     const [weeklyRes, attendanceRes, leaveRes, balanceRes, onlineRes, onLeaveRes, notifRes, holidayRes, weekOffRes, matrixRes, profileRes, eventsRes, checkInPolicyRes] =
       await Promise.all([
@@ -278,7 +279,7 @@ const EmployeeDashboard = () => {
           requiredPermissions: ["TIMESHEET_VIEW_SELF"]
         }),
         getApiWithToken(`/timesheets/attendance/my?date=${todayIso}`, null, {
-          requiredPermissions: ["TIMESHEET_VIEW_SELF"]
+          requiredPermissions: ["TIMESHEET_VIEW_SELF", "TIMESHEET_CHECKIN_SELF", "TIMESHEET_CHECKOUT_SELF"]
         }),
         getApiWithToken("/leaves/my", null, {
           requiredPermissions: ["LEAVE_VIEW_SELF"]
@@ -329,6 +330,8 @@ const EmployeeDashboard = () => {
 
     if (attendanceRes?.success) {
       const record = (attendanceRes.data || [])[0];
+      console.log(record,"record");
+      
       setAttendanceToday(record || null);
     } else {
       setAttendanceToday(null);
@@ -523,6 +526,8 @@ const EmployeeDashboard = () => {
   }, [weeklyEntries, attendanceToday, matrixDays]);
 
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
+  console.log(hasCheckedInToday,"has",attendanceToday?.checkInAt);
+  
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
   const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt);
 
