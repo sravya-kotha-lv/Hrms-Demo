@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#9ee6b7',
   },
 calendarHoliday: {
-  backgroundColor: '#fde68a', // light yellow for holidays
+  backgroundColor: '#efd980', // light yellow for holidays
 },
   calendarLeave: {
     backgroundColor: '#37e273',

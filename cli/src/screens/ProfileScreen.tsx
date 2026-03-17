@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Modal,
   PermissionsAndroid,
   Platform,
   Pressable,
@@ -14,8 +15,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { Picker } from '@react-native-picker/picker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
-import { useNavigation } from '@react-navigation/native';
 import { getApiWithToken, putApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -25,7 +26,12 @@ type UploadPayload = {
   base64Data: string;
 };
 
-const requestAndroidPermission = async (permission: string) => {
+const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
+const BLOOD_GROUP_OPTIONS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+type AndroidPermissionValue = typeof PermissionsAndroid.PERMISSIONS[keyof typeof PermissionsAndroid.PERMISSIONS];
+
+const requestAndroidPermission = async (permission: AndroidPermissionValue) => {
   const granted = await PermissionsAndroid.request(permission);
   return granted === PermissionsAndroid.RESULTS.GRANTED;
 };
@@ -45,22 +51,22 @@ const requestCameraPermission = async () => {
 };
 
 function ProfileScreen() {
-  const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { session, updateProfile } = useAuth();
   const token = session?.token || '';
-  const safeAreaInsets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [profile, setProfile] = useState<any>(null);
-  const [profileImageUpload, setProfileImageUpload] = useState<UploadPayload | null>(null);
+  const [error, setError] = useState('');
+  const [editVisible, setEditVisible] = useState(false);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState('');
+  const [bloodGroup, setBloodGroup] = useState('');
   const [line1, setLine1] = useState('');
   const [line2, setLine2] = useState('');
   const [city, setCity] = useState('');
@@ -70,22 +76,16 @@ function ProfileScreen() {
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyRelation, setEmergencyRelation] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('');
+  const [profileImage, setProfileImage] = useState<UploadPayload | null>(null);
+  const [addressProofUpload, setAddressProofUpload] = useState<UploadPayload | null>(null);
 
-  const loadProfile = async () => {
-    setLoading(true);
-    const res = await getApiWithToken<any>('/employees/me', token);
-    setLoading(false);
-    if (!res?.success) {
-      setError(res?.message || 'Unable to load profile.');
-      return;
-    }
-    const data = res.data || null;
-    setProfile(data);
+  const seedForm = (data: any | null) => {
     setFirstName(data?.firstName || '');
     setLastName(data?.lastName || '');
     setPhone(data?.phone || '');
     setDob(data?.dob ? String(data.dob).slice(0, 10) : '');
     setGender(data?.gender || '');
+    setBloodGroup(data?.bloodGroup || '');
     setLine1(data?.address?.line1 || '');
     setLine2(data?.address?.line2 || '');
     setCity(data?.address?.city || '');
@@ -96,61 +96,145 @@ function ProfileScreen() {
     setEmergencyName(contact?.name || '');
     setEmergencyRelation(contact?.relation || '');
     setEmergencyPhone(contact?.phone || '');
+    setProfileImage(null);
+    setAddressProofUpload(null);
+  };
+
+  const loadProfile = async () => {
+    if (!token) return;
+    setLoading(true);
+    const res = await getApiWithToken('/employees/me', token);
+    setLoading(false);
+    if (!res?.success) {
+      setError(res?.message || 'Unable to load profile');
+      return;
+    }
+    setProfile(res.data || null);
+    seedForm(res.data || null);
   };
 
   useEffect(() => {
-    if (!token) return;
     loadProfile();
   }, [token]);
+
+  const employmentRows = useMemo(
+    () => [
+      { label: 'Employee Code', value: profile?.employeeCode },
+      { label: 'Department', value: profile?.departmentId?.name },
+      { label: 'Designation', value: profile?.designationId?.name },
+      { label: 'Employment Type', value: profile?.employmentType },
+      {
+        label: 'Date Of Joining',
+        value: profile?.dateOfJoining ? String(profile.dateOfJoining).slice(0, 10) : '',
+      },
+      {
+        label: 'Reporting Manager',
+        value: profile?.managerId
+          ? `${profile.managerId.firstName || ''} ${profile.managerId.lastName || ''}`.trim()
+          : '',
+      },
+    ],
+    [profile]
+  );
+
+  const addressLabel = useMemo(() => {
+    const parts = [
+      profile?.address?.line1,
+      profile?.address?.line2,
+      profile?.address?.city,
+      profile?.address?.state,
+      profile?.address?.country,
+      profile?.address?.zip,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return parts;
+  }, [profile]);
+
+  const personalRows = useMemo(
+    () => [
+      { label: 'Work Email', value: profile?.userId?.email },
+      { label: 'Phone', value: profile?.phone },
+      { label: 'DOB', value: profile?.dob ? String(profile.dob).slice(0, 10) : '' },
+      { label: 'Gender', value: profile?.gender },
+      { label: 'Blood Group', value: profile?.bloodGroup },
+      { label: 'Address', value: addressLabel },
+      {
+        label: 'Address Proof',
+        value: profile?.addressProof?.fileUrl ? 'Uploaded' : 'Not uploaded',
+      },
+    ],
+    [profile, addressLabel]
+  );
 
   const pickImage = async (mode: 'camera' | 'library') => {
     setError('');
     if (mode === 'camera') {
       const ok = await requestCameraPermission();
       if (!ok) {
-        setError('Camera permission is required.');
+        setError('Camera permission required.');
         return;
       }
     } else {
       const ok = await requestPhotoPermission();
       if (!ok) {
-        setError('Photo library permission is required.');
+        setError('Photo permission required.');
         return;
       }
     }
-
     const result =
       mode === 'camera'
         ? await launchCamera({
             mediaType: 'photo',
             includeBase64: true,
+            quality: 0.7,
             maxWidth: 720,
             maxHeight: 720,
-            quality: 0.7,
           })
         : await launchImageLibrary({
             mediaType: 'photo',
             includeBase64: true,
+            quality: 0.7,
             maxWidth: 720,
             maxHeight: 720,
-            quality: 0.7,
           });
-
     const asset = result.assets?.[0];
     if (!asset?.base64 || !asset?.type) return;
-    setProfileImageUpload({
-      base64Data: asset.base64,
-      mimeType: asset.type,
+    setProfileImage({
       fileName: asset.fileName || `profile-${Date.now()}.jpg`,
+      mimeType: asset.type,
+      base64Data: asset.base64,
+    });
+  };
+
+  const pickAddressProof = async () => {
+    setError('');
+    const ok = await requestPhotoPermission();
+    if (!ok) {
+      setError('Photo permission required.');
+      return;
+    }
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      includeBase64: true,
+      quality: 0.7,
+      maxWidth: 1200,
+      maxHeight: 1200,
+    });
+    const asset = result.assets?.[0];
+    if (!asset?.base64 || !asset?.type) return;
+    setAddressProofUpload({
+      fileName: asset.fileName || `address-proof-${Date.now()}.jpg`,
+      mimeType: asset.type,
+      base64Data: asset.base64,
     });
   };
 
   const handleSave = async () => {
     if (!phone || !dob || !gender || !line1 || !city || !stateValue || !country || !zip) {
-      setError('Please fill all required fields.');
+      setError('Please fill the required fields.');
       return;
     }
-
     setSaving(true);
     setError('');
     const payload: Record<string, unknown> = {
@@ -159,6 +243,7 @@ function ProfileScreen() {
       phone,
       dob,
       gender,
+      bloodGroup: bloodGroup || undefined,
       address: {
         line1,
         line2,
@@ -176,141 +261,188 @@ function ProfileScreen() {
             },
           ]
         : [],
-      departmentId: profile?.departmentId || undefined,
-      designationId: profile?.designationId || undefined,
-      dateOfJoining: profile?.dateOfJoining || undefined,
-      employmentType: profile?.employmentType || undefined,
-      bloodGroup: profile?.bloodGroup || undefined,
-      aadhaarNumber: profile?.aadhaarNumber || undefined,
-      panNumber: profile?.panNumber || undefined,
     };
-
-    if (profileImageUpload) {
-      payload.profileImageUpload = profileImageUpload;
+    if (profileImage) {
+      payload.profileImageUpload = profileImage;
     }
-
-    const res = await putApiWithToken<any>('/employees/me/profile', payload, token);
+    if (addressProofUpload) {
+      payload.addressProofUpload = addressProofUpload;
+    }
+    const res = await putApiWithToken('/employees/me/profile', payload, token);
     setSaving(false);
     if (!res?.success) {
-      setError(res?.message || 'Unable to update profile.');
+      setError(res?.message || 'Unable to save profile.');
       return;
     }
+    setEditVisible(false);
     await loadProfile();
-    updateProfile(res?.data || profile);
-    setProfileImageUpload(null);
+    updateProfile(res.data || profile);
   };
 
-  const profileImage =
-    profileImageUpload?.base64Data
-      ? `data:${profileImageUpload.mimeType};base64,${profileImageUpload.base64Data}`
-      : profile?.profileImage || null;
+  const profileImageUrl = profile?.profileImage;
+  const displayName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Employee';
 
   return (
-    <LinearGradient
-      colors={['#f3f5f9', '#f3f5f9', '#eef1f6']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.container}
-    >
+    <LinearGradient colors={['#f3f5f9', '#f3f5f9', '#eef1f6']} style={styles.container}>
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: Math.max(safeAreaInsets.top, 16) },
+          { paddingTop: Math.max(insets.top, 16) },
         ]}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.headerButton}>
-            <MaterialCommunityIcons name="chevron-left" size={22} color="#0f172a" />
-          </Pressable>
-          <Text style={styles.headerTitle}>My Profile</Text>
-          <View style={styles.headerButton} />
-        </View>
-
         {loading ? (
-          <View style={styles.card}>
-            <ActivityIndicator />
+          <View style={styles.detailCard}>
+            <ActivityIndicator color="#2563eb" />
             <Text style={styles.helperText}>Loading profile...</Text>
           </View>
         ) : (
-          <View style={styles.card}>
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
-            <View style={styles.photoRow}>
-              <View style={styles.photoWrap}>
-                {profileImage ? (
-                  <Image source={{ uri: profileImage }} style={styles.photo} />
-                ) : (
-                  <View style={styles.photoPlaceholder}>
-                    <MaterialCommunityIcons name="account" size={28} color="#64748b" />
+          <>
+            <View style={styles.headerCard}>
+              <View style={styles.headerContent}>
+                <View style={styles.photoWrap}>
+                  {profileImageUrl ? (
+                    <Image source={{ uri: profileImageUrl }} style={styles.photo} />
+                  ) : (
+                    <View style={styles.placeholder}>
+                      <Text style={styles.placeholderText}>{displayName.charAt(0)}</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.headerText}>
+                  <Text style={styles.headerName}>{displayName}</Text>
+                  <Text style={styles.headerSubtitle}>{profile?.userId?.email || ''}</Text>
+                </View>
+              </View>
+              <Pressable style={styles.editButton} onPress={() => setEditVisible(true)}>
+                <Text style={styles.editButtonText}>Edit Profile</Text>
+              </Pressable>
+            </View>
+
+            <View style={[styles.detailCard, styles.cardSpacing]}>
+              <Text style={styles.cardTitle}>Employment Details</Text>
+              {employmentRows.map((row) => (
+                <View key={row.label} style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>{row.label}</Text>
+                  <Text style={styles.detailValue}>{row.value || '-'}</Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={[styles.detailCard, styles.cardSpacing]}>
+              <Text style={styles.cardTitle}>Personal Details</Text>
+              {personalRows.map((row) => (
+                <View key={row.label} style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>{row.label}</Text>
+                  <Text style={styles.detailValue}>{row.value || '-'}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      </ScrollView>
+
+      <Modal visible={editVisible} transparent animationType="slide">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <ScrollView contentContainerStyle={styles.modalContent}>
+              <Text style={styles.modalTitle}>Edit Profile</Text>
+              <Pressable style={styles.closeBadge} onPress={() => setEditVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#0f172a" />
+              </Pressable>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Profile Picture</Text>
+                <View style={styles.profilePicRow}>
+                  <View style={styles.profilePic}>
+                    {profileImage ? (
+                      <Image source={{ uri: `data:${profileImage.mimeType};base64,${profileImage.base64Data}` }} style={styles.profilePic} />
+                    ) : profileImageUrl ? (
+                      <Image source={{ uri: profileImageUrl }} style={styles.profilePic} />
+                    ) : (
+                      <MaterialCommunityIcons name="account" size={32} color="#64748b" />
+                    )}
                   </View>
-                )}
+                  <View style={styles.profilePicActions}>
+                    <Pressable style={styles.uploadButton} onPress={() => pickImage('camera')}>
+                      <Text style={styles.uploadButtonText}>Camera</Text>
+                    </Pressable>
+                    <Pressable style={styles.uploadButton} onPress={() => pickImage('library')}>
+                      <Text style={styles.uploadButtonText}>Gallery</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                <Text style={styles.helperText}>
+                  {profileImage?.fileName || profileImageUrl ? profileImage?.fileName || 'Selected image' : 'Choose profile picture (JPG, PNG, WEBP up to 2MB)'}
+                </Text>
               </View>
-              <View style={styles.photoActions}>
-                <Pressable style={styles.secondaryButton} onPress={() => pickImage('camera')}>
-                  <Text style={styles.secondaryButtonText}>Camera</Text>
-                </Pressable>
-                <Pressable style={styles.secondaryButton} onPress={() => pickImage('library')}>
-                  <Text style={styles.secondaryButtonText}>Gallery</Text>
-                </Pressable>
-              </View>
-            </View>
 
-            <Text style={styles.sectionTitle}>Basic Details</Text>
-            <View style={styles.formRow}>
               <TextInput
                 style={styles.input}
-                placeholder="First Name"
-                value={firstName}
-                onChangeText={setFirstName}
+                placeholder="Phone number"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
               />
               <TextInput
                 style={styles.input}
-                placeholder="Last Name"
-                value={lastName}
-                onChangeText={setLastName}
+                placeholder="Date of Birth (YYYY-MM-DD)"
+                value={dob}
+                onChangeText={setDob}
               />
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder="Phone"
-              value={phone}
-              onChangeText={setPhone}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Date of Birth (YYYY-MM-DD)"
-              value={dob}
-              onChangeText={setDob}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Gender"
-              value={gender}
-              onChangeText={setGender}
-            />
 
-            <Text style={styles.sectionTitle}>Address</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Address Line 1"
-              value={line1}
-              onChangeText={setLine1}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Address Line 2"
-              value={line2}
-              onChangeText={setLine2}
-            />
-            <View style={styles.formRow}>
-              <TextInput style={styles.input} placeholder="City" value={city} onChangeText={setCity} />
+              <View style={styles.pickerRow}>
+                <View style={styles.pickerWrapper}>
+                  <Picker
+                    selectedValue={gender}
+                    onValueChange={(value) => setGender(value)}
+                    style={styles.picker}
+                  >
+                    <Picker.Item label="Select Gender" value="" />
+                    {GENDER_OPTIONS.map((option) => (
+                      <Picker.Item key={option} label={option} value={option} />
+                    ))}
+                  </Picker>
+                </View>
+                <View style={[styles.pickerWrapper, { marginLeft: 12 }]}>
+                  <Picker
+                    selectedValue={bloodGroup}
+                    onValueChange={(value) => setBloodGroup(value)}
+                    style={styles.picker}
+                  >
+                    <Picker.Item label="Blood Group (optional)" value="" />
+                    {BLOOD_GROUP_OPTIONS.map((option) => (
+                      <Picker.Item key={option} label={option} value={option} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Address Line 1"
+                value={line1}
+                onChangeText={setLine1}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Address Line 2"
+                value={line2}
+                onChangeText={setLine2}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="City"
+                value={city}
+                onChangeText={setCity}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="State"
                 value={stateValue}
                 onChangeText={setStateValue}
               />
-            </View>
-            <View style={styles.formRow}>
               <TextInput
                 style={styles.input}
                 placeholder="Country"
@@ -319,110 +451,234 @@ function ProfileScreen() {
               />
               <TextInput
                 style={styles.input}
-                placeholder="PIN Code"
+                placeholder="ZIP / PIN"
                 value={zip}
                 onChangeText={setZip}
+                keyboardType="number-pad"
               />
-            </View>
+              <Pressable style={styles.fileButton} onPress={pickAddressProof}>
+                <Text style={styles.fileButtonText}>
+                  {addressProofUpload?.fileName || 'Choose Address Proof'}
+                </Text>
+              </Pressable>
+              <Text style={styles.fileHelperText}>PDF, JPG, PNG, WEBP up to 5MB</Text>
 
-            <Text style={styles.sectionTitle}>Emergency Contact</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Contact Name"
-              value={emergencyName}
-              onChangeText={setEmergencyName}
-            />
-            <View style={styles.formRow}>
+              <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Emergency Contact</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Relation"
-                value={emergencyRelation}
-                onChangeText={setEmergencyRelation}
+                placeholder="Name"
+                value={emergencyName}
+                onChangeText={setEmergencyName}
               />
-              <TextInput
-                style={styles.input}
-                placeholder="Phone"
-                value={emergencyPhone}
-                onChangeText={setEmergencyPhone}
-              />
-            </View>
+              <View style={styles.pickerRow}>
+                <View style={styles.pickerWrapper}>
+                  <Picker
+                    selectedValue={emergencyRelation}
+                    onValueChange={(value) => setEmergencyRelation(value)}
+                    style={styles.picker}
+                  >
+                    <Picker.Item label="Relationship" value="" />
+                    {['Father', 'Mother', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Guardian', 'Friend', 'Other'].map((item) => (
+                      <Picker.Item key={item} label={item} value={item} />
+                    ))}
+                  </Picker>
+                </View>
+                <TextInput
+                  style={[styles.input, { flex: 1, marginLeft: 12 }]}
+                  placeholder="Phone"
+                  value={emergencyPhone}
+                  onChangeText={setEmergencyPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
 
-            <Pressable style={styles.primaryButton} onPress={handleSave} disabled={saving}>
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Save Profile</Text>}
-            </Pressable>
+              <Pressable style={styles.primaryButton} onPress={handleSave} disabled={saving}>
+                {saving ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Save Profile</Text>
+                )}
+              </Pressable>
+            </ScrollView>
           </View>
-        )}
-      </ScrollView>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scrollContent: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 120, gap: 14 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    alignItems: 'center',
-    justifyContent: 'center',
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingBottom: 120,
   },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
+  headerCard: {
+    backgroundColor: '#fff',
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    gap: 12,
+    paddingRight: 140,
+    borderRadius: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+    position: 'relative',
   },
-  helperText: { fontSize: 12, color: '#64748b' },
-  errorText: { fontSize: 12, color: '#dc2626' },
-  photoRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  photoWrap: { width: 72, height: 72, borderRadius: 36, overflow: 'hidden' },
+  headerContent: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 24 },
+  photoWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    overflow: 'hidden',
+    marginRight: 12,
+  },
   photo: { width: '100%', height: '100%' },
-  photoPlaceholder: {
+  placeholder: {
     flex: 1,
     backgroundColor: '#f1f5f9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  photoActions: { flex: 1, flexDirection: 'row', gap: 8 },
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#0f172a', marginTop: 6 },
-  formRow: { flexDirection: 'row', gap: 10 },
-  input: {
+  placeholderText: { fontSize: 24, color: '#64748b' },
+  headerText: {},
+  headerName: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
+  headerSubtitle: { fontSize: 13, color: '#475569' },
+  editButton: {
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 2,
+    elevation: 5,
+  },
+  editButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  detailCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    marginTop: 12,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  cardSpacing: {
+    marginTop: 16,
+  },
+  cardTitle: { fontSize: 14, fontWeight: '700', color: '#0f172a', marginBottom: 8 },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  detailLabel: { fontSize: 12, color: '#475569', flex: 1 },
+  detailValue: { fontSize: 12, color: '#0f172a', fontWeight: '600', textAlign: 'right', flex: 1 },
+  helperText: { marginTop: 8, fontSize: 12, color: '#475569' },
+  errorText: { marginTop: 12, color: '#dc2626', textAlign: 'center' },
+  modalBackdrop: {
     flex: 1,
-    height: 42,
+    backgroundColor: 'rgba(15,23,42,0.35)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    maxHeight: '90%',
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 16,
+  },
+  modalContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 10 },
+  closeBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  section: { marginTop: 12 },
+  sectionTitle: { fontSize: 14, fontWeight: '600', color: '#475569', marginBottom: 6 },
+  profilePicRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  profilePic: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    overflow: 'hidden',
+  },
+  profilePicActions: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
+  uploadButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    paddingHorizontal: 10,
-    backgroundColor: '#ffffff',
-    fontSize: 12,
+    backgroundColor: '#f8fafc',
+    flex: 1,
+    alignItems: 'center',
+    marginLeft: 4,
   },
-  primaryButton: {
-    height: 44,
+  uploadButtonText: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
+  input: {
+    height: 46,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
     borderRadius: 12,
+    paddingHorizontal: 12,
+    backgroundColor: '#fff',
+    marginBottom: 10,
+  },
+  pickerRow: { flexDirection: 'row', marginBottom: 10 },
+  pickerWrapper: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+  },
+  picker: { height: 46 },
+  fileButton: {
+    borderWidth: 1,
+    borderColor: '#d7dbe3',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginBottom: 6,
+  },
+  fileButtonText: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
+  fileHelperText: { fontSize: 11, color: '#64748b', marginBottom: 16 },
+  primaryButton: {
     backgroundColor: '#2563eb',
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 12,
   },
   primaryButtonText: { color: '#fff', fontWeight: '700' },
-  secondaryButton: {
-    flex: 1,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  secondaryButtonText: { fontSize: 12, color: '#0f172a', fontWeight: '600' },
 });
 
 export default ProfileScreen;
