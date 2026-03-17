@@ -504,7 +504,19 @@ function EmployeeDashboardScreen() {
               <View style={styles.topBarRight}>
                 <Pressable
                   style={styles.iconButton}
-                  onPress={() => navigation.navigate('Notifications')}
+                  onPress={() => {
+                    setProfileMenuOpen(false);
+                    const parentNavigation = navigation.getParent?.();
+                    if (parentNavigation?.push) {
+                      parentNavigation.push('Notifications');
+                      return;
+                    }
+                    if (navigation.push) {
+                      navigation.push('Notifications');
+                      return;
+                    }
+                    navigation.navigate('Notifications');
+                  }}
                 >
                   <MaterialCommunityIcons name="bell-outline" size={18} color="#0f172a" />
                 </Pressable>
@@ -658,23 +670,6 @@ function EmployeeDashboardScreen() {
                             </View>
                           );
                         })
-                      )}
-                    </View>
-
-                    <View style={styles.card}>
-                      <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle}>Latest Notifications</Text>
-                        <MaterialCommunityIcons name="bell-outline" size={18} color="#64748b" />
-                      </View>
-                      {notifications.length === 0 ? (
-                        <Text style={styles.cardSubText}>No notifications</Text>
-                      ) : (
-                        notifications.map((n: any) => (
-                          <View key={n?._id || Math.random()} style={styles.noticeCard}>
-                            <Text style={styles.noticeTitle}>{n?.title || ''}</Text>
-                            <Text style={styles.noticeText}>{n?.message || ''}</Text>
-                          </View>
-                        ))
                       )}
                     </View>
 

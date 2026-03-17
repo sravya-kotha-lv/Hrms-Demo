@@ -350,7 +350,16 @@ function AppNavigator() {
         {session ? (
           <>
             <Stack.Screen name="EmployeeTabs" component={EmployeeTabs} />
-            <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            <Stack.Screen
+              name="Notifications"
+              component={NotificationsScreen}
+              options={{
+                headerShown: false,
+                presentation: 'card',
+                animation: 'slide_from_right',
+                contentStyle: { backgroundColor: '#f3f5f9' },
+              }}
+            />
             <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
             <Stack.Screen name="RoleSwitch" component={RoleSwitchScreen} />
           </>
