@@ -469,7 +469,7 @@ const Dashboard = () => {
     total: "Total active employees only. Resigned and terminated employees are excluded.",
     present: "Employees who checked in or checked out today.",
     leave: "Employees with approved leave that includes today.",
-    absent: "Employees marked absent today, excluding holiday, week off, and approved leave.",
+    absent: "Employees without attendance today, excluding holiday, week off, and approved leave.",
     late: "Employees who checked in late based on shift start and grace rules.",
     missed: "Employees who checked in today but have not checked out yet."
   };

@@ -860,6 +860,8 @@ const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone 
   }
 };
 
+const CHECK_IN_EARLY_WINDOW_MINUTES = 120;
+
 exports.checkIn = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const now = new Date();
@@ -946,6 +948,13 @@ exports.checkIn = async (req) => {
     organizationTimeZone
   );
   const attendanceDate = startOfDayInTimeZone(attendanceDateKey, organizationTimeZone);
+  const earliestCheckInAt = new Date(
+    scheduledStartAt.getTime() - CHECK_IN_EARLY_WINDOW_MINUTES * 60 * 1000
+  );
+
+  if (now < earliestCheckInAt) {
+    throwHttpError(403, "Check-in is allowed only within 2 hours before shift start");
+  }
 
   const graceMinutes = Number(shift.graceMinutes || 0);
   const lateDiff = Math.round((now.getTime() - scheduledStartAt.getTime()) / 60000) - graceMinutes;
@@ -1184,6 +1193,7 @@ exports.getMyAttendance = async (req) => {
   const dayStart = startOfDayInTimeZone(queryDate, organizationTimeZone);
   const dayEnd = endOfDayInTimeZone(queryDate, organizationTimeZone);
   const requestedDayKey = toDateKeyInTimeZone(queryDate, organizationTimeZone);
+  const todayKey = toDateKeyInTimeZone(new Date(), organizationTimeZone);
 
   const rows = await Attendance.find(
     buildAttendanceRangeFilter(
@@ -1193,7 +1203,36 @@ exports.getMyAttendance = async (req) => {
       dayEnd
     )
   ).sort({ date: -1, checkInAt: -1 });
-  return mergeAttendanceRowsByEmployeeDay(rows, organizationTimeZone)
+  const mergedRows = mergeAttendanceRowsByEmployeeDay(rows, organizationTimeZone);
+
+  if (requestedDayKey === todayKey) {
+    const { attendanceDateKey } = await resolveCheckInSchedule(
+      req.user.organizationId,
+      employee._id,
+      new Date(),
+      organizationTimeZone
+    );
+    if (attendanceDateKey !== requestedDayKey) {
+      const currentShiftDate = startOfDayInTimeZone(attendanceDateKey, organizationTimeZone);
+      const currentShiftRows = await Attendance.find({
+        organizationId: req.user.organizationId,
+        employeeId: employee._id,
+        date: currentShiftDate
+      }).sort({ date: -1, checkInAt: -1 });
+      const mergedCurrentShiftRows = mergeAttendanceRowsByEmployeeDay(currentShiftRows, organizationTimeZone)
+        .filter((row) => getAttendanceRowDayKey(row, organizationTimeZone) === attendanceDateKey);
+      if (mergedCurrentShiftRows.length) {
+        return mergedCurrentShiftRows;
+      }
+    }
+    const currentShiftRows = mergedRows
+      .filter((row) => getAttendanceRowDayKey(row, organizationTimeZone) === attendanceDateKey);
+    if (currentShiftRows.length) {
+      return currentShiftRows;
+    }
+  }
+
+  return mergedRows
     .filter((row) => getAttendanceRowDayKey(row, organizationTimeZone) === requestedDayKey);
 };
 
