@@ -35,7 +35,7 @@ import {
 } from "@/services/apiWrapper";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 
 /* ================= TYPES ================= */
 

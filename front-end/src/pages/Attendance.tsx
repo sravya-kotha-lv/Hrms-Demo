@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -22,10 +22,11 @@ import {
   HoverCardTrigger
 } from "@/components/ui/hover-card";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
-import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
+import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowUpDown } from "lucide-react";
 
 type DayCell = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
@@ -78,6 +79,13 @@ type AttendanceSnapshot = {
   checkInSelfieProvided?: boolean;
   checkInSelfieImage?: string | null;
 } | null;
+
+type MatrixPagination = {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
 
 const toEmployeeIdString = (value: unknown): string => {
   if (!value) return "";
@@ -160,6 +168,24 @@ const emptyCell: DayCell = {
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
+const toOrgDateKey = (value: string | number | Date) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: getOrgTimeZone(),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(value));
+  const read = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value || "00";
+  return `${read("year")}-${read("month")}-${read("day")}`;
+};
+
+const mergeAttendancePages = (existing: EmployeeRow[], incoming: EmployeeRow[]) => {
+  const merged = new Map<string, EmployeeRow>();
+  existing.forEach((row) => merged.set(toEmployeeIdString(row.employeeId), row));
+  incoming.forEach((row) => merged.set(toEmployeeIdString(row.employeeId), row));
+  return Array.from(merged.values());
+};
+
 const Attendance = () => {
   const { hasAnyPermission, profile } = useAuth();
   const canViewAll = hasAnyPermission(["ATTENDANCE_VIEW_ALL"]);
@@ -173,7 +199,16 @@ const Attendance = () => {
   const [rows, setRows] = useState<EmployeeRow[]>([]);
   const [daysInMonth, setDaysInMonth] = useState(31);
   const [loading, setLoading] = useState(false);
-  const [visibleRowCount, setVisibleRowCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [pagination, setPagination] = useState<MatrixPagination | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState<"employeeCode" | "firstName">("employeeCode");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const tableViewportRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
+  const resetPaginationRef = useRef(false);
 
   const [open, setOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
@@ -189,15 +224,16 @@ const Attendance = () => {
   const [history, setHistory] = useState<AttendanceHistoryItem[]>([]);
   const [selectedAttendanceSnapshot, setSelectedAttendanceSnapshot] = useState<AttendanceSnapshot>(null);
 
-  const fetchMatrix = async () => {
+  const fetchMatrix = useCallback(async () => {
     if (!canView) {
       setRows([]);
       return;
     }
     try {
-      setLoading(true);
+      if (currentPage > 1) setLoadingMore(true);
+      else setLoading(true);
       const endpoint = canViewAll
-        ? `/timesheets/attendance/matrix?month=${month}`
+        ? `/timesheets/attendance/matrix?month=${month}&page=${currentPage}&limit=${pageSize}&search=${encodeURIComponent(searchTerm.trim())}&sortBy=${sortBy}&sortOrder=${sortOrder}`
         : `/timesheets/attendance/matrix/my?month=${month}`;
       const permission = canViewAll ? ["ATTENDANCE_VIEW_ALL"] : ["ATTENDANCE_VIEW_SELF"];
 
@@ -215,77 +251,81 @@ const Attendance = () => {
         employeeId: toEmployeeIdString(employee.employeeId)
       }));
 
-      setRows(nextRows);
+      setRows((prev) => (canViewAll && currentPage > 1 ? mergeAttendancePages(prev, nextRows) : nextRows));
       setDaysInMonth(res.data?.daysInMonth || 31);
-      setSelectedEmployeeIds((prev) => {
-        const validIds = new Set(nextRows.map((e: EmployeeRow) => e.employeeId));
-        return prev.filter((id) => validIds.has(id));
-      });
+      setPagination(res.data?.pagination || null);
+      if (currentPage === 1) {
+        setSelectedEmployeeIds((prev) => {
+          const validIds = new Set(nextRows.map((e: EmployeeRow) => e.employeeId));
+          return prev.filter((id) => validIds.has(id));
+        });
+      }
     } finally {
+      loadingMoreRef.current = false;
       setLoading(false);
+      setLoadingMore(false);
     }
+  }, [canView, currentPage, canViewAll, month, pageSize, searchTerm, sortBy, sortOrder]);
+
+  useEffect(() => {
+    resetPaginationRef.current = true;
+    loadingMoreRef.current = false;
+    if (tableViewportRef.current) {
+      tableViewportRef.current.scrollTop = 0;
+    }
+    setCurrentPage(1);
+    setRows([]);
+  }, [month, pageSize, searchTerm, sortBy, sortOrder]);
+
+  useEffect(() => {
+    if (resetPaginationRef.current && currentPage !== 1) {
+      return;
+    }
+    if (resetPaginationRef.current && currentPage === 1) {
+      resetPaginationRef.current = false;
+    }
+    fetchMatrix();
+  }, [currentPage, fetchMatrix]);
+  const filteredRows = useMemo(() => rows || [], [rows]);
+  const visibleRows = filteredRows;
+
+  const hasMoreRows = Boolean(canViewAll && pagination && pagination.page < pagination.totalPages);
+
+  const handleMatrixScroll = () => {
+    const viewport = tableViewportRef.current;
+    if (!viewport || loading || loadingMore || loadingMoreRef.current || !hasMoreRows) return;
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    if (scrollTop <= 0 || scrollHeight <= clientHeight) return;
+    const progress = (scrollTop + clientHeight) / scrollHeight;
+    if (progress < 0.5) return;
+    loadingMoreRef.current = true;
+    setCurrentPage((prev) => {
+      if (!pagination || prev >= pagination.totalPages) {
+        loadingMoreRef.current = false;
+        return prev;
+      }
+      return prev + 1;
+    });
   };
 
-  useEffect(() => {
-    fetchMatrix();
-  }, [month, canViewAll, canViewSelf]);
-
-  const filteredRows = useMemo(() => {
-    return (rows || []).filter((r) => {
-      const name = `${r.firstName || ""} ${r.lastName || ""}`.trim().toLowerCase();
-      const code = (r.employeeCode || "").toLowerCase();
-      const q = search.toLowerCase();
-      return name.includes(q) || code.includes(q);
-    });
-  }, [rows, search]);
-
-  const filteredRowIds = useMemo(
-    () => filteredRows.map((row) => toEmployeeIdString(row.employeeId)).join("|"),
-    [filteredRows]
-  );
-
-  useEffect(() => {
-    if (loading) {
-      setVisibleRowCount(0);
+  const toggleSort = (field: "employeeCode" | "firstName") => {
+    if (field === "firstName" && sortBy === "employeeCode") {
+      setSortBy("firstName");
+      setSortOrder("asc");
       return;
     }
-    if (filteredRows.length === 0) {
-      setVisibleRowCount(0);
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
       return;
     }
-
-    let cancelled = false;
-    let frameId: number | null = null;
-    let count = 0;
-
-    const reveal = () => {
-      if (cancelled) return;
-      count += 1;
-      setVisibleRowCount(count);
-      if (count < filteredRows.length) {
-        frameId = window.requestAnimationFrame(reveal);
-      }
-    };
-
-    frameId = window.requestAnimationFrame(reveal);
-
-    return () => {
-      cancelled = true;
-      if (frameId !== null) window.cancelAnimationFrame(frameId);
-    };
-  }, [loading, filteredRows.length, filteredRowIds, search, month]);
-
-  const visibleRows = useMemo(
-    () => filteredRows.slice(0, Math.min(visibleRowCount, filteredRows.length)),
-    [filteredRows, visibleRowCount]
-  );
+    setSortBy(field);
+    setSortOrder("asc");
+  };
 
   const isFutureDay = (day: number) => {
-    const date = new Date(`${month}-${String(day).padStart(2, "0")}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return date.getTime() > today.getTime();
+    const dateKey = `${month}-${String(day).padStart(2, "0")}`;
+    const todayKey = toOrgDateKey(new Date());
+    return dateKey > todayKey;
   };
 
   const openCellDetails = async (row: EmployeeRow, day: number) => {
@@ -425,14 +465,6 @@ const Attendance = () => {
   };
 
   const getCellUi = (cell: DayCell, isFuture = false) => {
-    if (isFuture) {
-      return {
-        label: "Not Marked",
-        shortLabel: "-",
-        className: "bg-slate-100 text-slate-500 border-slate-200"
-      };
-    }
-
     const isFullDayPresent = cell.status === "full_day_present";
     const isHalfDayPresent = cell.status === "half_day_present";
     const isPresent = isPresentLikeStatus(cell.status);
@@ -461,6 +493,13 @@ const Attendance = () => {
         label: "Week Off",
         shortLabel: "W",
         className: "bg-sky-100 text-sky-700 border-sky-300"
+      };
+    }
+    if (isFuture) {
+      return {
+        label: "Not Marked",
+        shortLabel: "-",
+        className: "bg-slate-100 text-slate-500 border-slate-200"
       };
     }
     if (isLeave) {
@@ -877,7 +916,11 @@ const Attendance = () => {
                     <Input
                       placeholder="Search employee..."
                       value={search}
-                      onChange={(e) => setSearch(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setSearch(value);
+                        setSearchTerm(value);
+                      }}
                       className="w-full sm:w-72 bg-white/90"
                     />
                     <Button variant="outline" className="bg-white/90" onClick={fetchMatrix}>
@@ -926,8 +969,12 @@ const Attendance = () => {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white/95 shadow-sm overflow-hidden">
-                <div className="max-h-[72vh] overflow-auto">
+              <div className="rounded-2xl border border-slate-200 bg-white/95 shadow-sm overflow-hidden flex flex-col min-h-0 lg:h-[calc(100vh-290px)]">
+                <div
+                  ref={tableViewportRef}
+                  onScroll={handleMatrixScroll}
+                  className="min-h-0 flex-1 overflow-y-auto overflow-x-auto"
+                >
                   <table className="w-full border-collapse min-w-[1100px]">
                   <thead>
                     <tr className="border-b border-slate-200">
@@ -937,7 +984,18 @@ const Attendance = () => {
                         </th>
                       )}
                       <th className={`sticky ${canEdit ? "left-[48px]" : "left-0"} top-0 bg-white/95 backdrop-blur text-left p-3 min-w-[220px] z-30 text-slate-700`}>
-                        Employee
+                        <button
+                          type="button"
+                          onClick={() => toggleSort("firstName")}
+                          className="inline-flex items-center gap-1 font-semibold"
+                          title="Default sort is employee ID. Click to sort by employee name."
+                        >
+                          <span>Employee</span>
+                          <ArrowUpDown className={`h-3.5 w-3.5 ${sortBy === "employeeCode" || sortBy === "firstName" ? "opacity-100" : "opacity-40"}`} />
+                        </button>
+                        <div className="text-[11px] font-normal text-slate-500">
+                          Sorted by {sortBy === "employeeCode" ? "Employee ID" : "Employee Name"} ({sortOrder})
+                        </div>
                       </th>
                       {Array.from({ length: daysInMonth }).map((_, idx) => (
                         <th key={idx + 1} className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[42px]">
@@ -973,7 +1031,7 @@ const Attendance = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {loading && (
+                    {loading && rows.length === 0 && (
                       <tr>
                         <td colSpan={daysInMonth + summaryColumnCount + (canEdit ? 1 : 0)} className="p-3">
                           <div className="space-y-2">
@@ -991,7 +1049,7 @@ const Attendance = () => {
                         </td>
                       </tr>
                     )}
-                    {!loading && visibleRows.map((row) => (
+                    {visibleRows.map((row) => (
                       <tr key={row.employeeId} className="border-b border-slate-100 hover:bg-slate-50/55 transition-colors">
                         {canEdit && (
                           <td className="sticky left-0 bg-white p-2 z-20 text-center">
@@ -1070,6 +1128,36 @@ const Attendance = () => {
                   </table>
                 </div>
               </div>
+
+              {canViewAll && pagination && (
+                <div className="border-t border-slate-200 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <span>
+                      Showing {rows.length} of {pagination.total}
+                    </span>
+                    <Select
+                      value={String(pageSize)}
+                      onValueChange={(value) => setPageSize(Number(value))}
+                    >
+                      <SelectTrigger className="h-8 w-[120px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10 rows</SelectItem>
+                        <SelectItem value="20">20 rows</SelectItem>
+                        <SelectItem value="30">30 rows</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {loadingMore
+                      ? "Loading more attendance rows..."
+                      : hasMoreRows
+                        ? "Scroll past 50% to load more"
+                        : "You have reached the end"}
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center gap-2 text-xs mt-3">
                 <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">

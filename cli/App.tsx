@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
 
 import { NavigationContainer, NavigationState } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -17,6 +17,7 @@ import NotificationsScreen from './src/screens/NotificationsScreen';
 import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
 import RoleSwitchScreen from './src/screens/RoleSwitchScreen';
 import AttendanceScreen from './src/screens/AttendanceScreen';
+import { setUnauthorizedHandler } from './src/services/api';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 
 export type RootStackParamList = {
@@ -96,24 +97,13 @@ function EmployeeTabs() {
   const profile = session?.profile || session?.loginData || null;
   const profileImage = profile?.profileImage || profile?.profilePhoto || null;
   const initials =
-    (profile?.firstName?.[0] || '') +
-    (profile?.lastName?.[0] || '') ||
-    profile?.email?.[0] ||
-    'U';
-  const [activeSection, setActiveSection] = useState('Dashboard');
-  const sectionTitles: Record<string, string> = {
-    Attendance: 'Attendance',
-    Leaves: 'Leaves',
-    Dashboard: 'Dashboard',
-    Timesheets: 'Timesheets',
-    Profile: 'Profile',
-  };
-
-  const showGlobalHeader = activeSection !== 'Dashboard';
+    ((profile?.firstName?.[0] || '') + (profile?.lastName?.[0] || '') ||
+      profile?.email?.[0] ||
+      'U')
+      .toUpperCase();
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#010213' }}>
-      {showGlobalHeader && <SectionHeader title={sectionTitles[activeSection] || 'Dashboard'} />}
+    <View style={{ flex: 1, backgroundColor: '#eef2ff' }}>
       <Tabs.Navigator
         initialRouteName="Dashboard"
         screenOptions={{
@@ -135,14 +125,6 @@ function EmployeeTabs() {
           shadowRadius: 20,
           shadowOffset: { width: 0, height: 12 },
         paddingBottom: Platform.OS === 'ios' ? 12 : 8,
-      },
-    }}
-    screenListeners={{
-      state: (event: { data: { state?: NavigationState } }) => {
-        const nextState = event.data.state;
-        const index = nextState?.index ?? 0;
-        const routeName = nextState?.routeNames?.[index] ?? 'Dashboard';
-        setActiveSection(routeName);
       },
     }}
     >
@@ -291,55 +273,29 @@ const styles = StyleSheet.create({
   tabDotActive: {
     backgroundColor: '#7dd3fc',
   },
+  profileImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  profileInitials: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
 });
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <View
-      style={{
-        paddingHorizontal: 16,
-        paddingTop: Platform.OS === 'ios' ? 48 : 32,
-        paddingBottom: 16,
-        backgroundColor: '#010213',
-      }}
-    >
-      <View
-        style={{
-          backgroundColor: '#0f172a',
-          borderRadius: 999,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingVertical: 10,
-          paddingHorizontal: 18,
-          shadowColor: '#030712',
-          shadowOpacity: 0.8,
-          shadowRadius: 20,
-          elevation: 10,
-        }}
-      >
-        <Text style={{ color: '#e2e8f0', fontSize: 18, fontWeight: '600' }}>{title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View
-            style={{
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-              borderRadius: 999,
-              backgroundColor: 'rgba(255,255,255,0.08)',
-            }}
-          >
-            <Text style={{ color: '#cbd5f5', fontSize: 12 }}>Organization</Text>
-          </View>
-          <MaterialCommunityIcons name="bell-outline" size={18} color="#e2e8f0" />
-          <MaterialCommunityIcons name="account-circle" size={28} color="#e2e8f0" />
-        </View>
-      </View>
-    </View>
-  );
-}
-
 function AppNavigator() {
-  const { session } = useAuth();
+  const { session, logout, setSessionExpiredMessage } = useAuth();
+
+  useEffect(() => {
+    const handler = () => {
+      setSessionExpiredMessage('Your session has expired. Please log in again.');
+      logout();
+    };
+    setUnauthorizedHandler(handler);
+    return () => setUnauthorizedHandler(null);
+  }, [logout, setSessionExpiredMessage]);
 
   return (
     <NavigationContainer>

@@ -21,7 +21,7 @@ import {
   postApiWithToken,
   putApiWithToken
 } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 
 type JobStatus = "draft" | "open" | "on_hold" | "closed";
 type CandidateStage = "applied" | "screening" | "interview" | "offer" | "hired" | "rejected";

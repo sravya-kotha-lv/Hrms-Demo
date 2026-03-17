@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { motion } from "framer-motion";
 import {
@@ -66,6 +66,80 @@ type CheckInPolicy = {
   attendanceSelfieRequired: boolean;
   attendanceGeoFenceEnabled: boolean;
   attendanceGeoRadiusMeters: number;
+};
+
+type WeeklyEntry = {
+  date?: string;
+  hours?: number;
+  notes?: string;
+};
+
+type PersonSummary = {
+  _id?: string;
+  firstName?: string;
+  lastName?: string;
+  employeeCode?: string;
+};
+
+type OnlineEmployee = {
+  _id?: string;
+  employeeId?: PersonSummary | null;
+};
+
+type LeaveBalance = {
+  leaveTypeId?: string;
+  leaveType?: string;
+  remaining?: number;
+  total?: number;
+  used?: number;
+  pending?: number;
+};
+
+type EmployeeLeave = {
+  _id?: string;
+  status?: string;
+  fromDate?: string;
+  toDate?: string;
+  leaveTypeName?: string;
+  leaveTypeId?: { name?: string } | null;
+};
+
+type EmployeeNotification = {
+  _id?: string;
+  title?: string;
+  message?: string;
+};
+
+type HolidayItem = {
+  _id?: string;
+  name?: string;
+  date?: string;
+};
+
+type UpcomingEvent = {
+  employeeId?: string;
+  eventDate?: string;
+  daysAway?: number;
+  years?: number;
+  name?: string;
+};
+
+type MyProfile = {
+  profileCompleted?: boolean;
+  phone?: string;
+  dob?: string;
+  gender?: string;
+  address?: { line1?: string } | null;
+  emergencyContacts?: unknown[];
+};
+
+type TimesheetSummary = {
+  status?: string;
+  entries?: WeeklyEntry[];
+};
+
+type AttendanceTodayRecord = AttendanceDay & {
+  lateByMinutes?: number;
 };
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -162,22 +236,22 @@ const EmployeeDashboard = () => {
 
   const [weeklyStatus, setWeeklyStatus] = useState<string | null>(null);
   const [weeklyHours, setWeeklyHours] = useState<number>(0);
-  const [weeklyEntries, setWeeklyEntries] = useState<any[]>([]);
-  const [onlineList, setOnlineList] = useState<any[]>([]);
-  const [onLeaveList, setOnLeaveList] = useState<any[]>([]);
-  const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
-  const [leaveBalances, setLeaveBalances] = useState<any[]>([]);
-  const [myLeaves, setMyLeaves] = useState<any[]>([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [upcomingHolidays, setUpcomingHolidays] = useState<any[]>([]);
+  const [weeklyEntries, setWeeklyEntries] = useState<WeeklyEntry[]>([]);
+  const [onlineList, setOnlineList] = useState<OnlineEmployee[]>([]);
+  const [onLeaveList, setOnLeaveList] = useState<OnlineEmployee[]>([]);
+  const [attendanceToday, setAttendanceToday] = useState<AttendanceTodayRecord | null>(null);
+  const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
+  const [myLeaves, setMyLeaves] = useState<EmployeeLeave[]>([]);
+  const [notifications, setNotifications] = useState<EmployeeNotification[]>([]);
+  const [upcomingHolidays, setUpcomingHolidays] = useState<HolidayItem[]>([]);
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
-  const [upcomingEvents, setUpcomingEvents] = useState<{ birthdays: any[]; anniversaries: any[] }>({
+  const [upcomingEvents, setUpcomingEvents] = useState<{ birthdays: UpcomingEvent[]; anniversaries: UpcomingEvent[] }>({
     birthdays: [],
     anniversaries: []
   });
   const [matrixDays, setMatrixDays] = useState<Record<number, AttendanceDay>>({});
   const [daysInMonth, setDaysInMonth] = useState<number>(31);
-  const [myProfile, setMyProfile] = useState<any>(null);
+  const [myProfile, setMyProfile] = useState<MyProfile | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -194,7 +268,7 @@ const EmployeeDashboard = () => {
 
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
 
-  const loadDashboard = async (silent = false) => {
+  const loadDashboard = useCallback(async (silent = false) => {
     if (!silent) setDashboardLoading(true);
     const todayIso = toDateInput(new Date());
     const weekStartIso = toDateInput(weekStart);
@@ -245,10 +319,7 @@ const EmployeeDashboard = () => {
       setWeeklyStatus(weeklyRes.data.status || "draft");
       const entries = weeklyRes.data.entries || [];
       setWeeklyEntries(entries);
-      const total = entries.reduce(
-        (sum: number, e: any) => sum + (Number(e.hours) || 0),
-        0
-      );
+          const total = entries.reduce((sum: number, e: WeeklyEntry) => sum + (Number(e.hours) || 0), 0);
       setWeeklyHours(total);
     } else {
       setWeeklyStatus(null);
@@ -272,7 +343,7 @@ const EmployeeDashboard = () => {
     if (holidayRes?.success) {
       const now = new Date();
       const upcoming = (holidayRes.data || [])
-        .filter((h: any) => new Date(h.date) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()))
+        .filter((h: HolidayItem) => new Date(h.date || "") >= new Date(now.getFullYear(), now.getMonth(), now.getDate()))
         .slice(0, 6);
       setUpcomingHolidays(upcoming);
     } else {
@@ -309,7 +380,7 @@ const EmployeeDashboard = () => {
       });
     }
     if (!silent) setDashboardLoading(false);
-  };
+  }, [weekStart]);
 
   useEffect(() => {
     loadDashboard();
@@ -317,7 +388,7 @@ const EmployeeDashboard = () => {
       loadDashboard(true);
     }, 30000);
     return () => window.clearInterval(timer);
-  }, [weekStart]);
+  }, [loadDashboard]);
 
   const monthlySummary = useMemo(() => {
     let present = 0;
@@ -349,11 +420,11 @@ const EmployeeDashboard = () => {
   }, [matrixDays, daysInMonth]);
 
   const pendingLeaves = useMemo(
-    () => (myLeaves || []).filter((l: any) => l.status === "pending").length,
+    () => (myLeaves || []).filter((l) => l.status === "pending").length,
     [myLeaves]
   );
   const pendingLeaveItems = useMemo(
-    () => (myLeaves || []).filter((l: any) => l.status === "pending"),
+    () => (myLeaves || []).filter((l) => l.status === "pending"),
     [myLeaves]
   );
 
@@ -376,7 +447,7 @@ const EmployeeDashboard = () => {
   }, [myProfile]);
 
   const totalLeaveRemaining = useMemo(
-    () => (leaveBalances || []).reduce((sum: number, b: any) => sum + Number(b.remaining || 0), 0),
+    () => (leaveBalances || []).reduce((sum: number, b) => sum + Number(b.remaining || 0), 0),
     [leaveBalances]
   );
 
@@ -402,7 +473,7 @@ const EmployeeDashboard = () => {
       const dayKey = toDateInput(dayDate);
 
       const dayName = dayNames[dayDate.getDay()];
-      const entryForDay = (weeklyEntries || []).find((e: any) => {
+      const entryForDay = (weeklyEntries || []).find((e) => {
         if (!e?.date) return false;
         return toDateInput(new Date(e.date)) === dayKey;
       });
@@ -449,7 +520,7 @@ const EmployeeDashboard = () => {
       completedIncludingToday,
       dayRows
     };
-  }, [weeklyEntries, attendanceToday]);
+  }, [weeklyEntries, attendanceToday, matrixDays]);
 
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
@@ -461,13 +532,37 @@ const EmployeeDashboard = () => {
   const checkOutTimeText = attendanceToday?.checkOutAt
     ? formatTimeInOrgTimeZone(attendanceToday.checkOutAt)
     : "-";
+  const statusHeroClassName = isCheckedOut
+    ? "border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(220,252,231,0.84)_42%,rgba(255,255,255,0.98))]"
+    : isCheckedIn
+      ? "border-amber-200/80 bg-[linear-gradient(135deg,rgba(255,251,235,0.98),rgba(254,243,199,0.84)_42%,rgba(255,255,255,0.98))]"
+      : "border-sky-200/80 bg-[linear-gradient(135deg,rgba(239,246,255,0.98),rgba(224,242,254,0.84)_42%,rgba(255,255,255,0.98))]";
+  const balanceCardClassName =
+    "stat-card border-emerald-200/70 bg-[linear-gradient(135deg,rgba(236,253,245,0.92),rgba(209,250,229,0.72)_48%,rgba(255,255,255,0.96))]";
+  const weeklyCardClassName =
+    "stat-card border-blue-200/70 bg-[linear-gradient(135deg,rgba(239,246,255,0.94),rgba(219,234,254,0.78)_48%,rgba(255,255,255,0.96))]";
+  const teamCardClassName =
+    "stat-card border-violet-200/70 bg-[linear-gradient(135deg,rgba(245,243,255,0.94),rgba(233,213,255,0.72)_48%,rgba(255,255,255,0.96))]";
+  const pendingCardClassName =
+    "stat-card border-amber-200/70 bg-[linear-gradient(135deg,rgba(255,251,235,0.94),rgba(254,243,199,0.76)_48%,rgba(255,255,255,0.96))]";
+  const panelGradientClassName =
+    "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96)_100%)]";
+  const softInsetClassName =
+    "bg-[linear-gradient(135deg,rgba(255,255,255,0.82),rgba(248,250,252,0.72))]";
+  const secondaryHeroButtonClassName =
+    "h-10 rounded-xl border-white/70 bg-white/75 px-4 text-slate-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900";
+  const primaryHeroButtonClassName = isCheckedOut
+    ? "h-10 rounded-xl border-emerald-700 bg-[linear-gradient(135deg,#047857,#10b981)] px-4 text-white shadow-[0_10px_24px_rgba(16,185,129,0.24)] transition hover:brightness-105"
+    : isCheckedIn
+      ? "h-10 rounded-xl border-amber-700 bg-[linear-gradient(135deg,#b45309,#f59e0b)] px-4 text-white shadow-[0_10px_24px_rgba(245,158,11,0.24)] transition hover:brightness-105"
+      : "h-10 rounded-xl border-sky-700 bg-[linear-gradient(135deg,#1d4ed8,#2563eb)] px-4 text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:brightness-105";
 
   const lateFlag = useMemo(() => {
     return Number(attendanceToday?.lateByMinutes || 0) > 0;
   }, [attendanceToday]);
 
   const handleCheckIn = async () => {
-    const payload: Record<string, any> = {};
+    const payload: Record<string, unknown> = {};
 
     if (checkInPolicy.attendanceGeoFenceEnabled) {
       if (!navigator.geolocation) {
@@ -605,11 +700,12 @@ const EmployeeDashboard = () => {
       ) : (
       <>
       <motion.div
-        className="rounded-2xl border bg-gradient-to-r from-background to-muted/40 p-5"
+        className={`relative overflow-hidden rounded-2xl border p-5 shadow-sm ${statusHeroClassName}`}
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-48 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.74),transparent_72%)]" />
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
               <CalendarCheck className="w-4 h-4" />
@@ -627,26 +723,36 @@ const EmployeeDashboard = () => {
                 Session is open and excluded from payroll until check-out.
               </p>
             )}
+            {isCheckedOut && (
+              <p className="text-xs text-emerald-700 mt-1">
+                Check-in is allowed only once today. You can update the checkout time again if needed.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <PermissionGate permissions={["TIMESHEET_CHECKIN_SELF"]}>
-              <Button onClick={handleCheckIn} disabled={hasCheckedInToday || checkinLoading}>
+              <Button className={primaryHeroButtonClassName} onClick={handleCheckIn} disabled={hasCheckedInToday || checkinLoading}>
                 <LogIn className="w-4 h-4 mr-2" /> Check In
               </Button>
             </PermissionGate>
             <PermissionGate permissions={["TIMESHEET_CHECKOUT_SELF"]}>
-              <Button variant="outline" onClick={handleCheckOut} disabled={!hasCheckedInToday || checkoutLoading}>
+              <Button
+                variant="outline"
+                className={secondaryHeroButtonClassName}
+                onClick={handleCheckOut}
+                disabled={!hasCheckedInToday || checkoutLoading}
+              >
                 <LogOut className="w-4 h-4 mr-2" /> Check Out
               </Button>
             </PermissionGate>
-            <Button variant="outline" onClick={() => navigate("/leave/apply")}>Apply Leave</Button>
-            <Button variant="outline" onClick={() => navigate("/timesheets")}>Timesheet</Button>
+            <Button variant="outline" className={secondaryHeroButtonClassName} onClick={() => navigate("/leave/apply")}>Apply Leave</Button>
+            <Button variant="outline" className={secondaryHeroButtonClassName} onClick={() => navigate("/timesheets")}>Timesheet</Button>
           </div>
         </div>
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-5">
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+        <motion.div className={balanceCardClassName} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <ClipboardCheck className="w-4 h-4" /> Leave Balance
           </div>
@@ -657,7 +763,7 @@ const EmployeeDashboard = () => {
         <motion.button
           type="button"
           onClick={() => setWeeklyDialogOpen(true)}
-          className="stat-card text-left"
+          className={`${weeklyCardClassName} text-left`}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
@@ -674,7 +780,7 @@ const EmployeeDashboard = () => {
         <motion.button
           type="button"
           onClick={() => setOnlineDialogOpen(true)}
-          className="stat-card text-left"
+          className={`${teamCardClassName} text-left`}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
@@ -689,7 +795,7 @@ const EmployeeDashboard = () => {
         <motion.button
           type="button"
           onClick={() => setPendingDialogOpen(true)}
-          className="stat-card text-left"
+          className={`${pendingCardClassName} text-left`}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
@@ -711,15 +817,15 @@ const EmployeeDashboard = () => {
 
         <TabsContent value="overview" className="mt-4">
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <motion.div className="stat-card xl:col-span-2" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.div className={`stat-card xl:col-span-2 ${panelGradientClassName}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">Latest Notifications</h3>
                 <Bell className="w-4 h-4 text-muted-foreground" />
               </div>
               <div className="space-y-2 max-h-64 overflow-auto custom-scroll pr-1">
                 {notifications.length === 0 && <p className="text-sm text-muted-foreground">No notifications</p>}
-                {notifications.map((n: any) => (
-                  <div key={n._id} className="p-3 rounded-lg border bg-background">
+                {notifications.map((n) => (
+                  <div key={n._id} className={`rounded-lg border p-3 ${softInsetClassName}`}>
                     <p className="text-sm font-medium">{n.title}</p>
                     <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
                   </div>
@@ -727,7 +833,7 @@ const EmployeeDashboard = () => {
               </div>
             </motion.div>
 
-            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+            <motion.div className={`stat-card ${panelGradientClassName}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-semibold">Profile Completion</h3>
                 <Clock3 className="w-4 h-4 text-muted-foreground" />
@@ -750,18 +856,18 @@ const EmployeeDashboard = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.div className={`stat-card ${panelGradientClassName}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">Team Snapshot</h3>
                 <Badge variant="outline">Today</Badge>
               </div>
               <div className="text-sm space-y-2">
-                <div className="p-2 rounded-lg bg-muted/40">Online now: <span className="font-semibold">{onlineList.length}</span></div>
-                <div className="p-2 rounded-lg bg-muted/40">On leave today: <span className="font-semibold">{onLeaveList.length}</span></div>
+                <div className={`rounded-lg p-2 ${softInsetClassName}`}>Online now: <span className="font-semibold">{onlineList.length}</span></div>
+                <div className={`rounded-lg p-2 ${softInsetClassName}`}>On leave today: <span className="font-semibold">{onLeaveList.length}</span></div>
               </div>
             </motion.div>
 
-            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+            <motion.div className={`stat-card ${panelGradientClassName}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
               <div className="flex items-center gap-2 mb-3">
                 <CalendarDays className="w-4 h-4 text-muted-foreground" />
                 <h3 className="font-semibold">Next 7 Days Events</h3>
@@ -773,8 +879,8 @@ const EmployeeDashboard = () => {
                     {(upcomingEvents.birthdays || []).length === 0 && (
                       <p className="text-xs text-muted-foreground">No upcoming birthdays</p>
                     )}
-                    {(upcomingEvents.birthdays || []).slice(0, 4).map((e: any) => (
-                      <div key={`eb-${e.employeeId}-${e.eventDate}`} className="text-xs p-2 rounded bg-muted/40 flex items-center justify-between">
+                    {(upcomingEvents.birthdays || []).slice(0, 4).map((e) => (
+                      <div key={`eb-${e.employeeId}-${e.eventDate}`} className={`flex items-center justify-between rounded p-2 text-xs ${softInsetClassName}`}>
                         <span>{e.name}</span>
                         <span className="text-muted-foreground">
                           {formatDateInOrgTimeZone(e.eventDate)} ({e.daysAway === 0 ? "Today" : `${e.daysAway}d`})
@@ -789,8 +895,8 @@ const EmployeeDashboard = () => {
                     {(upcomingEvents.anniversaries || []).length === 0 && (
                       <p className="text-xs text-muted-foreground">No upcoming anniversaries</p>
                     )}
-                    {(upcomingEvents.anniversaries || []).slice(0, 4).map((e: any) => (
-                      <div key={`ea-${e.employeeId}-${e.eventDate}`} className="text-xs p-2 rounded bg-muted/40 flex items-center justify-between">
+                    {(upcomingEvents.anniversaries || []).slice(0, 4).map((e) => (
+                      <div key={`ea-${e.employeeId}-${e.eventDate}`} className={`flex items-center justify-between rounded p-2 text-xs ${softInsetClassName}`}>
                         <span>{e.name}</span>
                         <span className="text-muted-foreground">
                           {formatDateInOrgTimeZone(e.eventDate)} ({e.years}y)
@@ -805,21 +911,21 @@ const EmployeeDashboard = () => {
         </TabsContent>
 
         <TabsContent value="attendance" className="mt-4 space-y-4">
-          <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+          <motion.div className={`stat-card ${panelGradientClassName}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">Attendance Summary</h3>
               <Button variant="outline" size="sm" onClick={() => navigate("/attendance")}>Open Attendance</Button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
-              <div className="p-2 rounded-lg bg-muted/40">Present: <span className="font-semibold">{monthlySummary.present}</span></div>
-              <div className="p-2 rounded-lg bg-muted/40">Pending: <span className="font-semibold">{monthlySummary.pendingCheckout}</span></div>
-              <div className="p-2 rounded-lg bg-muted/40">Absent: <span className="font-semibold">{monthlySummary.absent}</span></div>
-              <div className="p-2 rounded-lg bg-muted/40">On Leave: <span className="font-semibold">{monthlySummary.onLeave}</span></div>
-              <div className="p-2 rounded-lg bg-muted/40">Week Off: <span className="font-semibold">{monthlySummary.weekOff}</span></div>
+              <div className={`rounded-lg p-2 ${softInsetClassName}`}>Present: <span className="font-semibold">{monthlySummary.present}</span></div>
+              <div className={`rounded-lg p-2 ${softInsetClassName}`}>Pending: <span className="font-semibold">{monthlySummary.pendingCheckout}</span></div>
+              <div className={`rounded-lg p-2 ${softInsetClassName}`}>Absent: <span className="font-semibold">{monthlySummary.absent}</span></div>
+              <div className={`rounded-lg p-2 ${softInsetClassName}`}>On Leave: <span className="font-semibold">{monthlySummary.onLeave}</span></div>
+              <div className={`rounded-lg p-2 ${softInsetClassName}`}>Week Off: <span className="font-semibold">{monthlySummary.weekOff}</span></div>
             </div>
           </motion.div>
 
-          <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+          <motion.div className={`stat-card ${panelGradientClassName}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold">Monthly Attendance Calendar</h3>
               <Badge variant="outline">{formatDateTimeInOrgTimeZone(new Date(), { month: "long", year: "numeric" })}</Badge>
@@ -877,15 +983,15 @@ const EmployeeDashboard = () => {
 
         <TabsContent value="planning" className="mt-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.div className={`stat-card ${panelGradientClassName}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
               <div className="flex items-center gap-2 mb-3">
                 <ClipboardCheck className="w-4 h-4 text-muted-foreground" />
                 <h3 className="font-semibold">Leave Balances</h3>
               </div>
               <div className="space-y-2">
                 {leaveBalances.length === 0 && <p className="text-sm text-muted-foreground">No balances found</p>}
-                {leaveBalances.map((b: any) => (
-                  <div key={b.leaveTypeId} className="p-2 rounded-lg border">
+                {leaveBalances.map((b) => (
+                  <div key={b.leaveTypeId} className={`rounded-lg border p-2 ${softInsetClassName}`}>
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium">{b.leaveType}</span>
                       <span>{Number(b.remaining || 0).toFixed(1)}/{Number(b.total || 0).toFixed(1)}</span>
@@ -898,15 +1004,15 @@ const EmployeeDashboard = () => {
               </div>
             </motion.div>
 
-            <motion.div className="stat-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+            <motion.div className={`stat-card ${panelGradientClassName}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
               <div className="flex items-center gap-2 mb-3">
                 <CalendarDays className="w-4 h-4 text-muted-foreground" />
                 <h3 className="font-semibold">Upcoming Holidays</h3>
               </div>
               <div className="space-y-2">
                 {upcomingHolidays.length === 0 && <p className="text-sm text-muted-foreground">No upcoming holidays</p>}
-                {upcomingHolidays.map((h: any) => (
-                  <div key={h._id} className="flex items-center justify-between text-sm p-2 rounded-lg bg-muted/40">
+                {upcomingHolidays.map((h) => (
+                  <div key={h._id} className={`flex items-center justify-between rounded-lg p-2 text-sm ${softInsetClassName}`}>
                     <span>{h.name}</span>
                     <span className="text-muted-foreground">{formatDateInOrgTimeZone(h.date)}</span>
                   </div>
@@ -935,7 +1041,7 @@ const EmployeeDashboard = () => {
             {onlineList.length === 0 && (
               <p className="text-sm text-muted-foreground">No employees are online right now.</p>
             )}
-            {onlineList.map((item: any) => (
+            {onlineList.map((item) => (
               <div key={item._id} className="flex items-center justify-between text-sm p-2 rounded-lg border bg-background">
                 <span>{item.employeeId?.firstName} {item.employeeId?.lastName}</span>
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
@@ -955,7 +1061,7 @@ const EmployeeDashboard = () => {
               <p className="text-sm text-muted-foreground">No pending requests.</p>
             )}
 
-            {pendingLeaveItems.map((leave: any) => (
+            {pendingLeaveItems.map((leave) => (
               <div key={leave._id} className="p-2 rounded-lg border bg-background text-sm">
                 <p className="font-medium">
                   Leave: {leave.leaveTypeName || leave.leaveTypeId?.name || "Leave Request"}
@@ -1001,7 +1107,7 @@ const EmployeeDashboard = () => {
             <div className="mt-3">
               <p className="text-xs font-medium text-muted-foreground mb-2">Sunday to Saturday</p>
               <div className="space-y-1">
-                {weeklyProgress.dayRows.map((row: any) => (
+                {weeklyProgress.dayRows.map((row) => (
                   <div key={row.dayName} className="flex items-center justify-between p-2 rounded-lg border bg-background">
                     <div>
                       <p className="font-medium">{row.dayName}</p>

@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { getApiWithToken, postApiWithToken, putApiWithToken, deleteApiWithToken } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 import { toast } from "sonner";
 import { Pencil, Trash2, Plus, Link as LinkIcon, RefreshCw } from "lucide-react";
@@ -96,6 +96,17 @@ const fileToDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const mergeExpensePages = (existing: any[], incoming: any[]) => {
+  const merged = new Map<string, any>();
+  existing.forEach((item) => {
+    if (item?._id) merged.set(String(item._id), item);
+  });
+  incoming.forEach((item) => {
+    if (item?._id) merged.set(String(item._id), item);
+  });
+  return Array.from(merged.values());
+};
+
 const Expenses = () => {
   const { hasAnyPermission } = useAuth();
   const canView = hasAnyPermission(["EXPENSE_VIEW", "EXPENSE_MANAGE"]);
@@ -107,6 +118,7 @@ const Expenses = () => {
   const [vendors, setVendors] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -119,6 +131,13 @@ const Expenses = () => {
   const [isEdit, setIsEdit] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const pageSize = 10;
+  const tableViewportRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
+  const resetPaginationRef = useRef(false);
 
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectExpenseId, setRejectExpenseId] = useState<string | null>(null);
@@ -233,10 +252,13 @@ const Expenses = () => {
 
   const fetchData = async () => {
     if (!canView) return;
-    setLoading(true);
+    const isLoadMoreRequest = currentPage > 1;
+    if (isLoadMoreRequest) setLoadingMore(true);
+    else setLoading(true);
     try {
+      const pagedQuery = `${queryString}${queryString ? "&" : "?"}page=${currentPage}&limit=${pageSize}`;
       const [listRes, summaryRes] = await Promise.all([
-        getApiWithToken(`/expenses${queryString}`, null, {
+        getApiWithToken(`/expenses${pagedQuery}`, null, {
           requiredPermissions: ["EXPENSE_VIEW", "EXPENSE_MANAGE"]
         }),
         getApiWithToken(`/expenses/summary${queryString}`, null, {
@@ -245,7 +267,14 @@ const Expenses = () => {
       ]);
 
       if (listRes?.success) {
-        setRows(listRes.data || []);
+        const payload = listRes.data;
+        const nextRows = Array.isArray(payload) ? payload : (payload?.items || []);
+        const pagination = Array.isArray(payload)
+          ? { page: currentPage, totalPages: 1, total: nextRows.length }
+          : payload?.pagination;
+        setRows((prev) => (currentPage > 1 ? mergeExpensePages(prev, nextRows) : nextRows));
+        setTotalItems(Number(pagination?.total || nextRows.length));
+        setTotalPages(Math.max(1, Number(pagination?.totalPages || 1)));
       } else {
         setRows([]);
         if (listRes && !listRes.skipped) toast.error(listRes?.message || "Failed to load expenses");
@@ -257,13 +286,40 @@ const Expenses = () => {
         setSummary(null);
       }
     } finally {
+      loadingMoreRef.current = false;
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
+    resetPaginationRef.current = true;
+    loadingMoreRef.current = false;
+    if (tableViewportRef.current) {
+      tableViewportRef.current.scrollTop = 0;
+    }
+    setCurrentPage(1);
+    setRows([]);
+  }, [queryString]);
+
+  useEffect(() => {
+    if (resetPaginationRef.current && currentPage !== 1) {
+      return;
+    }
+    if (resetPaginationRef.current && currentPage === 1) {
+      resetPaginationRef.current = false;
+    }
     fetchData();
-  }, [queryString, canView]);
+  }, [queryString, canView, currentPage]);
+
+  const refreshExpenseList = async () => {
+    setRows([]);
+    if (currentPage === 1) {
+      await fetchData();
+      return;
+    }
+    setCurrentPage(1);
+  };
 
   useEffect(() => {
     if (!canView) return;
@@ -357,7 +413,7 @@ const Expenses = () => {
     if (res?.success) {
       toast.success(isEdit ? "Expense updated" : "Expense added");
       setOpen(false);
-      fetchData();
+      refreshExpenseList();
     } else if (!res?.skipped) {
       toast.error(res?.message || "Save failed");
     }
@@ -368,7 +424,7 @@ const Expenses = () => {
     const res = await deleteApiWithToken(`/expenses/${id}`);
     if (res?.success) {
       toast.success("Expense deleted");
-      fetchData();
+      refreshExpenseList();
     } else {
       toast.error(res?.message || "Delete failed");
     }
@@ -383,7 +439,7 @@ const Expenses = () => {
     );
     if (res?.success) {
       toast.success(`Expense ${status}`);
-      fetchData();
+      refreshExpenseList();
     } else if (!res?.skipped) {
       toast.error(res?.message || "Action failed");
     }
@@ -403,7 +459,7 @@ const Expenses = () => {
     );
     if (res?.success) {
       toast.success("Reimbursement status updated");
-      fetchData();
+      refreshExpenseList();
     } else if (!res?.skipped) {
       toast.error(res?.message || "Failed to update reimbursement");
     }
@@ -436,7 +492,7 @@ const Expenses = () => {
     );
     if (res?.success) {
       toast.success("Expense restored");
-      fetchData();
+      refreshExpenseList();
     } else if (!res?.skipped) {
       toast.error(res?.message || "Restore failed");
     }
@@ -503,7 +559,7 @@ const Expenses = () => {
       toast.success(vendorEditId ? "Vendor updated" : "Vendor created");
       setVendorOpen(false);
       fetchVendors();
-      fetchData();
+      refreshExpenseList();
     } else if (!res?.skipped) {
       toast.error(res?.message || "Vendor save failed");
     }
@@ -534,6 +590,25 @@ const Expenses = () => {
   };
 
   const vendorAnalytics = summary?.byVendor || [];
+  const effectiveSummary = summary || computedSummary;
+  const hasMoreExpenses = currentPage < totalPages;
+
+  const handleExpenseTableScroll = () => {
+    const viewport = tableViewportRef.current;
+    if (!viewport || loading || loadingMore || loadingMoreRef.current || !hasMoreExpenses) return;
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    if (scrollTop <= 0 || scrollHeight <= clientHeight) return;
+    const progress = (scrollTop + clientHeight) / scrollHeight;
+    if (progress < 0.5) return;
+    loadingMoreRef.current = true;
+    setCurrentPage((prev) => {
+      if (prev >= totalPages) {
+        loadingMoreRef.current = false;
+        return prev;
+      }
+      return prev + 1;
+    });
+  };
 
   return (
     <MainLayout
@@ -588,19 +663,19 @@ const Expenses = () => {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div className="stat-card">
                   <p className="text-sm text-muted-foreground mb-1">Total Expense</p>
-                  <p className="text-2xl font-bold">{formatMoney(computedSummary.totals.totalAmount)}</p>
+                  <p className="text-2xl font-bold">{formatMoney(effectiveSummary.totals.totalAmount)}</p>
                 </div>
                 <div className="stat-card">
                   <p className="text-sm text-muted-foreground mb-1">Total Tax</p>
-                  <p className="text-2xl font-bold">{formatMoney(computedSummary.totals.totalTax)}</p>
+                  <p className="text-2xl font-bold">{formatMoney(effectiveSummary.totals.totalTax)}</p>
                 </div>
                 <div className="stat-card">
                   <p className="text-sm text-muted-foreground mb-1">Net Spend</p>
-                  <p className="text-2xl font-bold">{formatMoney(computedSummary.totals.netSpend)}</p>
+                  <p className="text-2xl font-bold">{formatMoney(effectiveSummary.totals.netSpend)}</p>
                 </div>
                 <div className="stat-card">
                   <p className="text-sm text-muted-foreground mb-1">This Month Spend</p>
-                  <p className="text-2xl font-bold">{formatMoney(computedSummary.thisMonth.netSpend)}</p>
+                  <p className="text-2xl font-bold">{formatMoney(effectiveSummary.thisMonth.netSpend)}</p>
                 </div>
               </div>
 
@@ -750,7 +825,7 @@ const Expenses = () => {
             <Button variant="outline" onClick={() => { setStartDate(""); setEndDate(""); setCategoryFilter("all"); setStatusFilter("all"); setEmployeeFilter("all"); setReimbursementStatusFilter("all"); setRecordFilter("active"); }}>
               Reset
             </Button>
-            <Button variant="outline" onClick={fetchData} disabled={loading} className="gap-2">
+            <Button variant="outline" onClick={refreshExpenseList} disabled={loading || loadingMore} className="gap-2">
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Refreshing..." : "Refresh"}
             </Button>
@@ -762,6 +837,11 @@ const Expenses = () => {
           </div>
 
           <div className="bg-card rounded-xl card-shadow overflow-hidden">
+            <div
+              ref={tableViewportRef}
+              onScroll={handleExpenseTableScroll}
+              className="max-h-[60vh] overflow-auto"
+            >
             <Table>
               <TableHeader>
                 <TableRow className="table-header">
@@ -780,7 +860,7 @@ const Expenses = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && Array.from({ length: 6 }).map((_, idx) => (
+                {loading && rows.length === 0 && Array.from({ length: 6 }).map((_, idx) => (
                   <TableRow key={`expense-skeleton-${idx}`}>
                     {Array.from({ length: (canManage || canAction) ? 12 : 11 }).map((__, colIdx) => (
                       <TableCell key={colIdx}>
@@ -911,6 +991,17 @@ const Expenses = () => {
                 ))}
               </TableBody>
             </Table>
+            </div>
+            <div className="border-t px-4 py-3 text-sm text-muted-foreground flex items-center justify-between">
+              <span>Showing {rows.length} of {totalItems} expenses</span>
+              <span>
+                {loadingMore
+                  ? "Loading more expenses..."
+                  : hasMoreExpenses
+                    ? "Scroll past 50% to load more"
+                    : "You have reached the end"}
+              </span>
+            </div>
           </div>
         </>
       )}

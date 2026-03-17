@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { MainLayout } from "@/components/layout/MainLayout";
 import {
@@ -53,9 +53,52 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { useNavigate } from "react-router-dom";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
+
+type PersonRef = {
+  _id?: string;
+  firstName?: string;
+  lastName?: string;
+  employeeCode?: string;
+};
+
+type ApprovalStep = {
+  stepNumber?: number;
+  approverType?: "manager" | "role" | "employee";
+  approverRoleSlug?: string;
+  approverEmployeeId?: PersonRef | null;
+  status?: "queued" | "pending" | "approved" | "rejected";
+  actionBy?: PersonRef | null;
+};
+
+type LeaveTypeRef = {
+  _id?: string;
+  name?: string;
+};
+
+type LeaveRecord = {
+  _id?: string;
+  employeeId?: PersonRef | null;
+  leaveTypeId?: LeaveTypeRef | null;
+  leaveTypeName?: string;
+  fromDate?: string;
+  toDate?: string;
+  totalDays?: number;
+  duration?: "full_day" | "half_day";
+  halfDaySession?: "first_half" | "second_half";
+  status?: "pending" | "approved" | "rejected";
+  reason?: string;
+  rejectionReason?: string;
+  approvalSteps?: ApprovalStep[];
+};
+
+type LeaveApplyWindow = {
+  earliestAllowedDateKey?: string;
+  attendanceLockMode?: string;
+  attendanceLockAfterDays?: number;
+};
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -95,40 +138,53 @@ const getLeaveTypeIcon = (type: string) => {
   }
 };
 
-const toActorName = (employee: any) => {
+const toActorName = (employee: PersonRef | null | undefined) => {
   if (!employee) return "-";
   const full = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
   return employee.employeeCode ? `${full || "Employee"} (${employee.employeeCode})` : full || "Employee";
 };
 
-const getStepApproverLabel = (step: any) => {
+const getStepApproverLabel = (step: ApprovalStep | null | undefined) => {
   if (!step) return "-";
   if (step.approverType === "manager") return "Reporting Manager";
   if (step.approverType === "role") return step.approverRoleSlug ? `Role: ${step.approverRoleSlug}` : "Role";
   return step.approverEmployeeId ? `Employee: ${toActorName(step.approverEmployeeId)}` : "Employee";
 };
 
-const getApprovalProgressLabel = (record: any) => {
+const getApprovalProgressLabel = (record: LeaveRecord) => {
   const steps = Array.isArray(record?.approvalSteps) ? record.approvalSteps : [];
   if (!steps.length) return "Single-step";
-  const pending = steps.find((s: any) => s.status === "pending");
+  const pending = steps.find((s) => s.status === "pending");
   if (record?.status === "approved") return `Completed (${steps.length} steps)`;
   if (record?.status === "rejected") {
-    const rejectedStep = steps.find((s: any) => s.status === "rejected");
+    const rejectedStep = steps.find((s) => s.status === "rejected");
     return rejectedStep ? `Rejected at S${rejectedStep.stepNumber}` : "Rejected";
   }
   if (!pending) return "Pending";
   return `S${pending.stepNumber}/${steps.length} • ${getStepApproverLabel(pending)}`;
 };
 
-const toIdString = (value: any) => {
+const toIdString = (value: unknown) => {
   if (!value) return "";
   if (typeof value === "string") return value;
-  if (typeof value === "object" && value._id) return String(value._id);
+  if (typeof value === "object" && value !== null && "_id" in value) return String((value as { _id?: string })._id || "");
   return String(value);
 };
 
-const getLeaveDurationLabel = (leave: any) => {
+const mergeLeavePages = (existing: LeaveRecord[], incoming: LeaveRecord[]) => {
+  const merged = new Map<string, LeaveRecord>();
+  existing.forEach((item) => {
+    const itemId = toIdString(item?._id);
+    if (itemId) merged.set(itemId, item);
+  });
+  incoming.forEach((item) => {
+    const itemId = toIdString(item?._id);
+    if (itemId) merged.set(itemId, item);
+  });
+  return Array.from(merged.values());
+};
+
+const getLeaveDurationLabel = (leave: LeaveRecord) => {
   const duration = leave?.duration || "full_day";
   if (duration !== "half_day") return "Full Day";
   const session = leave?.halfDaySession === "second_half" ? "Second Half" : "First Half";
@@ -142,16 +198,25 @@ const Leave = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [selectedLeave, setSelectedLeave] = useState<any | null>(null);
+  const [selectedLeave, setSelectedLeave] = useState<LeaveRecord | null>(null);
   const [actionType, setActionType] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
-  const [leaves, setLeaves] = useState<any[]>([]);
+  const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [leaveStats, setLeaveStats] = useState({ pending: 0, approved: 0, rejected: 0, onLeaveToday: 0 });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const leavePageSize = 10;
+  const tableViewportRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
+  const resetPaginationRef = useRef(false);
   const [viewMode, setViewMode] = useState<"all" | "my">("all");
   const [applyOpen, setApplyOpen] = useState(false);
-  const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
-  const [leaveApplyWindow, setLeaveApplyWindow] = useState<any | null>(null);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeRef[]>([]);
+  const [leaveApplyWindow, setLeaveApplyWindow] = useState<LeaveApplyWindow | null>(null);
   const [applyForm, setApplyForm] = useState({
     leaveTypeId: "",
     fromDate: "",
@@ -186,10 +251,10 @@ const Leave = () => {
     return "";
   }, [applyForm.fromDate, applyForm.toDate, leaveApplyWindow]);
 
-  const canCurrentActorActionLeave = (leave: any) => {
+  const canCurrentActorActionLeave = (leave: LeaveRecord) => {
     const steps = Array.isArray(leave?.approvalSteps) ? leave.approvalSteps : [];
     if (!steps.length) return true;
-    const pendingStep = steps.find((s: any) => s.status === "pending");
+    const pendingStep = steps.find((s) => s.status === "pending");
     if (!pendingStep) return false;
 
     if (pendingStep.approverType === "role") {
@@ -199,28 +264,45 @@ const Leave = () => {
     return Boolean(stepEmployeeId && currentEmployeeId && stepEmployeeId === currentEmployeeId);
   };
 
-  const fetchLeaves = async () => {
+  const fetchLeaves = useCallback(async (pageToLoad = 1) => {
     try {
-      setLoading(true);
+      const isLoadMoreRequest = pageToLoad > 1;
+      if (isLoadMoreRequest) setLoadingMore(true);
+      else setLoading(true);
       if (!canViewAny) {
         setLeaves([]);
         setViewMode("my");
         return;
       }
 
-      let res = await getApiWithToken("/leaves", null, {
+      const params = new URLSearchParams({
+        page: String(pageToLoad),
+        limit: String(leavePageSize)
+      });
+      if (searchQuery.trim()) params.set("search", searchQuery.trim());
+      if (statusFilter !== "all") params.set("status", statusFilter);
+
+      let res = await getApiWithToken(`/leaves?${params.toString()}`, null, {
         requiredPermissions: ["LEAVE_VIEW_ALL"]
       });
       if (res?.skipped) {
         res = null;
       } else if (res?.success) {
-        setLeaves(res?.data || []);
+        const payload = res?.data;
+        const nextLeaves = Array.isArray(payload) ? payload : (payload?.items || []);
+        const pagination = Array.isArray(payload)
+          ? { page: 1, totalPages: 1, total: nextLeaves.length }
+          : payload?.pagination;
+        setLeaves((prev) => (pageToLoad > 1 ? mergeLeavePages(prev, nextLeaves) : nextLeaves));
+        setTotalItems(Number(pagination?.total || nextLeaves.length));
+        setTotalPages(Math.max(1, Number(pagination?.totalPages || 1)));
+        setLeaveStats(payload?.stats || { pending: 0, approved: 0, rejected: 0, onLeaveToday: 0 });
         setViewMode("all");
         return;
       }
 
       // fallback to my leaves (for employee role)
-      res = await getApiWithToken("/leaves/my", null, {
+      res = await getApiWithToken(`/leaves/my?${params.toString()}`, null, {
         requiredPermissions: ["LEAVE_VIEW_SELF"]
       });
       if (res?.skipped) {
@@ -229,24 +311,60 @@ const Leave = () => {
         return;
       }
       if (res?.success) {
-        setLeaves(res?.data || []);
+        const payload = res?.data;
+        const nextLeaves = Array.isArray(payload) ? payload : (payload?.items || []);
+        const pagination = Array.isArray(payload)
+          ? { page: 1, totalPages: 1, total: nextLeaves.length }
+          : payload?.pagination;
+        setLeaves((prev) => (pageToLoad > 1 ? mergeLeavePages(prev, nextLeaves) : nextLeaves));
+        setTotalItems(Number(pagination?.total || nextLeaves.length));
+        setTotalPages(Math.max(1, Number(pagination?.totalPages || 1)));
+        setLeaveStats(payload?.stats || { pending: 0, approved: 0, rejected: 0, onLeaveToday: 0 });
         setViewMode("my");
       } else {
         toast.error(res?.message || "Failed to load leaves");
       }
     } finally {
+      loadingMoreRef.current = false;
       setLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, [canViewAny, leavePageSize, searchQuery, statusFilter]);
+
+  const refreshLeaveList = useCallback(async () => {
+    setLeaves([]);
+    if (currentPage === 1) {
+      await fetchLeaves(1);
+      return;
+    }
+    setCurrentPage(1);
+  }, [currentPage, fetchLeaves]);
 
   useEffect(() => {
-    fetchLeaves();
-  }, []);
+    resetPaginationRef.current = true;
+    loadingMoreRef.current = false;
+    if (tableViewportRef.current) {
+      tableViewportRef.current.scrollTop = 0;
+    }
+    setCurrentPage(1);
+    setLeaves([]);
+  }, [searchQuery, statusFilter]);
+
+  useEffect(() => {
+    if (resetPaginationRef.current && currentPage !== 1) {
+      return;
+    }
+    if (resetPaginationRef.current && currentPage === 1) {
+      resetPaginationRef.current = false;
+    }
+    fetchLeaves(currentPage);
+  }, [currentPage, fetchLeaves]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await fetchLeaves();
+      setCurrentPage(1);
+      await refreshLeaveList();
     } finally {
       setRefreshing(false);
     }
@@ -305,44 +423,32 @@ const Leave = () => {
         halfDaySession: "first_half",
         reason: ""
       });
-      fetchLeaves();
+      refreshLeaveList();
     } else {
       toast.error(res?.message || "Apply failed");
     }
   };
 
-  const filteredLeaves = useMemo(() => {
-    return (leaves || []).filter((leave) => {
-      const employeeName = leave.employeeId
-        ? `${leave.employeeId.firstName || ""} ${leave.employeeId.lastName || ""}`.trim()
-        : "You";
-      const typeName = leave.leaveTypeId?.name || "";
-      const matchesSearch =
-        employeeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        typeName.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesStatus =
-        statusFilter === "all" || leave.status === statusFilter;
-      return matchesSearch && matchesStatus;
+  const hasMoreLeaves = currentPage < totalPages;
+
+  const handleLeaveTableScroll = () => {
+    const viewport = tableViewportRef.current;
+    if (!viewport || loading || loadingMore || loadingMoreRef.current || !hasMoreLeaves) return;
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    if (scrollTop <= 0 || scrollHeight <= clientHeight) return;
+    const progress = (scrollTop + clientHeight) / scrollHeight;
+    if (progress < 0.5) return;
+    loadingMoreRef.current = true;
+    setCurrentPage((prev) => {
+      if (prev >= totalPages) {
+        loadingMoreRef.current = false;
+        return prev;
+      }
+      return prev + 1;
     });
-  }, [leaves, searchQuery, statusFilter]);
+  };
 
-  const stats = useMemo(() => {
-    const pending = leaves.filter((l) => l.status === "pending").length;
-    const approved = leaves.filter((l) => l.status === "approved").length;
-    const rejected = leaves.filter((l) => l.status === "rejected").length;
-
-    const today = new Date();
-    const onLeaveToday = leaves.filter((l) => {
-      if (l.status !== "approved") return false;
-      const from = new Date(l.fromDate);
-      const to = new Date(l.toDate);
-      return today >= from && today <= to;
-    }).length;
-
-    return { pending, approved, rejected, onLeaveToday };
-  }, [leaves]);
-
-  const handleAction = (leave: any, action: "approve" | "reject") => {
+  const handleAction = (leave: LeaveRecord, action: "approve" | "reject") => {
     if (!canCurrentActorActionLeave(leave)) {
       toast.error("You are not the current approver for this request");
       return;
@@ -352,7 +458,7 @@ const Leave = () => {
     setActionDialogOpen(true);
   };
 
-  const handleView = (leave: any) => {
+  const handleView = (leave: LeaveRecord) => {
     setSelectedLeave(leave);
     setViewDialogOpen(true);
   };
@@ -364,7 +470,7 @@ const Leave = () => {
       return;
     }
 
-    const payload: any = {
+    const payload: { status: "approved" | "rejected"; rejectionReason?: string } = {
       status: actionType === "approve" ? "approved" : "rejected",
     };
     if (actionType === "reject") {
@@ -383,7 +489,7 @@ const Leave = () => {
       setActionDialogOpen(false);
       setSelectedLeave(null);
       setComment("");
-      fetchLeaves();
+      refreshLeaveList();
     } else {
       toast.error(res?.message || "Action failed");
     }
@@ -408,7 +514,7 @@ const Leave = () => {
           animate={{ opacity: 1, y: 0 }}
         >
           <p className="text-sm text-muted-foreground mb-1">Pending Requests</p>
-          <p className="text-3xl font-bold text-warning">{stats.pending}</p>
+          <p className="text-3xl font-bold text-warning">{leaveStats.pending}</p>
           <p className="text-sm text-muted-foreground mt-1">requires action</p>
         </motion.div>
         <motion.div
@@ -418,7 +524,7 @@ const Leave = () => {
           transition={{ delay: 0.1 }}
         >
           <p className="text-sm text-muted-foreground mb-1">Approved</p>
-          <p className="text-3xl font-bold text-success">{stats.approved}</p>
+          <p className="text-3xl font-bold text-success">{leaveStats.approved}</p>
           <p className="text-sm text-muted-foreground mt-1">total</p>
         </motion.div>
         <motion.div
@@ -428,7 +534,7 @@ const Leave = () => {
           transition={{ delay: 0.2 }}
         >
           <p className="text-sm text-muted-foreground mb-1">Rejected</p>
-          <p className="text-3xl font-bold text-destructive">{stats.rejected}</p>
+          <p className="text-3xl font-bold text-destructive">{leaveStats.rejected}</p>
           <p className="text-sm text-muted-foreground mt-1">total</p>
         </motion.div>
         <motion.div
@@ -438,7 +544,7 @@ const Leave = () => {
           transition={{ delay: 0.3 }}
         >
           <p className="text-sm text-muted-foreground mb-1">On Leave Today</p>
-          <p className="text-3xl font-bold text-primary">{stats.onLeaveToday}</p>
+          <p className="text-3xl font-bold text-primary">{leaveStats.onLeaveToday}</p>
           <p className="text-sm text-muted-foreground mt-1">employees</p>
         </motion.div>
         </div>
@@ -498,6 +604,11 @@ const Leave = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
       >
+        <div
+          ref={tableViewportRef}
+          onScroll={handleLeaveTableScroll}
+          className="max-h-[60vh] overflow-auto"
+        >
         <Table>
           <TableHeader>
             <TableRow className="table-header">
@@ -513,7 +624,7 @@ const Leave = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && Array.from({ length: 6 }).map((_, idx) => (
+            {loading && leaves.length === 0 && Array.from({ length: 6 }).map((_, idx) => (
               <TableRow key={`leave-skeleton-${idx}`}>
                 <TableCell><Skeleton className="h-10 w-40" /></TableCell>
                 <TableCell><Skeleton className="h-4 w-28" /></TableCell>
@@ -526,14 +637,14 @@ const Leave = () => {
                 <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-20" /></TableCell>
               </TableRow>
             ))}
-            {!loading && filteredLeaves.length === 0 && (
+            {!loading && leaves.length === 0 && (
               <TableRow>
                 <TableCell colSpan={9} className="text-center py-10">
                   No leave requests found
                 </TableCell>
               </TableRow>
             )}
-            {!loading && filteredLeaves.map((leave) => {
+            {leaves.map((leave) => {
               const employeeName = leave.employeeId
                 ? `${leave.employeeId.firstName || ""} ${leave.employeeId.lastName || ""}`.trim()
                 : "You";
@@ -605,6 +716,17 @@ const Leave = () => {
             })}
           </TableBody>
         </Table>
+        </div>
+        <div className="border-t px-4 py-3 text-sm text-muted-foreground flex items-center justify-between">
+          <span>Showing {leaves.length} of {totalItems} leave records</span>
+          <span>
+            {loadingMore
+              ? "Loading more leave records..."
+              : hasMoreLeaves
+                ? "Scroll past 50% to load more"
+                : "You have reached the end"}
+          </span>
+        </div>
         </motion.div>
       )}
 
@@ -670,8 +792,8 @@ const Leave = () => {
                   <p className="font-medium mb-1">Approval Steps</p>
                   <div className="space-y-1 text-xs text-muted-foreground">
                     {[...selectedLeave.approvalSteps]
-                      .sort((a: any, b: any) => Number(a.stepNumber) - Number(b.stepNumber))
-                      .map((step: any) => (
+                      .sort((a, b) => Number(a.stepNumber) - Number(b.stepNumber))
+                      .map((step) => (
                         <div key={`leave-step-${selectedLeave._id}-${step.stepNumber}`}>
                           {`S${step.stepNumber} • ${getStepApproverLabel(step)} • ${step.status}${step.actionBy ? ` • by ${toActorName(step.actionBy)}` : ""}`}
                         </div>

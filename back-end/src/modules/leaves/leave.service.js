@@ -37,6 +37,12 @@ const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "superadmin"
 ]);
 
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+};
+
 const isSameDate = (d1, d2) =>
   new Date(d1).setHours(0, 0, 0, 0) === new Date(d2).setHours(0, 0, 0, 0);
 
@@ -615,11 +621,64 @@ exports.getMyLeaves = async (req) => {
     organizationId: req.user.organizationId
   });
 
-  return Leave.find({ employeeId: employee._id })
+  const query = { employeeId: employee._id };
+  const statsQuery = { ...query };
+  if (req.query.status && req.query.status !== "all") {
+    query.status = req.query.status;
+  }
+  if (req.query.search) {
+    const typeIds = await LeaveType.find({
+      organizationId: req.user.organizationId,
+      name: { $regex: String(req.query.search).trim(), $options: "i" }
+    }).distinct("_id");
+    query.leaveTypeId = { $in: typeIds.length ? typeIds : [] };
+  }
+
+  const pageRequested = req.query.page !== undefined || req.query.limit !== undefined;
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 10), 100);
+  const baseQuery = Leave.find(query)
     .populate("leaveTypeId", "name code")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
+
+  if (!pageRequested) {
+    return baseQuery;
+  }
+
+  const [items, total] = await Promise.all([
+    baseQuery.skip((page - 1) * limit).limit(limit),
+    Leave.countDocuments(query)
+  ]);
+  const today = new Date();
+  const [pending, approved, rejected, onLeaveToday] = await Promise.all([
+    Leave.countDocuments({ ...statsQuery, status: "pending" }),
+    Leave.countDocuments({ ...statsQuery, status: "approved" }),
+    Leave.countDocuments({ ...statsQuery, status: "rejected" }),
+    Leave.countDocuments({
+      ...statsQuery,
+      status: "approved",
+      fromDate: { $lte: today },
+      toDate: { $gte: today }
+    })
+  ]);
+
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit))
+    },
+    stats: {
+      pending,
+      approved,
+      rejected,
+      onLeaveToday
+    }
+  };
 };
 
 exports.getAllLeaves = async (req) => {
@@ -646,13 +705,81 @@ exports.getAllLeaves = async (req) => {
       }
     }
   }
+  const statsQuery = { ...query };
 
-  return Leave.find(query)
+  if (req.query.status && req.query.status !== "all") {
+    query.status = req.query.status;
+  }
+
+  const search = String(req.query.search || "").trim();
+  if (search) {
+    const [employeeIds, leaveTypeIds] = await Promise.all([
+      Employee.find({
+        organizationId: req.user.organizationId,
+        $or: [
+          { firstName: { $regex: search, $options: "i" } },
+          { lastName: { $regex: search, $options: "i" } },
+          { employeeCode: { $regex: search, $options: "i" } }
+        ]
+      }).distinct("_id"),
+      LeaveType.find({
+        organizationId: req.user.organizationId,
+        name: { $regex: search, $options: "i" }
+      }).distinct("_id")
+    ]);
+
+    query.$or = [
+      { employeeId: { $in: employeeIds } },
+      { leaveTypeId: { $in: leaveTypeIds } }
+    ];
+  }
+
+  const pageRequested = req.query.page !== undefined || req.query.limit !== undefined;
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 10), 100);
+  const baseQuery = Leave.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
+
+  if (!pageRequested) {
+    return baseQuery;
+  }
+
+  const [items, total] = await Promise.all([
+    baseQuery.skip((page - 1) * limit).limit(limit),
+    Leave.countDocuments(query)
+  ]);
+  const today = new Date();
+  const [pending, approved, rejected, onLeaveToday] = await Promise.all([
+    Leave.countDocuments({ ...statsQuery, status: "pending" }),
+    Leave.countDocuments({ ...statsQuery, status: "approved" }),
+    Leave.countDocuments({ ...statsQuery, status: "rejected" }),
+    Leave.countDocuments({
+      ...statsQuery,
+      status: "approved",
+      fromDate: { $lte: today },
+      toDate: { $gte: today }
+    })
+  ]);
+
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit))
+    },
+    stats: {
+      pending,
+      approved,
+      rejected,
+      onLeaveToday
+    }
+  };
 };
 
 exports.getMyPendingApprovals = async (req) => {

@@ -435,8 +435,15 @@ function EmployeeDashboardScreen() {
   };
 
   const employeeName = [myProfile?.firstName, myProfile?.lastName].filter(Boolean).join(' ');
-  const organizationName =
-    myProfile?.organization?.name || myProfile?.activeOrganization?.name || 'Organization';
+  const organizationName = useMemo(() => {
+    return (
+      myProfile?.organization?.name ||
+      myProfile?.activeOrganization?.name ||
+      session?.loginData?.organization?.name ||
+      session?.loginData?.activeOrganization?.name ||
+      'Organization'
+    );
+  }, [myProfile, session?.loginData]);
   const profileInitials =
     (myProfile?.firstName?.[0] || '') + (myProfile?.lastName?.[0] || '');
   const avatarLabel =
@@ -500,7 +507,6 @@ function EmployeeDashboardScreen() {
                 </Pressable>
               </View>
             </View>
-
             <View style={styles.tabs}>
               <Pressable
                 style={[styles.tab, activeTab === 'overview' && styles.tabActive]}
@@ -1074,6 +1080,25 @@ const styles = StyleSheet.create({
   },
   shell: {
     gap: 14,
+  },
+  dashboardHeader: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 16,
+  },
+  dashboardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  organizationLabel: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   topBar: {
     flexDirection: 'row',

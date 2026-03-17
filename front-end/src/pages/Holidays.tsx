@@ -27,7 +27,7 @@ import {
   putApiWithToken,
   deleteApiWithToken,
 } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
 interface HolidayForm {

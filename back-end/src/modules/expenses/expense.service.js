@@ -212,8 +212,8 @@ exports.listExpenses = async (req) => {
   const pageNum = Math.max(1, Number(req.query.page || 1));
   const limitNum = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
   const skip = (pageNum - 1) * limitNum;
-
-  return Expense.find(query)
+  const pageRequested = req.query.page !== undefined || req.query.limit !== undefined;
+  const baseQuery = Expense.find(query)
     .populate("purchasedBy", "firstName lastName employeeCode")
     .populate("createdBy", "firstName lastName employeeCode")
     .populate("updatedBy", "firstName lastName employeeCode")
@@ -223,9 +223,26 @@ exports.listExpenses = async (req) => {
     .populate("reimbursedBy", "firstName lastName employeeCode")
     .populate("vendorId", "name isActive")
     .sort({ expenseDate: -1, createdAt: -1 })
-    .skip(skip)
-    .limit(limitNum)
     .lean();
+
+  if (!pageRequested) {
+    return baseQuery.skip(skip).limit(limitNum);
+  }
+
+  const [items, total] = await Promise.all([
+    baseQuery.skip(skip).limit(limitNum),
+    Expense.countDocuments(query)
+  ]);
+
+  return {
+    items,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limitNum))
+    }
+  };
 };
 
 exports.getSummary = async (req) => {

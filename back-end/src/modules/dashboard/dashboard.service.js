@@ -12,7 +12,8 @@ const Permission = require("../permissions/permission.model");
 const {
   isValidTimeZone,
   toDateKeyInTimeZone,
-  addDaysToDateKey
+  addDaysToDateKey,
+  getWeekdayForDateKey
 } = require("../../utils/timezone");
 
 const withQuery = (req, query) => ({
@@ -76,6 +77,207 @@ const isActiveEmployee = (employee) => {
   return employee.status !== "resigned" && employee.employmentLifecycleStatus !== "terminated";
 };
 
+const parseTimeToMinutes = (value) => {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+  return hours * 60 + minutes;
+};
+
+const getCurrentOrgMinutes = (timeZone) => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date());
+  const read = (type) => Number(parts.find((part) => part.type === type)?.value || "0");
+  return read("hour") * 60 + read("minute");
+};
+
+const isApprovedLeaveOnDate = (leave, dateKey, timeZone) => {
+  if (leave?.status !== "approved") return false;
+  const fromKey = toDateKeyInTimeZone(leave.fromDate, timeZone);
+  const toKey = toDateKeyInTimeZone(leave.toDate, timeZone);
+  return dateKey >= fromKey && dateKey <= toKey;
+};
+
+const buildLeaveIndex = (leaves, timeZone, fromKey, toKey) => {
+  const index = new Set();
+  (leaves || []).forEach((leave) => {
+    if (leave?.status !== "approved") return;
+    let cursor = toDateKeyInTimeZone(leave.fromDate, timeZone);
+    const end = toDateKeyInTimeZone(leave.toDate, timeZone);
+    while (cursor && cursor <= end && cursor <= toKey) {
+      if (cursor >= fromKey) {
+        index.add(`${String(leave.employeeId?._id || leave.employeeId)}-${cursor}`);
+      }
+      cursor = addDaysToDateKey(cursor, 1);
+    }
+  });
+  return index;
+};
+
+const buildDashboardStats = ({
+  employees,
+  attendanceToday,
+  attendanceLast7,
+  leaveList,
+  holidays,
+  weekOffMap,
+  timeZone,
+  todayKey
+}) => {
+  const currentOrgMinutes = getCurrentOrgMinutes(timeZone);
+  const holidayKeyMap = new Map(
+    (holidays || []).map((holiday) => [toDateKeyInTimeZone(holiday.date, timeZone), holiday.name])
+  );
+  const todayAttendanceMap = new Map(
+    (attendanceToday || []).map((row) => [String(row.employeeId?._id || row.employeeId), row])
+  );
+  const start7Key = addDaysToDateKey(todayKey, -6);
+  const leaveIndex = buildLeaveIndex(leaveList, timeZone, start7Key, todayKey);
+  const attendanceLast7Map = new Map(
+    (attendanceLast7 || []).map((row) => {
+      const employeeId = String(row.employeeId?._id || row.employeeId);
+      const dateKey = toDateKeyInTimeZone(row.checkInAt || row.checkOutAt || row.date, timeZone);
+      return [`${employeeId}-${dateKey}`, row];
+    })
+  );
+
+  const todayStatusList = (employees || []).map((employee) => {
+    const employeeId = String(employee._id);
+    const attendance = todayAttendanceMap.get(employeeId) || null;
+    const holidayName = holidayKeyMap.get(todayKey) || null;
+    const employeeWeekOffDays = weekOffMap.employeeMap.get(employeeId) || weekOffMap.defaultDays || [];
+    const isWeekOff = employeeWeekOffDays.includes(getWeekdayForDateKey(todayKey, timeZone));
+    const isOnLeave = (leaveList || []).some((leave) =>
+      String(leave.employeeId?._id || leave.employeeId) === employeeId
+      && isApprovedLeaveOnDate(leave, todayKey, timeZone)
+    );
+    const hasAttendance = Boolean(attendance?.checkInAt || attendance?.checkOutAt);
+    const isPendingCheckout = Boolean(attendance?.checkInAt && !attendance?.checkOutAt);
+    const shiftStartTime = attendance?.shiftStartTime || employee?.shiftId?.startTime || null;
+    const graceMinutes = Number(employee?.shiftId?.graceMinutes || 0);
+    const shiftStartMinutes = parseTimeToMinutes(shiftStartTime);
+    const countAsAbsent = !holidayName
+      && !isWeekOff
+      && !isOnLeave
+      && !hasAttendance
+      && (shiftStartMinutes === null || currentOrgMinutes >= shiftStartMinutes + graceMinutes);
+
+    return {
+      employeeId,
+      holidayName,
+      isWeekOff,
+      isOnLeave,
+      checkInAt: attendance?.checkInAt || null,
+      checkOutAt: attendance?.checkOutAt || null,
+      lateByMinutes: Number(attendance?.lateByMinutes || 0),
+      shiftStartTime,
+      overriddenBy: attendance?.overriddenBy || null,
+      overriddenAt: attendance?.overriddenAt || null,
+      present: hasAttendance,
+      pendingCheckout: isPendingCheckout,
+      absent: countAsAbsent
+    };
+  });
+
+  const kpis = {
+    totalEmployees: employees.length,
+    presentToday: todayStatusList.filter((item) => item.present).length,
+    absentToday: todayStatusList.filter((item) => item.absent).length,
+    checkedInOnly: todayStatusList.filter((item) => item.pendingCheckout).length,
+    lateArrivals: todayStatusList.filter((item) => item.present && item.lateByMinutes > 0).length,
+    onLeaveToday: todayStatusList.filter((item) => item.isOnLeave).length
+  };
+
+  const monthDaySummary = {
+    present: todayStatusList.filter((item) => item.present && !item.pendingCheckout).length,
+    pendingCheckout: todayStatusList.filter((item) => item.pendingCheckout).length,
+    absent: todayStatusList.filter((item) => item.absent).length,
+    onLeave: todayStatusList.filter((item) => item.isOnLeave).length,
+    weekOff: todayStatusList.filter((item) => item.isWeekOff).length,
+    holiday: todayStatusList.filter((item) => Boolean(item.holidayName)).length,
+    overridden: todayStatusList.filter((item) => item.overriddenBy || item.overriddenAt).length
+  };
+
+  const groupedDepartments = {};
+  (employees || []).forEach((employee) => {
+    const dept = employee.departmentId?.name || "Unassigned";
+    if (!groupedDepartments[dept]) {
+      groupedDepartments[dept] = { name: dept, employees: 0, present: 0, onLeave: 0, absent: 0 };
+    }
+    groupedDepartments[dept].employees += 1;
+    const status = todayStatusList.find((item) => item.employeeId === String(employee._id));
+    if (!status) return;
+    if (status.isOnLeave) groupedDepartments[dept].onLeave += 1;
+    else if (status.present) groupedDepartments[dept].present += 1;
+    else if (status.absent) groupedDepartments[dept].absent += 1;
+  });
+
+  const departmentAnalytics = Object.values(groupedDepartments)
+    .sort((a, b) => b.employees - a.employees)
+    .slice(0, 6);
+
+  const attendanceTrend = Array.from({ length: 7 }).map((_, idx) => {
+    const key = addDaysToDateKey(start7Key, idx);
+    let present = 0;
+    let absent = 0;
+    let excluded = 0;
+
+    (employees || []).forEach((employee) => {
+      const employeeId = String(employee._id);
+      const holidayName = holidayKeyMap.get(key) || null;
+      const employeeWeekOffDays = weekOffMap.employeeMap.get(employeeId) || weekOffMap.defaultDays || [];
+      const isWeekOff = employeeWeekOffDays.includes(getWeekdayForDateKey(key, timeZone));
+      const isOnLeave = leaveIndex.has(`${employeeId}-${key}`);
+      const attendance = attendanceLast7Map.get(`${employeeId}-${key}`) || null;
+
+      if (holidayName || isWeekOff || isOnLeave) {
+        excluded += 1;
+        return;
+      }
+
+      if (attendance?.checkInAt || attendance?.checkOutAt) {
+        present += 1;
+        return;
+      }
+
+      if (key === todayKey) {
+        const shiftStartTime = attendance?.shiftStartTime || employee?.shiftId?.startTime || null;
+        const graceMinutes = Number(employee?.shiftId?.graceMinutes || 0);
+        const shiftStartMinutes = parseTimeToMinutes(shiftStartTime);
+        if (shiftStartMinutes === null || currentOrgMinutes >= shiftStartMinutes + graceMinutes) {
+          absent += 1;
+        }
+        return;
+      }
+
+      absent += 1;
+    });
+
+    return {
+      key,
+      present,
+      absent,
+      excluded
+    };
+  });
+
+  return {
+    todayStatusList,
+    dashboardStats: {
+      kpis,
+      monthDaySummary,
+      departmentAnalytics,
+      attendanceTrend
+    }
+  };
+};
+
 exports.getSummary = async (req) => {
   const permissionCodes = await getPermissionCodesForRequest(req);
   const month = req.query?.month || toDateKeyInTimeZone(new Date(), "UTC").slice(0, 7);
@@ -86,7 +288,6 @@ exports.getSummary = async (req) => {
 
   const canViewEmployees = hasAnyPermission(permissionCodes, ["EMP_VIEW"]);
   const canViewAttendance = hasAnyPermission(permissionCodes, ["TIMESHEET_VIEW_ALL"]);
-  const canViewAttendanceMatrix = hasAnyPermission(permissionCodes, ["ATTENDANCE_VIEW_ALL"]);
   const canViewLeaves = hasAnyPermission(permissionCodes, ["LEAVE_VIEW_ALL"]);
   const canViewWeekly = hasAnyPermission(permissionCodes, ["TIMESHEET_VIEW_ALL"]);
   const canViewHolidays = hasAnyPermission(permissionCodes, ["HOLIDAY_VIEW"]);
@@ -98,16 +299,14 @@ exports.getSummary = async (req) => {
     employeesData,
     attendanceToday,
     attendanceLast7,
-    matrixData,
     leaveList,
     weeklyList,
     holidays,
-    weekOff,
     orgSettings,
     notificationsData
   ] = await Promise.all([
     canViewEmployees
-      ? EmployeeService.listByOrganization(withQuery(req, { page: 1, limit: 500 }))
+      ? EmployeeService.listByOrganization(req)
       : Promise.resolve({ items: [], pagination: null }),
     canViewAttendance
       ? TimesheetService.getAttendance(withQuery(req, { startDate: todayKey, endDate: todayKey }))
@@ -115,9 +314,6 @@ exports.getSummary = async (req) => {
     canViewAttendance
       ? TimesheetService.getAttendance(withQuery(req, { startDate: start7Key, endDate: todayKey }))
       : Promise.resolve([]),
-    canViewAttendanceMatrix
-      ? TimesheetService.getAttendanceMatrix(withQuery(req, { month }))
-      : Promise.resolve({ employees: [] }),
     canViewLeaves
       ? LeaveService.getAllLeaves(req)
       : Promise.resolve([]),
@@ -130,9 +326,6 @@ exports.getSummary = async (req) => {
         year
       }).sort({ date: 1 })
       : Promise.resolve([]),
-    canViewWeekOffs
-      ? WeekOffService.get(req)
-      : Promise.resolve(null),
     canViewOrgSettings
       ? OrgSettingsService.get(req)
       : Promise.resolve(null),
@@ -142,6 +335,12 @@ exports.getSummary = async (req) => {
   ]);
 
   const activeEmployees = (employeesData?.items || []).filter(isActiveEmployee);
+  const weekOffMap = canViewWeekOffs || canViewAttendance
+    ? await WeekOffService.resolveWeekOffMapForEmployees({
+      organizationId: req.user.organizationId,
+      employees: activeEmployees
+    })
+    : { defaultDays: [], employeeMap: new Map() };
   const activeEmployeeIds = new Set(activeEmployees.map((employee) => String(employee._id)));
 
   const activeAttendanceToday = (attendanceToday || []).filter((row) => {
@@ -150,11 +349,6 @@ exports.getSummary = async (req) => {
   });
 
   const activeAttendanceLast7 = (attendanceLast7 || []).filter((row) => {
-    const employeeId = getEmployeeExternalId(row?.employeeId);
-    return Boolean(employeeId && activeEmployeeIds.has(employeeId));
-  });
-
-  const activeAttendanceMatrix = (matrixData?.employees || []).filter((row) => {
     const employeeId = getEmployeeExternalId(row?.employeeId);
     return Boolean(employeeId && activeEmployeeIds.has(employeeId));
   });
@@ -169,15 +363,28 @@ exports.getSummary = async (req) => {
     return Boolean(employeeId && activeEmployeeIds.has(employeeId));
   });
 
+  const { todayStatusList, dashboardStats } = buildDashboardStats({
+    employees: activeEmployees,
+    attendanceToday: activeAttendanceToday,
+    attendanceLast7: activeAttendanceLast7,
+    leaveList: activeLeaves,
+    holidays: holidays || [],
+    weekOffMap: weekOffMap || { defaultDays: [], employeeMap: new Map() },
+    timeZone,
+    todayKey
+  });
+
   return {
     employeeList: activeEmployees,
     attendanceToday: activeAttendanceToday,
     attendanceLast7: activeAttendanceLast7,
-    attendanceMatrix: activeAttendanceMatrix,
+    attendanceMatrix: [],
     leaveList: activeLeaves,
     weeklyList: activeWeekly,
     holidays: holidays || [],
-    weekOffDays: weekOff?.weekOffDays || [],
+    weekOffDays: weekOffMap?.defaultDays || [],
+    todayStatusList,
+    dashboardStats,
     orgSettings: orgSettings || null,
     notifications: notificationsData?.items || []
   };

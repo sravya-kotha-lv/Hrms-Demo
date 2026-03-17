@@ -26,7 +26,7 @@ import {
   postApiWithToken,
   putApiWithToken
 } from "@/services/apiWrapper";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/useAuth";
 
 type ModuleKey = "leave" | "attendance_request";
 type ApproverType = "manager" | "role" | "employee";
@@ -94,6 +94,8 @@ const approverLabel = (step: FlowStep) => {
   if (step.approverType === "role") return `Role: ${step.roleSlug || "-"}`;
   return `Employee: ${step.employeeId || "-"}`;
 };
+
+const sanitizeFlowName = (value: string) => value.replace(/[^A-Za-z ]+/g, "").replace(/\s{2,}/g, " ");
 
 const ApprovalFlows = () => {
   const { hasAnyPermission } = useAuth();
@@ -241,6 +243,10 @@ const ApprovalFlows = () => {
     }
     if (!form.name.trim()) {
       toast.error("Flow name is required");
+      return;
+    }
+    if (!/^[A-Za-z ]+$/.test(form.name.trim())) {
+      toast.error("Flow name can contain only letters and spaces");
       return;
     }
     if (!stepRows.length) {
@@ -430,7 +436,9 @@ const ApprovalFlows = () => {
             <Input
               placeholder="Flow name"
               value={form.name}
-              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, name: sanitizeFlowName(e.target.value) }))
+              }
             />
 
             <Select
