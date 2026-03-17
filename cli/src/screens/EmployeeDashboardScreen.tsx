@@ -680,35 +680,6 @@ function EmployeeDashboardScreen() {
 
                     <View style={styles.card}>
                       <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle}>Profile Completion</Text>
-                        <MaterialCommunityIcons name="clock-outline" size={18} color="#64748b" />
-                      </View>
-                      <Text style={styles.cardSubText}>
-                        {myProfile?.profileCompleted ? 'Profile marked completed.' : 'Profile is not completed yet.'}
-                      </Text>
-                      <Text style={styles.linkText}>
-                        {missingProfileFields.length === 0
-                          ? 'No pending profile tasks.'
-                          : `Pending: ${missingProfileFields.join(', ')}`}
-                      </Text>
-                      <View style={styles.actionRow}>
-                        <Pressable
-                          style={styles.secondaryAction}
-                          onPress={() => navigation.navigate('Profile')}
-                        >
-                          <Text style={styles.secondaryActionText}>Update Profile</Text>
-                        </Pressable>
-                        <Pressable
-                          style={styles.secondaryAction}
-                          onPress={() => navigation.navigate('Leaves')}
-                        >
-                          <Text style={styles.secondaryActionText}>My Leaves</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-
-                    <View style={styles.card}>
-                      <View style={styles.cardHeader}>
                         <Text style={styles.cardTitle}>Team Snapshot</Text>
                         <View style={styles.pill}>
                           <Text style={styles.pillText}>Today</Text>
@@ -818,13 +789,6 @@ function EmployeeDashboardScreen() {
                     </View>
                   </>
                 )}
-
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Profile</Text>
-                  <Text style={styles.cardSubText}>{employeeName || 'Employee'}</Text>
-                  <Text style={styles.cardSubText}>{myProfile?.email || ''}</Text>
-                  <Text style={styles.cardSubText}>Permissions available: {permissions.length}</Text>
-                </View>
 
               </>
             )}
