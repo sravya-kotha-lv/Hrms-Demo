@@ -36,7 +36,7 @@ import { hasPermission } from "@/utils/auth";
 import { useAuth } from "@/context/useAuth";
 import { InlineLoader } from "@/components/ui/loaders";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDateInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
+import { formatDateInOrgTimeZone, formatTimeInOrgTimeZone, toDateKeyInOrgTimeZone } from "@/utils/timezone";
 
 const toDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -330,7 +330,7 @@ const captureSelfieFromCamera = async (): Promise<string | null> => {
 
 const Timesheets = () => {
   const { profile } = useAuth();
-  const [selectedDate] = useState(toDateInput(new Date()));
+  const [selectedDate] = useState(() => toDateKeyInOrgTimeZone(new Date()));
   const [weekStartDate, setWeekStartDate] = useState(getWeekStart(new Date()));
   const [attendanceToday, setAttendanceToday] = useState<AttendanceTodayRecord | null>(null);
   const [timesheet, setTimesheet] = useState<TeamTimesheet | null>(null);
@@ -360,7 +360,7 @@ const Timesheets = () => {
   const [attendanceRequestOpen, setAttendanceRequestOpen] = useState(false);
   const [attendanceRequestLoading, setAttendanceRequestLoading] = useState(false);
   const [attendanceRequestForm, setAttendanceRequestForm] = useState({
-    date: toDateInput(new Date()),
+    date: toDateKeyInOrgTimeZone(new Date()),
     requestType: "missed_checkout" as "missed_checkout" | "correction",
     requestedCheckInTime: "",
     requestedCheckOutTime: "",
@@ -476,7 +476,7 @@ const Timesheets = () => {
     const res = await getApiWithToken(
       `/timesheets/attendance/my?date=${selectedDate}`,
       null,
-      { requiredPermissions: ["TIMESHEET_VIEW_SELF"] }
+      { requiredPermissions: ["TIMESHEET_VIEW_SELF", "TIMESHEET_CHECKIN_SELF", "TIMESHEET_CHECKOUT_SELF"] }
     );
     if (res?.skipped) return;
     if (res?.success) {
