@@ -3,12 +3,6 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { AttendanceDay } from '../types/attendance';
 
-type UpcomingHoliday = {
-  _id?: string;
-  name?: string;
-  date?: string;
-};
-
 type AttendanceTabProps = {
   matrixDays: Record<number, AttendanceDay>;
   daysInMonth: number;
@@ -17,7 +11,7 @@ type AttendanceTabProps = {
   dayNames: string[];
   formatTime: (value: string | Date) => string;
   employeeName: string;
-  upcomingHolidays?: UpcomingHoliday[];
+  upcomingHolidays?: any[];
   holidaysLoading?: boolean;
 };
 
@@ -25,6 +19,17 @@ const isPresentLikeStatus = (status?: string | null) =>
   status === 'present' ||
   status === 'half_day_present' ||
   status === 'full_day_present';
+
+const formatHolidayDate = (value?: string) => {
+  if (!value) return 'Date unavailable';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date unavailable';
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
 
 const AttendanceTab = ({
   matrixDays,
@@ -194,14 +199,33 @@ const AttendanceTab = ({
         </>
       )}
 
-      {upcomingHolidays.length > 0 && (
-        <View style={styles.holidayBanner}>
-          <Text style={styles.holidayBannerText}>
-            Upcoming holidays: {upcomingHolidays.map((h) => h.name || 'Holiday').join(', ')}
-          </Text>
+      <View style={styles.holidaysSection}>
+        <View style={styles.holidaysHeader}>
+          <Text style={styles.holidaysTitle}>Holiday List</Text>
+          <MaterialCommunityIcons name="calendar-star" size={16} color="#2563eb" />
         </View>
-      )}
 
+        {holidaysLoading ? (
+          <Text style={styles.holidaysEmptyText}>Loading holidays...</Text>
+        ) : upcomingHolidays.length === 0 ? (
+          <Text style={styles.holidaysEmptyText}>No holidays found.</Text>
+        ) : (
+          upcomingHolidays.map((holiday: any) => (
+            <View
+              key={holiday?._id || `${holiday?.name || 'holiday'}-${holiday?.date || ''}`}
+              style={styles.holidayRow}
+            >
+              <View style={styles.holidayBadge}>
+                <MaterialCommunityIcons name="calendar-blank" size={14} color="#2563eb" />
+              </View>
+              <View style={styles.holidayInfo}>
+                <Text style={styles.holidayName}>{holiday?.name || 'Holiday'}</Text>
+                <Text style={styles.holidayMeta}>{formatHolidayDate(holiday?.date)}</Text>
+              </View>
+            </View>
+          ))
+        )}
+      </View>
     </View>
   );
 };
@@ -210,9 +234,11 @@ const styles = StyleSheet.create({
 
   container: {
     marginTop: 16,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
 
   header: {
@@ -242,7 +268,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 14,
-    backgroundColor: '#eef2ff',
+    backgroundColor: '#dbeafe',
   },
 
   refreshText: {
@@ -255,6 +281,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 14,
+    backgroundColor: '#ffffff',
   },
 
   weekText: {
@@ -270,11 +297,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginTop: 10,
     justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
   },
 
   emptyCell: {
     width: '13%',
     height: 48,
+    backgroundColor: '#ffffff',
   },
 
   dayCell: {
@@ -284,6 +313,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
 
   dayText: {
@@ -313,7 +345,7 @@ calendarHoliday: {
   },
 
   calendarNeutral: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#ffffff',
   },
 
   modalBackdrop: {
@@ -345,18 +377,59 @@ calendarHoliday: {
     fontWeight: '700',
     color: '#0f172a',
   },
-  holidayBanner: {
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#c7d2fe',
-    backgroundColor: '#eef2ff',
+  holidaysSection: {
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 14,
+    gap: 10,
   },
-  holidayBannerText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#1d4ed8',
+  holidaysHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  holidaysTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  holidaysEmptyText: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  holidayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  holidayBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  holidayInfo: {
+    flex: 1,
+  },
+  holidayName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  holidayMeta: {
+    marginTop: 2,
+    fontSize: 11,
+    color: '#64748b',
   },
 });
 

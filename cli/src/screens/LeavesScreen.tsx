@@ -258,6 +258,17 @@ function LeavesScreen() {
     return diff;
   }, [fromDate, toDate]);
 
+  const formatTableDate = (value?: string) => {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return String(value).slice(0, 10);
+    return parsed.toLocaleDateString(undefined, {
+      month: 'numeric',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
   return (
     <LinearGradient
       colors={['#f3f5f9', '#f3f5f9', '#eef1f6']}
@@ -359,16 +370,9 @@ function LeavesScreen() {
         </View>
 
         <View style={styles.tableCard}>
-          <View style={styles.tableHeaderRow}>
-            <Text style={[styles.tableHeaderText, styles.colEmployee]}>Employee</Text>
-            <Text style={[styles.tableHeaderText, styles.colType]}>Leave Type</Text>
-            <Text style={[styles.tableHeaderText, styles.colDate]}>From</Text>
-            <Text style={[styles.tableHeaderText, styles.colDate]}>To</Text>
-            <Text style={[styles.tableHeaderText, styles.colTiny]}>Days</Text>
-            <Text style={[styles.tableHeaderText, styles.colTiny]}>Duration</Text>
-            <Text style={[styles.tableHeaderText, styles.colTiny]}>Status</Text>
-            <Text style={[styles.tableHeaderText, styles.colTiny]}>Approval</Text>
-            <Text style={[styles.tableHeaderText, styles.colTiny]}>Actions</Text>
+          <View style={styles.tableIntro}>
+            <Text style={styles.tableTitle}>Leave Requests</Text>
+            <Text style={styles.tableHint}>Swipe left or right to view all columns.</Text>
           </View>
           {loading ? (
             <View style={styles.tableEmpty}>
@@ -379,37 +383,115 @@ function LeavesScreen() {
               <Text style={styles.emptyText}>No leave requests found</Text>
             </View>
           ) : (
-            filteredLeaves.map((leave) => {
-              const employee =
-                leave?.employeeId?.firstName || leave?.employeeId?.lastName
-                  ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
-                  : leave?.employeeId?.email || 'Employee';
-              const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || 'Leave';
-              const from = leave?.fromDate ? String(leave.fromDate).slice(0, 10) : '-';
-              const to = leave?.toDate ? String(leave.toDate).slice(0, 10) : '-';
-              const days = leave?.totalDays || '-';
-              const durationLabel =
-                leave?.duration === 'half_day' ? 'Half Day' : 'Full Day';
-              const status = leave?.status || 'pending';
-              return (
-                <View key={leave._id} style={styles.tableRow}>
-                  <Text style={[styles.tableCell, styles.colEmployee]} numberOfLines={1}>
-                    {employee}
-                  </Text>
-                  <Text style={[styles.tableCell, styles.colType]} numberOfLines={1}>
-                    {leaveType}
-                  </Text>
-                  <Text style={[styles.tableCell, styles.colDate]}>{from}</Text>
-                  <Text style={[styles.tableCell, styles.colDate]}>{to}</Text>
-                  <Text style={[styles.tableCell, styles.colSmall]}>{days}</Text>
-                  <Text style={[styles.tableCell, styles.colSmall]}>{durationLabel}</Text>
-                  <Text style={[styles.tableCell, styles.colSmall]}>{status}</Text>
-                  <Text style={[styles.tableCell, styles.colSmall]}>-</Text>
-                  <Text style={[styles.tableCell, styles.colSmall]}>-</Text>
+            <View style={styles.tableViewport}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator
+                directionalLockEnabled
+                alwaysBounceHorizontal={false}
+                bounces={false}
+                decelerationRate="fast"
+                scrollEventThrottle={16}
+                overScrollMode="never"
+                keyboardShouldPersistTaps="handled"
+                persistentScrollbar
+                style={styles.tableScroll}
+                contentContainerStyle={styles.tableHorizontalScroll}
+              >
+                <View style={styles.tableContent}>
+                  <View style={styles.tableHeaderRow}>
+                    <Text style={[styles.tableHeaderText, styles.colEmployee]}>Employee</Text>
+                    <Text style={[styles.tableHeaderText, styles.colType]}>Leave Type</Text>
+                    <Text style={[styles.tableHeaderText, styles.colDate]}>From</Text>
+                    <Text style={[styles.tableHeaderText, styles.colDate]}>To</Text>
+                    <Text style={[styles.tableHeaderText, styles.colDays]}>Days</Text>
+                    <Text style={[styles.tableHeaderText, styles.colDuration]}>Duration</Text>
+                    <Text style={[styles.tableHeaderText, styles.colStatus]}>Status</Text>
+                    <Text style={[styles.tableHeaderText, styles.colApproval]}>Approval</Text>
+                    <Text style={[styles.tableHeaderText, styles.colActions]}>Actions</Text>
+                  </View>
+                  <View>
+                    {filteredLeaves.map((leave) => {
+                      const employee =
+                        leave?.employeeId?.firstName || leave?.employeeId?.lastName
+                          ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
+                          : leave?.employeeId?.email || 'Employee';
+                      const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || 'Leave';
+                      const from = formatTableDate(leave?.fromDate);
+                      const to = formatTableDate(leave?.toDate);
+                      const days = leave?.totalDays || '-';
+                      const durationLabel = leave?.duration === 'half_day' ? 'Half Day' : 'Full Day';
+                      const status = leave?.status || 'pending';
+                      const approvalLabel = leave?.approvalStatus || leave?.approvedBy?.name || 'Single-step';
+                      const employeeInitial = (employee.trim()[0] || 'U').toUpperCase();
+                      return (
+                        <View key={leave._id} style={styles.tableRow}>
+                          <View style={styles.colEmployee}>
+                            <View style={styles.employeeCell}>
+                              <View style={styles.employeeBadge}>
+                                <Text style={styles.employeeBadgeText}>{employeeInitial}</Text>
+                              </View>
+                              <View style={styles.employeeMeta}>
+                                <Text style={styles.tableCell} numberOfLines={1}>
+                                  {employee}
+                                </Text>
+                                <Text style={styles.employeeHint}>SELF</Text>
+                              </View>
+                            </View>
+                          </View>
+                          <Text style={[styles.tableCell, styles.colType]} numberOfLines={1}>
+                            {leaveType}
+                          </Text>
+                          <Text style={[styles.tableCell, styles.colDate]}>{from}</Text>
+                          <Text style={[styles.tableCell, styles.colDate]}>{to}</Text>
+                          <Text style={[styles.tableCell, styles.colDays]}>{days}</Text>
+                          <Text style={[styles.tableCell, styles.colDuration]}>{durationLabel}</Text>
+                          <View style={styles.colStatus}>
+                            <View
+                              style={[
+                                styles.statusPill,
+                                status === 'approved'
+                                  ? styles.statusApproved
+                                  : status === 'rejected'
+                                    ? styles.statusRejected
+                                    : styles.statusPending,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.statusPillText,
+                                  status === 'approved'
+                                    ? styles.statusApprovedText
+                                    : status === 'rejected'
+                                      ? styles.statusRejectedText
+                                      : styles.statusPendingText,
+                                ]}
+                              >
+                                {status.charAt(0).toUpperCase() + status.slice(1)}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.tableCell, styles.colApproval]} numberOfLines={1}>
+                            {approvalLabel}
+                          </Text>
+                          <Text style={[styles.tableActionsText, styles.colActions]}>...</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
                 </View>
-              );
-            })
+              </ScrollView>
+            </View>
+            
           )}
+          {!loading && filteredLeaves.length > 0 ? (
+            <View style={styles.tableFooter}>
+              <Text style={styles.tableFooterText}>
+                Showing {filteredLeaves.length} of {leaves.length} leave records
+              </Text>
+              <Text style={styles.tableFooterText}>You have reached the end</Text>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
       
@@ -841,29 +923,67 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     gap: 8,
+    overflow: 'hidden',
+  },
+  tableIntro: {
+    gap: 4,
+    paddingHorizontal: 4,
+  },
+  tableTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  tableHint: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+  tableViewport: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#eef2f7',
+    backgroundColor: '#ffffff',
+    width: '100%',
+  },
+  tableScroll: {
+    width: '100%',
+  },
+  tableHorizontalScroll: {
+    minWidth: 1280,
+  },
+  tableContent: {
+    minWidth: 1280,
   },
   tableHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
-    paddingBottom: 8,
+    paddingBottom: 10,
+    paddingTop: 2,
+    paddingHorizontal: 8,
+    backgroundColor: '#f8fafc',
   },
   tableHeaderText: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#64748b',
-    fontWeight: '600',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    lineHeight: 14,
   },
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    minHeight: 58,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
   tableCell: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#0f172a',
+    lineHeight: 16,
   },
   tableEmpty: {
     paddingVertical: 18,
@@ -873,11 +993,95 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94a3b8',
   },
-  colEmployee: { flex: 1.2 },
-  colType: { flex: 1 },
-  colDate: { flex: 0.8 },
-  colTiny: { flex: 0.55, textAlign: 'center' },
-  colSmall: { flex: 0.45, textAlign: 'center' },
+  colEmployee: { width: 210 },
+  colType: { width: 110 },
+  colDate: { width: 92 },
+  colDays: { width: 70, textAlign: 'center' },
+  colDuration: { width: 104 },
+  colStatus: { width: 110, alignItems: 'flex-start', justifyContent: 'center' },
+  colApproval: { width: 120, textAlign: 'center' },
+  colActions: { width: 84, textAlign: 'center' },
+  employeeCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  employeeBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  employeeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  employeeMeta: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  employeeHint: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+  },
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  statusPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusApproved: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#86efac',
+  },
+  statusApprovedText: {
+    color: '#166534',
+  },
+  statusRejected: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#fca5a5',
+  },
+  statusRejectedText: {
+    color: '#b91c1c',
+  },
+  statusPending: {
+    backgroundColor: '#fef3c7',
+    borderColor: '#fcd34d',
+  },
+  statusPendingText: {
+    color: '#92400e',
+  },
+  tableActionsText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 1,
+  },
+  tableFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingTop: 8,
+    paddingHorizontal: 4,
+  },
+  tableFooterText: {
+    fontSize: 10,
+    color: '#94a3b8',
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(15,23,42,0.35)',
