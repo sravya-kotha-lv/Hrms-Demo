@@ -9,8 +9,8 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AttendanceTab from '../components/AttendanceTab';
 import { AttendanceDay } from '../types/attendance';
 import { getApiWithToken } from '../services/api';
@@ -41,7 +41,7 @@ function AttendanceScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [upcomingHolidays, setUpcomingHolidays] = useState<any[]>([]);
+  const [holidayList, setHolidayList] = useState<any[]>([]);
   const [holidaysLoading, setHolidaysLoading] = useState(false);
 
   const employeeName = useMemo(() => {
@@ -95,26 +95,23 @@ function AttendanceScreen() {
       const year = referenceDate.getFullYear();
       const response = await getApiWithToken<any>(`/holidays?year=${year}`, token);
       if (response?.success) {
-        const today = new Date();
-        const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const upcoming = (response.data || [])
+        const allHolidays = (response.data || [])
           .filter((holiday: any) => {
             if (!holiday?.date) return false;
             const holidayDate = new Date(holiday.date);
-            return !Number.isNaN(holidayDate.getTime()) && holidayDate >= startOfToday;
+            return !Number.isNaN(holidayDate.getTime());
           })
           .sort((a: any, b: any) => {
             const aTime = new Date(a.date).getTime() || 0;
             const bTime = new Date(b.date).getTime() || 0;
             return aTime - bTime;
-          })
-          .slice(0, 6);
-        setUpcomingHolidays(upcoming);
+          });
+        setHolidayList(allHolidays);
       } else {
-        setUpcomingHolidays([]);
+        setHolidayList([]);
       }
     } catch {
-      setUpcomingHolidays([]);
+      setHolidayList([]);
     } finally {
       setHolidaysLoading(false);
     }
@@ -124,7 +121,6 @@ function AttendanceScreen() {
     if (!token) return;
     loadAttendance(referenceDate);
   }, [referenceDate, loadAttendance, token]);
-
   useEffect(() => {
     if (!token) return;
     loadHolidays();
@@ -187,7 +183,7 @@ function AttendanceScreen() {
             dayNames={dayNames}
             formatTime={formatTime}
             employeeName={employeeName}
-            upcomingHolidays={upcomingHolidays}
+            upcomingHolidays={holidayList}
             holidaysLoading={holidaysLoading}
           />
         )}
@@ -227,7 +223,7 @@ const styles = StyleSheet.create({
   },
   headerLabel: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: '#e2e8f0',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
