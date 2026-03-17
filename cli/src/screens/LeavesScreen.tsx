@@ -138,11 +138,12 @@ function LeavesScreen() {
     };
     if (duration === 'half_day') payload.halfDaySession = halfDaySession;
     const res = await postApiWithToken<any>('/leaves/apply', payload, token);
-    setSubmitting(false);
     if (!res?.success) {
+      setSubmitting(false);
       setError(res?.message || 'Unable to apply leave.');
       return;
     }
+    setSubmitting(false);
     setReason('');
     setApplyOpen(false);
     loadData();
@@ -1034,7 +1035,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f5f9',
   },
   calendarHoliday: {
-    backgroundColor: '#d1fae5',
+    backgroundColor: '#efd980',
   },
   legendRow: {
     flexDirection: 'row',
