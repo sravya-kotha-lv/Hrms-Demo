@@ -351,8 +351,8 @@ export const Sidebar = memo(({
               onClick={() => isMobile && onMobileClose?.()}
               className="flex items-center gap-3 px-1 py-1"
             >
-              <div className="w-10 h-10 rounded-xl bg-white/8 border border-white/15 flex items-center justify-center">
-                <UserCircle className="w-6 h-6 text-white" />
+              <div className="w-14 h-14 rounded-xl bg-white/8 border border-white/15 flex items-center justify-center overflow-hidden">
+                <img src="/hrms-logo.png" alt="Upanaya logo" className="w-10 h-10 object-contain" />
               </div>
               <AnimatePresence>
                 {!effectiveCollapsed && (
@@ -390,7 +390,7 @@ export const Sidebar = memo(({
           </div>
         </nav>
 
-        <div className="border-t border-white/10 py-4 px-3">
+        {/* <div className="border-t border-white/10 py-4 px-3">
           <div className="mt-4 pt-4 border-t border-white/10">
             <div className="flex items-center gap-3 px-2">
               <Avatar className="w-10 h-10 border-2 border-white/30">
@@ -418,7 +418,7 @@ export const Sidebar = memo(({
               </AnimatePresence>
             </div>
           </div>
-        </div>
+        </div> */}
       </motion.aside>
     </>
   );
