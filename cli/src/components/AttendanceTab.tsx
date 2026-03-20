@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { AttendanceDay } from '../types/attendance';
 
@@ -31,6 +31,14 @@ const formatHolidayDate = (value?: string) => {
   });
 };
 
+const formatAttendanceDate = (referenceDate: Date, day: number) => {
+  const date = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), day);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const dateValue = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dateValue}`;
+};
+
 const AttendanceTab = ({
   matrixDays,
   daysInMonth,
@@ -43,8 +51,7 @@ const AttendanceTab = ({
   holidaysLoading = false,
 }: AttendanceTabProps) => {
 
-  const [showCellModal, setShowCellModal] = useState(false);
-  const [selectedDayForModal, setSelectedDayForModal] = useState<number | null>(null);
+  const [selectedDayForCard, setSelectedDayForCard] = useState<number | null>(null);
 
   const monthDate = useMemo(
     () => new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1),
@@ -98,12 +105,22 @@ const AttendanceTab = ({
     return styles.calendarNeutral;
   };
 
-  const openCellModal = (day: number) => {
-    setSelectedDayForModal(day);
-    setShowCellModal(true);
+  const selectedCell = selectedDayForCard ? matrixDays[selectedDayForCard] || {} : null;
+  const selectedDateLabel = selectedDayForCard
+    ? formatAttendanceDate(referenceDate, selectedDayForCard)
+    : '';
+  const hasActivity =
+    Boolean(selectedCell?.status) ||
+    Boolean(selectedCell?.checkInAt) ||
+    Boolean(selectedCell?.checkOutAt) ||
+    Boolean(selectedCell?.leaveType) ||
+    Boolean(selectedCell?.holidayName);
+
+  const openCellCard = (day: number) => {
+    setSelectedDayForCard(day);
   };
 
-  const closeCellModal = () => setShowCellModal(false);
+  const closeCellCard = () => setSelectedDayForCard(null);
 
   return (
     <View style={styles.container}>
@@ -141,63 +158,13 @@ const AttendanceTab = ({
             <Pressable
               key={`day-${day}`}
               style={[styles.dayCell, getAttendanceStyle(day)]}
-              onPress={() => openCellModal(day)}
+              onPress={() => openCellCard(day)}
             >
               <Text style={styles.dayText}>{day}</Text>
             </Pressable>
           );
         })}
       </View>
-
-      {/* Modal */}
-      {showCellModal && selectedDayForModal && (
-        <>
-          <Pressable style={styles.modalBackdrop} onPress={closeCellModal} />
-
-          <View style={styles.modal}>
-            <View style={styles.modalContent}>
-
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  {employeeName} - Day {selectedDayForModal}
-                </Text>
-
-                <Pressable onPress={closeCellModal}>
-                  <MaterialCommunityIcons name="close" size={20} color="#64748b" />
-                </Pressable>
-              </View>
-
-              {(() => {
-
-                const cell = matrixDays[selectedDayForModal] || {};
-
-                return (
-                  <View style={{ gap: 6 }}>
-                    <Text>Status: {cell.status || 'No record'}</Text>
-
-                    {cell.checkInAt && (
-                      <Text>Check-in: {formatTime(cell.checkInAt)}</Text>
-                    )}
-
-                    {cell.checkOutAt && (
-                      <Text>Check-out: {formatTime(cell.checkOutAt)}</Text>
-                    )}
-
-                    {cell.leaveType && (
-                      <Text>Leave Type: {cell.leaveType}</Text>
-                    )}
-
-                    {cell.holidayName && (
-                      <Text>Holiday: {cell.holidayName}</Text>
-                    )}
-                  </View>
-                );
-              })()}
-
-            </View>
-          </View>
-        </>
-      )}
 
       <View style={styles.holidaysSection}>
         <View style={styles.holidaysHeader}>
@@ -226,6 +193,63 @@ const AttendanceTab = ({
           ))
         )}
       </View>
+
+      <Modal
+        visible={Boolean(selectedDayForCard)}
+        transparent
+        animationType="fade"
+        onRequestClose={closeCellCard}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={closeCellCard} />
+
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderSpacer} />
+              <Text style={styles.modalTitle}>Attendance Details</Text>
+              <Pressable onPress={closeCellCard} hitSlop={8} style={styles.modalCloseButton}>
+                <MaterialCommunityIcons name="close" size={20} color="#6b7280" />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              {employeeName} - {selectedDateLabel}
+            </Text>
+
+            <View style={styles.timelineCard}>
+              <Text style={styles.timelineTitle}>Activity Timeline</Text>
+
+              {!hasActivity && (
+                <Text style={styles.timelineEmptyText}>No activity found.</Text>
+              )}
+
+              {selectedCell?.status && (
+                <Text style={styles.timelineText}>Status: {selectedCell.status}</Text>
+              )}
+
+              {selectedCell?.checkInAt && (
+                <Text style={styles.timelineText}>Check-in: {formatTime(selectedCell.checkInAt)}</Text>
+              )}
+
+              {selectedCell?.checkOutAt && (
+                <Text style={styles.timelineText}>Check-out: {formatTime(selectedCell.checkOutAt)}</Text>
+              )}
+
+              {selectedCell?.leaveType && (
+                <Text style={styles.timelineText}>Leave Type: {selectedCell.leaveType}</Text>
+              )}
+
+              {selectedCell?.holidayName && (
+                <Text style={styles.timelineText}>Holiday: {selectedCell.holidayName}</Text>
+              )}
+            </View>
+
+            <Pressable style={styles.cancelButton} onPress={closeCellCard}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -348,35 +372,102 @@ calendarHoliday: {
     backgroundColor: '#ffffff',
   },
 
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.52)',
   },
 
-  modal: {
-    position: 'absolute',
-    top: '30%',
-    left: 20,
-    right: 20,
-  },
-
-  modalContent: {
+  modalCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 22,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 10,
   },
 
   modalHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+  },
+
+  modalHeaderSpacer: {
+    width: 24,
   },
 
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#1f2937',
   },
+
+  modalCloseButton: {
+    width: 24,
+    alignItems: 'flex-end',
+  },
+
+  modalSubtitle: {
+    marginTop: 16,
+    fontSize: 13,
+    color: '#6b7280',
+  },
+
+  timelineCard: {
+    marginTop: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#d7dee8',
+    backgroundColor: '#f8fafc',
+    padding: 14,
+    gap: 8,
+  },
+
+  timelineTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
+
+  timelineText: {
+    fontSize: 13,
+    color: '#475569',
+  },
+
+  timelineEmptyText: {
+    fontSize: 13,
+    color: '#6b7280',
+  },
+
+  cancelButton: {
+    marginTop: 16,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d7dee8',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
+
   holidaysSection: {
     marginTop: 16,
     borderTopWidth: 1,

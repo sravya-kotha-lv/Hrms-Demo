@@ -598,7 +598,7 @@ function EmployeeDashboardScreen() {
                       <View style={styles.actionRow}>
                         <Pressable
                           style={styles.secondaryAction}
-                          onPress={() => navigation.navigate('Leaves')}
+                          onPress={() => navigation.navigate('Leaves', { openApply: true })}
                         >
                           <Text style={styles.secondaryActionText}>Apply Leave</Text>
                         </Pressable>
@@ -823,16 +823,6 @@ function EmployeeDashboardScreen() {
                 }}
               >
                 <Text style={styles.profileMenuText}>Change Password</Text>
-              </Pressable>
-              <Pressable
-                style={styles.profileMenuItem}
-                onPress={() => {
-                  setProfileMenuOpen(false);
-                  navigation.navigate('RoleSwitch');
-                }}
-              >
-                <Text style={styles.profileMenuText}>Switch role</Text>
-                <MaterialCommunityIcons name="chevron-right" size={16} color="#64748b" />
               </Pressable>
               <View style={styles.profileMenuDivider} />
               <Pressable

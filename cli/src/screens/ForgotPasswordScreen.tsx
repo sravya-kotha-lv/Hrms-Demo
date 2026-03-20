@@ -159,17 +159,21 @@ function ForgotPasswordScreen() {
           {step === 'password' && (
             <View style={styles.form}>
               <TextInput
-                style={styles.input}
+                style={[styles.input, styles.passwordInput]}
                 placeholder="New password"
                 placeholderTextColor="#94a3b8"
+                selectionColor="#000000"
+                cursorColor="#000000"
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, styles.passwordInput]}
                 placeholder="Confirm new password"
                 placeholderTextColor="#94a3b8"
+                selectionColor="#000000"
+                cursorColor="#000000"
                 secureTextEntry
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
@@ -257,6 +261,9 @@ const styles = StyleSheet.create({
   },
   otpInput: {
     letterSpacing: 5,
+  },
+  passwordInput: {
+    color: '#000000',
   },
   primaryButton: {
     height: 44,

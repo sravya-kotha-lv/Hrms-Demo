@@ -20,10 +20,30 @@ import { AttendanceDay } from '../types/attendance';
 const isPresentLikeStatus = (status?: string | null) =>
   status === 'present' || status === 'half_day_present' || status === 'full_day_present';
 
-function LeavesScreen() {
+const parseDateKeyToMonth = (value?: string) => {
+  if (!value) return null;
+  const [year, month] = value.split('-').map(Number);
+  if (!year || !month) return null;
+  return new Date(year, month - 1, 1);
+};
+
+const getLeaveEmployeeDisplayId = (leave: any, profileEmployeeCode?: string) =>
+  profileEmployeeCode ||
+  leave?.employeeId?.employeeCode ||
+  leave?.employee?.employeeCode ||
+  leave?.employeeCode ||
+  leave?.employeeId?.employeeId ||
+  leave?.employee?.employeeId ||
+  leave?.employeeId?.code ||
+  leave?.employee?.code ||
+  'N/A';
+
+function LeavesScreen({ route }: any) {
   const navigation = useNavigation<any>();
   const { session } = useAuth();
   const token = session?.token || '';
+  const profile = session?.profile || session?.loginData || null;
+  const profileEmployeeCode = profile?.employeeCode || '';
   const safeAreaInsets = useSafeAreaInsets();
   const now = new Date();
 
@@ -122,6 +142,13 @@ function LeavesScreen() {
     }
   }, [applyOpen]);
 
+  useEffect(() => {
+    if (route?.params?.openApply) {
+      setApplyOpen(true);
+      navigation.setParams?.({ openApply: false });
+    }
+  }, [navigation, route?.params?.openApply]);
+
   const applyLeave = async () => {
     if (!leaveTypeId || !fromDate || !toDate || !reason) {
       setError('Please select a leave type, choose both dates, and add a reason.');
@@ -164,17 +191,14 @@ function LeavesScreen() {
     if (!searchQuery.trim()) return byStatus;
     const query = searchQuery.trim().toLowerCase();
     return byStatus.filter((leave) => {
-      const employee =
-        leave?.employeeId?.firstName || leave?.employeeId?.lastName
-          ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
-          : leave?.employeeId?.email || '';
+      const employee = String(getLeaveEmployeeDisplayId(leave, profileEmployeeCode) || '');
       const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || '';
       return (
         employee.toLowerCase().includes(query) ||
         leaveType.toLowerCase().includes(query)
       );
     });
-  }, [leaves, searchQuery, statusFilter]);
+  }, [leaves, profileEmployeeCode, searchQuery, statusFilter]);
 
   const statusLabel =
     statusFilter === 'all'
@@ -217,20 +241,38 @@ function LeavesScreen() {
   };
 
   const formatDateKey = (day: number) => {
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const y = targetMonth.getFullYear();
+    const m = String(targetMonth.getMonth() + 1).padStart(2, '0');
     const d = String(day).padStart(2, '0');
     return `${y}-${m}-${d}`;
+  };
+
+  const openDatePicker = (field: 'from' | 'to') => {
+    const existingValue = field === 'from' ? fromDate : toDate;
+    const monthForField = parseDateKeyToMonth(existingValue) || parseDateKeyToMonth(fromDate);
+    if (monthForField) {
+      setTargetMonth(monthForField);
+    }
+    setActiveDateField(field);
   };
 
   const handleSelectDay = (day: number) => {
     const selected = formatDateKey(day);
     if (activeDateField === 'from') {
       setFromDate(selected);
-      setActiveDateField('to');
+      if (toDate && selected > toDate) {
+        setToDate('');
+      }
+      setActiveDateField(null);
       return;
     }
     if (activeDateField === 'to') {
+      if (fromDate && selected < fromDate) {
+        setFromDate(selected);
+        setToDate('');
+        setActiveDateField(null);
+        return;
+      }
       setToDate(selected);
       setActiveDateField(null);
       return;
@@ -400,7 +442,7 @@ function LeavesScreen() {
               >
                 <View style={styles.tableContent}>
                   <View style={styles.tableHeaderRow}>
-                    <Text style={[styles.tableHeaderText, styles.colEmployee]}>Employee</Text>
+                    <Text style={[styles.tableHeaderText, styles.colEmployee]}>Employee ID</Text>
                     <Text style={[styles.tableHeaderText, styles.colType]}>Leave Type</Text>
                     <Text style={[styles.tableHeaderText, styles.colDate]}>From</Text>
                     <Text style={[styles.tableHeaderText, styles.colDate]}>To</Text>
@@ -412,10 +454,7 @@ function LeavesScreen() {
                   </View>
                   <View>
                     {filteredLeaves.map((leave) => {
-                      const employee =
-                        leave?.employeeId?.firstName || leave?.employeeId?.lastName
-                          ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
-                          : leave?.employeeId?.email || 'Employee';
+                      const employee = String(getLeaveEmployeeDisplayId(leave, profileEmployeeCode));
                       const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || 'Leave';
                       const from = formatTableDate(leave?.fromDate);
                       const to = formatTableDate(leave?.toDate);
@@ -423,7 +462,7 @@ function LeavesScreen() {
                       const durationLabel = leave?.duration === 'half_day' ? 'Half Day' : 'Full Day';
                       const status = leave?.status || 'pending';
                       const approvalLabel = leave?.approvalStatus || leave?.approvedBy?.name || 'Single-step';
-                      const employeeInitial = (employee.trim()[0] || 'U').toUpperCase();
+                      const employeeInitial = '#';
                       return (
                         <View key={leave._id} style={styles.tableRow}>
                           <View style={styles.colEmployee}>
@@ -661,7 +700,7 @@ function LeavesScreen() {
                     <Text style={styles.fieldLabel}>From Date</Text>
                     <Pressable
                       style={styles.dateInput}
-                      onPress={() => setActiveDateField('from')}
+                      onPress={() => openDatePicker('from')}
                     >
                       <Text style={styles.selectText}>{fromDate || 'dd-mm-yyyy'}</Text>
                       <MaterialCommunityIcons
@@ -675,7 +714,7 @@ function LeavesScreen() {
                     <Text style={styles.fieldLabel}>To Date</Text>
                     <Pressable
                       style={styles.dateInput}
-                      onPress={() => setActiveDateField('to')}
+                      onPress={() => openDatePicker('to')}
                     >
                       <Text style={styles.selectText}>{toDate || 'dd-mm-yyyy'}</Text>
                       <MaterialCommunityIcons
@@ -688,8 +727,8 @@ function LeavesScreen() {
                 </View>
                 <Text style={styles.dateHint}>
                   {activeDateField
-                    ? `Pick a date on the calendar for the ${activeDateField} field.`
-                    : 'Tap a date on the calendar above to set the From/To fields.'}
+                    ? `Pick a date for the ${activeDateField} field.`
+                    : 'Tap the From Date or To Date field to choose a date.'}
                 </Text>
 
                 <Text style={styles.fieldLabel}>Reason</Text>
@@ -715,6 +754,85 @@ function LeavesScreen() {
                 </Pressable>
               </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(applyOpen && activeDateField)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActiveDateField(null)}
+      >
+        <View style={styles.datePickerBackdrop}>
+          <Pressable style={styles.datePickerOverlay} onPress={() => setActiveDateField(null)} />
+          <View style={styles.datePickerCard}>
+            <View style={styles.datePickerHeader}>
+              <Text style={styles.datePickerTitle}>
+                {activeDateField === 'from' ? 'Select From Date' : 'Select To Date'}
+              </Text>
+              <Pressable onPress={() => setActiveDateField(null)} hitSlop={8}>
+                <MaterialCommunityIcons name="close" size={18} color="#0f172a" />
+              </Pressable>
+            </View>
+
+            <View style={styles.calendarHeaderRowTop}>
+              <Text style={styles.cardTitle}>{monthLabel}</Text>
+              <View style={styles.calendarNavRow}>
+                <Pressable style={styles.calendarNavButton} onPress={() => changeMonth(-1)}>
+                  <MaterialCommunityIcons name="chevron-left" size={16} color="#111827" />
+                </Pressable>
+                <Pressable style={styles.calendarNavButton} onPress={() => changeMonth(1)}>
+                  <MaterialCommunityIcons name="chevron-right" size={16} color="#111827" />
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.weekRow}>
+              {weekDays.map((d) => (
+                <Text key={`picker-${d}`} style={styles.weekText}>
+                  {d}
+                </Text>
+              ))}
+            </View>
+
+            <View style={styles.calendarGrid}>
+              {calendarRows.map((week, wIdx) => (
+                <View key={`picker-week-${wIdx}`} style={styles.attendanceWeekRow}>
+                  {week.map((day, dIdx) => {
+                    if (!day) {
+                      return <View key={`picker-empty-${wIdx}-${dIdx}`} style={styles.calendarEmpty} />;
+                    }
+                    const key = formatDateKey(day);
+                    const isSelected =
+                      key === fromDate ||
+                      key === toDate ||
+                      (fromDate && toDate && key > fromDate && key < toDate);
+                    return (
+                      <Pressable
+                        key={`picker-${key}`}
+                        style={[
+                          styles.dayCell,
+                          getAttendanceStyle(day),
+                          isSelected && styles.dayCellSelected,
+                        ]}
+                        onPress={() => handleSelectDay(day)}
+                      >
+                        <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>
+                          {day}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+
+            {calendarLoading && (
+              <View style={styles.calendarLoading}>
+                <ActivityIndicator color="#2563eb" />
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -1120,6 +1238,38 @@ const styles = StyleSheet.create({
   modalContent: {
     gap: 12,
     paddingBottom: 12,
+  },
+  datePickerBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: 'rgba(15,23,42,0.38)',
+  },
+  datePickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  datePickerCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  datePickerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
   },
   calendarCard: {
     backgroundColor: '#e8ecff',
