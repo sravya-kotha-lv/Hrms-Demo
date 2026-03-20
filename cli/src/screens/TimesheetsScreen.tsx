@@ -147,11 +147,9 @@ function TimesheetsScreen() {
         ]}
       >
         <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.headerButton}>
-            <MaterialCommunityIcons name="chevron-left" size={22} color="#0f172a" />
-          </Pressable>
+         
           <Text style={styles.headerTitle}>Weekly Timesheet</Text>
-          <View style={styles.headerButton} />
+          
         </View>
 
         <View style={styles.card}>
