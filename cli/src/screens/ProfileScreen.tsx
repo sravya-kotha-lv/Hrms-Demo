@@ -406,11 +406,15 @@ function ProfileScreen() {
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Profile Picture</Text>
                 <View style={styles.profilePicRow}>
-                  <View style={styles.profilePic}>
+                  <View style={styles.profilePicWrapper}>
                     {profileImage ? (
-                      <Image source={{ uri: `data:${profileImage.mimeType};base64,${profileImage.base64Data}` }} style={styles.profilePic} />
+                      <Image
+                        source={{ uri: `data:${profileImage.mimeType};base64,${profileImage.base64Data}` }}
+                        style={styles.profilePicImage}
+                        resizeMode="cover"
+                      />
                     ) : profileImageUrl ? (
-                      <Image source={{ uri: profileImageUrl }} style={styles.profilePic} />
+                      <Image source={{ uri: profileImageUrl }} style={styles.profilePicImage} resizeMode="cover" />
                     ) : (
                       <MaterialCommunityIcons name="account" size={32} color="#64748b" />
                     )}
@@ -692,16 +696,21 @@ const styles = StyleSheet.create({
   section: { marginTop: 12 },
   sectionTitle: { fontSize: 14, fontWeight: '600', color: '#475569', marginBottom: 6 },
   profilePicRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  profilePic: {
+  profilePicWrapper: {
     width: 64,
     height: 64,
     borderRadius: 32,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    alignItems: 'center',
-    justifyContent: 'center',
     marginRight: 12,
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profilePicImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 32,
   },
   profilePicActions: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
   uploadButton: {
