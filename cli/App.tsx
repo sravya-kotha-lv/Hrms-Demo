@@ -16,7 +16,6 @@ import LeavesScreen from './src/screens/LeavesScreen';
 import TimesheetsScreen from './src/screens/TimesheetsScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
-import RoleSwitchScreen from './src/screens/RoleSwitchScreen';
 import AttendanceScreen from './src/screens/AttendanceScreen';
 import { setUnauthorizedHandler } from './src/services/api';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -54,7 +53,6 @@ export type RootStackParamList = {
   EmployeeTabs: undefined;
   Notifications: undefined;
   ChangePassword: undefined;
-  RoleSwitch: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -388,7 +386,6 @@ function AppNavigator() {
               }}
             />
             <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-            <Stack.Screen name="RoleSwitch" component={RoleSwitchScreen} />
           </>
         ) : (
           <>
