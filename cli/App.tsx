@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import { NavigationContainer, NavigationState } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BlurView } from '@react-native-community/blur';
@@ -20,6 +20,33 @@ import RoleSwitchScreen from './src/screens/RoleSwitchScreen';
 import AttendanceScreen from './src/screens/AttendanceScreen';
 import { setUnauthorizedHandler } from './src/services/api';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+
+const patchResponseForStatusZero = () => {
+  if (typeof globalThis === 'undefined' || !globalThis.Response) {
+    return;
+  }
+  const NativeResponse = globalThis.Response as typeof Response & { __patchedForZero?: boolean };
+  type ResponseBody = ConstructorParameters<typeof Response>[0];
+  if (NativeResponse.__patchedForZero) return;
+
+  const WrappedResponse = function (
+    body?: ResponseBody,
+    init: ResponseInit = {}
+  ) {
+    const normalizedInit = { ...init };
+    if (normalizedInit.status === 0) {
+      normalizedInit.status = 200;
+    }
+    return new NativeResponse(body, normalizedInit);
+  } as unknown as typeof Response;
+
+  WrappedResponse.prototype = NativeResponse.prototype;
+  Object.setPrototypeOf(WrappedResponse, NativeResponse);
+  (WrappedResponse as typeof Response & { __patchedForZero?: boolean }).__patchedForZero = true;
+  globalThis.Response = WrappedResponse;
+};
+
+patchResponseForStatusZero();
 
 export type RootStackParamList = {
   Login: undefined;

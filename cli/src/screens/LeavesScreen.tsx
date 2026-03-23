@@ -20,30 +20,28 @@ import { AttendanceDay } from '../types/attendance';
 const isPresentLikeStatus = (status?: string | null) =>
   status === 'present' || status === 'half_day_present' || status === 'full_day_present';
 
-const parseDateKeyToMonth = (value?: string) => {
-  if (!value) return null;
-  const [year, month] = value.split('-').map(Number);
-  if (!year || !month) return null;
-  return new Date(year, month - 1, 1);
+const toIsoDateString = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
-const getLeaveEmployeeDisplayId = (leave: any, profileEmployeeCode?: string) =>
-  profileEmployeeCode ||
-  leave?.employeeId?.employeeCode ||
-  leave?.employee?.employeeCode ||
-  leave?.employeeCode ||
-  leave?.employeeId?.employeeId ||
-  leave?.employee?.employeeId ||
-  leave?.employeeId?.code ||
-  leave?.employee?.code ||
-  'N/A';
+const DURATION_OPTIONS = [
+  { value: 'full_day', label: 'Full Day' },
+  { value: 'half_day', label: 'Half Day' },
+] as const;
 
-function LeavesScreen({ route }: any) {
+const SESSION_OPTIONS = [
+  { value: 'first_half', label: 'First Half' },
+  { value: 'second_half', label: 'Second Half' },
+] as const;
+
+function LeavesScreen() {
   const navigation = useNavigation<any>();
   const { session } = useAuth();
   const token = session?.token || '';
   const profile = session?.profile || session?.loginData || null;
-  const profileEmployeeCode = profile?.employeeCode || '';
   const safeAreaInsets = useSafeAreaInsets();
   const now = new Date();
 
@@ -63,9 +61,13 @@ function LeavesScreen({ route }: any) {
   const [leaveTypeId, setLeaveTypeId] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [fromDateInput, setFromDateInput] = useState('');
+  const [toDateInput, setToDateInput] = useState('');
   const [reason, setReason] = useState('');
   const [duration, setDuration] = useState<'full_day' | 'half_day'>('full_day');
   const [halfDaySession, setHalfDaySession] = useState<'first_half' | 'second_half'>('first_half');
+  const [durationMenuOpen, setDurationMenuOpen] = useState(false);
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [calendarDays, setCalendarDays] = useState<Record<number, AttendanceDay>>({});
   const [calendarDaysInMonth, setCalendarDaysInMonth] = useState(initialDaysInMonth);
   const [targetMonth, setTargetMonth] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1));
@@ -74,6 +76,9 @@ function LeavesScreen({ route }: any) {
   const [leaveBalances, setLeaveBalances] = useState<any[]>([]);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [activeDateField, setActiveDateField] = useState<'from' | 'to' | null>(null);
+  const [miniCalendarField, setMiniCalendarField] = useState<'from' | 'to' | null>(null);
+  const [selectedLeave, setSelectedLeave] = useState<any | null>(null);
+  const [detailsVisible, setDetailsVisible] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -139,15 +144,17 @@ function LeavesScreen({ route }: any) {
     if (!applyOpen) {
       setLeaveTypeMenuOpen(false);
       setActiveDateField(null);
+      setDurationMenuOpen(false);
+      setSessionMenuOpen(false);
+      setMiniCalendarField(null);
     }
   }, [applyOpen]);
 
   useEffect(() => {
-    if (route?.params?.openApply) {
-      setApplyOpen(true);
-      navigation.setParams?.({ openApply: false });
+    if (duration === 'full_day') {
+      setSessionMenuOpen(false);
     }
-  }, [navigation, route?.params?.openApply]);
+  }, [duration]);
 
   const applyLeave = async () => {
     if (!leaveTypeId || !fromDate || !toDate || !reason) {
@@ -172,6 +179,8 @@ function LeavesScreen({ route }: any) {
     }
     setSubmitting(false);
     setReason('');
+    setDurationMenuOpen(false);
+    setSessionMenuOpen(false);
     setApplyOpen(false);
     loadData();
   };
@@ -183,6 +192,11 @@ function LeavesScreen({ route }: any) {
   const primaryBalance = useMemo(() => {
     return leaveBalances.length > 0 ? leaveBalances[0] : null;
   }, [leaveBalances]);
+  const currentEmployeeCode =
+    profile?.employeeCode ||
+    profile?.employeeId ||
+    profile?.employee?.employeeCode ||
+    '';
   const filteredLeaves = useMemo(() => {
     const byStatus =
       statusFilter === 'all'
@@ -191,14 +205,24 @@ function LeavesScreen({ route }: any) {
     if (!searchQuery.trim()) return byStatus;
     const query = searchQuery.trim().toLowerCase();
     return byStatus.filter((leave) => {
-      const employee = String(getLeaveEmployeeDisplayId(leave, profileEmployeeCode) || '');
+      const employee =
+        leave?.employeeId?.firstName || leave?.employeeId?.lastName
+          ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
+          : leave?.employeeId?.email || '';
+      const employeeCode =
+        leave?.employeeCode ||
+        leave?.employeeId?.employeeCode ||
+        leave?.employeeId?.employeeId ||
+        currentEmployeeCode ||
+        '';
       const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || '';
       return (
         employee.toLowerCase().includes(query) ||
-        leaveType.toLowerCase().includes(query)
+        leaveType.toLowerCase().includes(query) ||
+        employeeCode.toLowerCase().includes(query)
       );
     });
-  }, [leaves, profileEmployeeCode, searchQuery, statusFilter]);
+  }, [currentEmployeeCode, leaves, searchQuery, statusFilter]);
 
   const statusLabel =
     statusFilter === 'all'
@@ -241,54 +265,59 @@ function LeavesScreen({ route }: any) {
   };
 
   const formatDateKey = (day: number) => {
-    const y = targetMonth.getFullYear();
-    const m = String(targetMonth.getMonth() + 1).padStart(2, '0');
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
     const d = String(day).padStart(2, '0');
     return `${y}-${m}-${d}`;
   };
 
-  const openDatePicker = (field: 'from' | 'to') => {
-    const existingValue = field === 'from' ? fromDate : toDate;
-    const monthForField = parseDateKeyToMonth(existingValue) || parseDateKeyToMonth(fromDate);
-    if (monthForField) {
-      setTargetMonth(monthForField);
-    }
-    setActiveDateField(field);
-  };
-
   const handleSelectDay = (day: number) => {
     const selected = formatDateKey(day);
+    const displayText = formatDisplayDate(selected);
+    if (miniCalendarField) {
+      setMiniCalendarField(null);
+    }
     if (activeDateField === 'from') {
-      setFromDate(selected);
-      if (toDate && selected > toDate) {
-        setToDate('');
-      }
-      setActiveDateField(null);
+      setDateField('from', selected, { displayText });
+      setActiveDateField('to');
       return;
     }
     if (activeDateField === 'to') {
-      if (fromDate && selected < fromDate) {
-        setFromDate(selected);
-        setToDate('');
-        setActiveDateField(null);
-        return;
-      }
-      setToDate(selected);
+      setDateField('to', selected, { displayText });
       setActiveDateField(null);
       return;
     }
     if (!fromDate || (fromDate && toDate)) {
-      setFromDate(selected);
-      setToDate('');
+      setDateField('from', selected, { displayText });
+      setDateField('to', '', { displayText: '' });
       return;
     }
     if (fromDate && !toDate) {
       if (selected >= fromDate) {
-        setToDate(selected);
+        setDateField('to', selected, { displayText });
       } else {
-        setFromDate(selected);
+        setDateField('from', selected, { displayText });
       }
     }
+  };
+
+  const openDetails = (leave: any) => {
+    setSelectedLeave(leave);
+    setDetailsVisible(true);
+  };
+
+  const closeDetails = () => {
+    setDetailsVisible(false);
+    setSelectedLeave(null);
+  };
+
+  const openFieldCalendar = (field: 'from' | 'to') => {
+    setActiveDateField(field);
+    setMiniCalendarField(field);
+  };
+
+  const closeMiniCalendar = () => {
+    setMiniCalendarField(null);
   };
 
   const applicableDays = useMemo(() => {
@@ -309,6 +338,90 @@ function LeavesScreen({ route }: any) {
       day: 'numeric',
       year: 'numeric',
     });
+  };
+
+  const detailEmployeeName = selectedLeave
+    ? [
+        selectedLeave?.employeeId?.firstName,
+        selectedLeave?.employeeId?.lastName,
+      ].filter(Boolean).join(' ') ||
+      selectedLeave?.employeeName ||
+      selectedLeave?.employeeId?.email ||
+      'Employee'
+    : '';
+  const detailLeaveType = selectedLeave?.leaveTypeName || selectedLeave?.leaveTypeId?.name || 'Leave';
+  const detailFrom = selectedLeave ? formatTableDate(selectedLeave.fromDate) : '-';
+  const detailTo = selectedLeave ? formatTableDate(selectedLeave.toDate) : '-';
+  const detailDays = selectedLeave?.totalDays ?? '-';
+  const detailDuration = selectedLeave?.duration === 'half_day' ? 'Half Day' : 'Full Day';
+  const detailStatus = selectedLeave?.status ? selectedLeave.status.charAt(0).toUpperCase() + selectedLeave.status.slice(1) : 'Pending';
+  const detailApproval =
+    selectedLeave?.approvalStatus ||
+    selectedLeave?.approvedBy?.name ||
+    'Single-step';
+  const detailReason = selectedLeave?.reason || selectedLeave?.leaveReason || '-';
+
+  const formatDisplayDate = (value?: string) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const year = parsed.getFullYear();
+    return `${day}-${month}-${year}`;
+  };
+
+  const parseDisplayDate = (value: string) => {
+    const normalized = value.trim();
+    const match = normalized.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (!match) return null;
+    const [, dayPart, monthPart, yearPart] = match;
+    const day = Number(dayPart);
+    const month = Number(monthPart);
+    const year = Number(yearPart);
+    if (!day || !month || !year) return null;
+    const date = new Date(year, month - 1, day);
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() + 1 !== month ||
+      date.getDate() !== day
+    ) {
+      return null;
+    }
+    return toIsoDateString(date);
+  };
+
+  const setDateField = (
+    field: 'from' | 'to',
+    isoValue: string,
+    options?: { displayText?: string }
+  ) => {
+    const displayText =
+      options?.displayText ?? (isoValue ? formatDisplayDate(isoValue) : '');
+    if (field === 'from') {
+      setFromDate(isoValue);
+      setFromDateInput(displayText);
+      return;
+    }
+    setToDate(isoValue);
+    setToDateInput(displayText);
+  };
+
+  const handleDateInputChange = (field: 'from' | 'to', text: string) => {
+    if (field === 'from') {
+      setFromDateInput(text);
+    } else {
+      setToDateInput(text);
+    }
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setDateField(field, '', { displayText: '' });
+      return;
+    }
+    const iso = parseDisplayDate(trimmed);
+    if (iso) {
+      setDateField(field, iso, { displayText: formatDisplayDate(iso) });
+    }
   };
 
   return (
@@ -365,7 +478,14 @@ function LeavesScreen({ route }: any) {
                 style={styles.filterButton}
                 onPress={() => setFilterOpen((v) => !v)}
               >
-                <Text style={styles.filterText}>{statusLabel}</Text>
+                <Text
+                  style={styles.filterText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  allowFontScaling={false}
+                >
+                  {statusLabel}
+                </Text>
                 <MaterialCommunityIcons name="chevron-down" size={16} color="#64748b" />
               </Pressable>
               {filterOpen && (
@@ -442,7 +562,7 @@ function LeavesScreen({ route }: any) {
               >
                 <View style={styles.tableContent}>
                   <View style={styles.tableHeaderRow}>
-                    <Text style={[styles.tableHeaderText, styles.colEmployee]}>Employee ID</Text>
+                    <Text style={[styles.tableHeaderText, styles.colEmployee]}>Employee</Text>
                     <Text style={[styles.tableHeaderText, styles.colType]}>Leave Type</Text>
                     <Text style={[styles.tableHeaderText, styles.colDate]}>From</Text>
                     <Text style={[styles.tableHeaderText, styles.colDate]}>To</Text>
@@ -454,7 +574,16 @@ function LeavesScreen({ route }: any) {
                   </View>
                   <View>
                     {filteredLeaves.map((leave) => {
-                      const employee = String(getLeaveEmployeeDisplayId(leave, profileEmployeeCode));
+                      const employee =
+                        leave?.employeeId?.firstName || leave?.employeeId?.lastName
+                          ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
+                          : leave?.employeeId?.email || 'Employee';
+                      const employeeCode =
+                        leave?.employeeCode ||
+                        leave?.employeeId?.employeeCode ||
+                        leave?.employeeId?.employeeId ||
+                        currentEmployeeCode ||
+                        'N/A';
                       const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || 'Leave';
                       const from = formatTableDate(leave?.fromDate);
                       const to = formatTableDate(leave?.toDate);
@@ -462,7 +591,7 @@ function LeavesScreen({ route }: any) {
                       const durationLabel = leave?.duration === 'half_day' ? 'Half Day' : 'Full Day';
                       const status = leave?.status || 'pending';
                       const approvalLabel = leave?.approvalStatus || leave?.approvedBy?.name || 'Single-step';
-                      const employeeInitial = '#';
+                      const employeeInitial = (employee.trim()[0] || 'U').toUpperCase();
                       return (
                         <View key={leave._id} style={styles.tableRow}>
                           <View style={styles.colEmployee}>
@@ -474,7 +603,7 @@ function LeavesScreen({ route }: any) {
                                 <Text style={styles.tableCell} numberOfLines={1}>
                                   {employee}
                                 </Text>
-                                <Text style={styles.employeeHint}>SELF</Text>
+                                <Text style={styles.employeeHint}>{employeeCode}</Text>
                               </View>
                             </View>
                           </View>
@@ -513,7 +642,16 @@ function LeavesScreen({ route }: any) {
                           <Text style={[styles.tableCell, styles.colApproval]} numberOfLines={1}>
                             {approvalLabel}
                           </Text>
-                          <Text style={[styles.tableActionsText, styles.colActions]}>...</Text>
+                          <View style={styles.colActions}>
+                            <Pressable
+                              style={styles.actionTrigger}
+                              onPress={() => openDetails(leave)}
+                              hitSlop={6}
+                            >
+                              <MaterialCommunityIcons name="dots-horizontal" size={20} color="#64748b" />
+                            </Pressable>
+                            
+                          </View>
                         </View>
                       );
                     })}
@@ -534,6 +672,56 @@ function LeavesScreen({ route }: any) {
         </View>
       </ScrollView>
       
+      <Modal visible={detailsVisible} transparent animationType="fade">
+        <Pressable style={styles.detailsBackdrop} onPress={closeDetails}>
+          <Pressable style={styles.detailsCard} onPress={(event) => event.stopPropagation()}>
+            <View style={styles.detailsHeader}>
+              <Text style={styles.detailsTitle}>Leave Details</Text>
+              <Pressable style={styles.detailsClose} onPress={closeDetails}>
+                <MaterialCommunityIcons name="close" size={18} color="#64748b" />
+              </Pressable>
+            </View>
+            <View style={styles.detailsBody}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Employee</Text>
+                <Text style={styles.detailValue}>{detailEmployeeName}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Leave Type</Text>
+                <Text style={styles.detailValue}>{detailLeaveType}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>From</Text>
+                <Text style={styles.detailValue}>{detailFrom}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>To</Text>
+                <Text style={styles.detailValue}>{detailTo}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Days</Text>
+                <Text style={styles.detailValue}>{detailDays}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Duration</Text>
+                <Text style={styles.detailValue}>{detailDuration}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Status</Text>
+                <Text style={styles.detailValue}>{detailStatus}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Approval</Text>
+                <Text style={styles.detailValue}>{detailApproval}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Reason</Text>
+                <Text style={styles.detailValue}>{detailReason}</Text>
+              </View>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={applyOpen} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
@@ -659,14 +847,14 @@ function LeavesScreen({ route }: any) {
                   </Pressable>
                 </View>
                 {leaveTypeMenuOpen && (
-                  <View style={styles.leaveTypeListWrapper}>
-                    <ScrollView style={styles.leaveTypeList}>
+                  <View style={styles.selectDropdownWrapper}>
+                    <ScrollView style={[styles.selectDropdown, styles.selectDropdownScroll]}>
                       {leaveTypes.map((type, index) => (
                         <Pressable
                           key={type._id || `${type.name}-${index}`}
                           style={[
-                            styles.leaveTypeItem,
-                            leaveTypeId === type._id && styles.leaveTypeItemActive,
+                            styles.selectDropdownItem,
+                            leaveTypeId === type._id && styles.selectDropdownItemActive,
                           ]}
                           onPress={() => {
                             setLeaveTypeId(type._id || '');
@@ -675,8 +863,8 @@ function LeavesScreen({ route }: any) {
                         >
                           <Text
                             style={[
-                              styles.leaveTypeItemText,
-                              leaveTypeId === type._id && styles.leaveTypeItemTextActive,
+                              styles.selectDropdownItemText,
+                              leaveTypeId === type._id && styles.selectDropdownItemTextActive,
                             ]}
                           >
                             {type.name || 'Leave type'}
@@ -687,48 +875,151 @@ function LeavesScreen({ route }: any) {
                   </View>
                 )}
 
-                <Text style={styles.fieldLabel}>Duration</Text>
-                <Pressable
-                  style={styles.selectInput}
-                  onPress={() => setDuration((d) => (d === 'full_day' ? 'half_day' : 'full_day'))}
-                >
-                  <Text style={styles.selectText}>{duration === 'half_day' ? 'Half Day' : 'Full Day'}</Text>
-                </Pressable>
+                <View style={styles.formRow}>
+                  <View style={styles.fieldColumn}>
+                    <Text style={styles.fieldLabel}>Duration</Text>
+                    <View style={styles.selectRow}>
+                      <Pressable
+                        style={styles.selectInput}
+                        onPress={() => setDurationMenuOpen((v) => !v)}
+                        hitSlop={6}
+                      >
+                        <Text style={styles.selectText}>
+                          {duration === 'half_day' ? 'Half Day' : 'Full Day'}
+                        </Text>
+                        <MaterialCommunityIcons name="chevron-down" size={18} color="#94a3b8" />
+                      </Pressable>
+                    </View>
+                    {durationMenuOpen && (
+                      <View style={styles.selectDropdownWrapper}>
+                        <View style={styles.selectDropdown}>
+                          {DURATION_OPTIONS.map((option) => (
+                            <Pressable
+                              key={option.value}
+                              style={[
+                                styles.selectDropdownItem,
+                                duration === option.value && styles.selectDropdownItemActive,
+                              ]}
+                              onPress={() => {
+                                setDuration(option.value);
+                                setDurationMenuOpen(false);
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.selectDropdownItemText,
+                                  duration === option.value &&
+                                    styles.selectDropdownItemTextActive,
+                                ]}
+                              >
+                                {option.label}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                  {duration === 'half_day' && (
+                    <View style={styles.fieldColumn}>
+                      <Text style={styles.fieldLabel}>Session</Text>
+                      <View style={styles.selectRow}>
+                        <Pressable
+                          style={styles.selectInput}
+                          onPress={() => setSessionMenuOpen((v) => !v)}
+                          hitSlop={6}
+                        >
+                          <Text style={styles.selectText}>
+                            {SESSION_OPTIONS.find((option) => option.value === halfDaySession)?.label ??
+                              'Session'}
+                          </Text>
+                          <MaterialCommunityIcons name="chevron-down" size={18} color="#94a3b8" />
+                        </Pressable>
+                      </View>
+                      {sessionMenuOpen && (
+                        <View style={styles.selectDropdownWrapper}>
+                          <View style={styles.selectDropdown}>
+                            {SESSION_OPTIONS.map((option) => (
+                              <Pressable
+                                key={option.value}
+                                style={[
+                                  styles.selectDropdownItem,
+                                  halfDaySession === option.value &&
+                                    styles.selectDropdownItemActive,
+                                ]}
+                                onPress={() => {
+                                  setHalfDaySession(option.value);
+                                  setSessionMenuOpen(false);
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.selectDropdownItemText,
+                                    halfDaySession === option.value &&
+                                      styles.selectDropdownItemTextActive,
+                                  ]}
+                                >
+                                  {option.label}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
 
                 <View style={styles.dateRow}>
                   <View style={styles.dateField}>
                     <Text style={styles.fieldLabel}>From Date</Text>
-                    <Pressable
-                      style={styles.dateInput}
-                      onPress={() => openDatePicker('from')}
-                    >
-                      <Text style={styles.selectText}>{fromDate || 'dd-mm-yyyy'}</Text>
-                      <MaterialCommunityIcons
-                        name="calendar-month-outline"
-                        size={18}
-                        color="#94a3b8"
+                    <View style={styles.dateInput}>
+                      <TextInput
+                        style={styles.dateTextInput}
+                        placeholder="dd-mm-yyyy"
+                        placeholderTextColor="#94a3b8"
+                        value={fromDateInput}
+                        onChangeText={(text) => handleDateInputChange('from', text)}
+                        keyboardType="number-pad"
+                        maxLength={10}
+                        onFocus={() => setActiveDateField('from')}
                       />
-                    </Pressable>
+                    <Pressable onPress={() => openFieldCalendar('from')} hitSlop={6}>
+                        <MaterialCommunityIcons
+                          name="calendar-month-outline"
+                          size={18}
+                          color="#94a3b8"
+                        />
+                      </Pressable>
+                    </View>
                   </View>
                   <View style={styles.dateField}>
                     <Text style={styles.fieldLabel}>To Date</Text>
-                    <Pressable
-                      style={styles.dateInput}
-                      onPress={() => openDatePicker('to')}
-                    >
-                      <Text style={styles.selectText}>{toDate || 'dd-mm-yyyy'}</Text>
-                      <MaterialCommunityIcons
-                        name="calendar-month-outline"
-                        size={18}
-                        color="#94a3b8"
+                    <View style={styles.dateInput}>
+                      <TextInput
+                        style={styles.dateTextInput}
+                        placeholder="dd-mm-yyyy"
+                        placeholderTextColor="#94a3b8"
+                        value={toDateInput}
+                        onChangeText={(text) => handleDateInputChange('to', text)}
+                        keyboardType="number-pad"
+                        maxLength={10}
+                        onFocus={() => setActiveDateField('to')}
                       />
-                    </Pressable>
+                      <Pressable onPress={() => openFieldCalendar('to')} hitSlop={6}>
+                        <MaterialCommunityIcons
+                          name="calendar-month-outline"
+                          size={18}
+                          color="#94a3b8"
+                        />
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
                 <Text style={styles.dateHint}>
                   {activeDateField
-                    ? `Pick a date for the ${activeDateField} field.`
-                    : 'Tap the From Date or To Date field to choose a date.'}
+                    ? `Pick a date on the calendar for the ${activeDateField} field.`
+                    : 'Tap a date on the calendar above to set the From/To fields.'}
                 </Text>
 
                 <Text style={styles.fieldLabel}>Reason</Text>
@@ -758,50 +1049,31 @@ function LeavesScreen({ route }: any) {
         </View>
       </Modal>
 
-      <Modal
-        visible={Boolean(applyOpen && activeDateField)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setActiveDateField(null)}
-      >
-        <View style={styles.datePickerBackdrop}>
-          <Pressable style={styles.datePickerOverlay} onPress={() => setActiveDateField(null)} />
-          <View style={styles.datePickerCard}>
-            <View style={styles.datePickerHeader}>
-              <Text style={styles.datePickerTitle}>
-                {activeDateField === 'from' ? 'Select From Date' : 'Select To Date'}
-              </Text>
-              <Pressable onPress={() => setActiveDateField(null)} hitSlop={8}>
-                <MaterialCommunityIcons name="close" size={18} color="#0f172a" />
+      <Modal visible={miniCalendarField !== null} transparent animationType="fade">
+        <Pressable style={styles.miniCalendarBackdrop} onPress={closeMiniCalendar}>
+          <Pressable
+            style={styles.miniCalendarCard}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <View style={styles.miniCalendarHeader}>
+              <Text style={styles.miniCalendarTitle}>{monthLabel}</Text>
+              <Pressable style={styles.miniCalendarClose} onPress={closeMiniCalendar}>
+                <MaterialCommunityIcons name="arrow-down" size={16} color="#64748b" />
               </Pressable>
             </View>
-
-            <View style={styles.calendarHeaderRowTop}>
-              <Text style={styles.cardTitle}>{monthLabel}</Text>
-              <View style={styles.calendarNavRow}>
-                <Pressable style={styles.calendarNavButton} onPress={() => changeMonth(-1)}>
-                  <MaterialCommunityIcons name="chevron-left" size={16} color="#111827" />
-                </Pressable>
-                <Pressable style={styles.calendarNavButton} onPress={() => changeMonth(1)}>
-                  <MaterialCommunityIcons name="chevron-right" size={16} color="#111827" />
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.weekRow}>
+            <View style={[styles.weekRow, styles.miniWeekRow]}>
               {weekDays.map((d) => (
-                <Text key={`picker-${d}`} style={styles.weekText}>
+                <Text key={d} style={[styles.weekText, styles.miniWeekText]}>
                   {d}
                 </Text>
               ))}
             </View>
-
-            <View style={styles.calendarGrid}>
+            <View style={styles.miniCalendarGrid}>
               {calendarRows.map((week, wIdx) => (
-                <View key={`picker-week-${wIdx}`} style={styles.attendanceWeekRow}>
+                <View key={`mini-week-${wIdx}`} style={styles.miniWeekRow}>
                   {week.map((day, dIdx) => {
                     if (!day) {
-                      return <View key={`picker-empty-${wIdx}-${dIdx}`} style={styles.calendarEmpty} />;
+                      return <View key={`mini-empty-${wIdx}-${dIdx}`} style={styles.miniCalendarEmpty} />;
                     }
                     const key = formatDateKey(day);
                     const isSelected =
@@ -810,15 +1082,23 @@ function LeavesScreen({ route }: any) {
                       (fromDate && toDate && key > fromDate && key < toDate);
                     return (
                       <Pressable
-                        key={`picker-${key}`}
+                        key={`mini-day-${key}`}
                         style={[
-                          styles.dayCell,
+                          styles.miniDayCell,
                           getAttendanceStyle(day),
                           isSelected && styles.dayCellSelected,
                         ]}
-                        onPress={() => handleSelectDay(day)}
+                        onPress={() => {
+                          handleSelectDay(day);
+                          closeMiniCalendar();
+                        }}
                       >
-                        <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>
+                        <Text
+                          style={[
+                            styles.dayText,
+                            isSelected && styles.dayTextSelected,
+                          ]}
+                        >
                           {day}
                         </Text>
                       </Pressable>
@@ -827,14 +1107,8 @@ function LeavesScreen({ route }: any) {
                 </View>
               ))}
             </View>
-
-            {calendarLoading && (
-              <View style={styles.calendarLoading}>
-                <ActivityIndicator color="#2563eb" />
-              </View>
-            )}
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </LinearGradient>
   );
@@ -931,11 +1205,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 42,
     backgroundColor: '#ffffff',
+    minWidth: 120,
   },
   filterText: {
     fontSize: 12,
     color: '#0f172a',
     fontWeight: '600',
+    lineHeight: 16,
+    includeFontPadding: false,
   },
   filterMenu: {
     position: 'absolute',
@@ -1118,7 +1395,24 @@ const styles = StyleSheet.create({
   colDuration: { width: 104 },
   colStatus: { width: 110, alignItems: 'flex-start', justifyContent: 'center' },
   colApproval: { width: 120, textAlign: 'center' },
-  colActions: { width: 84, textAlign: 'center' },
+  colActions: {
+    width: 84,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  actionTrigger: {
+    padding: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+  },
+  actionLabel: {
+    fontSize: 10,
+    color: '#64748b',
+  },
   employeeCell: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1238,38 +1532,6 @@ const styles = StyleSheet.create({
   modalContent: {
     gap: 12,
     paddingBottom: 12,
-  },
-  datePickerBackdrop: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 16,
-    backgroundColor: 'rgba(15,23,42,0.38)',
-  },
-  datePickerOverlay: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  datePickerCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-  },
-  datePickerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  datePickerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
   },
   calendarCard: {
     backgroundColor: '#e8ecff',
@@ -1391,6 +1653,125 @@ const styles = StyleSheet.create({
   calendarHoliday: {
     backgroundColor: '#efd980',
   },
+  detailsBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  detailsCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  detailsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  detailsClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsBody: {
+    gap: 10,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  detailLabel: {
+    fontSize: 12,
+    color: '#475569',
+    width: '40%',
+  },
+  detailValue: {
+    fontSize: 12,
+    color: '#0f172a',
+    fontWeight: '600',
+    width: '60%',
+  },
+  miniCalendarBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  miniCalendarCard: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 18,
+    backgroundColor: '#ffffff',
+    padding: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  miniCalendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  miniCalendarTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  miniCalendarClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniWeekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  miniWeekText: {
+    fontSize: 10,
+  },
+  miniCalendarGrid: {
+    marginTop: 8,
+  },
+  miniCalendarEmpty: {
+    width: '13%',
+    height: 36,
+  },
+  miniDayCell: {
+    width: '13%',
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
   legendRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1415,6 +1796,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0f172a',
   },
+  fieldColumn: {
+    flex: 1,
+    gap: 6,
+  },
   selectRow: {
     flexDirection: 'row',
     gap: 10,
@@ -1428,7 +1813,9 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     paddingHorizontal: 12,
     backgroundColor: '#f8fafc',
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   selectText: {
     fontSize: 12,
@@ -1445,6 +1832,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 42,
   },
+  dateTextInput: {
+    flex: 1,
+    fontSize: 12,
+    color: '#0f172a',
+    paddingVertical: 0,
+  },
   dateHint: {
     fontSize: 11,
     color: '#64748b',
@@ -1454,31 +1847,33 @@ const styles = StyleSheet.create({
   leaveTypeTrigger: {
     justifyContent: 'center',
   },
-  leaveTypeListWrapper: {
+  selectDropdownWrapper: {
     marginTop: 6,
   },
-  leaveTypeList: {
+  selectDropdown: {
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#ffffff',
-    maxHeight: 180,
     overflow: 'hidden',
   },
-  leaveTypeItem: {
+  selectDropdownScroll: {
+    maxHeight: 180,
+  },
+  selectDropdownItem: {
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  leaveTypeItemActive: {
+  selectDropdownItemActive: {
     backgroundColor: '#eef2ff',
   },
-  leaveTypeItemText: {
+  selectDropdownItemText: {
     fontSize: 12,
     color: '#0f172a',
   },
-  leaveTypeItemTextActive: {
+  selectDropdownItemTextActive: {
     fontWeight: '700',
     color: '#1d4ed8',
   },
@@ -1553,3 +1948,4 @@ const styles = StyleSheet.create({
 });
 
 export default LeavesScreen;
+

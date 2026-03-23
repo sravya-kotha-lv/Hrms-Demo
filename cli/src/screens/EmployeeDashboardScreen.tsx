@@ -637,44 +637,6 @@ function EmployeeDashboardScreen() {
                   <>
                     <View style={styles.card}>
                       <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle}>On Leave Today</Text>
-                        <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-                      </View>
-                      <View style={styles.leaveTableHeader}>
-                        <Text style={styles.leaveTableHeading}>Employee</Text>
-                        <Text style={styles.leaveTableHeading}>Leave Type</Text>
-                        <Text style={styles.leaveTableHeading}>From</Text>
-                        <Text style={styles.leaveTableHeading}>To</Text>
-                      </View>
-                      {onLeaveList.length === 0 ? (
-                        <Text style={styles.cardSubText}>No one is on leave today.</Text>
-                      ) : (
-                        onLeaveList.map((leave: any) => {
-                          const employeeName =
-                            [
-                              leave?.employee?.firstName,
-                              leave?.employee?.lastName,
-                            ].filter(Boolean).join(' ') ||
-                            leave?.employeeName ||
-                            'Employee';
-                          return (
-                            <View key={leave?._id || `${leave?.employeeId}-${leave?.from}`} style={styles.leaveTableRow}>
-                              <Text style={styles.leaveTableValue}>{employeeName}</Text>
-                              <Text style={styles.leaveTableValue}>{leave?.leaveType || 'Leave'}</Text>
-                              <Text style={styles.leaveTableValue}>
-                                {leave?.from || leave?.startDate ? toDateInput(new Date(leave?.from || leave?.startDate)) : '-'}
-                              </Text>
-                              <Text style={styles.leaveTableValue}>
-                                {leave?.to || leave?.endDate ? toDateInput(new Date(leave?.to || leave?.endDate)) : '-'}
-                              </Text>
-                            </View>
-                          );
-                        })
-                      )}
-                    </View>
-
-                    <View style={styles.card}>
-                      <View style={styles.cardHeader}>
                         <Text style={styles.cardTitle}>Team Snapshot</Text>
                         <View style={styles.pill}>
                           <Text style={styles.pillText}>Today</Text>

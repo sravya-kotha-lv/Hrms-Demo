@@ -24,6 +24,20 @@ export const getOrgTimeZone = () => {
 const toDate = (value: string | number | Date) =>
   value instanceof Date ? value : new Date(value);
 
+export const toDateKeyInOrgTimeZone = (value: string | number | Date) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: getOrgTimeZone(),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(toDate(value));
+
+  const read = (type: "year" | "month" | "day") =>
+    parts.find((part) => part.type === type)?.value || "";
+
+  return `${read("year")}-${read("month")}-${read("day")}`;
+};
+
 export const formatDateInOrgTimeZone = (
   value: string | number | Date,
   options: Intl.DateTimeFormatOptions = {}
