@@ -41,6 +41,7 @@ function LeavesScreen() {
   const navigation = useNavigation<any>();
   const { session } = useAuth();
   const token = session?.token || '';
+  const profile = session?.profile || session?.loginData || null;
   const safeAreaInsets = useSafeAreaInsets();
   const now = new Date();
 
@@ -191,6 +192,11 @@ function LeavesScreen() {
   const primaryBalance = useMemo(() => {
     return leaveBalances.length > 0 ? leaveBalances[0] : null;
   }, [leaveBalances]);
+  const currentEmployeeCode =
+    profile?.employeeCode ||
+    profile?.employeeId ||
+    profile?.employee?.employeeCode ||
+    '';
   const filteredLeaves = useMemo(() => {
     const byStatus =
       statusFilter === 'all'
@@ -203,13 +209,20 @@ function LeavesScreen() {
         leave?.employeeId?.firstName || leave?.employeeId?.lastName
           ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
           : leave?.employeeId?.email || '';
+      const employeeCode =
+        leave?.employeeCode ||
+        leave?.employeeId?.employeeCode ||
+        leave?.employeeId?.employeeId ||
+        currentEmployeeCode ||
+        '';
       const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || '';
       return (
         employee.toLowerCase().includes(query) ||
-        leaveType.toLowerCase().includes(query)
+        leaveType.toLowerCase().includes(query) ||
+        employeeCode.toLowerCase().includes(query)
       );
     });
-  }, [leaves, searchQuery, statusFilter]);
+  }, [currentEmployeeCode, leaves, searchQuery, statusFilter]);
 
   const statusLabel =
     statusFilter === 'all'
@@ -565,6 +578,12 @@ function LeavesScreen() {
                         leave?.employeeId?.firstName || leave?.employeeId?.lastName
                           ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
                           : leave?.employeeId?.email || 'Employee';
+                      const employeeCode =
+                        leave?.employeeCode ||
+                        leave?.employeeId?.employeeCode ||
+                        leave?.employeeId?.employeeId ||
+                        currentEmployeeCode ||
+                        'N/A';
                       const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || 'Leave';
                       const from = formatTableDate(leave?.fromDate);
                       const to = formatTableDate(leave?.toDate);
@@ -584,7 +603,7 @@ function LeavesScreen() {
                                 <Text style={styles.tableCell} numberOfLines={1}>
                                   {employee}
                                 </Text>
-                                <Text style={styles.employeeHint}>SELF</Text>
+                                <Text style={styles.employeeHint}>{employeeCode}</Text>
                               </View>
                             </View>
                           </View>
@@ -1929,3 +1948,4 @@ const styles = StyleSheet.create({
 });
 
 export default LeavesScreen;
+

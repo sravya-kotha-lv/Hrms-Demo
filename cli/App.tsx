@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import { NavigationContainer, NavigationState } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BlurView } from '@react-native-community/blur';
@@ -26,10 +26,11 @@ const patchResponseForStatusZero = () => {
     return;
   }
   const NativeResponse = globalThis.Response as typeof Response & { __patchedForZero?: boolean };
+  type ResponseBody = ConstructorParameters<typeof Response>[0];
   if (NativeResponse.__patchedForZero) return;
 
   const WrappedResponse = function (
-    body?: BodyInit | null,
+    body?: ResponseBody,
     init: ResponseInit = {}
   ) {
     const normalizedInit = { ...init };

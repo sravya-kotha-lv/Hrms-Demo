@@ -194,14 +194,16 @@ function LoginScreen() {
                 />
 
                 <View style={styles.passwordWrap}>
-                  <TextInput
-                    style={[styles.input, styles.passwordInput]}
-                    placeholder="Password"
-                    placeholderTextColor="#9aa4b2"
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={setPassword}
-                  />
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  placeholder="Password"
+                  placeholderTextColor="#9aa4b2"
+                  selectionColor="#000000"
+                  cursorColor="#000000"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                />
                   <Pressable
                     onPress={() => setShowPassword((current) => !current)}
                     style={styles.eyeButton}
@@ -383,6 +385,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     paddingHorizontal: 12,
+    color: '#0f172a',
   },
   passwordWrap: {
     position: 'relative',
@@ -390,6 +393,7 @@ const styles = StyleSheet.create({
   },
   passwordInput: {
     paddingRight: 44,
+    color: '#000000',
   },
   eyeButton: {
     position: 'absolute',
