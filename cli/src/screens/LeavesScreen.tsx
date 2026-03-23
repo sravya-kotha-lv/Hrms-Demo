@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getApiWithToken, postApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { AttendanceDay } from '../types/attendance';
@@ -41,7 +41,6 @@ function LeavesScreen() {
   const navigation = useNavigation<any>();
   const { session } = useAuth();
   const token = session?.token || '';
-  const profile = session?.profile || session?.loginData || null;
   const safeAreaInsets = useSafeAreaInsets();
   const now = new Date();
 
@@ -150,6 +149,18 @@ function LeavesScreen() {
     }
   }, [applyOpen]);
 
+  useFocusEffect(
+    useCallback(() => {
+      const state = navigation.getState();
+      const currentRoute = state.routes?.[state.index];
+      const shouldOpenModal = currentRoute?.params?.openApplyModal;
+      if (shouldOpenModal) {
+        setApplyOpen(true);
+        navigation.setParams({ openApplyModal: undefined });
+      }
+    }, [navigation])
+  );
+
   useEffect(() => {
     if (duration === 'full_day') {
       setSessionMenuOpen(false);
@@ -192,11 +203,6 @@ function LeavesScreen() {
   const primaryBalance = useMemo(() => {
     return leaveBalances.length > 0 ? leaveBalances[0] : null;
   }, [leaveBalances]);
-  const currentEmployeeCode =
-    profile?.employeeCode ||
-    profile?.employeeId ||
-    profile?.employee?.employeeCode ||
-    '';
   const filteredLeaves = useMemo(() => {
     const byStatus =
       statusFilter === 'all'
@@ -209,20 +215,13 @@ function LeavesScreen() {
         leave?.employeeId?.firstName || leave?.employeeId?.lastName
           ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
           : leave?.employeeId?.email || '';
-      const employeeCode =
-        leave?.employeeCode ||
-        leave?.employeeId?.employeeCode ||
-        leave?.employeeId?.employeeId ||
-        currentEmployeeCode ||
-        '';
       const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || '';
       return (
         employee.toLowerCase().includes(query) ||
-        leaveType.toLowerCase().includes(query) ||
-        employeeCode.toLowerCase().includes(query)
+        leaveType.toLowerCase().includes(query)
       );
     });
-  }, [currentEmployeeCode, leaves, searchQuery, statusFilter]);
+  }, [leaves, searchQuery, statusFilter]);
 
   const statusLabel =
     statusFilter === 'all'
@@ -264,9 +263,9 @@ function LeavesScreen() {
     return styles.calendarNeutral;
   };
 
-  const formatDateKey = (day: number) => {
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
+  const formatDateKey = (day: number, monthDate: Date = targetMonth) => {
+    const y = monthDate.getFullYear();
+    const m = String(monthDate.getMonth() + 1).padStart(2, '0');
     const d = String(day).padStart(2, '0');
     return `${y}-${m}-${d}`;
   };
@@ -578,12 +577,6 @@ function LeavesScreen() {
                         leave?.employeeId?.firstName || leave?.employeeId?.lastName
                           ? `${leave.employeeId?.firstName || ''} ${leave.employeeId?.lastName || ''}`.trim()
                           : leave?.employeeId?.email || 'Employee';
-                      const employeeCode =
-                        leave?.employeeCode ||
-                        leave?.employeeId?.employeeCode ||
-                        leave?.employeeId?.employeeId ||
-                        currentEmployeeCode ||
-                        'N/A';
                       const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || 'Leave';
                       const from = formatTableDate(leave?.fromDate);
                       const to = formatTableDate(leave?.toDate);
@@ -592,6 +585,23 @@ function LeavesScreen() {
                       const status = leave?.status || 'pending';
                       const approvalLabel = leave?.approvalStatus || leave?.approvedBy?.name || 'Single-step';
                       const employeeInitial = (employee.trim()[0] || 'U').toUpperCase();
+                      const employeeIdText =
+                        leave?.employeeId?.employeeCode ||
+                        leave?.employeeId?.code ||
+                        leave?.employeeCode ||
+                        (leave?.employeeId?.employeeId != null
+                          ? String(leave.employeeId.employeeId)
+                          : undefined) ||
+                        (leave?.employeeId?._id != null
+                          ? String(leave.employeeId._id)
+                          : undefined) ||
+                        leave?.employeeId?.email ||
+                        session?.profile?.employeeCode ||
+                        (session?.profile?.employeeId != null
+                          ? String(session.profile.employeeId)
+                          : undefined) ||
+                        session?.profile?.email ||
+                        'SELF';
                       return (
                         <View key={leave._id} style={styles.tableRow}>
                           <View style={styles.colEmployee}>
@@ -603,7 +613,7 @@ function LeavesScreen() {
                                 <Text style={styles.tableCell} numberOfLines={1}>
                                   {employee}
                                 </Text>
-                                <Text style={styles.employeeHint}>{employeeCode}</Text>
+                              <Text style={styles.employeeHint}>{employeeIdText}</Text>
                               </View>
                             </View>
                           </View>
@@ -1056,7 +1066,21 @@ function LeavesScreen() {
             onPress={(event) => event.stopPropagation()}
           >
             <View style={styles.miniCalendarHeader}>
-              <Text style={styles.miniCalendarTitle}>{monthLabel}</Text>
+              <View style={styles.miniCalendarNavRow}>
+                <Pressable
+                  style={styles.miniCalendarNavButton}
+                  onPress={() => changeMonth(-1)}
+                >
+                  <MaterialCommunityIcons name="chevron-left" size={16} color="#64748b" />
+                </Pressable>
+                <Text style={styles.miniCalendarTitle}>{monthLabel}</Text>
+                <Pressable
+                  style={styles.miniCalendarNavButton}
+                  onPress={() => changeMonth(1)}
+                >
+                  <MaterialCommunityIcons name="chevron-right" size={16} color="#64748b" />
+                </Pressable>
+              </View>
               <Pressable style={styles.miniCalendarClose} onPress={closeMiniCalendar}>
                 <MaterialCommunityIcons name="arrow-down" size={16} color="#64748b" />
               </Pressable>
@@ -1419,9 +1443,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   employeeBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#f8fafc',
@@ -1429,7 +1453,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
   },
   employeeBadgeText: {
-    fontSize: 10,
+    fontSize: 14,
     fontWeight: '700',
     color: '#64748b',
   },
@@ -1736,6 +1760,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 6,
   },
+  miniCalendarNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   miniCalendarTitle: {
     fontSize: 12,
     fontWeight: '700',
@@ -1759,6 +1788,16 @@ const styles = StyleSheet.create({
   },
   miniCalendarGrid: {
     marginTop: 8,
+  },
+  miniCalendarNavButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
   },
   miniCalendarEmpty: {
     width: '13%',
@@ -1948,4 +1987,3 @@ const styles = StyleSheet.create({
 });
 
 export default LeavesScreen;
-

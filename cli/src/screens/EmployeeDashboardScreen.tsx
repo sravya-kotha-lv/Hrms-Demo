@@ -598,7 +598,7 @@ function EmployeeDashboardScreen() {
                       <View style={styles.actionRow}>
                         <Pressable
                           style={styles.secondaryAction}
-                          onPress={() => navigation.navigate('Leaves', { openApply: true })}
+                          onPress={() => navigation.navigate('Leaves', { openApplyModal: true })}
                         >
                           <Text style={styles.secondaryActionText}>Apply Leave</Text>
                         </Pressable>
