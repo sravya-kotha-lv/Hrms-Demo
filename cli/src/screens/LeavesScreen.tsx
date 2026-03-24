@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -27,6 +28,17 @@ const toIsoDateString = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const normalizeImageUri = (value?: string | null) => {
+  if (!value) return null;
+  if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:')) {
+    return value;
+  }
+  if (value.startsWith('/')) {
+    return `https://www.upanayahr.com${value}`;
+  }
+  return `https://www.upanayahr.com/${value}`;
+};
+
 const DURATION_OPTIONS = [
   { value: 'full_day', label: 'Full Day' },
   { value: 'half_day', label: 'Half Day' },
@@ -36,6 +48,49 @@ const SESSION_OPTIONS = [
   { value: 'first_half', label: 'First Half' },
   { value: 'second_half', label: 'Second Half' },
 ] as const;
+
+const normalizeLeaveKey = (value?: string | null) =>
+  (value || '').trim().toLowerCase();
+
+const normalizeStatusKey = (value?: string | null) =>
+  (value || '').trim().toLowerCase();
+
+const normalizeApiDateKey = (value?: string | null) => {
+  if (!value) return '';
+  const raw = String(value).trim();
+  const directMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (directMatch) {
+    return `${directMatch[1]}-${directMatch[2]}-${directMatch[3]}`;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return toIsoDateString(parsed);
+};
+
+const enumerateDateRange = (fromValue?: string | null, toValue?: string | null) => {
+  const startKey = normalizeApiDateKey(fromValue);
+  const endKey = normalizeApiDateKey(toValue || fromValue);
+  if (!startKey || !endKey) return [];
+
+  const start = new Date(`${startKey}T00:00:00`);
+  const end = new Date(`${endKey}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+
+  const rangeStart = start <= end ? start : end;
+  const rangeEnd = start <= end ? end : start;
+  const dates: string[] = [];
+  const cursor = new Date(rangeStart);
+
+  while (cursor <= rangeEnd) {
+    dates.push(toIsoDateString(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return dates;
+};
+
+const calendarPastelOrder = ['blue', 'green', 'yellow', 'pink'] as const;
 
 function LeavesScreen() {
   const navigation = useNavigation<any>();
@@ -167,9 +222,24 @@ function LeavesScreen() {
     }
   }, [duration]);
 
+  useEffect(() => {
+    if (duration !== 'half_day') return;
+    setToDate('');
+    setToDateInput('');
+    setActiveDateField(null);
+    if (miniCalendarField === 'to') {
+      setMiniCalendarField(null);
+    }
+  }, [duration, miniCalendarField]);
+
   const applyLeave = async () => {
-    if (!leaveTypeId || !fromDate || !toDate || !reason) {
-      setError('Please select a leave type, choose both dates, and add a reason.');
+    const effectiveToDate = duration === 'half_day' ? fromDate : toDate;
+    if (!leaveTypeId || !fromDate || !effectiveToDate || !reason) {
+      setError(
+        duration === 'half_day'
+          ? 'Please select a leave type, choose a date, and add a reason.'
+          : 'Please select a leave type, choose both dates, and add a reason.'
+      );
       return;
     }
     setSubmitting(true);
@@ -177,7 +247,7 @@ function LeavesScreen() {
     const payload: any = {
       leaveTypeId,
       fromDate,
-      toDate,
+      toDate: effectiveToDate,
       reason,
       duration,
     };
@@ -194,15 +264,65 @@ function LeavesScreen() {
     setSessionMenuOpen(false);
     setApplyOpen(false);
     loadData();
+    loadCalendar(targetMonth);
   };
 
   const pendingCount = leaves.filter((l) => l.status === 'pending').length;
   const approvedCount = leaves.filter((l) => l.status === 'approved').length;
   const rejectedCount = leaves.filter((l) => l.status === 'rejected').length;
   const onLeaveToday = leaves.filter((l) => l.status === 'approved').length;
+  const selectedLeaveType = useMemo(
+    () => leaveTypes.find((type) => type?._id === leaveTypeId) || null,
+    [leaveTypeId, leaveTypes]
+  );
+
   const primaryBalance = useMemo(() => {
-    return leaveBalances.length > 0 ? leaveBalances[0] : null;
-  }, [leaveBalances]);
+    if (leaveBalances.length === 0) return null;
+    if (!selectedLeaveType) return leaveBalances[0];
+
+    const selectedId = String(selectedLeaveType?._id || '');
+    const selectedName = normalizeLeaveKey(selectedLeaveType?.name);
+
+    return (
+      leaveBalances.find((balance) => {
+        const balanceId =
+          String(balance?.leaveTypeId?._id || balance?.leaveTypeId || '');
+        const balanceName = normalizeLeaveKey(
+          balance?.leaveType || balance?.leaveTypeName || balance?.leaveTypeId?.name
+        );
+
+        return (
+          (selectedId && balanceId === selectedId) ||
+          (selectedName && balanceName === selectedName)
+        );
+      }) || null
+    );
+  }, [leaveBalances, selectedLeaveType]);
+
+  const leaveDatesByKey = useMemo(() => {
+    const monthPrefix = `${targetMonth.getFullYear()}-${String(targetMonth.getMonth() + 1).padStart(2, '0')}-`;
+    const leaveDateMap: Record<string, { status: string; leaveType: string }> = {};
+
+    leaves.forEach((leave) => {
+      const status = normalizeStatusKey(leave?.status);
+      if (status === 'rejected' || status === 'cancelled' || status === 'canceled') {
+        return;
+      }
+
+      const leaveType = leave?.leaveTypeName || leave?.leaveTypeId?.name || leave?.leaveType || 'Leave';
+      enumerateDateRange(leave?.fromDate, leave?.toDate).forEach((dateKey) => {
+        if (!dateKey.startsWith(monthPrefix)) return;
+
+        const existing = leaveDateMap[dateKey];
+        if (!existing || (existing.status !== 'approved' && status === 'approved')) {
+          leaveDateMap[dateKey] = { status, leaveType };
+        }
+      });
+    });
+
+    return leaveDateMap;
+  }, [leaves, targetMonth]);
+
   const filteredLeaves = useMemo(() => {
     const byStatus =
       statusFilter === 'all'
@@ -254,13 +374,23 @@ function LeavesScreen() {
 
   const getAttendanceStyle = (day: number) => {
     const cell = calendarDays[day];
-    if (!cell) return styles.calendarNeutral;
-    if (cell.holidayName) return styles.calendarHoliday;
-    if (cell.isWeekOff) return styles.calendarWeekOff;
-    if (cell.isOnLeave) return styles.calendarLeave;
-    if (isPresentLikeStatus(cell.status)) return styles.calendarPresent;
-    if (cell.status === 'absent') return styles.calendarAbsent;
+    const dateKey = formatDateKey(day);
+    const leaveEntry = leaveDatesByKey[dateKey];
+
+    if (cell?.holidayName) return styles.calendarHoliday;
+    if (cell?.isWeekOff) return styles.calendarWeekOff;
+    if (cell?.isOnLeave || cell?.leaveType || leaveEntry) return styles.calendarLeave;
+    if (cell && isPresentLikeStatus(cell.status)) return styles.calendarPresent;
+    if (cell?.status === 'absent') return styles.calendarAbsent;
     return styles.calendarNeutral;
+  };
+
+  const getCalendarToneStyle = (day: number) => {
+    const tone = calendarPastelOrder[(day - 1) % calendarPastelOrder.length];
+    if (tone === 'blue') return styles.calendarToneBlue;
+    if (tone === 'green') return styles.calendarToneGreen;
+    if (tone === 'yellow') return styles.calendarToneYellow;
+    return styles.calendarTonePink;
   };
 
   const formatDateKey = (day: number, monthDate: Date = targetMonth) => {
@@ -278,7 +408,7 @@ function LeavesScreen() {
     }
     if (activeDateField === 'from') {
       setDateField('from', selected, { displayText });
-      setActiveDateField('to');
+      setActiveDateField(duration === 'half_day' ? null : 'to');
       return;
     }
     if (activeDateField === 'to') {
@@ -311,6 +441,9 @@ function LeavesScreen() {
   };
 
   const openFieldCalendar = (field: 'from' | 'to') => {
+    if (duration === 'half_day' && field === 'to') {
+      return;
+    }
     setActiveDateField(field);
     setMiniCalendarField(field);
   };
@@ -407,6 +540,9 @@ function LeavesScreen() {
   };
 
   const handleDateInputChange = (field: 'from' | 'to', text: string) => {
+    if (duration === 'half_day' && field === 'to') {
+      return;
+    }
     if (field === 'from') {
       setFromDateInput(text);
     } else {
@@ -585,6 +721,19 @@ function LeavesScreen() {
                       const status = leave?.status || 'pending';
                       const approvalLabel = leave?.approvalStatus || leave?.approvedBy?.name || 'Single-step';
                       const employeeInitial = (employee.trim()[0] || 'U').toUpperCase();
+                      const employeePhoto = normalizeImageUri(
+                        leave?.employeeId?.profileImage ||
+                          leave?.employeeId?.profilePhoto ||
+                          leave?.employeeId?.avatar ||
+                          leave?.employee?.profileImage ||
+                          leave?.employee?.profilePhoto ||
+                          leave?.employee?.avatar ||
+                          leave?.profileImage ||
+                          leave?.profilePhoto ||
+                          (leave?.employeeId?._id === session?.profile?._id
+                            ? session?.profile?.profileImage || session?.profile?.profilePhoto
+                            : null)
+                      );
                       const employeeIdText =
                         leave?.employeeId?.employeeCode ||
                         leave?.employeeId?.code ||
@@ -607,7 +756,15 @@ function LeavesScreen() {
                           <View style={styles.colEmployee}>
                             <View style={styles.employeeCell}>
                               <View style={styles.employeeBadge}>
-                                <Text style={styles.employeeBadgeText}>{employeeInitial}</Text>
+                                {employeePhoto ? (
+                                  <Image
+                                    source={{ uri: employeePhoto }}
+                                    style={styles.employeeBadgeImage}
+                                    resizeMode="cover"
+                                  />
+                                ) : (
+                                  <Text style={styles.employeeBadgeText}>{employeeInitial}</Text>
+                                )}
                               </View>
                               <View style={styles.employeeMeta}>
                                 <Text style={styles.tableCell} numberOfLines={1}>
@@ -784,6 +941,7 @@ function LeavesScreen() {
                               key={key}
                               style={[
                                 styles.dayCell,
+                                getCalendarToneStyle(day),
                                 getAttendanceStyle(day),
                                 isSelected && styles.dayCellSelected,
                               ]}
@@ -830,6 +988,9 @@ function LeavesScreen() {
                 {primaryBalance && (
                   <View style={styles.leaveBalancePanel}>
                     <Text style={styles.leaveBalanceHeading}>Leave Balance</Text>
+                    <Text style={styles.leaveBalanceType}>
+                      {selectedLeaveType?.name || primaryBalance?.leaveType || 'All Leaves'}
+                    </Text>
                     <Text style={styles.leaveBalanceValue}>
                       {primaryBalance?.remaining ?? 0}/{primaryBalance?.total ?? 0}
                     </Text>
@@ -851,7 +1012,7 @@ function LeavesScreen() {
                     onPress={() => setLeaveTypeMenuOpen((v) => !v)}
                   >
                     <Text style={styles.selectText}>
-                      {leaveTypes.find((l) => l._id === leaveTypeId)?.name || 'Select leave type'}
+                      {selectedLeaveType?.name || 'Select leave type'}
                     </Text>
                     <MaterialCommunityIcons name="chevron-down" size={18} color="#94a3b8" />
                   </Pressable>
@@ -980,54 +1141,83 @@ function LeavesScreen() {
                   )}
                 </View>
 
-                <View style={styles.dateRow}>
-                  <View style={styles.dateField}>
-                    <Text style={styles.fieldLabel}>From Date</Text>
-                    <View style={styles.dateInput}>
-                      <TextInput
-                        style={styles.dateTextInput}
-                        placeholder="dd-mm-yyyy"
-                        placeholderTextColor="#94a3b8"
-                        value={fromDateInput}
-                        onChangeText={(text) => handleDateInputChange('from', text)}
-                        keyboardType="number-pad"
-                        maxLength={10}
-                        onFocus={() => setActiveDateField('from')}
-                      />
-                    <Pressable onPress={() => openFieldCalendar('from')} hitSlop={6}>
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={18}
-                          color="#94a3b8"
+                {duration === 'half_day' ? (
+                  <View key="date-row-half-day" style={styles.singleDateRow}>
+                    <View style={styles.dateFieldFull}>
+                      <Text style={styles.fieldLabel}>Date</Text>
+                      <View style={styles.dateInput}>
+                        <TextInput
+                          style={styles.dateTextInput}
+                          placeholder="dd-mm-yyyy"
+                          placeholderTextColor="#94a3b8"
+                          value={fromDateInput}
+                          onChangeText={(text) => handleDateInputChange('from', text)}
+                          keyboardType="number-pad"
+                          maxLength={10}
+                          onFocus={() => setActiveDateField('from')}
                         />
-                      </Pressable>
+                        <Pressable onPress={() => openFieldCalendar('from')} hitSlop={6}>
+                          <MaterialCommunityIcons
+                            name="calendar-month-outline"
+                            size={18}
+                            color="#94a3b8"
+                          />
+                        </Pressable>
+                      </View>
                     </View>
                   </View>
-                  <View style={styles.dateField}>
-                    <Text style={styles.fieldLabel}>To Date</Text>
-                    <View style={styles.dateInput}>
-                      <TextInput
-                        style={styles.dateTextInput}
-                        placeholder="dd-mm-yyyy"
-                        placeholderTextColor="#94a3b8"
-                        value={toDateInput}
-                        onChangeText={(text) => handleDateInputChange('to', text)}
-                        keyboardType="number-pad"
-                        maxLength={10}
-                        onFocus={() => setActiveDateField('to')}
-                      />
-                      <Pressable onPress={() => openFieldCalendar('to')} hitSlop={6}>
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={18}
-                          color="#94a3b8"
+                ) : (
+                  <View key="date-row-full-day" style={styles.dateRow}>
+                    <View style={styles.dateField}>
+                      <Text style={styles.fieldLabel}>From Date</Text>
+                      <View style={styles.dateInput}>
+                        <TextInput
+                          style={styles.dateTextInput}
+                          placeholder="dd-mm-yyyy"
+                          placeholderTextColor="#94a3b8"
+                          value={fromDateInput}
+                          onChangeText={(text) => handleDateInputChange('from', text)}
+                          keyboardType="number-pad"
+                          maxLength={10}
+                          onFocus={() => setActiveDateField('from')}
                         />
-                      </Pressable>
+                        <Pressable onPress={() => openFieldCalendar('from')} hitSlop={6}>
+                          <MaterialCommunityIcons
+                            name="calendar-month-outline"
+                            size={18}
+                            color="#94a3b8"
+                          />
+                        </Pressable>
+                      </View>
+                    </View>
+                    <View style={styles.dateField}>
+                      <Text style={styles.fieldLabel}>To Date</Text>
+                      <View style={styles.dateInput}>
+                        <TextInput
+                          style={styles.dateTextInput}
+                          placeholder="dd-mm-yyyy"
+                          placeholderTextColor="#94a3b8"
+                          value={toDateInput}
+                          onChangeText={(text) => handleDateInputChange('to', text)}
+                          keyboardType="number-pad"
+                          maxLength={10}
+                          onFocus={() => setActiveDateField('to')}
+                        />
+                        <Pressable onPress={() => openFieldCalendar('to')} hitSlop={6}>
+                          <MaterialCommunityIcons
+                            name="calendar-month-outline"
+                            size={18}
+                            color="#94a3b8"
+                          />
+                        </Pressable>
+                      </View>
                     </View>
                   </View>
-                </View>
+                )}
                 <Text style={styles.dateHint}>
-                  {activeDateField
+                  {duration === 'half_day'
+                    ? 'For half day leave, To Date matches From Date automatically.'
+                    : activeDateField
                     ? `Pick a date on the calendar for the ${activeDateField} field.`
                     : 'Tap a date on the calendar above to set the From/To fields.'}
                 </Text>
@@ -1109,6 +1299,7 @@ function LeavesScreen() {
                         key={`mini-day-${key}`}
                         style={[
                           styles.miniDayCell,
+                          getCalendarToneStyle(day),
                           getAttendanceStyle(day),
                           isSelected && styles.dayCellSelected,
                         ]}
@@ -1457,6 +1648,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#64748b',
   },
+  employeeBadgeImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+  },
   employeeMeta: {
     flex: 1,
     minWidth: 0,
@@ -1641,6 +1837,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
+    borderWidth: 1,
   },
   dayText: {
     fontSize: 15,
@@ -1659,23 +1856,44 @@ const styles = StyleSheet.create({
     marginTop: 8,
     alignItems: 'center',
   },
+  calendarToneBlue: {
+    backgroundColor: '#cfe3ff',
+    borderColor: '#cfe3ff',
+  },
+  calendarToneGreen: {
+    backgroundColor: '#c7f1d8',
+    borderColor: '#c7f1d8',
+  },
+  calendarToneYellow: {
+    backgroundColor: '#f8e88b',
+    borderColor: '#f8e88b',
+  },
+  calendarTonePink: {
+    backgroundColor: '#ffd5d7',
+    borderColor: '#ffd5d7',
+  },
   calendarPresent: {
-    backgroundColor: '#9ee6b7',
+    backgroundColor: '#c7f1d8',
+    borderColor: '#7bd3a3',
   },
   calendarLeave: {
-    backgroundColor: '#37e273',
+    backgroundColor: '#9fe3b8',
+    borderColor: '#57b97d',
   },
   calendarWeekOff: {
-    backgroundColor: '#a2c3eb',
+    backgroundColor: '#b9d4f7',
+    borderColor: '#79a9e8',
   },
   calendarAbsent: {
-    backgroundColor: '#fcd2d2',
+    backgroundColor: '#ffd5d7',
+    borderColor: '#f0a2aa',
   },
   calendarNeutral: {
-    backgroundColor: '#f1f5f9',
+    borderColor: 'transparent',
   },
   calendarHoliday: {
-    backgroundColor: '#efd980',
+    backgroundColor: '#f8e88b',
+    borderColor: '#dfc95f',
   },
   detailsBackdrop: {
     flex: 1,
@@ -1810,6 +2028,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
+    borderWidth: 1,
   },
   legendRow: {
     flexDirection: 'row',
@@ -1871,11 +2090,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 42,
   },
+  dateInputDisabled: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e5e7eb',
+  },
   dateTextInput: {
     flex: 1,
     fontSize: 12,
     color: '#0f172a',
     paddingVertical: 0,
+  },
+  dateTextInputDisabled: {
+    color: '#94a3b8',
   },
   dateHint: {
     fontSize: 11,
@@ -1935,6 +2161,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#475569',
   },
+  leaveBalanceType: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1d4ed8',
+    marginTop: 4,
+  },
   leaveBalanceValue: {
     fontSize: 24,
     fontWeight: '700',
@@ -1950,8 +2182,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
+  singleDateRow: {
+    width: '100%',
+  },
   dateField: {
     flex: 1,
+    gap: 6,
+  },
+  dateFieldFull: {
+    width: '100%',
     gap: 6,
   },
   reasonInput: {
