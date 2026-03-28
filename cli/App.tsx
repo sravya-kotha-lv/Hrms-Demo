@@ -5,7 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BlurView } from '@react-native-community/blur';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { Image, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, StatusBar, StyleSheet, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
@@ -355,10 +355,22 @@ const styles = StyleSheet.create({
   profileInitialsActive: {
     color: '#2563eb',
   },
+  authLoadingScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef2ff',
+    gap: 12,
+  },
+  authLoadingText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1e3a8a',
+  },
 });
 
 function AppNavigator() {
-  const { session, logout, setSessionExpiredMessage } = useAuth();
+  const { session, logout, setSessionExpiredMessage, authReady } = useAuth();
 
   useEffect(() => {
     const handler = () => {
@@ -368,6 +380,15 @@ function AppNavigator() {
     setUnauthorizedHandler(handler);
     return () => setUnauthorizedHandler(null);
   }, [logout, setSessionExpiredMessage]);
+
+  if (!authReady) {
+    return (
+      <View style={styles.authLoadingScreen}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={styles.authLoadingText}>Restoring your session...</Text>
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>
