@@ -50,6 +50,11 @@ type LeaveApplyWindow = {
   earliestAllowedDateKey?: string | null;
 };
 
+type LeaveRestriction = {
+  blocked: boolean;
+  reason: string;
+};
+
 type DayMeta = {
   date: Date;
   excluded: boolean;
@@ -123,6 +128,7 @@ const LeaveApply = () => {
   const [holidayKeys, setHolidayKeys] = useState<Set<string>>(new Set());
   const [sandwichRuleEnabled, setSandwichRuleEnabled] = useState(false);
   const [leaveApplyWindow, setLeaveApplyWindow] = useState<LeaveApplyWindow | null>(null);
+  const [leaveRestriction, setLeaveRestriction] = useState<LeaveRestriction>({ blocked: false, reason: "" });
   const [leaveTypeId, setLeaveTypeId] = useState("");
   const [reason, setReason] = useState("");
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>();
@@ -151,6 +157,7 @@ const LeaveApply = () => {
       setWeekOffDays(data.weekOffDays || []);
       setSandwichRuleEnabled(Boolean(data.sandwichRuleEnabled));
       setLeaveApplyWindow(data.leaveApplyWindow || null);
+      setLeaveRestriction(data.leaveRestriction || { blocked: false, reason: "" });
       setBalances(data.balances || []);
       setHolidayKeys(new Set((data.holidays || []).map((h: any) => dateKey(new Date(h.date)))));
     } finally {
@@ -287,6 +294,10 @@ const LeaveApply = () => {
       toast.error("Leave type and both dates are required");
       return;
     }
+    if (leaveRestriction.blocked) {
+      toast.error(leaveRestriction.reason || "Leave application is currently unavailable");
+      return;
+    }
     if (dateError) {
       toast.error(dateError);
       return;
@@ -409,12 +420,17 @@ const LeaveApply = () => {
             <CardTitle>Leave Request</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
+            {leaveRestriction.blocked && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {leaveRestriction.reason}
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
               <div className="md:col-span-2 space-y-2">
                 <Label>Leave Type</Label>
-                <Select value={leaveTypeId} onValueChange={setLeaveTypeId}>
+                <Select value={leaveTypeId} onValueChange={setLeaveTypeId} disabled={leaveRestriction.blocked}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select leave type" />
+                    <SelectValue placeholder={leaveRestriction.blocked ? "Leave types unavailable" : "Select leave type"} />
                   </SelectTrigger>
                   <SelectContent>
                     {leaveTypes.map((lt) => (
@@ -518,7 +534,7 @@ const LeaveApply = () => {
             </div>
 
             <div className="flex justify-start sm:justify-end">
-              <Button onClick={submit} disabled={submitting || loading || Boolean(dateError)}>
+              <Button onClick={submit} disabled={submitting || loading || Boolean(dateError) || leaveRestriction.blocked}>
                 {submitting ? "Applying..." : "Apply Leave"}
               </Button>
             </div>
