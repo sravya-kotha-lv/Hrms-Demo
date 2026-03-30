@@ -132,6 +132,8 @@ export function DataTable<T>({
     return filteredData.slice(start, start + pageSize);
   }, [filteredData, currentPage, pageSize]);
 
+  const displayedData = hideFooter ? filteredData : paginatedData;
+
   const startIndex = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIndex = Math.min(currentPage * pageSize, totalItems);
 
@@ -204,7 +206,7 @@ export function DataTable<T>({
               </TableRow>
             )}
 
-            {paginatedData.map((row) =>
+            {displayedData.map((row) =>
               renderRow ? (
                 <TableRow
                   key={String(row[rowKey])}

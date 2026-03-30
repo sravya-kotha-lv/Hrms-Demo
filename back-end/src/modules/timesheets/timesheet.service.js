@@ -374,6 +374,23 @@ const assertValidObjectIdLike = (value, fieldName) => {
   return normalized;
 };
 
+const serializeMongoIdsDeep = (value) => {
+  if (value == null) return value;
+  if (value instanceof mongoose.Types.ObjectId) return value.toString();
+  if (Array.isArray(value)) return value.map((item) => serializeMongoIdsDeep(item));
+  if (value instanceof Date) return value;
+  if (typeof value !== "object") return value;
+
+  const source = typeof value.toObject === "function" ? value.toObject() : value;
+  const output = {};
+
+  Object.keys(source).forEach((key) => {
+    output[key] = serializeMongoIdsDeep(source[key]);
+  });
+
+  return output;
+};
+
 const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asia/Kolkata") => {
   const grouped = new Map();
 
@@ -1843,13 +1860,15 @@ exports.raiseAttendanceRequest = async (req) => {
 
 exports.getMyAttendanceRequests = async (req) => {
   const employee = await getEmployeeFromReq(req);
-  return AttendanceRequest.find({
+  const rows = await AttendanceRequest.find({
     organizationId: req.user.organizationId,
     employeeId: employee._id
   })
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
+
+  return serializeMongoIdsDeep(rows);
 };
 
 exports.getAttendanceRequests = async (req) => {
@@ -1883,12 +1902,14 @@ exports.getAttendanceRequests = async (req) => {
     }
   }
 
-  return AttendanceRequest.find(query)
+  const rows = await AttendanceRequest.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("actionBy", "firstName lastName employeeCode")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
+
+  return serializeMongoIdsDeep(rows);
 };
 
 exports.getMyPendingAttendanceApprovals = async (req) => {
@@ -1926,7 +1947,7 @@ exports.getMyPendingAttendanceApprovals = async (req) => {
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 
-  return rows;
+  return serializeMongoIdsDeep(rows);
 };
 
 exports.actionAttendanceRequest = async (req) => {

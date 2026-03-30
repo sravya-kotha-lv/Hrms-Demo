@@ -87,6 +87,17 @@ type TeamTimesheet = {
   entries?: WeeklyEntry[];
 };
 
+const getTimesheetId = (timesheet: TeamTimesheet | null | undefined) =>
+  toIdString(timesheet?._id || timesheet?.id);
+
+const normalizeTimesheetRecord = (timesheet: TeamTimesheet | null | undefined) => {
+  if (!timesheet) return null;
+  return {
+    ...timesheet,
+    _id: getTimesheetId(timesheet)
+  };
+};
+
 type AttendanceTodayRecord = {
   checkInAt?: string | null;
   checkOutAt?: string | null;
@@ -221,6 +232,19 @@ const toIdString = (value: unknown) => {
       if (bytes.length) return toIdString(bytes);
     }
   }
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    "data" in value &&
+    (value as { type?: string }).type === "Buffer"
+  ) {
+    return toIdString((value as { data?: unknown }).data);
+  }
+  if (typeof value === "object" && value !== null && "data" in value) {
+    const data = (value as { data?: unknown }).data;
+    if (Array.isArray(data)) return toIdString(data);
+  }
   if (typeof value === "object" && value !== null && "toHexString" in value && typeof (value as { toHexString?: () => string }).toHexString === "function") {
     return (value as { toHexString: () => string }).toHexString();
   }
@@ -229,6 +253,21 @@ const toIdString = (value: unknown) => {
     if (asString && asString !== "[object Object]") return asString;
   }
   return String(value);
+};
+
+const getAttendanceRequestId = (request: AttendanceRequest | string | null | undefined) =>
+  typeof request === "string" ? request : toIdString(request?._actionId || request?._id);
+
+const normalizeAttendanceRequestRecord = (
+  request: (AttendanceRequest & { id?: string }) | null | undefined
+): AttendanceRequest | null => {
+  if (!request) return null;
+  const requestId = toIdString(request?._actionId || request?._id || request?.id);
+  return {
+    ...request,
+    _id: requestId,
+    _actionId: requestId
+  };
 };
 
 const mergeTimesheetPages = (existing: TeamTimesheet[], incoming: TeamTimesheet[]) => {
@@ -453,7 +492,10 @@ const Timesheets = () => {
     if (resAll?.skipped) return;
     if (resAll?.success) {
       const payload = resAll.data;
-      const nextItems = Array.isArray(payload) ? payload : (payload?.items || []);
+      const nextItems = (Array.isArray(payload) ? payload : (payload?.items || [])).map((item: TeamTimesheet) => ({
+        ...item,
+        _id: getTimesheetId(item)
+      }));
       const pagination = Array.isArray(payload)
         ? { page: 1, totalPages: 1, total: nextItems.length }
         : payload?.pagination;
@@ -510,8 +552,9 @@ const Timesheets = () => {
       return;
     }
     if (resWeek?.success && resWeek.data) {
-      setTimesheet(resWeek.data);
-      setEntries(normalizeEntries(weekDates, resWeek.data.entries || []));
+      const normalizedTimesheet = normalizeTimesheetRecord(resWeek.data);
+      setTimesheet(normalizedTimesheet);
+      setEntries(normalizeEntries(weekDates, normalizedTimesheet?.entries || []));
     } else {
       setTimesheet(null);
       setEntries(normalizeEntries(weekDates, []));
@@ -597,10 +640,9 @@ const Timesheets = () => {
     if (res?.skipped) return;
     if (res?.success) {
       setMyAttendanceRequests(
-        (res.data || []).map((request: AttendanceRequest & { id?: string }) => ({
-          ...request,
-          _actionId: toIdString(request?._id || request?.id)
-        }))
+        (res.data || [])
+          .map((request: AttendanceRequest & { id?: string }) => normalizeAttendanceRequestRecord(request))
+          .filter(Boolean) as AttendanceRequest[]
       );
     }
   }, []);
@@ -612,10 +654,9 @@ const Timesheets = () => {
     if (res?.skipped) return;
     if (res?.success) {
       setPendingAttendanceRequests(
-        (res.data || []).map((request: AttendanceRequest & { id?: string }) => ({
-          ...request,
-          _actionId: toIdString(request?._id || request?.id)
-        }))
+        (res.data || [])
+          .map((request: AttendanceRequest & { id?: string }) => normalizeAttendanceRequestRecord(request))
+          .filter(Boolean) as AttendanceRequest[]
       );
     }
   }, []);
@@ -745,14 +786,12 @@ const Timesheets = () => {
   };
 
   const actionAttendanceRequest = async (requestRow: AttendanceRequest | string, status: "approved" | "rejected") => {
-    console.log(requestRow);
-    
-    const requestId = toIdString(requestRow);
+    const requestId = getAttendanceRequestId(requestRow);
     if (!requestId || requestId === "[object Object]") {
       toast.error("Invalid attendance request id");
       return;
     }
-    const request = pendingAttendanceRequests.find((r) => toIdString(r) === requestId);
+    const request = pendingAttendanceRequests.find((r) => getAttendanceRequestId(r) === requestId);
     if (request && !canCurrentActorActionAttendanceRequest(request)) {
       toast.error("You are not the current approver for this request");
       return;
@@ -887,7 +926,7 @@ const Timesheets = () => {
     if (res?.skipped) return;
     if (res?.success) {
       toast.success("Timesheet created");
-      setTimesheet(res.data);
+      setTimesheet(normalizeTimesheetRecord(res.data));
       loadWeekly();
     } else {
       toast.error(res?.message || "Create failed");
@@ -895,7 +934,11 @@ const Timesheets = () => {
   };
 
   const saveDraft = async () => {
-    if (!timesheet?._id) return;
+    const timesheetId = getTimesheetId(timesheet);
+    if (!timesheetId || timesheetId === "[object Object]") {
+      toast.error("Invalid timesheet id");
+      return;
+    }
     setSaving(true);
     const payload = {
       weekStart: weekStartKey,
@@ -907,7 +950,7 @@ const Timesheets = () => {
     };
     
     const res = await putApiWithToken(
-      `/timesheets/weekly/${timesheet._id}`,
+      `/timesheets/weekly/${timesheetId}`,
       payload,
       null,
       { requiredPermissions: ["TIMESHEET_EDIT_SELF"] }
@@ -916,7 +959,7 @@ const Timesheets = () => {
     if (res?.skipped) return;
     if (res?.success) {
       toast.success("Timesheet updated");
-      setTimesheet(res.data);
+      setTimesheet(normalizeTimesheetRecord(res.data));
       loadWeekly();
     } else {
       toast.error(res?.message || "Update failed");
@@ -924,7 +967,11 @@ const Timesheets = () => {
   };
 
   const submitTimesheet = async () => {
-    if (!timesheet?._id) return;
+    const timesheetId = getTimesheetId(timesheet);
+    if (!timesheetId || timesheetId === "[object Object]") {
+      toast.error("Invalid timesheet id");
+      return;
+    }
     setSaving(true);
     const payload = {
       weekStart: weekStartKey,
@@ -935,7 +982,7 @@ const Timesheets = () => {
       }))
     };
     const res = await postApiWithToken(
-      `/timesheets/weekly/${timesheet._id}/submit`,
+      `/timesheets/weekly/${timesheetId}/submit`,
       payload,
       null,
       { requiredPermissions: ["TIMESHEET_SUBMIT_SELF"] }
@@ -944,7 +991,7 @@ const Timesheets = () => {
     if (res?.skipped) return;
     if (res?.success) {
       toast.success("Timesheet submitted");
-      setTimesheet(res.data);
+      setTimesheet(normalizeTimesheetRecord(res.data));
       loadWeekly();
     } else {
       toast.error(res?.message || "Submit failed");
@@ -952,10 +999,14 @@ const Timesheets = () => {
   };
 
   const recallTimesheet = async () => {
-    if (!timesheet?._id) return;
+    const timesheetId = getTimesheetId(timesheet);
+    if (!timesheetId || timesheetId === "[object Object]") {
+      toast.error("Invalid timesheet id");
+      return;
+    }
     setSaving(true);
     const res = await postApiWithToken(
-      `/timesheets/weekly/${timesheet._id}/recall`,
+      `/timesheets/weekly/${timesheetId}/recall`,
       {},
       null,
       { requiredPermissions: ["TIMESHEET_RECALL_SELF"] }
@@ -964,7 +1015,7 @@ const Timesheets = () => {
     if (res?.skipped) return;
     if (res?.success) {
       toast.success("Timesheet recalled");
-      setTimesheet(res.data);
+      setTimesheet(normalizeTimesheetRecord(res.data));
       loadWeekly();
     } else {
       toast.error(res?.message || "Recall failed");
@@ -972,19 +1023,26 @@ const Timesheets = () => {
   };
 
   const openActionDialog = (ts: TeamTimesheet, type: "approve" | "reject") => {
-    setSelectedTimesheet(ts);
+    setSelectedTimesheet({
+      ...ts,
+      _id: getTimesheetId(ts)
+    });
     setActionType(type);
     setComment("");
     setActionDialogOpen(true);
   };
 
   const submitAction = async () => {
-    if (!selectedTimesheet?._id) return;
+    const selectedTimesheetId = getTimesheetId(selectedTimesheet);
+    if (!selectedTimesheetId || selectedTimesheetId === "[object Object]") {
+      toast.error("Invalid timesheet id");
+      return;
+    }
     const payload: { status: "approved" | "rejected"; rejectionReason?: string } = { status: actionType === "approve" ? "approved" : "rejected" };
     if (payload.status === "rejected") payload.rejectionReason = comment;
 
     const res = await putApiWithToken(
-      `/timesheets/weekly/${selectedTimesheet._id}/action`,
+      `/timesheets/weekly/${selectedTimesheetId}/action`,
       payload,
       null,
       { requiredPermissions: ["TIMESHEET_ACTION"] }
