@@ -15,6 +15,10 @@ const SuperAdminDashboard = React.lazy(() => import("./pages/SuperAdminDashboard
 const Employees = React.lazy(() => import("./pages/Employees"));
 const AddEmployee = React.lazy(() => import("./pages/AddEmployee"));
 const ViewEmployee = React.lazy(() => import("./pages/ViewEmployee"));
+const EmployeeAttendanceDetails = React.lazy(() => import("./pages/EmployeeAttendanceDetails"));
+const EmployeeLeaveDetails = React.lazy(() => import("./pages/EmployeeLeaveDetails"));
+const EmployeeOverviewDetails = React.lazy(() => import("./pages/EmployeeOverviewDetails"));
+const DashboardGraphDetails = React.lazy(() => import("./pages/DashboardGraphDetails"));
 const Attendance = React.lazy(() => import("./pages/Attendance"));
 const EmployeeDashboard = React.lazy(() => import("./pages/EmployeeDashboard"));
 const Timesheets = React.lazy(() => import("./pages/Timesheets"));
@@ -135,6 +139,46 @@ const App = () => (
                 <RequireAuth permissions={["EMP_VIEW"]}>
                   <RequireProfile>
                     <ViewEmployee />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/dashboard/graph/:graphKey"
+              element={
+                <RequireAuth permissions={["ORG_VIEW", "EMP_VIEW", "ROLE_VIEW", "LEAVE_VIEW_ALL", "TIMESHEET_VIEW_ALL"]}>
+                  <RequireProfile>
+                    <DashboardGraphDetails />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/dashboard/employee/:id"
+              element={
+                <RequireAuth permissions={["EMP_VIEW", "ATTENDANCE_VIEW_ALL", "LEAVE_VIEW_ALL"]}>
+                  <RequireProfile>
+                    <EmployeeOverviewDetails />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/dashboard/attendance/:id"
+              element={
+                <RequireAuth permissions={["ATTENDANCE_VIEW_ALL", "TIMESHEET_VIEW_ALL", "EMP_VIEW"]}>
+                  <RequireProfile>
+                    <EmployeeAttendanceDetails />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/dashboard/leaves/:id"
+              element={
+                <RequireAuth permissions={["LEAVE_VIEW_ALL", "EMP_VIEW"]}>
+                  <RequireProfile>
+                    <EmployeeLeaveDetails />
                   </RequireProfile>
                 </RequireAuth>
               }

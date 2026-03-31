@@ -1257,10 +1257,16 @@ exports.getAttendance = async (req) => {
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const start = req.query.startDate ? new Date(req.query.startDate) : new Date();
   const end = req.query.endDate ? new Date(req.query.endDate) : start;
+  const requestedEmployeeId = req.query.employeeId ? String(req.query.employeeId) : "";
 
   const startDate = startOfDayInTimeZone(start, organizationTimeZone);
   const endDate = endOfDayInTimeZone(end, organizationTimeZone);
   const employeeFilter = {};
+
+  if (requestedEmployeeId) {
+    await assertManageAccessForEmployee(req, requestedEmployeeId);
+    employeeFilter.employeeId = requestedEmployeeId;
+  }
 
   if (req.user.activeRoleId) {
     const role = await Role.findOne({
@@ -1279,7 +1285,12 @@ exports.getAttendance = async (req) => {
           organizationId: req.user.organizationId,
           managerId: managerEmployee._id
         }).distinct("_id");
-        employeeFilter.employeeId = { $in: reportIds };
+        if (requestedEmployeeId) {
+          const allowed = reportIds.some((id) => String(id) === requestedEmployeeId);
+          if (!allowed) throw new Error("Access denied");
+        } else {
+          employeeFilter.employeeId = { $in: reportIds };
+        }
       }
     }
   }
