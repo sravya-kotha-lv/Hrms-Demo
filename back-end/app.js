@@ -191,7 +191,7 @@ const { ensureSystemBootstrap } = require("./src/utils/bootstrapSystem");
 const startServer = async () => {
   await connectDB();
   validatePayrollDbConfig();
-  await connectPayrollDb();
+  // await connectPayrollDb();
 
   try {
     const bootstrapResult = await ensureSystemBootstrap();
