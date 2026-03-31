@@ -695,6 +695,7 @@ exports.getMyLeaves = async (req) => {
 
 exports.getAllLeaves = async (req) => {
   const query = { organizationId: req.user.organizationId };
+  const requestedEmployeeId = req.query.employeeId ? String(req.query.employeeId) : "";
 
   if (req.user.activeRoleId) {
     const role = await Role.findOne({
@@ -713,9 +714,19 @@ exports.getAllLeaves = async (req) => {
           organizationId: req.user.organizationId,
           managerId: managerEmployee._id
         }).distinct("_id");
-        query.employeeId = { $in: reportIds };
+        if (requestedEmployeeId) {
+          const allowed = reportIds.some((id) => String(id) === requestedEmployeeId);
+          if (!allowed) throw new Error("Access denied");
+          query.employeeId = requestedEmployeeId;
+        } else {
+          query.employeeId = { $in: reportIds };
+        }
       }
     }
+  }
+
+  if (requestedEmployeeId && !query.employeeId) {
+    query.employeeId = requestedEmployeeId;
   }
   const statsQuery = { ...query };
 

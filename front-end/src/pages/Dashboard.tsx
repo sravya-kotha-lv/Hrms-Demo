@@ -682,8 +682,9 @@ const Dashboard = () => {
   };
 
   const openGraphDialog = (key: GraphTrendKey) => {
-    setSelectedGraphKey(key);
-    setGraphDialogOpen(true);
+    navigate(`/dashboard/graph/${key}`, {
+      state: { from: "/dashboard" }
+    });
   };
 
   const monthDaySummary = useMemo(() => {
@@ -1149,6 +1150,32 @@ const Dashboard = () => {
                     variant="outline"
                     onClick={() => {
                       setDetailsDialogOpen(false);
+                      if (selectedKpiKey === "total") {
+                        navigate(`/dashboard/employee/${row.id}`, {
+                          state: { from: "/dashboard" }
+                        });
+                        return;
+                      }
+                      if (selectedKpiKey === "leave") {
+                        navigate(`/dashboard/leaves/${row.id}`, {
+                          state: { from: "/dashboard" }
+                        });
+                        return;
+                      }
+                      if (selectedKpiKey === "present" || selectedKpiKey === "absent" || selectedKpiKey === "late" || selectedKpiKey === "missed") {
+                        const mode =
+                          selectedKpiKey === "present"
+                            ? "present"
+                            : selectedKpiKey === "absent"
+                              ? "absent"
+                              : selectedKpiKey === "late"
+                                ? "late"
+                                : "missed";
+                        navigate(`/dashboard/attendance/${row.id}?mode=${mode}`, {
+                          state: { from: "/dashboard" }
+                        });
+                        return;
+                      }
                       navigate(`/employees/${row.id}`);
                     }}
                   >
