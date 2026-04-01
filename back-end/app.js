@@ -38,6 +38,7 @@ const shouldExposeMetrics = process.env.ENABLE_HTTP_METRICS === "true" || proces
 // Parse JSON
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+require("./src/integrations/fcm").mount(app);
 
 const defaultAllowedOrigins = [
   "http://localhost:3000",
