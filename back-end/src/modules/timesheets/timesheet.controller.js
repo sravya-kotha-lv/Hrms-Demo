@@ -100,6 +100,11 @@ exports.bulkOverrideAttendance = async (req, res) => {
   res.status(200).json(buildNormalizedSuccessResponse({ message: "Attendance bulk updated", data }));
 };
 
+exports.lockAttendanceMonth = async (req, res) => {
+  const data = await service.lockAttendanceMonth(req);
+  res.status(200).json(buildNormalizedSuccessResponse({ message: "Attendance locked for payroll", data }));
+};
+
 exports.raiseAttendanceRequest = async (req, res) => {
   const data = await service.raiseAttendanceRequest(req);
   res.status(201).json(buildNormalizedSuccessResponse({ message: "Attendance request raised", data }));

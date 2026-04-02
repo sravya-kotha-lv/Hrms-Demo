@@ -14,6 +14,7 @@ const AuditLog = require("../auditLogs/auditLogs.model");
 const sendMail = require("../../utils/sendMail");
 const { createNotificationSafe } = require("../notifications/notification.service");
 const Shift = require("../shifts/shift.model");
+const payrollAttendanceService = require("../payroll/payrollAttendance.service");
 const { normalizeAttendanceRequestDateKey } = require("./attendanceRequest.utils");
 const {
   resolveApplicableFlow,
@@ -704,7 +705,7 @@ const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, min
   const isOpenSession = Boolean(attendanceRow?.checkInAt && !attendanceRow?.checkOutAt);
   const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : null;
   const shiftStillRunning = shiftEndAt && !Number.isNaN(shiftEndAt.getTime()) && now < shiftEndAt;
-  if (isOpenSession && shiftStillRunning) return "pending_checkout";
+  if (isOpenSession) return "pending_checkout";
 
   const hasAnyAttendance = Boolean(attendanceRow?.checkInAt || attendanceRow?.checkOutAt);
   if (!hasAnyAttendance) return "absent";
@@ -891,6 +892,113 @@ const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone 
 
   if (targetKey <= lockUntilKey) {
     throw new Error(`Attendance is locked through payroll cutoff date ${lockUntilKey}`);
+  }
+};
+
+const getAttendanceLockWindowMeta = (settings, timeZone = "UTC", now = new Date()) => {
+  const today = startOfDayInTimeZone(now, timeZone);
+  const todayKey = toDateKeyInTimeZone(today, timeZone);
+  const lockEnabled = Boolean(settings?.attendanceLockEnabled);
+  const mode = settings?.attendanceLockMode || "days_window";
+
+  if (!lockEnabled) {
+    return {
+      attendanceLockEnabled: false,
+      attendanceLockMode: mode,
+      attendanceLockAfterDays: Number(settings?.attendanceLockAfterDays ?? 7),
+      payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+      todayKey,
+      lockedThroughDateKey: null
+    };
+  }
+
+  if (mode === "days_window") {
+    const attendanceLockAfterDays = Number(settings?.attendanceLockAfterDays ?? 7);
+    return {
+      attendanceLockEnabled: true,
+      attendanceLockMode: mode,
+      attendanceLockAfterDays,
+      payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+      todayKey,
+      lockedThroughDateKey: addDaysToDateKey(todayKey, -attendanceLockAfterDays)
+    };
+  }
+
+  const cutoffDay = Number(settings?.payrollCutoffDay ?? 25);
+  const currentDay = getDayInTimeZone(today, timeZone);
+  const [todayYear, todayMonth] = todayKey.split("-").map(Number);
+  const lockedThroughDateKey = currentDay > cutoffDay
+    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`
+    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
+
+  return {
+    attendanceLockEnabled: true,
+    attendanceLockMode: mode,
+    attendanceLockAfterDays: Number(settings?.attendanceLockAfterDays ?? 7),
+    payrollCutoffDay: cutoffDay,
+    todayKey,
+    lockedThroughDateKey
+  };
+};
+
+const buildLockAttendanceActionMeta = ({
+  settings,
+  monthEndDateKey,
+  pendingCheckoutCount,
+  snapshotGenerated = false,
+  timeZone,
+  now = new Date()
+}) => {
+  const windowMeta = getAttendanceLockWindowMeta(settings, timeZone, now);
+
+  if (!windowMeta.attendanceLockEnabled) {
+    return {
+      enabled: false,
+      pendingCheckoutCount,
+      lockedThroughDateKey: windowMeta.lockedThroughDateKey,
+      reason: "Attendance lock is disabled in organization settings.",
+      snapshotGenerated
+    };
+  }
+
+  if (!windowMeta.lockedThroughDateKey || monthEndDateKey > windowMeta.lockedThroughDateKey) {
+    return {
+      enabled: false,
+      pendingCheckoutCount,
+      lockedThroughDateKey: windowMeta.lockedThroughDateKey,
+      reason: `Lock date has not been crossed yet for ${monthEndDateKey}.`,
+      snapshotGenerated
+    };
+  }
+
+  if (pendingCheckoutCount < 1) {
+    return {
+      enabled: false,
+      pendingCheckoutCount,
+      lockedThroughDateKey: windowMeta.lockedThroughDateKey,
+      reason: "No pending checkout rows found for the selected month.",
+      snapshotGenerated
+    };
+  }
+
+  return {
+    enabled: true,
+    pendingCheckoutCount,
+    lockedThroughDateKey: windowMeta.lockedThroughDateKey,
+    reason: null,
+    snapshotGenerated
+  };
+};
+
+const hasPayrollSnapshotForMonth = async (req, month) => {
+  try {
+    const snapshotData = await payrollAttendanceService.listMonthlyAttendanceSnapshots({
+      user: req.user,
+      query: { month }
+    });
+    return Boolean(snapshotData?.count > 0);
+  } catch (_) {
+    return false;
   }
 };
 
@@ -1382,6 +1490,7 @@ exports.getAttendanceMatrix = async (req) => {
       month,
       daysInMonth,
       employees: [],
+      lockAttendance: null,
       pagination: {
         total: totalEmployees,
         page,
@@ -1419,10 +1528,23 @@ exports.getAttendanceMatrix = async (req) => {
       organizationId: req.user.organizationId,
       employees
     }),
-    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("minHalfDayHours minWorkHoursPerDay")
+    OrgSettings.findOne({ organizationId: req.user.organizationId })
+      .select("minHalfDayHours minWorkHoursPerDay attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay")
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
+  const pendingCheckoutCount = attendanceRows.filter(
+    (row) => Boolean(row.checkInAt && !row.checkOutAt)
+  ).length;
+  const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
+  const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
+  const lockAttendance = buildLockAttendanceActionMeta({
+    settings: orgSettings,
+    monthEndDateKey,
+    pendingCheckoutCount,
+    snapshotGenerated,
+    timeZone: organizationTimeZone
+  });
 
   const holidayByDay = new Map();
   holidays.forEach((h) => {
@@ -1565,6 +1687,7 @@ exports.getAttendanceMatrix = async (req) => {
     month,
     daysInMonth,
     employees: data,
+    lockAttendance,
     pagination: {
       total: totalEmployees,
       page,
@@ -1611,10 +1734,23 @@ exports.getMyAttendanceMatrix = async (req) => {
       organizationId: req.user.organizationId,
       shiftId: employee.shiftId
     }),
-    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("minHalfDayHours minWorkHoursPerDay")
+    OrgSettings.findOne({ organizationId: req.user.organizationId })
+      .select("minHalfDayHours minWorkHoursPerDay attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay")
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
+  const pendingCheckoutCount = attendanceRows.filter(
+    (row) => Boolean(row.checkInAt && !row.checkOutAt)
+  ).length;
+  const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
+  const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
+  const lockAttendance = buildLockAttendanceActionMeta({
+    settings: orgSettings,
+    monthEndDateKey,
+    pendingCheckoutCount,
+    snapshotGenerated,
+    timeZone: organizationTimeZone
+  });
 
   const holidayByDay = new Map();
   holidays.forEach((h) => {
@@ -1731,6 +1867,7 @@ exports.getMyAttendanceMatrix = async (req) => {
     year,
     month,
     daysInMonth,
+    lockAttendance,
     employees: [{
       employeeId: String(employee._id),
       firstName: employee.firstName,
@@ -2486,6 +2623,69 @@ exports.bulkOverrideAttendance = async (req) => {
     updatedCount,
     date,
     status: req.body.status
+  };
+};
+
+exports.lockAttendanceMonth = async (req) => {
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const { start, end } = parseMonthRangeInTimeZone(req.body.month, organizationTimeZone);
+  const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
+  const settings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
+    .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay");
+  const scopedEmployeeIds = await getScopedEmployeeIdsForViewer(req);
+
+  const attendanceQuery = {
+    organizationId: req.user.organizationId,
+    date: { $gte: start, $lte: end },
+    checkInAt: { $ne: null },
+    checkOutAt: null
+  };
+
+  if (Array.isArray(scopedEmployeeIds)) {
+    attendanceQuery.employeeId = { $in: scopedEmployeeIds };
+  }
+
+  const pendingCheckoutCount = await Attendance.countDocuments(attendanceQuery);
+  const lockAttendance = buildLockAttendanceActionMeta({
+    settings,
+    monthEndDateKey,
+    pendingCheckoutCount,
+    timeZone: organizationTimeZone
+  });
+
+  if (!lockAttendance.enabled) {
+    throwHttpError(400, lockAttendance.reason || "Attendance lock action is not available yet.");
+  }
+
+  const snapshotResult = await payrollAttendanceService.generateMonthlyAttendanceSnapshots({
+    ...req,
+    body: {
+      month: req.body.month,
+      forceRebuild: true,
+      employeeIds: Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length
+        ? scopedEmployeeIds.map((id) => String(id))
+        : undefined
+    }
+  });
+
+  await audit({
+    req,
+    module: "timesheets",
+    action: "ATTENDANCE_LOCK_MONTH",
+    entityId: req.user.organizationId,
+    after: {
+      month: req.body.month,
+      pendingCheckoutCount,
+      snapshotGenerated: true
+    }
+  });
+
+  return {
+    month: req.body.month,
+    updatedCount: snapshotResult?.generatedCount || 0,
+    pendingCheckoutCount,
+    lockedThroughDateKey: lockAttendance.lockedThroughDateKey,
+    snapshotGenerated: true
   };
 };
 

@@ -49,6 +49,10 @@ exports.bulkOverrideAttendanceSchema = Joi.object({
   employeeIds: Joi.array().items(Joi.string().required()).min(1).required()
 });
 
+exports.lockAttendanceMonthSchema = Joi.object({
+  month: Joi.string().pattern(/^\d{4}-\d{2}$/).required()
+});
+
 exports.raiseAttendanceRequestSchema = Joi.object({
   date: localDateSchema.required(),
   requestType: Joi.string().valid("missed_checkout", "correction").required(),
