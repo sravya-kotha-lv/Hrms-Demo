@@ -1012,7 +1012,7 @@ function LeavesScreen() {
                     onPress={() => setLeaveTypeMenuOpen((v) => !v)}
                   >
                     <Text style={styles.selectText}>
-                      {selectedLeaveType?.name || 'Select leave type'}
+                      {selectedLeaveType?.name || 'Select leave type'}                                                            
                     </Text>
                     <MaterialCommunityIcons name="chevron-down" size={18} color="#94a3b8" />
                   </Pressable>

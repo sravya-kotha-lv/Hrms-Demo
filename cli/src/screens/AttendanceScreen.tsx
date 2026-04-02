@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -33,6 +34,7 @@ function AttendanceScreen() {
   const { session } = useAuth();
   const token = session?.token || '';
   const profile = session?.profile || session?.loginData || null;
+  const profileImage = profile?.profileImage || profile?.profilePhoto || null;
   const insets = useSafeAreaInsets();
 
   const [referenceDate, setReferenceDate] = useState(() => new Date());
@@ -155,8 +157,29 @@ function AttendanceScreen() {
     >
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
-          <Text style={styles.headerLabel}>My Attendance Calendar</Text>
-          <Text style={styles.headerName}>{employeeName}</Text>
+          <View style={styles.headerTopRow}>
+            <View style={styles.headerTextBlock}>
+              <Text style={styles.headerLabel}>My Attendance Calendar</Text>
+              <Text style={styles.headerName}>{employeeName}</Text>
+            </View>
+            <View style={styles.headerAvatarShell}>
+              {profileImage ? (
+                <Image source={{ uri: profileImage }} style={styles.headerAvatarImage} />
+              ) : (
+                <View style={styles.headerAvatarFallback}>
+                  <Text style={styles.headerAvatarFallbackText}>
+                    {String(employeeName || 'E')
+                      .split(' ')
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map(part => part[0])
+                      .join('')
+                      .toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
           <View style={styles.monthControls}>
             <Pressable style={styles.navButton} onPress={() => changeMonth(-1)}>
               <MaterialCommunityIcons name="chevron-left" size={20} color="#1f2937" />
@@ -221,17 +244,55 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     elevation: 5,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  headerTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
   headerLabel: {
     fontSize: 12,
-    color: '#e2e8f0',
+    color: '#94a3b8',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    fontWeight: '600',
   },
   headerName: {
     marginTop: 6,
     fontSize: 22,
     fontWeight: '700',
     color: '#0f172a',
+  },
+  headerAvatarShell: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#dbeafe',
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  headerAvatarFallback: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dbeafe',
+  },
+  headerAvatarFallbackText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#2563eb',
   },
   monthControls: {
     marginTop: 16,

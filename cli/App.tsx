@@ -19,6 +19,7 @@ import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
 import AttendanceScreen from './src/screens/AttendanceScreen';
 import { setUnauthorizedHandler } from './src/services/api';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { setupFirebaseMessaging } from './src/services/fcm';
 
 const patchResponseForStatusZero = () => {
   if (typeof globalThis === 'undefined' || !globalThis.Response) {
@@ -380,6 +381,26 @@ function AppNavigator() {
     setUnauthorizedHandler(handler);
     return () => setUnauthorizedHandler(null);
   }, [logout, setSessionExpiredMessage]);
+
+  useEffect(() => {
+    if (!authReady || !session) {
+      return;
+    }
+
+    let unsubscribe = () => {};
+
+    setupFirebaseMessaging(session.token)
+      .then(cleanup => {
+        unsubscribe = cleanup;
+      })
+      .catch(error => {
+        console.log('FCM setup failed:', error);
+      });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [authReady, session]);
 
   if (!authReady) {
     return (
