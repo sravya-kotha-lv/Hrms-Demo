@@ -686,14 +686,30 @@ const resolveWorkedMinutes = (attendanceRow) => {
   return 0;
 };
 
-const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8 }) => {
+const resolveWorkedMinutesForMatrixStatus = (attendanceRow, now = new Date()) => {
+  const resolvedMinutes = resolveWorkedMinutes(attendanceRow);
+  if (resolvedMinutes > 0) return resolvedMinutes;
+  if (!attendanceRow?.checkInAt || attendanceRow?.checkOutAt) return 0;
+
+  const checkInAt = new Date(attendanceRow.checkInAt);
+  const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : now;
+  if (Number.isNaN(checkInAt.getTime()) || Number.isNaN(shiftEndAt.getTime())) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round((shiftEndAt.getTime() - checkInAt.getTime()) / 60000));
+};
+
+const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8, now = new Date() }) => {
   const isOpenSession = Boolean(attendanceRow?.checkInAt && !attendanceRow?.checkOutAt);
-  if (isOpenSession) return "pending_checkout";
+  const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : null;
+  const shiftStillRunning = shiftEndAt && !Number.isNaN(shiftEndAt.getTime()) && now < shiftEndAt;
+  if (isOpenSession && shiftStillRunning) return "pending_checkout";
 
   const hasAnyAttendance = Boolean(attendanceRow?.checkInAt || attendanceRow?.checkOutAt);
   if (!hasAnyAttendance) return "absent";
 
-  const workedMinutes = resolveWorkedMinutes(attendanceRow);
+  const workedMinutes = resolveWorkedMinutesForMatrixStatus(attendanceRow, now);
   const halfDayMinutes = Math.max(0, Number(minHalfDayHours || 0) * 60);
   const fullDayMinutes = Math.max(halfDayMinutes, Number(minWorkHoursPerDay || 0) * 60);
 
