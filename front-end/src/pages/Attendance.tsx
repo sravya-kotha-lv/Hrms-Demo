@@ -87,6 +87,14 @@ type MatrixPagination = {
   totalPages: number;
 };
 
+type LockAttendanceMeta = {
+  enabled: boolean;
+  pendingCheckoutCount: number;
+  lockedThroughDateKey: string | null;
+  reason: string | null;
+  snapshotGenerated?: boolean;
+};
+
 const toEmployeeIdString = (value: unknown): string => {
   if (!value) return "";
   if (typeof value === "string") return value;
@@ -174,13 +182,15 @@ const getAttendanceStatus = (dayData: {
   leaveType: string | null;
   attendanceStatus: DayCell["status"];
   isFuture?: boolean;
+  snapshotGenerated?: boolean;
 }) => {
-  const { isHoliday, isWeekOff, leaveType, attendanceStatus, isFuture = false } = dayData;
+  const { isHoliday, isWeekOff, leaveType, attendanceStatus, isFuture = false, snapshotGenerated = false } = dayData;
 
   if (isHoliday) return "Holiday";
   if (isWeekOff) return "Week Off";
   if (leaveType) return "Leave";
   if (isFuture) return "Future";
+  if (attendanceStatus === "pending_checkout" && snapshotGenerated) return "Absent";
   if (attendanceStatus === "pending_checkout") return "Pending Checkout";
   if (attendanceStatus === "full_day_present" || attendanceStatus === "present") return "Present";
   if (attendanceStatus === "half_day_present") return "Half Day";
@@ -235,6 +245,8 @@ const Attendance = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [pagination, setPagination] = useState<MatrixPagination | null>(null);
+  const [lockAttendanceMeta, setLockAttendanceMeta] = useState<LockAttendanceMeta | null>(null);
+  const [lockingAttendance, setLockingAttendance] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"employeeCode" | "firstName">("employeeCode");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -286,6 +298,7 @@ const Attendance = () => {
       setRows((prev) => (canViewAll && currentPage > 1 ? mergeAttendancePages(prev, nextRows) : nextRows));
       setDaysInMonth(res.data?.daysInMonth || 31);
       setPagination(res.data?.pagination || null);
+      setLockAttendanceMeta(res.data?.lockAttendance || null);
       if (currentPage === 1) {
         setSelectedEmployeeIds((prev) => {
           const validIds = new Set(nextRows.map((e: EmployeeRow) => e.employeeId));
@@ -446,7 +459,8 @@ const Attendance = () => {
       isHoliday: Boolean(cell.holidayName),
       isWeekOff: cell.isWeekOff,
       leaveType: cell.leaveType,
-      attendanceStatus: cell.status
+      attendanceStatus: cell.status,
+      snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
     });
     const hideTimings = resolvedStatus === "Leave" || resolvedStatus === "Holiday";
     if (resolvedStatus !== "Absent") parts.push(`Status: ${resolvedStatus}`);
@@ -500,7 +514,8 @@ const Attendance = () => {
       isWeekOff: cell.isWeekOff,
       leaveType: cell.leaveType,
       attendanceStatus: cell.status,
-      isFuture
+      isFuture,
+      snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
     });
 
     if (resolvedStatus === "Holiday") {
@@ -577,7 +592,8 @@ const Attendance = () => {
         isHoliday: Boolean(cell.holidayName),
         isWeekOff: cell.isWeekOff,
         leaveType: cell.leaveType,
-        attendanceStatus: cell.status
+        attendanceStatus: cell.status,
+        snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
       });
 
       if (cell.checkInSelfieProvided) {
@@ -678,6 +694,33 @@ const Attendance = () => {
     URL.revokeObjectURL(url);
   };
 
+  const runLockAttendance = async () => {
+    if (!canEdit || !lockAttendanceMeta?.enabled || lockingAttendance) return;
+    const confirmed = window.confirm(
+      `Lock attendance for ${month} and generate the payroll snapshot now? Pending checkout day(s) will be treated as absent inside payroll calculations until attendance is corrected and the snapshot is regenerated.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setLockingAttendance(true);
+      const res = await postApiWithToken(
+        "/timesheets/attendance/matrix/lock-month",
+        { month },
+        null,
+        { requiredPermissions: ["ATTENDANCE_MANAGE"] }
+      );
+      if (res?.skipped) return;
+      if (!res?.success) {
+        toast.error(res?.message || "Failed to lock attendance");
+        return;
+      }
+      toast.success(`Payroll attendance snapshot generated for ${month}.`);
+      await fetchMatrix();
+    } finally {
+      setLockingAttendance(false);
+    }
+  };
+
   const toggleEmployeeSelection = (employeeId: string) => {
     const normalizedEmployeeId = toEmployeeIdString(employeeId).trim();
     if (!normalizedEmployeeId) return;
@@ -742,6 +785,7 @@ const Attendance = () => {
   );
   const weekDayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const summaryColumnCount = canViewSelfieData ? 8 : 7;
+  const loadingRowCount = 6;
 
   return (
     <MainLayout
@@ -948,11 +992,30 @@ const Attendance = () => {
                     <Button variant="outline" className="bg-white/90" onClick={fetchMatrix}>
                       Refresh
                     </Button>
+                    {canEdit && (
+                      <Button
+                        className="bg-slate-900 text-white hover:bg-slate-800"
+                        onClick={runLockAttendance}
+                        disabled={!lockAttendanceMeta?.enabled || lockingAttendance}
+                        title={lockAttendanceMeta?.reason || undefined}
+                      >
+                        {lockingAttendance
+                          ? "Locking..."
+                          : `Lock Attendance${lockAttendanceMeta?.pendingCheckoutCount ? ` (${lockAttendanceMeta.pendingCheckoutCount})` : ""}`}
+                      </Button>
+                    )}
                     <Button variant="outline" className="bg-white/90" onClick={downloadCsv}>
                       Export CSV
                     </Button>
                   </div>
                 </div>
+                {canEdit && lockAttendanceMeta && (
+                  <div className="mt-3 text-xs text-slate-600">
+                    {lockAttendanceMeta.enabled
+                      ? `Lock date crossed. You can generate the payroll attendance snapshot for ${month}. Pending checkout day(s): ${lockAttendanceMeta.pendingCheckoutCount}.`
+                      : (lockAttendanceMeta.reason || "Attendance lock action is not available yet.")}
+                  </div>
+                )}
 
                 {canEdit && (
                   <div
@@ -992,6 +1055,42 @@ const Attendance = () => {
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white/95 shadow-sm overflow-hidden flex flex-col min-h-0 lg:h-[calc(100vh-290px)]">
+                <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-emerald-500" />
+                      Full Day Present
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-lime-200 bg-lime-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-lime-500" />
+                      Half Day Present
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-orange-500" />
+                      Pending Checkout
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-rose-500" />
+                      Absent
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-sky-500" />
+                      Week Off
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-violet-500" />
+                      Approved Leave
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-indigo-500" />
+                      Present + Leave
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-amber-500" />
+                      Holiday
+                    </div>
+                  </div>
+                </div>
                 <div
                   ref={tableViewportRef}
                   onScroll={handleMatrixScroll}
@@ -1057,7 +1156,7 @@ const Attendance = () => {
                       <tr>
                         <td colSpan={daysInMonth + summaryColumnCount + (canEdit ? 1 : 0)} className="p-3">
                           <div className="space-y-2">
-                            {Array.from({ length: 6 }).map((_, idx) => (
+                            {Array.from({ length: loadingRowCount }).map((_, idx) => (
                               <Skeleton key={`attendance-row-skeleton-${idx}`} className="h-10 w-full rounded-md" />
                             ))}
                           </div>
@@ -1146,6 +1245,17 @@ const Attendance = () => {
                         })()}
                       </tr>
                     ))}
+                    {loadingMore && rows.length > 0 && (
+                      <>
+                        {Array.from({ length: 3 }).map((_, idx) => (
+                          <tr key={`attendance-loading-more-${idx}`} className="border-b border-slate-100">
+                            <td colSpan={daysInMonth + summaryColumnCount + (canEdit ? 1 : 0)} className="p-3">
+                              <Skeleton className="h-10 w-full rounded-md" />
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
                   </tbody>
                   </table>
                 </div>
@@ -1180,41 +1290,6 @@ const Attendance = () => {
                   </div>
                 </div>
               )}
-
-              <div className="flex flex-wrap items-center gap-2 text-xs mt-3">
-                <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-emerald-500" />
-                  Full Day Present
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-lime-200 bg-lime-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-lime-500" />
-                  Half Day Present
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-orange-500" />
-                  Pending Checkout
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-rose-500" />
-                  Absent
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-sky-500" />
-                  Week Off
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-violet-500" />
-                  Approved Leave
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-indigo-500" />
-                  Present + Leave
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-amber-500" />
-                  Holiday
-                </div>
-              </div>
             </>
           )}
         </>

@@ -13,6 +13,7 @@ const {
   actionWeeklySchema,
   overrideAttendanceSchema,
   bulkOverrideAttendanceSchema,
+  lockAttendanceMonthSchema,
   raiseAttendanceRequestSchema,
   attendanceRequestActionSchema
 } = require("./timesheet.validation");
@@ -90,6 +91,14 @@ router.post(
   authorize("ATTENDANCE_MANAGE"),
   validate(bulkOverrideAttendanceSchema),
   asyncHandler(controller.bulkOverrideAttendance)
+);
+
+router.post(
+  "/attendance/matrix/lock-month",
+  auth,
+  authorize("ATTENDANCE_MANAGE"),
+  validate(lockAttendanceMonthSchema),
+  asyncHandler(controller.lockAttendanceMonth)
 );
 
 router.post(
