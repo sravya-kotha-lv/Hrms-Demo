@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
-import { formatDateInOrgTimeZone } from "@/utils/timezone";
+import { formatDateKeyInOrgCalendar, toDateKeyInOrgCalendar } from "@/utils/timezone";
 
 const toIdString = (value: unknown): string => {
   if (!value) return "";
@@ -49,6 +49,7 @@ const normalizeAttendanceRequestRecord = (row: any) => {
   const requestId = getAttendanceRequestId(row);
   return {
     ...row,
+    date: row?.date ? toDateKeyInOrgCalendar(row.date) : row?.date,
     _id: requestId,
     _actionId: requestId
   };
@@ -299,7 +300,7 @@ const PendingApprovals = () => {
                           ? `${row.employeeId.firstName || ""} ${row.employeeId.lastName || ""}`.trim()
                           : "-"}
                       </TableCell>
-                      <TableCell>{formatDateInOrgTimeZone(row.date)}</TableCell>
+                      <TableCell>{formatDateKeyInOrgCalendar(row.date)}</TableCell>
                       <TableCell className="capitalize">{String(row.requestType || "").replace("_", " ")}</TableCell>
                       <TableCell>{row.requestedCheckInTime || "-"} / {row.requestedCheckOutTime || "-"}</TableCell>
                       <TableCell>{getStatusBadge(row.status)}</TableCell>

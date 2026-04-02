@@ -168,6 +168,38 @@ const emptyCell: DayCell = {
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
+const getAttendanceStatus = (dayData: {
+  isHoliday: boolean;
+  isWeekOff: boolean;
+  leaveType: string | null;
+  attendanceStatus: DayCell["status"];
+  isFuture?: boolean;
+}) => {
+  const { isHoliday, isWeekOff, leaveType, attendanceStatus, isFuture = false } = dayData;
+
+  if (isHoliday) return "Holiday";
+  if (isWeekOff) return "Week Off";
+  if (leaveType) return "Leave";
+  if (isFuture) return "Future";
+  if (attendanceStatus === "pending_checkout") return "Pending Checkout";
+  if (attendanceStatus === "full_day_present" || attendanceStatus === "present") return "Present";
+  if (attendanceStatus === "half_day_present") return "Half Day";
+  return "Absent";
+};
+
+const toLeaveShortLabel = (leaveType: string | null) => {
+  const normalized = String(leaveType || "").trim();
+  if (!normalized) return "L";
+  const compact = normalized.replace(/[^a-zA-Z]/g, "").toUpperCase();
+  if (compact.length >= 2 && compact.length <= 4) return compact;
+  const initials = normalized
+    .split(/\s+/)
+    .map((part) => part[0] || "")
+    .join("")
+    .toUpperCase();
+  return initials || "L";
+};
+
 const toOrgDateKey = (value: string | number | Date) => {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: getOrgTimeZone(),
@@ -410,16 +442,14 @@ const Attendance = () => {
 
   const formatHoverInfo = (cell: DayCell) => {
     const parts: string[] = [];
-    const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
-    const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
-    const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName);
-    if (cell.status === "pending_checkout") {
-      parts.push("Status: Pending checkout");
-    } else if (cell.status === "half_day_present") {
-      parts.push("Status: Half day present");
-    } else if (cell.status === "full_day_present") {
-      parts.push("Status: Full day present");
-    }
+    const resolvedStatus = getAttendanceStatus({
+      isHoliday: Boolean(cell.holidayName),
+      isWeekOff: cell.isWeekOff,
+      leaveType: cell.leaveType,
+      attendanceStatus: cell.status
+    });
+    const hideTimings = resolvedStatus === "Leave" || resolvedStatus === "Holiday";
+    if (resolvedStatus !== "Absent") parts.push(`Status: ${resolvedStatus}`);
     if (cell.excludeFromPayroll) {
       parts.push("Excluded from payroll until checkout is completed");
     }
@@ -465,76 +495,61 @@ const Attendance = () => {
   };
 
   const getCellUi = (cell: DayCell, isFuture = false) => {
-    const isFullDayPresent = cell.status === "full_day_present";
-    const isHalfDayPresent = cell.status === "half_day_present";
-    const isPresent = isPresentLikeStatus(cell.status);
-    const isPendingCheckout = cell.status === "pending_checkout";
-    const isLeave = cell.isOnLeave;
-    const isPartialLeaveWithAttendance = isLeave && (isPresent || isPendingCheckout);
-    const isWeekOff = cell.isWeekOff;
-    const isHoliday = Boolean(cell.holidayName);
+    const resolvedStatus = getAttendanceStatus({
+      isHoliday: Boolean(cell.holidayName),
+      isWeekOff: cell.isWeekOff,
+      leaveType: cell.leaveType,
+      attendanceStatus: cell.status,
+      isFuture
+    });
 
-    if (isPartialLeaveWithAttendance) {
-      return {
-        label: "Present + Leave",
-        shortLabel: "PL",
-        className: "bg-indigo-100 text-indigo-700 border-indigo-300"
-      };
-    }
-    if (isHoliday) {
+    if (resolvedStatus === "Holiday") {
       return {
         label: "Holiday",
         shortLabel: "H",
         className: "bg-amber-100 text-amber-700 border-amber-300"
       };
     }
-    if (isWeekOff) {
+    if (resolvedStatus === "Week Off") {
       return {
         label: "Week Off",
         shortLabel: "W",
         className: "bg-sky-100 text-sky-700 border-sky-300"
       };
     }
-    if (isFuture) {
+    if (resolvedStatus === "Future") {
       return {
         label: "Not Marked",
         shortLabel: "-",
         className: "bg-slate-100 text-slate-500 border-slate-200"
       };
     }
-    if (isLeave) {
+    if (resolvedStatus === "Leave") {
       return {
-        label: "Leave",
-        shortLabel: "L",
+        label: cell.leaveType || "Leave",
+        shortLabel: toLeaveShortLabel(cell.leaveType),
         className: "bg-violet-100 text-violet-700 border-violet-300"
       };
     }
-    if (isPendingCheckout) {
+    if (resolvedStatus === "Pending Checkout") {
       return {
         label: "Pending Checkout",
         shortLabel: "PC",
         className: "bg-orange-100 text-orange-700 border-orange-300"
       };
     }
-    if (isFullDayPresent) {
-      return {
-        label: "Full Day Present",
-        shortLabel: "P",
-        className: "bg-emerald-100 text-emerald-700 border-emerald-300"
-      };
-    }
-    if (isHalfDayPresent) {
-      return {
-        label: "Half Day Present",
-        shortLabel: "HP",
-        className: "bg-lime-100 text-lime-700 border-lime-300"
-      };
-    }
-    if (isPresent) {
+    if (resolvedStatus === "Present") {
       return {
         label: "Present",
         shortLabel: "P",
         className: "bg-emerald-100 text-emerald-700 border-emerald-300"
+      };
+    }
+    if (resolvedStatus === "Half Day") {
+      return {
+        label: "Half Day",
+        shortLabel: "HP",
+        className: "bg-lime-100 text-lime-700 border-lime-300"
       };
     }
     return {
@@ -558,34 +573,41 @@ const Attendance = () => {
         continue;
       }
       const cell = row.days?.[day] || emptyCell;
+      const resolvedStatus = getAttendanceStatus({
+        isHoliday: Boolean(cell.holidayName),
+        isWeekOff: cell.isWeekOff,
+        leaveType: cell.leaveType,
+        attendanceStatus: cell.status
+      });
+
       if (cell.checkInSelfieProvided) {
         selfieDays += 1;
       }
-      if (cell.status === "pending_checkout") {
+      if (resolvedStatus === "Pending Checkout") {
         pendingCheckoutDays += 1;
         if (cell.excludeFromPayroll) {
           payrollExcludedDays += 1;
         }
         continue;
       }
-      if (cell.status === "half_day_present") {
+      if (resolvedStatus === "Half Day") {
         presentDays += 0.5;
         absentDays += 0.5;
         continue;
       }
-      if (cell.status === "full_day_present" || cell.status === "present") {
+      if (resolvedStatus === "Present") {
         presentDays += 1;
         continue;
       }
-      if (cell.isOnLeave) {
+      if (resolvedStatus === "Leave") {
         onLeaveDays += 1;
         continue;
       }
-      if (cell.isWeekOff) {
+      if (resolvedStatus === "Week Off") {
         weekOffDays += 1;
         continue;
       }
-      if (cell.holidayName) {
+      if (resolvedStatus === "Holiday") {
         holidayDays += 1;
         continue;
       }

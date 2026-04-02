@@ -19,6 +19,12 @@ const INVALID_CREDENTIALS_ERROR = {
   message: "Invalid credentials"
 };
 
+const getMaxActiveLoginsPerUser = async (organizationId) => {
+  const settings = await OrgSettings.findOne({ organizationId }).select("maxActiveLoginsPerUser").lean();
+  const configuredLimit = Number(settings?.maxActiveLoginsPerUser || 1);
+  return Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 1;
+};
+
 const extractBase64Payload = (value = "") => {
   if (!value || typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -228,17 +234,22 @@ const resolveLoginContext = async ({ email, password }) => {
 exports.loginUser = async ({ email, password }) => {
   console.log("Attempting login with email:", email, password);
   const { user, membership, activeRole } = await resolveLoginContext({ email, password });
+  const organizationId = membership.organizationId._id;
+  const maxActiveLoginsPerUser = await getMaxActiveLoginsPerUser(organizationId);
 
   const token = createJwtToken({
     userId: user._id,
-    organizationId: membership.organizationId._id,
+    organizationId,
     roleIds: membership.roleIds.map(r => r._id),
     activeRoleId: activeRole?._id
   });
 
-  await rotateUserToken(User, user._id, token);
+  await rotateUserToken(User, user._id, token, {
+    organizationId,
+    maxActiveLoginsPerUser
+  });
   await User.findByIdAndUpdate(user._id, {
-    activeOrganizationId: membership.organizationId._id,
+    activeOrganizationId: organizationId,
     lastActiveRoleId: activeRole?._id || null,
     lastLoginAt: new Date()
   });
@@ -268,6 +279,8 @@ exports.loginUserWithSelfie = async ({ email, password, selfieImage, livenessSel
   }
 
   const { user, membership, activeRole } = await resolveLoginContext({ email, password });
+  const organizationId = membership.organizationId._id;
+  const maxActiveLoginsPerUser = await getMaxActiveLoginsPerUser(organizationId);
   const employee = await Employee.findOne({
     userId: user._id,
     organizationId: membership.organizationId?._id || membership.organizationId,
@@ -321,14 +334,17 @@ exports.loginUserWithSelfie = async ({ email, password, selfieImage, livenessSel
 
   const token = createJwtToken({
     userId: user._id,
-    organizationId: membership.organizationId._id,
+    organizationId,
     roleIds: membership.roleIds.map(r => r._id),
     activeRoleId: activeRole?._id
   });
 
-  await rotateUserToken(User, user._id, token);
+  await rotateUserToken(User, user._id, token, {
+    organizationId,
+    maxActiveLoginsPerUser
+  });
   await User.findByIdAndUpdate(user._id, {
-    activeOrganizationId: membership.organizationId._id,
+    activeOrganizationId: organizationId,
     lastActiveRoleId: activeRole?._id || null,
     lastLoginAt: new Date()
   });
@@ -613,7 +629,10 @@ exports.switchOrgAndRole = async ({
     /**
      * 7️⃣ Rotate token
      */
-    await rotateUserToken(User, user._id, token);
+    await rotateUserToken(User, user._id, token, {
+      organizationId,
+      maxActiveLoginsPerUser: await getMaxActiveLoginsPerUser(organizationId)
+    });
 
     return {
       token,
@@ -677,7 +696,10 @@ exports.switchOrgAndRole = async ({
     lastActiveRoleId: activeRoleId
   });
 
-  await rotateUserToken(User, user.userId, token);
+  await rotateUserToken(User, user.userId, token, {
+    organizationId,
+    maxActiveLoginsPerUser: await getMaxActiveLoginsPerUser(organizationId)
+  });
 
   return {
     token,

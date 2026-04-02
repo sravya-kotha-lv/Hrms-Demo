@@ -14,6 +14,7 @@ const AuditLog = require("../auditLogs/auditLogs.model");
 const sendMail = require("../../utils/sendMail");
 const { createNotificationSafe } = require("../notifications/notification.service");
 const Shift = require("../shifts/shift.model");
+const { normalizeAttendanceRequestDateKey } = require("./attendanceRequest.utils");
 const {
   resolveApplicableFlow,
   getActorApprovalContext,
@@ -685,14 +686,30 @@ const resolveWorkedMinutes = (attendanceRow) => {
   return 0;
 };
 
-const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8 }) => {
+const resolveWorkedMinutesForMatrixStatus = (attendanceRow, now = new Date()) => {
+  const resolvedMinutes = resolveWorkedMinutes(attendanceRow);
+  if (resolvedMinutes > 0) return resolvedMinutes;
+  if (!attendanceRow?.checkInAt || attendanceRow?.checkOutAt) return 0;
+
+  const checkInAt = new Date(attendanceRow.checkInAt);
+  const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : now;
+  if (Number.isNaN(checkInAt.getTime()) || Number.isNaN(shiftEndAt.getTime())) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round((shiftEndAt.getTime() - checkInAt.getTime()) / 60000));
+};
+
+const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8, now = new Date() }) => {
   const isOpenSession = Boolean(attendanceRow?.checkInAt && !attendanceRow?.checkOutAt);
-  if (isOpenSession) return "pending_checkout";
+  const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : null;
+  const shiftStillRunning = shiftEndAt && !Number.isNaN(shiftEndAt.getTime()) && now < shiftEndAt;
+  if (isOpenSession && shiftStillRunning) return "pending_checkout";
 
   const hasAnyAttendance = Boolean(attendanceRow?.checkInAt || attendanceRow?.checkOutAt);
   if (!hasAnyAttendance) return "absent";
 
-  const workedMinutes = resolveWorkedMinutes(attendanceRow);
+  const workedMinutes = resolveWorkedMinutesForMatrixStatus(attendanceRow, now);
   const halfDayMinutes = Math.max(0, Number(minHalfDayHours || 0) * 60);
   const fullDayMinutes = Math.max(halfDayMinutes, Number(minWorkHoursPerDay || 0) * 60);
 
@@ -1784,7 +1801,8 @@ exports.getMyAttendanceCellHistory = async (req) => {
 exports.raiseAttendanceRequest = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
-  const date = startOfDayInTimeZone(req.body.date, organizationTimeZone);
+  const dateKey = normalizeAttendanceRequestDateKey(req.body.date, organizationTimeZone);
+  const date = startOfDayInTimeZone(dateKey, organizationTimeZone);
   const today = startOfDayInTimeZone(new Date(), organizationTimeZone);
   if (date > today) {
     throw new Error("Attendance request date cannot be in the future");
@@ -1820,7 +1838,7 @@ exports.raiseAttendanceRequest = async (req) => {
   const existingPending = await AttendanceRequest.findOne({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date,
+    date: dateKey,
     status: "pending"
   });
   if (existingPending) {
@@ -1837,7 +1855,7 @@ exports.raiseAttendanceRequest = async (req) => {
   const request = await AttendanceRequest.create({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date,
+    date: dateKey,
     requestType,
     requestedCheckInTime,
     requestedCheckOutTime,
@@ -1857,7 +1875,7 @@ exports.raiseAttendanceRequest = async (req) => {
       actorEmployeeId: employee._id,
       type: "attendance_request_pending_approval",
       title: "Attendance request approval pending",
-      message: `${employeeName} submitted an attendance request for ${date.toDateString()}.`,
+      message: `${employeeName} submitted an attendance request for ${dateKey}.`,
       meta: {
         attendanceRequestId: request._id,
         status: request.status,
@@ -2062,8 +2080,8 @@ exports.actionAttendanceRequest = async (req) => {
     return request;
   }
 
-  const attendanceDate = startOfDayInTimeZone(request.date, organizationTimeZone);
-  const attendanceDateKey = toDateKeyInTimeZone(attendanceDate, organizationTimeZone);
+  const attendanceDateKey = normalizeAttendanceRequestDateKey(request.date, organizationTimeZone);
+  const attendanceDate = startOfDayInTimeZone(attendanceDateKey, organizationTimeZone);
   const attendance = await Attendance.findOneAndUpdate(
     {
       organizationId: req.user.organizationId,

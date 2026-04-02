@@ -100,6 +100,12 @@ const orgSettingsSchema = new mongoose.Schema(
     employeeIdPrefix: {
       type: String,
       default: ""
+    },
+    maxActiveLoginsPerUser: {
+      type: Number,
+      default: 1,
+      min: 1,
+      max: 20
     }
   },
   { timestamps: true }

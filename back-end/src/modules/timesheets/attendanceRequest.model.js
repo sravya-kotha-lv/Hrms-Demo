@@ -53,9 +53,10 @@ const attendanceRequestSchema = new mongoose.Schema(
       index: true
     },
     date: {
-      type: Date,
+      type: String,
       required: true,
-      index: true
+      index: true,
+      match: /^\d{4}-\d{2}-\d{2}$/
     },
     requestType: {
       type: String,

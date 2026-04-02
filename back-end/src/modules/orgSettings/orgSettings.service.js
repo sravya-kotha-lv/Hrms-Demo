@@ -23,7 +23,8 @@ const DEFAULTS = {
   attendanceDevBypassEnabled: false,
   probationPeriodDays: 90,
   noticePeriodDays: 30,
-  employeeIdPrefix: ""
+  employeeIdPrefix: "",
+  maxActiveLoginsPerUser: 1
 };
 
 exports.get = async (req) => {
@@ -70,7 +71,8 @@ exports.upsert = async (req) => {
     attendanceDevBypassEnabled,
     probationPeriodDays,
     noticePeriodDays,
-    employeeIdPrefix
+    employeeIdPrefix,
+    maxActiveLoginsPerUser
   } = req.body;
 
   if (!isValidTimeZone(timezone)) {
@@ -131,7 +133,8 @@ exports.upsert = async (req) => {
       attendanceDevBypassEnabled,
       probationPeriodDays,
       noticePeriodDays,
-      employeeIdPrefix: (employeeIdPrefix || "").trim().toUpperCase()
+      employeeIdPrefix: (employeeIdPrefix || "").trim().toUpperCase(),
+      maxActiveLoginsPerUser
     },
     { upsert: true, new: true }
   );

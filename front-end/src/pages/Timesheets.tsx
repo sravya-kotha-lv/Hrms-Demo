@@ -36,7 +36,13 @@ import { hasPermission } from "@/utils/auth";
 import { useAuth } from "@/context/useAuth";
 import { InlineLoader } from "@/components/ui/loaders";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDateInOrgTimeZone, formatTimeInOrgTimeZone, toDateKeyInOrgTimeZone } from "@/utils/timezone";
+import {
+  formatDateInOrgTimeZone,
+  formatDateKeyInOrgCalendar,
+  formatTimeInOrgTimeZone,
+  toDateKeyInOrgCalendar,
+  toDateKeyInOrgTimeZone
+} from "@/utils/timezone";
 
 const toDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -265,6 +271,7 @@ const normalizeAttendanceRequestRecord = (
   const requestId = toIdString(request?._actionId || request?._id || request?.id);
   return {
     ...request,
+    date: request.date ? toDateKeyInOrgCalendar(request.date) : request.date,
     _id: requestId,
     _actionId: requestId
   };
@@ -1180,7 +1187,7 @@ const Timesheets = () => {
             )}
             {myAttendanceRequests.map((r) => (
               <TableRow key={r._actionId || toIdString(r._id)} className="table-row-hover">
-                <TableCell>{formatDateInOrgTimeZone(r.date)}</TableCell>
+                <TableCell>{formatDateKeyInOrgCalendar(r.date)}</TableCell>
                 <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
                 <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
                 <TableCell>{getStatusBadge(r.status)}</TableCell>
@@ -1230,7 +1237,7 @@ const Timesheets = () => {
                       ? `${r.employeeId.firstName || ""} ${r.employeeId.lastName || ""}`.trim()
                       : "-"}
                   </TableCell>
-                  <TableCell>{formatDateInOrgTimeZone(r.date)}</TableCell>
+                  <TableCell>{formatDateKeyInOrgCalendar(r.date)}</TableCell>
                   <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
                   <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
                   <TableCell className="max-w-[240px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>

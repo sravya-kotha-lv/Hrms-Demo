@@ -42,6 +42,11 @@ const userSchema = new mongoose.Schema(
     tokenList: [
       {
         token: String,
+        organizationId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "organizations",
+          default: null
+        },
         loginTimestamp: String,
         logoutTimestamp: String,
         status: String,
