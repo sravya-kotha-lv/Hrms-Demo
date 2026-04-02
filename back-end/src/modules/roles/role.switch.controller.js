@@ -1,6 +1,7 @@
 const { createJwtToken } = require("../../utils/jwtToken");
 const Role = require("./role.model");
 const UserModel = require("../users/user.model");
+const OrgSettings = require("../orgSettings/orgSettings.model");
 const { buildSuccessResponse } = require("../../utils/responseBuilder");
 const { rotateUserToken } = require("../../utils/tokenManager");
 
@@ -54,7 +55,13 @@ exports.switchRole = async (req, res) => {
     activeRoleId: role._id
   });
 
-  await rotateUserToken(UserModel, user.userId, token);
+  const settings = await OrgSettings.findOne({ organizationId: user.organizationId })
+    .select("maxActiveLoginsPerUser")
+    .lean();
+  await rotateUserToken(UserModel, user.userId, token, {
+    organizationId: user.organizationId,
+    maxActiveLoginsPerUser: Number(settings?.maxActiveLoginsPerUser || 1)
+  });
   await UserModel.findByIdAndUpdate(user.userId, {
     lastActiveRoleId: role._id
   });
