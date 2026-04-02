@@ -1339,18 +1339,24 @@ const Employees = () => {
                         onCheckedChange={(value) => toggleSelectOne(getEmployeeId(employee), Boolean(value))}
                       />
                     )}
-                    <Avatar>
-                      <AvatarImage src={employee.profileImage || ""} />
-                      <AvatarFallback>
-                        {`${employee.firstName?.[0] || ""}${employee.lastName?.[0] || ""}`}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-medium">
-                        {employee.firstName} {employee.lastName}
-                      </p>
-                      <p className="text-sm text-muted-foreground">{employee.employeeCode}</p>
-                    </div>
+                    <button
+                      type="button"
+                      className="flex items-center gap-3 text-left"
+                      onClick={() => navigate(`/employees/${employee._id}`)}
+                    >
+                      <Avatar>
+                        <AvatarImage src={employee.profileImage || ""} />
+                        <AvatarFallback>
+                          {`${employee.firstName?.[0] || ""}${employee.lastName?.[0] || ""}`}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium hover:text-primary">
+                          {employee.firstName} {employee.lastName}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{employee.employeeCode}</p>
+                      </div>
+                    </button>
                   </div>
                 </TableCell>
                 <TableCell>{employee.userId?.email || "-"}</TableCell>

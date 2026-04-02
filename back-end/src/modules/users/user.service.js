@@ -14,6 +14,10 @@ const FACEPP_COMPARE_URL = process.env.FACEPP_COMPARE_URL || "https://api-us.fac
 const FACEPP_DETECT_URL = process.env.FACEPP_DETECT_URL || "https://api-us.faceplusplus.com/facepp/v3/detect";
 const FACE_MATCH_MIN_CONFIDENCE = Number(process.env.FACE_MATCH_MIN_CONFIDENCE || 70);
 const FACE_LOGIN_ALLOW_PASSWORD_FALLBACK = String(process.env.FACE_LOGIN_ALLOW_PASSWORD_FALLBACK || "false").toLowerCase() === "true";
+const INVALID_CREDENTIALS_ERROR = {
+  code: 400,
+  message: "Invalid credentials"
+};
 
 const extractBase64Payload = (value = "") => {
   if (!value || typeof value !== "string") return "";
@@ -160,18 +164,12 @@ const resolveLoginContext = async ({ email, password }) => {
 
   const user = await User.findOne({ email: normalizedEmail }).select("+password");
   if (!user) {
-    throw {
-      code: 400,
-      message: "Email not registered"
-    };
+    throw INVALID_CREDENTIALS_ERROR;
   }
 
   const valid = await checkPasswords(password, user.password);
   if (!valid) {
-    throw {
-      code: 400,
-      message: "Incorrect password"
-    };
+    throw INVALID_CREDENTIALS_ERROR;
   }
 
   const memberships = await OrgUser
