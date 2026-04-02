@@ -95,6 +95,11 @@ type NotificationRecord = {
   title?: string;
   message?: string;
   createdAt?: string;
+  type?: string;
+  meta?: {
+    module?: string;
+    [key: string]: unknown;
+  };
 };
 
 type TodayStatusRecord = {
@@ -275,6 +280,16 @@ const doughnutPalette = {
 const Dashboard = () => {
   const navigate = useNavigate();
   const { isSuperAdmin, permissions } = useAuth();
+  const getNotificationTarget = (notification: NotificationRecord) => {
+    const moduleName = String(notification?.meta?.module || "").toLowerCase();
+    const type = String(notification?.type || "").toLowerCase();
+    const text = `${String(notification?.title || "").toLowerCase()} ${String(notification?.message || "").toLowerCase()}`;
+
+    if (moduleName === "leaves" || type.startsWith("leave_") || text.includes("leave")) return "/leave";
+    if (type === "attendance_request_pending_approval" || text.includes("approval")) return "/pending-approvals";
+    if (type === "attendance_override" || text.includes("attendance")) return "/attendance";
+    return "/dashboard";
+  };
   const today = new Date();
   const todayKey = toOrgDateKey(today);
   const [todayYearStr, todayMonthStr, todayDayStr] = todayKey.split("-");
@@ -2249,10 +2264,15 @@ const Dashboard = () => {
           <div className="space-y-2 max-h-56 overflow-auto custom-scroll pr-1">
             {notifications.length === 0 && <p className="text-sm text-muted-foreground">No notifications</p>}
             {notifications.map((n) => (
-              <div key={n._id} className="p-2 rounded-lg border text-sm">
+              <button
+                key={n._id}
+                type="button"
+                className="w-full rounded-lg border p-2 text-left text-sm transition hover:border-primary/40"
+                onClick={() => navigate(getNotificationTarget(n))}
+              >
                 <p className="font-medium">{n.title}</p>
                 <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
-              </div>
+              </button>
             ))}
           </div>
         </div>
