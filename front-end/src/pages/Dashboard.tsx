@@ -163,6 +163,7 @@ type KpiDisplayRow = {
   designation: string;
   checkInAt?: string;
   checkOutAt?: string;
+  shiftEndTime?: string;
   lateByMinutes?: number;
   leaveType?: string;
   absentReason?: string;
@@ -535,7 +536,7 @@ const Dashboard = () => {
     if (dashboardStats?.kpis) return dashboardStats.kpis;
     return {
       totalEmployees: employeeList.length,
-      presentToday: todayStatusList.filter((item) => item.present).length,
+      presentToday: todayStatusList.filter((item) => item.present && !item.pendingCheckout).length,
       absentToday: todayStatusList.filter((item) => item.absent).length,
       checkedInOnly: todayStatusList.filter((item) => item.pendingCheckout).length,
       lateArrivals: todayStatusList.filter((item) => item.present && Number(item.lateByMinutes || 0) > 0).length,
@@ -557,7 +558,10 @@ const Dashboard = () => {
       employeeList.map((emp) => [String(emp._id), emp] as const)
     );
     const todayStatusByEmployeeId = new Map(
-      (todayStatusList || []).map((item) => [String(item.employeeId), item] as const)
+      (todayStatusList || []).map((item) => [getEmployeeId(item.employeeId as string | EmployeeRecord), item] as const)
+    );
+    const attendanceTodayByEmployeeId = new Map(
+      (attendanceToday || []).map((row) => [getEmployeeId(row.employeeId as string | EmployeeRecord), row] as const)
     );
 
     const toDisplayRow = (employee: EmployeeRecord, extra: Partial<KpiDisplayRow> = {}): KpiDisplayRow => ({
@@ -579,23 +583,49 @@ const Dashboard = () => {
       return Array.from(map.values());
     };
 
+    const getEmployeeRecord = (employeeId: string) => employeeById.get(String(employeeId)) || {};
+    const employeesOnApprovedLeaveToday = new Set(
+      (leaveList || [])
+        .filter((leave) => {
+          const fromKey = toOrgDateKey(leave.fromDate);
+          const toKey = toOrgDateKey(leave.toDate);
+          return leave.status === "approved" && todayKey >= fromKey && todayKey <= toKey;
+        })
+        .map((leave) => getEmployeeId(leave.employeeId as string | EmployeeRecord))
+        .filter(Boolean)
+    );
+
     const totalRows = employeeList.map((emp) => toDisplayRow(emp));
 
     const presentRows = uniqueByEmployeeId(
-      employeeList
-        .filter((employee) => {
-          const employeeId = String(employee?._id || "");
+      (attendanceToday || [])
+        .filter((row) => {
+          const employeeId = getEmployeeId(row.employeeId as string | EmployeeRecord);
+          if (!employeeId || !hasAttendanceActivity(row)) return false;
           const status = todayStatusByEmployeeId.get(employeeId);
-          if (!status || status.holidayName || status.isWeekOff || status.isOnLeave) return false;
-          return Boolean(status.present);
+          if (status) {
+            if (status.holidayName || status.isWeekOff || status.isOnLeave || status.pendingCheckout) return false;
+            return Boolean(status.present || row.checkInAt || row.checkOutAt);
+          }
+          if (employeesOnApprovedLeaveToday.has(employeeId)) return false;
+          return true;
         })
-        .map((employee) => {
-          const employeeId = String(employee?._id || "");
+        .map((attendance) => {
+          const employeeId = getEmployeeId(attendance.employeeId as string | EmployeeRecord);
           const status = todayStatusByEmployeeId.get(employeeId);
-          return toDisplayRow(employee || {}, {
+          
+          return toDisplayRow(getEmployeeRecord(employeeId) as EmployeeRecord, {
             id: employeeId,
-            checkInAt: status?.checkInAt ? formatTimeInOrgTimeZone(status.checkInAt, { hour: "2-digit", minute: "2-digit" }) : "-",
-            checkOutAt: status?.checkOutAt ? formatTimeInOrgTimeZone(status.checkOutAt, { hour: "2-digit", minute: "2-digit" }) : "-"
+            checkInAt: status?.checkInAt
+              ? formatTimeInOrgTimeZone(status.checkInAt, { hour: "2-digit", minute: "2-digit" })
+              : attendance?.checkInAt
+                ? formatTimeInOrgTimeZone(attendance.checkInAt, { hour: "2-digit", minute: "2-digit" })
+                : "-",
+            checkOutAt: status?.checkOutAt
+              ? formatTimeInOrgTimeZone(status.checkOutAt, { hour: "2-digit", minute: "2-digit" })
+              : attendance?.checkOutAt
+                ? formatTimeInOrgTimeZone(attendance.checkOutAt, { hour: "2-digit", minute: "2-digit" })
+                : "-"
           });
         })
     );
@@ -617,14 +647,11 @@ const Dashboard = () => {
     );
 
     const absentRows = uniqueByEmployeeId(
-      employeeList
-        .filter((employee) => {
-          const status = todayStatusByEmployeeId.get(String(employee?._id || ""));
-          return Boolean(status?.absent);
-        })
-        .map((employee) => {
-          const employeeId = String(employee?._id || "");
-          return toDisplayRow(employee || {}, {
+      (todayStatusList || [])
+        .filter((status) => Boolean(status?.absent))
+        .map((status) => {
+          const employeeId = String(status?.employeeId || "");
+          return toDisplayRow(getEmployeeRecord(employeeId) as EmployeeRecord, {
             id: employeeId,
             absentReason: "Absent"
           });
@@ -632,36 +659,29 @@ const Dashboard = () => {
     );
 
     const lateRows = uniqueByEmployeeId(
-      employeeList
-        .filter((employee) => {
-          const employeeId = String(employee?._id || "");
-          const status = todayStatusByEmployeeId.get(employeeId);
+      (todayStatusList || [])
+        .filter((status) => {
           if (!status || status.holidayName || status.isWeekOff || status.isOnLeave) return false;
           return Boolean(status.present) && Number(status.lateByMinutes || 0) > 0;
         })
-        .map((employee) => {
-          const employeeId = String(employee?._id || "");
-          const status = todayStatusByEmployeeId.get(employeeId);
-          return toDisplayRow(employee || {}, {
+        .map((status) => {
+          const employeeId = String(status.employeeId || "");
+          return toDisplayRow(getEmployeeRecord(employeeId) as EmployeeRecord, {
             id: employeeId,
-            lateByMinutes: Number(status?.lateByMinutes || 0)
+            lateByMinutes: Number(status.lateByMinutes || 0)
           });
         })
     );
 
     const missedRows = uniqueByEmployeeId(
-      employeeList
-        .filter((employee) => {
-          const employeeId = String(employee?._id || "");
-          const status = todayStatusByEmployeeId.get(employeeId);
-          return Boolean(status?.pendingCheckout);
-        })
-        .map((employee) => {
-          const employeeId = String(employee?._id || "");
-          const status = todayStatusByEmployeeId.get(employeeId);
-          return toDisplayRow(employee || {}, {
+      (todayStatusList || [])
+        .filter((status) => Boolean(status?.pendingCheckout))
+        .map((status) => {
+          const employeeId = getEmployeeId(status?.employeeId as string | EmployeeRecord);
+          return toDisplayRow(getEmployeeRecord(employeeId) as EmployeeRecord, {
             id: employeeId,
-            checkInAt: status?.checkInAt ? formatTimeInOrgTimeZone(status.checkInAt, { hour: "2-digit", minute: "2-digit" }) : "-"
+            checkInAt: status?.checkInAt ? formatTimeInOrgTimeZone(status.checkInAt, { hour: "2-digit", minute: "2-digit" }) : "-",
+            shiftEndTime: status?.shiftEndTime || "-"
           });
         })
     );
@@ -674,7 +694,7 @@ const Dashboard = () => {
       late: { title: "Late Arrivals", rows: lateRows },
       missed: { title: "Missed Checkout", rows: missedRows }
     };
-  }, [employeeList, leaveList, todayKey, todayStatusList]);
+  }, [attendanceToday, employeeList, leaveList, todayKey, todayStatusList]);
 
   const openKpiDialog = (key: "total" | "present" | "absent" | "leave" | "late" | "missed") => {
     setSelectedKpiKey(key);
@@ -686,6 +706,59 @@ const Dashboard = () => {
       state: { from: "/dashboard" }
     });
   };
+
+  const selectedKpiRows = useMemo(() => {
+    if (!selectedKpiKey) return [];
+
+    const configuredRows = kpiEmployeeDetails[selectedKpiKey]?.rows || [];
+    if (selectedKpiKey !== "present" || configuredRows.length > 0) return configuredRows;
+
+    const employeeById = new Map(
+      employeeList.map((emp) => [String(emp._id), emp] as const)
+    );
+    const employeesOnApprovedLeaveToday = new Set(
+      (leaveList || [])
+        .filter((leave) => {
+          const fromKey = toOrgDateKey(leave.fromDate);
+          const toKey = toOrgDateKey(leave.toDate);
+          return leave.status === "approved" && todayKey >= fromKey && todayKey <= toKey;
+        })
+        .map((leave) => getEmployeeId(leave.employeeId as string | EmployeeRecord))
+        .filter(Boolean)
+    );
+    const todayStatusByEmployeeId = new Map(
+      (todayStatusList || []).map((item) => [getEmployeeId(item.employeeId as string | EmployeeRecord), item] as const)
+    );
+
+    return Array.from(
+      new Map(
+        (attendanceToday || [])
+          .filter((row) => {
+            const employeeId = getEmployeeId(row.employeeId as string | EmployeeRecord);
+            if (!employeeId || !hasAttendanceActivity(row)) return false;
+            if (employeesOnApprovedLeaveToday.has(employeeId)) return false;
+            const status = todayStatusByEmployeeId.get(employeeId);
+            if (status?.holidayName || status?.isWeekOff || status?.isOnLeave || status?.pendingCheckout) return false;
+            return true;
+          })
+          .map((row) => {
+            const employeeId = getEmployeeId(row.employeeId as string | EmployeeRecord);
+            const employee = employeeById.get(employeeId) || {};
+            return [employeeId, {
+              id: employeeId,
+              name: `${employee?.firstName || ""} ${employee?.lastName || ""}`.trim() || "-",
+              employeeCode: employee?.employeeCode || "-",
+              department: employee?.departmentId?.name || "Unassigned",
+              designation: employee?.designationId?.name || "-",
+              checkInAt: row.checkInAt ? formatTimeInOrgTimeZone(row.checkInAt, { hour: "2-digit", minute: "2-digit" }) : "-",
+              checkOutAt: row.checkOutAt ? formatTimeInOrgTimeZone(row.checkOutAt, { hour: "2-digit", minute: "2-digit" }) : "-"
+            }] as const;
+          })
+      ).values()
+    );
+  }, [attendanceToday, employeeList, kpiEmployeeDetails, leaveList, selectedKpiKey, todayKey, todayStatusList]);
+
+  const selectedKpiTitle = selectedKpiKey ? kpiEmployeeDetails[selectedKpiKey].title : "Employee Details";
 
   const monthDaySummary = useMemo(() => {
     if (dashboardStats?.monthDaySummary) return dashboardStats.monthDaySummary;
@@ -1128,15 +1201,13 @@ const Dashboard = () => {
       <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>
-              {selectedKpiKey ? kpiEmployeeDetails[selectedKpiKey].title : "Employee Details"}
-            </DialogTitle>
+            <DialogTitle>{selectedKpiTitle}</DialogTitle>
           </DialogHeader>
           <div className="max-h-[420px] overflow-auto space-y-2">
-            {(selectedKpiKey ? kpiEmployeeDetails[selectedKpiKey].rows : []).length === 0 && (
+            {selectedKpiRows.length === 0 && (
               <p className="text-sm text-muted-foreground">No employees found.</p>
             )}
-            {(selectedKpiKey ? kpiEmployeeDetails[selectedKpiKey].rows : []).map((row: KpiDisplayRow) => (
+            {selectedKpiRows.map((row: KpiDisplayRow) => (
               <div key={row.id} className="rounded-lg border p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -1195,6 +1266,7 @@ const Dashboard = () => {
                   <p className="text-xs text-muted-foreground mt-2">
                     Check-in: {row.checkInAt}{" "}
                     {"checkOutAt" in row ? `| Check-out: ${row.checkOutAt}` : ""}
+                    {"shiftEndTime" in row && row.shiftEndTime ? `| Shift ends: ${row.shiftEndTime}` : ""}
                   </p>
                 )}
               </div>

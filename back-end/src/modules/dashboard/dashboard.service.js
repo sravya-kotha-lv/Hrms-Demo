@@ -100,6 +100,57 @@ const buildLeaveIndex = (leaves, timeZone, fromKey, toKey) => {
   return index;
 };
 
+const getAttendanceAnchorDateKey = (row, timeZone) => {
+  const anchorDate = row?.checkInAt || row?.checkOutAt || row?.date || row?.createdAt;
+  return anchorDate ? toDateKeyInTimeZone(anchorDate, timeZone) : null;
+};
+
+const isAttendanceRowRelevantForToday = (row, { timeZone, todayKey }) => {
+  const anchorDateKey = getAttendanceAnchorDateKey(row, timeZone);
+  if (!anchorDateKey) return false;
+  if (anchorDateKey === todayKey) return true;
+
+  const scheduledEndDateKey = row?.scheduledEndAt
+    ? toDateKeyInTimeZone(row.scheduledEndAt, timeZone)
+    : anchorDateKey;
+  const isOvernightShift = Boolean(row?.scheduledEndAt && scheduledEndDateKey !== anchorDateKey);
+
+  if (isOvernightShift && scheduledEndDateKey === todayKey) {
+    return true;
+  }
+
+  return false;
+};
+
+const buildDashboardTodayAttendance = ({ rows, activeEmployeeIds, timeZone, todayKey }) => {
+  const bestRows = new Map();
+
+  for (const row of rows || []) {
+    const employeeId = getEmployeeExternalId(row?.employeeId);
+    if (!employeeId || !activeEmployeeIds.has(employeeId)) continue;
+    if (!isAttendanceRowRelevantForToday(row, { timeZone, todayKey })) continue;
+
+    const anchorDateKey = getAttendanceAnchorDateKey(row, timeZone);
+    const scheduledEndDateKey = row?.scheduledEndAt
+      ? toDateKeyInTimeZone(row.scheduledEndAt, timeZone)
+      : anchorDateKey;
+    const isOvernightShift = Boolean(row?.scheduledEndAt && scheduledEndDateKey !== anchorDateKey);
+
+    const score = anchorDateKey === todayKey
+      ? 3
+      : isOvernightShift && scheduledEndDateKey === todayKey
+        ? 2
+        : 1;
+
+    const existing = bestRows.get(employeeId);
+    if (!existing || score > existing.score) {
+      bestRows.set(employeeId, { score, row });
+    }
+  }
+
+  return Array.from(bestRows.values()).map((entry) => entry.row);
+};
+
 const buildDashboardStats = ({
   employees,
   attendanceToday,
@@ -135,6 +186,7 @@ const buildDashboardStats = ({
       return [`${employeeId}-${dateKey}`, row];
     })
   );
+  const now = new Date();
 
   const todayStatusList = (employees || []).map((employee) => {
     const employeeId = String(employee._id);
@@ -147,7 +199,13 @@ const buildDashboardStats = ({
       && isApprovedLeaveOnDate(leave, todayKey, timeZone)
     );
     const hasAttendance = Boolean(attendance?.checkInAt || attendance?.checkOutAt);
-    const isPendingCheckout = Boolean(attendance?.checkInAt && !attendance?.checkOutAt);
+    const scheduledEndAt = attendance?.scheduledEndAt ? new Date(attendance.scheduledEndAt) : null;
+    const isShiftCompleted = Boolean(
+      scheduledEndAt
+      && !Number.isNaN(scheduledEndAt.getTime())
+      && now >= scheduledEndAt
+    );
+    const isPendingCheckout = Boolean(attendance?.checkInAt && !attendance?.checkOutAt && isShiftCompleted);
     const countAsAbsent = !holidayName
       && !isWeekOff
       && !isOnLeave
@@ -172,7 +230,7 @@ const buildDashboardStats = ({
 
   const kpis = {
     totalEmployees: employees.length,
-    presentToday: todayStatusList.filter((item) => item.present).length,
+    presentToday: todayStatusList.filter((item) => item.present && !item.pendingCheckout).length,
     absentToday: todayStatusList.filter((item) => item.absent).length,
     checkedInOnly: todayStatusList.filter((item) => item.pendingCheckout).length,
     lateArrivals: todayStatusList.filter((item) => item.present && item.lateByMinutes > 0).length,
@@ -338,7 +396,8 @@ exports.getSummary = async (req) => {
     canViewHolidays
       ? Holiday.find({
         organizationId: req.user.organizationId,
-        year
+        year,
+        status: "active"
       }).sort({ date: 1 })
       : Promise.resolve([]),
     canViewOrgSettings
@@ -358,9 +417,11 @@ exports.getSummary = async (req) => {
     : { defaultDays: [], employeeMap: new Map() };
   const activeEmployeeIds = new Set(activeEmployees.map((employee) => String(employee._id)));
 
-  const activeAttendanceToday = (attendanceToday || []).filter((row) => {
-    const employeeId = getEmployeeExternalId(row?.employeeId);
-    return Boolean(employeeId && activeEmployeeIds.has(employeeId));
+  const activeAttendanceToday = buildDashboardTodayAttendance({
+    rows: [...(attendanceToday || []), ...(attendanceLast7 || [])],
+    activeEmployeeIds,
+    timeZone,
+    todayKey
   });
 
   const activeAttendanceLast7 = (attendanceLast7 || []).filter((row) => {
