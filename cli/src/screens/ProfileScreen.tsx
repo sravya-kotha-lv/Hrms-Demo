@@ -348,13 +348,7 @@ function ProfileScreen() {
         ) : (
           <>
             <View style={styles.headerCard}>
-              <LinearGradient
-                colors={['#2a6cff', '#4a39f3']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0.9, y: 1 }}
-                style={styles.headerAccent}
-              />
-              <View style={styles.headerMain}>
+              <View style={styles.headerContent}>
                 <View style={styles.photoWrap}>
                   {profileImageUrl ? (
                     <Image source={{ uri: profileImageUrl }} style={styles.photo} />
@@ -364,23 +358,15 @@ function ProfileScreen() {
                     </View>
                   )}
                 </View>
-                <View style={styles.headerBody}>
-                  <View style={styles.headerText}>
-                    <Text style={styles.headerName} numberOfLines={1}>
-                      {displayName}
-                    </Text>
-                    <View style={styles.headerSubtitleRow}>
-                      <MaterialCommunityIcons name="email-outline" size={12} color="#4b63f3" />
-                      <Text style={styles.headerSubtitle} numberOfLines={1}>
-                        {profile?.userId?.email || ''}
-                      </Text>
-                    </View>
-                  </View>
-                  <Pressable style={styles.editButton} onPress={() => setEditVisible(true)}>
-                    <MaterialCommunityIcons name="pencil-outline" size={14} color="#2563eb" />
-                    <Text style={styles.editButtonText}>Edit Profile</Text>
-                  </Pressable>
+                <View style={styles.headerText}>
+                  <Text style={styles.headerName}>{displayName}</Text>
+                  <Text style={styles.headerSubtitle}>{profile?.userId?.email || ''}</Text>
                 </View>
+              </View>
+              <View style={styles.headerActions}>
+                <Pressable style={styles.editButton} onPress={() => setEditVisible(true)}>
+                  <Text style={styles.editButtonText}>Edit Profile</Text>
+                </Pressable>
               </View>
             </View>
 
@@ -615,82 +601,44 @@ const styles = StyleSheet.create({
   },
   headerCard: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    minHeight: 116,
-    overflow: 'hidden',
-    position: 'relative',
+    padding: 16,
+    borderRadius: 18,
+    gap: 14,
     shadowColor: '#0f172a',
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  headerAccent: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 74,
-    borderTopRightRadius: 26,
-    borderBottomRightRadius: 26,
-  },
-  headerMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 116,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
+  headerContent: { flexDirection: 'row', alignItems: 'center' },
   photoWrap: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     overflow: 'hidden',
-    marginLeft: 10,
-    marginRight: 14,
-    borderWidth: 3,
-    borderColor: '#fff',
-    backgroundColor: '#dbeafe',
-    zIndex: 1,
+    marginRight: 12,
   },
   photo: { width: '100%', height: '100%' },
   placeholder: {
     flex: 1,
-    backgroundColor: '#dbeafe',
+    backgroundColor: '#f1f5f9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  placeholderText: { fontSize: 24, color: '#3561f3', fontWeight: '700' },
-  headerBody: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: 'center',
-    paddingRight: 8,
+  placeholderText: { fontSize: 24, color: '#64748b' },
+  headerText: { flex: 1, minWidth: 0 },
+  headerName: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
+  headerSubtitle: { fontSize: 13, color: '#475569' },
+  headerActions: {
+    alignItems: 'flex-end',
   },
-  headerText: { minWidth: 0 },
-  headerName: { fontSize: 23, fontWeight: '800', color: '#1e293b' },
-  headerSubtitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    gap: 6,
-  },
-  headerSubtitle: { flex: 1, fontSize: 11, color: '#64748b', fontWeight: '500' },
   editButton: {
-    marginTop: 14,
-    alignSelf: 'flex-start',
-    minHeight: 38,
+    backgroundColor: '#1450d3',
     paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#2563eb',
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignSelf: 'flex-end',
   },
-  editButtonText: { color: '#2563eb', fontWeight: '700', fontSize: 13 },
+  editButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   detailCard: {
     backgroundColor: '#fff',
     borderRadius: 18,

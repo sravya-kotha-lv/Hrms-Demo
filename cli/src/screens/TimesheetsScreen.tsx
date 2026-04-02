@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useNavigation } from '@react-navigation/native';
 import { getApiWithToken, postApiWithToken, putApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -42,22 +43,8 @@ const buildWeekDates = (weekStart: Date) => {
   return dates;
 };
 
-const formatHeaderRange = (weekDates: Date[]) => {
-  if (!weekDates.length) return '';
-  const first = weekDates[0];
-  const last = weekDates[weekDates.length - 1];
-  return `${first.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${last.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
-};
-
-const formatDayLabel = (value: string) => {
-  const date = new Date(value);
-  return {
-    weekday: date.toLocaleDateString(undefined, { weekday: 'short' }),
-    day: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-  };
-};
-
 function TimesheetsScreen() {
+  const navigation = useNavigation<any>();
   const { session } = useAuth();
   const token = session?.token || '';
   const safeAreaInsets = useSafeAreaInsets();
@@ -70,11 +57,6 @@ function TimesheetsScreen() {
 
   const weekStartKey = useMemo(() => toDateInput(weekStart), [weekStart]);
   const weekDates = useMemo(() => buildWeekDates(weekStart), [weekStart]);
-  const weekRangeLabel = useMemo(() => formatHeaderRange(weekDates), [weekDates]);
-  const totalHours = useMemo(
-    () => entries.reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0),
-    [entries]
-  );
 
   const loadTimesheet = async () => {
     setLoading(true);
@@ -151,14 +133,6 @@ function TimesheetsScreen() {
     loadTimesheet();
   };
 
-  const shiftWeek = (offset: number) => {
-    setWeekStart(prev => {
-      const next = new Date(prev);
-      next.setDate(next.getDate() + offset * 7);
-      return getWeekStart(next);
-    });
-  };
-
   return (
     <LinearGradient
       colors={['#f3f5f9', '#f3f5f9', '#eef1f6']}
@@ -172,74 +146,31 @@ function TimesheetsScreen() {
           { paddingTop: Math.max(safeAreaInsets.top, 16) },
         ]}
       >
-        <View style={styles.heroCard}>
-          <View style={styles.heroTopRow}>
-            <View style={styles.heroTitleWrap}>
-              <Text style={styles.heroEyebrow}>Weekly Timesheet</Text>
-              <Text style={styles.heroTitle}>Log your week cleanly</Text>
-              <Text style={styles.heroSubtitle}>{weekRangeLabel}</Text>
-            </View>
-            <View style={styles.heroIconBadge}>
-              <MaterialCommunityIcons name="clipboard-text-clock-outline" size={20} color="#2563eb" />
-            </View>
-          </View>
-
-          <View style={styles.weekNavigator}>
-            <Pressable style={styles.weekNavButton} onPress={() => shiftWeek(-1)}>
-              <MaterialCommunityIcons name="chevron-left" size={18} color="#334155" />
-            </Pressable>
-            <View style={styles.weekNavigatorCenter}>
-              <Text style={styles.weekNavigatorLabel}>Week Starting</Text>
-              <Text style={styles.weekNavigatorValue}>{weekStartKey}</Text>
-            </View>
-            <Pressable style={styles.weekNavButton} onPress={() => shiftWeek(1)}>
-              <MaterialCommunityIcons name="chevron-right" size={18} color="#334155" />
-            </Pressable>
-          </View>
-
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Total Hours</Text>
-              <Text style={styles.summaryValue}>{totalHours.toFixed(1)}h</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Status</Text>
-              <Text style={styles.summaryValue}>{timesheetId ? 'Draft Ready' : 'New Week'}</Text>
-            </View>
-          </View>
+        <View style={styles.header}>
+         
+          <Text style={styles.headerTitle}>Weekly Timesheet</Text>
+          
         </View>
 
         <View style={styles.card}>
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          <Text style={styles.sectionTitle}>Daily Entries</Text>
-          <Text style={styles.helperText}>Fill hours and a short work summary for each day.</Text>
+          <Text style={styles.helperText}>Week starting {weekStartKey}</Text>
 
           {loading ? (
-            <View style={styles.loadingState}>
-              <ActivityIndicator color="#2563eb" />
-            </View>
+            <ActivityIndicator />
           ) : (
             entries.map((entry, idx) => (
               <View key={entry.date} style={styles.entryRow}>
-                <View style={styles.entryHeader}>
-                  <View>
-                    <Text style={styles.entryWeekday}>{formatDayLabel(entry.date).weekday}</Text>
-                    <Text style={styles.entryDate}>{formatDayLabel(entry.date).day}</Text>
-                  </View>
-                  <View style={styles.hoursShell}>
-                    <Text style={styles.hoursLabel}>Hours</Text>
-                    <TextInput
-                      style={styles.hoursInput}
-                      keyboardType="decimal-pad"
-                      value={String(entry.hours)}
-                      onChangeText={(value) => updateEntry(idx, { hours: Number(value) || 0 })}
-                    />
-                  </View>
-                </View>
+                <Text style={styles.entryDate}>{entry.date}</Text>
+                <TextInput
+                  style={styles.hoursInput}
+                  keyboardType="decimal-pad"
+                  value={String(entry.hours)}
+                  onChangeText={(value) => updateEntry(idx, { hours: Number(value) || 0 })}
+                />
                 <TextInput
                   style={styles.notesInput}
-                  placeholder="What did you work on today?"
-                  placeholderTextColor="#94a3b8"
+                  placeholder="Notes"
                   value={entry.notes || ''}
                   onChangeText={(value) => updateEntry(idx, { notes: value })}
                 />
@@ -264,67 +195,8 @@ function TimesheetsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 120, gap: 14 },
-  heroCard: {
-    borderRadius: 22,
-    padding: 18,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#dbe7ff',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  heroTitleWrap: {
-    flex: 1,
-  },
-  heroEyebrow: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: '#94a3b8',
-  },
-  heroTitle: {
-    marginTop: 6,
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  heroSubtitle: {
-    marginTop: 4,
-    fontSize: 13,
-    color: '#64748b',
-  },
-  heroIconBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: '#eff6ff',
-    borderWidth: 1,
-    borderColor: '#dbeafe',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  weekNavigator: {
-    marginTop: 18,
-    borderRadius: 16,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  weekNavButton: {
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerButton: {
     width: 36,
     height: 36,
     borderRadius: 12,
@@ -334,137 +206,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  weekNavigatorCenter: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  weekNavigatorLabel: {
-    fontSize: 11,
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  weekNavigatorValue: {
-    marginTop: 2,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  summaryRow: {
-    marginTop: 14,
-    flexDirection: 'row',
-    gap: 10,
-  },
-  summaryCard: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 14,
-    backgroundColor: '#f8fbff',
-    borderWidth: 1,
-    borderColor: '#e0ecff',
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  summaryValue: {
-    marginTop: 6,
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 20,
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    gap: 12,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
+    gap: 10,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
   helperText: { fontSize: 12, color: '#64748b' },
   errorText: { fontSize: 12, color: '#dc2626' },
-  loadingState: {
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
   entryRow: {
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    borderRadius: 16,
-    padding: 12,
-    gap: 10,
-    backgroundColor: '#fcfdff',
+    borderRadius: 12,
+    padding: 10,
+    gap: 8,
   },
-  entryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  entryWeekday: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    color: '#94a3b8',
-  },
-  entryDate: { marginTop: 2, fontSize: 15, fontWeight: '800', color: '#0f172a' },
-  hoursShell: {
-    width: 92,
-  },
-  hoursLabel: {
-    fontSize: 11,
-    color: '#64748b',
-    marginBottom: 4,
-    textAlign: 'right',
-  },
+  entryDate: { fontSize: 12, fontWeight: '700', color: '#0f172a' },
   hoursInput: {
-    height: 40,
-    borderRadius: 10,
+    height: 36,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    paddingHorizontal: 10,
-    fontSize: 14,
-    backgroundColor: '#ffffff',
-    textAlign: 'center',
-    fontWeight: '700',
+    paddingHorizontal: 8,
+    fontSize: 12,
   },
   notesInput: {
-    height: 42,
-    borderRadius: 10,
+    height: 36,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    paddingHorizontal: 12,
-    fontSize: 13,
-    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    fontSize: 12,
   },
-  actionRow: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  actionRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
   secondaryButton: {
     flex: 1,
-    height: 44,
-    borderRadius: 12,
+    height: 40,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#f8fafc',
   },
-  secondaryText: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
+  secondaryText: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
   primaryButton: {
     flex: 1,
-    height: 44,
-    borderRadius: 12,
+    height: 40,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#2563eb',
   },
-  primaryText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  primaryText: { fontSize: 12, fontWeight: '700', color: '#fff' },
 });
 
 export default TimesheetsScreen;
