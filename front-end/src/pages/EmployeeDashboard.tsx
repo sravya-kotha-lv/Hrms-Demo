@@ -132,6 +132,12 @@ type MyProfile = {
   gender?: string;
   address?: { line1?: string } | null;
   emergencyContacts?: unknown[];
+  shiftId?: {
+    name?: string;
+    code?: string;
+    startTime?: string | null;
+    endTime?: string | null;
+  } | null;
 };
 
 type TimesheetSummary = {
@@ -141,12 +147,25 @@ type TimesheetSummary = {
 
 type AttendanceTodayRecord = AttendanceDay & {
   lateByMinutes?: number;
+  shiftStartTime?: string | null;
+  shiftEndTime?: string | null;
 };
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
+
+const formatShiftTime = (value?: string | null) => {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return null;
+  const [hoursText, minutesText] = value.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return value;
+  const meridiem = hours >= 12 ? "PM" : "AM";
+  const normalizedHours = hours % 12 || 12;
+  return `${normalizedHours}:${String(minutes).padStart(2, "0")} ${meridiem}`;
+};
 
 const captureSelfieFromCamera = async (): Promise<string | null> => {
   if (!navigator.mediaDevices?.getUserMedia) return null;
@@ -537,6 +556,12 @@ const EmployeeDashboard = () => {
   const checkOutTimeText = attendanceToday?.checkOutAt
     ? formatTimeInOrgTimeZone(attendanceToday.checkOutAt)
     : "-";
+  const assignedShift = myProfile?.shiftId || null;
+  const shiftStartText = formatShiftTime(attendanceToday?.shiftStartTime || assignedShift?.startTime);
+  const shiftEndText = formatShiftTime(attendanceToday?.shiftEndTime || assignedShift?.endTime);
+  const shiftTimingsText = shiftStartText && shiftEndText
+    ? `${shiftStartText} - ${shiftEndText}`
+    : shiftStartText || shiftEndText || "-";
   const statusHeroClassName = isCheckedOut
     ? "border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(220,252,231,0.84)_42%,rgba(255,255,255,0.98))]"
     : isCheckedIn
@@ -722,6 +747,9 @@ const EmployeeDashboard = () => {
             </h2>
             <p className="text-sm text-muted-foreground mt-2">
               Check-in: {checkInTimeText} • Check-out: {checkOutTimeText}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Shift: {shiftTimingsText}
             </p>
             {isCheckedIn && (
               <p className="text-xs text-orange-700 mt-1">

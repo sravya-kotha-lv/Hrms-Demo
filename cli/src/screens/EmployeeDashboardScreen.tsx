@@ -51,6 +51,17 @@ const formatDate = (value: string | Date) =>
 const formatTime = (value: string | Date) =>
   new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
+const formatShiftTime = (value?: string | null) => {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return null;
+  const [hoursText, minutesText] = value.split(':');
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return value;
+  const meridiem = hours >= 12 ? 'PM' : 'AM';
+  const normalizedHours = hours % 12 || 12;
+  return `${normalizedHours}:${String(minutes).padStart(2, '0')} ${meridiem}`;
+};
+
 const today = new Date();
 const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 const currentYear = today.getFullYear();
@@ -233,6 +244,12 @@ function EmployeeDashboardScreen() {
   const checkOutTimeText = attendanceToday?.checkOutAt
     ? formatTime(attendanceToday.checkOutAt)
     : '-';
+  const assignedShift = myProfile?.shiftId || null;
+  const shiftStartText = formatShiftTime(attendanceToday?.shiftStartTime || assignedShift?.startTime);
+  const shiftEndText = formatShiftTime(attendanceToday?.shiftEndTime || assignedShift?.endTime);
+  const shiftTimingsText = shiftStartText && shiftEndText
+    ? `${shiftStartText} - ${shiftEndText}`
+    : shiftStartText || shiftEndText || '-';
 
   const lateFlag = useMemo(() => Number(attendanceToday?.lateByMinutes || 0) > 0, [attendanceToday]);
 
@@ -454,6 +471,7 @@ function EmployeeDashboardScreen() {
                       <Text style={styles.cardSubText}>
                         Check-in: {checkInTimeText} • Check-out: {checkOutTimeText}
                       </Text>
+                      <Text style={styles.cardSubText}>Shift: {shiftTimingsText}</Text>
                       <View style={styles.actionRow}>
                         <Pressable
                           style={[styles.primaryAction, isCheckedIn && styles.primaryDisabled]}

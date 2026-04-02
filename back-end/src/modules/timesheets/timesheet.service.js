@@ -14,6 +14,7 @@ const AuditLog = require("../auditLogs/auditLogs.model");
 const sendMail = require("../../utils/sendMail");
 const { createNotificationSafe } = require("../notifications/notification.service");
 const Shift = require("../shifts/shift.model");
+const { normalizeAttendanceRequestDateKey } = require("./attendanceRequest.utils");
 const {
   resolveApplicableFlow,
   getActorApprovalContext,
@@ -1784,7 +1785,8 @@ exports.getMyAttendanceCellHistory = async (req) => {
 exports.raiseAttendanceRequest = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
-  const date = startOfDayInTimeZone(req.body.date, organizationTimeZone);
+  const dateKey = normalizeAttendanceRequestDateKey(req.body.date, organizationTimeZone);
+  const date = startOfDayInTimeZone(dateKey, organizationTimeZone);
   const today = startOfDayInTimeZone(new Date(), organizationTimeZone);
   if (date > today) {
     throw new Error("Attendance request date cannot be in the future");
@@ -1820,7 +1822,7 @@ exports.raiseAttendanceRequest = async (req) => {
   const existingPending = await AttendanceRequest.findOne({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date,
+    date: dateKey,
     status: "pending"
   });
   if (existingPending) {
@@ -1837,7 +1839,7 @@ exports.raiseAttendanceRequest = async (req) => {
   const request = await AttendanceRequest.create({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date,
+    date: dateKey,
     requestType,
     requestedCheckInTime,
     requestedCheckOutTime,
@@ -1857,7 +1859,7 @@ exports.raiseAttendanceRequest = async (req) => {
       actorEmployeeId: employee._id,
       type: "attendance_request_pending_approval",
       title: "Attendance request approval pending",
-      message: `${employeeName} submitted an attendance request for ${date.toDateString()}.`,
+      message: `${employeeName} submitted an attendance request for ${dateKey}.`,
       meta: {
         attendanceRequestId: request._id,
         status: request.status,
@@ -2062,8 +2064,8 @@ exports.actionAttendanceRequest = async (req) => {
     return request;
   }
 
-  const attendanceDate = startOfDayInTimeZone(request.date, organizationTimeZone);
-  const attendanceDateKey = toDateKeyInTimeZone(attendanceDate, organizationTimeZone);
+  const attendanceDateKey = normalizeAttendanceRequestDateKey(request.date, organizationTimeZone);
+  const attendanceDate = startOfDayInTimeZone(attendanceDateKey, organizationTimeZone);
   const attendance = await Attendance.findOneAndUpdate(
     {
       organizationId: req.user.organizationId,
