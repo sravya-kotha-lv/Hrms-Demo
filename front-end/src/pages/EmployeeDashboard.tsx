@@ -109,6 +109,11 @@ type EmployeeNotification = {
   _id?: string;
   title?: string;
   message?: string;
+  type?: string;
+  meta?: {
+    module?: string;
+    [key: string]: unknown;
+  };
 };
 
 type HolidayItem = {
@@ -234,6 +239,17 @@ const captureSelfieFromCamera = async (): Promise<string | null> => {
 
 const EmployeeDashboard = () => {
   const navigate = useNavigate();
+
+  const getNotificationTarget = (notification: EmployeeNotification) => {
+    const moduleName = String(notification?.meta?.module || "").toLowerCase();
+    const type = String(notification?.type || "").toLowerCase();
+    const text = `${String(notification?.title || "").toLowerCase()} ${String(notification?.message || "").toLowerCase()}`;
+
+    if (moduleName === "leaves" || type.startsWith("leave_") || text.includes("leave")) return "/leave";
+    if (type === "attendance_request_pending_approval" || text.includes("approval")) return "/pending-approvals";
+    if (type === "attendance_override" || text.includes("attendance")) return "/attendance";
+    return "/employee-dashboard";
+  };
 
   const [weeklyStatus, setWeeklyStatus] = useState<string | null>(null);
   const [weeklyHours, setWeeklyHours] = useState<number>(0);
@@ -830,10 +846,15 @@ const EmployeeDashboard = () => {
               <div className="space-y-2 max-h-64 overflow-auto custom-scroll pr-1">
                 {notifications.length === 0 && <p className="text-sm text-muted-foreground">No notifications</p>}
                 {notifications.map((n) => (
-                  <div key={n._id} className={`rounded-lg border p-3 ${softInsetClassName}`}>
+                  <button
+                    key={n._id}
+                    type="button"
+                    className={`w-full rounded-lg border p-3 text-left transition hover:border-primary/40 ${softInsetClassName}`}
+                    onClick={() => navigate(getNotificationTarget(n))}
+                  >
                     <p className="text-sm font-medium">{n.title}</p>
                     <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
-                  </div>
+                  </button>
                 ))}
               </div>
             </motion.div>

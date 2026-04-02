@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Upanaya</string>
+    <string name="fcm_default_channel_id">upanaya-notifications</string>
 </resources>
