@@ -1,6 +1,9 @@
 const OrgSettings = require("./orgSettings.model");
 const Organization = require("../organizations/organization.model");
 const { isValidTimeZone } = require("../../utils/timezone");
+const { getDefaultMaxActiveLoginsPerUser } = require("../../utils/orgSettingsDefaults");
+
+const DEFAULT_MAX_ACTIVE_LOGINS_PER_USER = getDefaultMaxActiveLoginsPerUser();
 
 const DEFAULTS = {
   leaveCreditFrequency: "monthly",
@@ -24,7 +27,7 @@ const DEFAULTS = {
   probationPeriodDays: 90,
   noticePeriodDays: 30,
   employeeIdPrefix: "",
-  maxActiveLoginsPerUser: 1
+  maxActiveLoginsPerUser: DEFAULT_MAX_ACTIVE_LOGINS_PER_USER
 };
 
 exports.get = async (req) => {
@@ -43,6 +46,14 @@ exports.get = async (req) => {
     });
   } else if (!isValidTimeZone(settings.timezone)) {
     settings.timezone = organizationTimeZone;
+    await settings.save();
+  }
+
+  if (
+    settings.maxActiveLoginsPerUser === undefined
+    || settings.maxActiveLoginsPerUser === null
+  ) {
+    settings.maxActiveLoginsPerUser = DEFAULT_MAX_ACTIVE_LOGINS_PER_USER;
     await settings.save();
   }
 
