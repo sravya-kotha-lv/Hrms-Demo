@@ -9,6 +9,7 @@ const sendMail = require("../../utils/sendMail");
 const Employee = require("../employees/employee.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
 const leaveBalanceService = require("../leaveBalances/leaveBalance.service");
+const { getDefaultMaxActiveLoginsPerUser } = require("../../utils/orgSettingsDefaults");
 
 const FACEPP_COMPARE_URL = process.env.FACEPP_COMPARE_URL || "https://api-us.faceplusplus.com/facepp/v3/compare";
 const FACEPP_DETECT_URL = process.env.FACEPP_DETECT_URL || "https://api-us.faceplusplus.com/facepp/v3/detect";
@@ -21,8 +22,11 @@ const INVALID_CREDENTIALS_ERROR = {
 
 const getMaxActiveLoginsPerUser = async (organizationId) => {
   const settings = await OrgSettings.findOne({ organizationId }).select("maxActiveLoginsPerUser").lean();
-  const configuredLimit = Number(settings?.maxActiveLoginsPerUser || 1);
-  return Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 1;
+  const configuredLimit = Number(settings?.maxActiveLoginsPerUser);
+  if (Number.isInteger(configuredLimit) && configuredLimit > 0) {
+    return configuredLimit;
+  }
+  return getDefaultMaxActiveLoginsPerUser();
 };
 
 const extractBase64Payload = (value = "") => {
