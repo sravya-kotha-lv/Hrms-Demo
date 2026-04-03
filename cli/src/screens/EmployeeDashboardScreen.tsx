@@ -48,19 +48,11 @@ const getWeekStart = (value: Date) => {
 const formatDate = (value: string | Date) =>
   new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
+const formatDateLong = (value: string | Date) =>
+  new Date(value).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+
 const formatTime = (value: string | Date) =>
   new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-
-const formatShiftTime = (value?: string | null) => {
-  if (!value || !/^\d{2}:\d{2}$/.test(value)) return null;
-  const [hoursText, minutesText] = value.split(':');
-  const hours = Number(hoursText);
-  const minutes = Number(minutesText);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return value;
-  const meridiem = hours >= 12 ? 'PM' : 'AM';
-  const normalizedHours = hours % 12 || 12;
-  return `${normalizedHours}:${String(minutes).padStart(2, '0')} ${meridiem}`;
-};
 
 const today = new Date();
 const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -78,6 +70,7 @@ function EmployeeDashboardScreen() {
   } = useAuth();
   const token = session?.token || '';
   const profile = session?.profile || session?.loginData || null;
+  const permissions = session?.permissions || [];
   const safeAreaInsets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'planning'>('overview');
   const [loading, setLoading] = useState(true);
@@ -85,11 +78,14 @@ function EmployeeDashboardScreen() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   const [weeklyStatus, setWeeklyStatus] = useState<string | null>(null);
+  const [weeklyHours, setWeeklyHours] = useState(0);
+  const [weeklyEntries, setWeeklyEntries] = useState<any[]>([]);
   const [onlineList, setOnlineList] = useState<any[]>([]);
   const [onLeaveList, setOnLeaveList] = useState<any[]>([]);
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
   const [leaveBalances, setLeaveBalances] = useState<any[]>([]);
   const [myLeaves, setMyLeaves] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [upcomingHolidays, setUpcomingHolidays] = useState<any[]>([]);
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<{ birthdays: any[]; anniversaries: any[] }>({
@@ -125,6 +121,7 @@ function EmployeeDashboardScreen() {
       balanceRes,
       onlineRes,
       onLeaveRes,
+      notifRes,
       holidayRes,
       weekOffRes,
       matrixRes,
@@ -138,6 +135,7 @@ function EmployeeDashboardScreen() {
       getApiWithToken<any>('/leave-balances/my', token),
       getApiWithToken<any>('/timesheets/online', token),
       getApiWithToken<any>('/timesheets/on-leave', token),
+      getApiWithToken<any>('/notifications/my?limit=6', token),
       getApiWithToken<any>(`/holidays?year=${currentYear}`, token),
       getApiWithToken<any>('/week-offs', token),
       getApiWithToken<any>(`/timesheets/attendance/matrix/my?month=${currentMonth}`, token),
@@ -148,8 +146,14 @@ function EmployeeDashboardScreen() {
 
     if (weeklyRes?.success && weeklyRes?.data) {
       setWeeklyStatus(weeklyRes.data.status || 'draft');
+      const entries = weeklyRes.data.entries || [];
+      setWeeklyEntries(entries);
+      const total = entries.reduce((sum: number, e: any) => sum + (Number(e?.hours) || 0), 0);
+      setWeeklyHours(total);
     } else {
       setWeeklyStatus(null);
+      setWeeklyHours(0);
+      setWeeklyEntries([]);
     }
 
     if (attendanceRes?.success) {
@@ -163,6 +167,7 @@ function EmployeeDashboardScreen() {
     setLeaveBalances(balanceRes?.success ? balanceRes.data || [] : []);
     setOnlineList(onlineRes?.success ? onlineRes.data || [] : []);
     setOnLeaveList(onLeaveRes?.success ? onLeaveRes.data || [] : []);
+    setNotifications(notifRes?.success ? notifRes.data?.items || [] : []);
 
     if (holidayRes?.success) {
       const now = new Date();
@@ -214,7 +219,6 @@ function EmployeeDashboardScreen() {
     if (silent) setRefreshing(false);
   };
 
-  // `loadDashboard` intentionally closes over current token/weekStart for the polling cycle.
   useEffect(() => {
     if (!token) return undefined;
     loadDashboard();
@@ -222,7 +226,6 @@ function EmployeeDashboardScreen() {
       loadDashboard(true);
     }, 30000);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart, token]);
 
   const pendingLeaves = useMemo(
@@ -232,10 +235,108 @@ function EmployeeDashboardScreen() {
 
   const pendingTimesheets = useMemo(() => (weeklyStatus === 'submitted' ? 1 : 0), [weeklyStatus]);
 
+  const missingProfileFields = useMemo(() => {
+    if (!myProfile) return [];
+    const missing: string[] = [];
+    if (!myProfile.phone) missing.push('Phone');
+    if (!myProfile.dob) missing.push('Date of birth');
+    if (!myProfile.gender) missing.push('Gender');
+    if (!myProfile.address?.line1) missing.push('Address');
+    if (!Array.isArray(myProfile.emergencyContacts) || myProfile.emergencyContacts?.length === 0) {
+      missing.push('Emergency contact');
+    }
+    return missing;
+  }, [myProfile]);
+
   const totalLeaveRemaining = useMemo(
     () => (leaveBalances || []).reduce((sum: number, b: any) => sum + Number(b?.remaining || 0), 0),
     [leaveBalances]
   );
+
+  const weeklyProgress = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayKey = toDateInput(todayStart);
+    const sundayStart = new Date(todayStart);
+    sundayStart.setDate(todayStart.getDate() - todayStart.getDay());
+
+    let todayLiveHours = 0;
+    if (attendanceToday?.checkInAt) {
+      const inAt = new Date(attendanceToday.checkInAt);
+      const outAt = attendanceToday?.checkOutAt ? new Date(attendanceToday.checkOutAt) : now;
+      todayLiveHours = Math.max(0, (outAt.getTime() - inAt.getTime()) / (1000 * 60 * 60));
+    }
+
+    const dayRows = Array.from({ length: 7 }, (_, idx) => {
+      const dayDate = new Date(sundayStart);
+      dayDate.setDate(sundayStart.getDate() + idx);
+      dayDate.setHours(0, 0, 0, 0);
+      const dayKey = toDateInput(dayDate);
+
+      const dayName = dayNames[dayDate.getDay()];
+      const entryForDay = (weeklyEntries || []).find((e: any) => {
+        if (!e?.date) return false;
+        return toDateInput(new Date(e.date)) === dayKey;
+      });
+      const timesheetHours = Number(entryForDay?.hours || 0);
+
+      const matrixCell =
+        dayDate.getMonth() === today.getMonth() && dayDate.getFullYear() === today.getFullYear()
+          ? matrixDays[dayDate.getDate()]
+          : null;
+
+      let attendanceHours = 0;
+      if (matrixCell?.checkInAt) {
+        const inAt = new Date(matrixCell.checkInAt);
+        const outAt = matrixCell?.checkOutAt ? new Date(matrixCell.checkOutAt) : now;
+        attendanceHours = Math.max(0, (outAt.getTime() - inAt.getTime()) / (1000 * 60 * 60));
+      }
+
+      const completedHours =
+        dayKey === todayKey
+          ? Math.max(timesheetHours, attendanceHours, todayLiveHours)
+          : Math.max(timesheetHours, attendanceHours);
+
+      const entryNotes = entryForDay?.notes || entryForDay?.note || '';
+      return {
+        dayName,
+        date: dayDate,
+        timesheetHours,
+        attendanceHours,
+        completedHours,
+        notes: entryNotes,
+      };
+    });
+
+    const completedIncludingToday = dayRows
+      .filter((d) => toDateInput(new Date(d.date)) <= todayKey)
+      .reduce((sum, d) => sum + Number(d.completedHours || 0), 0);
+
+    const todayTimesheetHours =
+      dayRows.find((d) => toDateInput(new Date(d.date)) === todayKey)?.timesheetHours || 0;
+
+    return {
+      completedIncludingToday,
+      todayTimesheetHours,
+      todayLiveHours,
+      dayRows,
+    };
+  }, [weeklyEntries, attendanceToday, matrixDays]);
+
+  const weekEndDate = useMemo(() => {
+    const end = new Date(weekStart);
+    end.setDate(end.getDate() + 6);
+    return end;
+  }, [weekStart]);
+  const weeklyRangeLabel = `${toDateInput(weekStart)} - ${toDateInput(weekEndDate)}`;
+  const weekStatusLabel =
+    weeklyStatus && weeklyStatus.length > 0
+      ? `${weeklyStatus[0].toUpperCase()}${weeklyStatus.slice(1)}`
+      : 'Draft';
+  const requiredWeeklyHours = 56;
+  const timesheetDays = weeklyProgress.dayRows;
+  const workedHoursText = `${weeklyHours.toFixed(2)} / ${requiredWeeklyHours}`;
 
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
@@ -244,12 +345,6 @@ function EmployeeDashboardScreen() {
   const checkOutTimeText = attendanceToday?.checkOutAt
     ? formatTime(attendanceToday.checkOutAt)
     : '-';
-  const assignedShift = myProfile?.shiftId || null;
-  const shiftStartText = formatShiftTime(attendanceToday?.shiftStartTime || assignedShift?.startTime);
-  const shiftEndText = formatShiftTime(attendanceToday?.shiftEndTime || assignedShift?.endTime);
-  const shiftTimingsText = shiftStartText && shiftEndText
-    ? `${shiftStartText} - ${shiftEndText}`
-    : shiftStartText || shiftEndText || '-';
 
   const lateFlag = useMemo(() => Number(attendanceToday?.lateByMinutes || 0) > 0, [attendanceToday]);
 
@@ -347,12 +442,15 @@ function EmployeeDashboardScreen() {
   };
 
   const employeeName = [myProfile?.firstName, myProfile?.lastName].filter(Boolean).join(' ');
-  const organizationName =
-    myProfile?.organization?.name ||
-    myProfile?.activeOrganization?.name ||
-    session?.loginData?.organization?.name ||
-    session?.loginData?.activeOrganization?.name ||
-    'Organization';
+  const organizationName = useMemo(() => {
+    return (
+      myProfile?.organization?.name ||
+      myProfile?.activeOrganization?.name ||
+      session?.loginData?.organization?.name ||
+      session?.loginData?.activeOrganization?.name ||
+      'Organization'
+    );
+  }, [myProfile, session?.loginData]);
   const profileInitials =
     (myProfile?.firstName?.[0] || '') + (myProfile?.lastName?.[0] || '');
   const avatarLabel =
@@ -471,7 +569,6 @@ function EmployeeDashboardScreen() {
                       <Text style={styles.cardSubText}>
                         Check-in: {checkInTimeText} • Check-out: {checkOutTimeText}
                       </Text>
-                      <Text style={styles.cardSubText}>Shift: {shiftTimingsText}</Text>
                       <View style={styles.actionRow}>
                         <Pressable
                           style={[styles.primaryAction, isCheckedIn && styles.primaryDisabled]}
@@ -517,29 +614,20 @@ function EmployeeDashboardScreen() {
                     <View style={styles.statsGrid}>
                       <View style={styles.statCard}>
                         <Text style={styles.statLabel}>Leave Balance</Text>
-                        <Text style={[styles.statValue, styles.statValueBlue]}>
-                          {totalLeaveRemaining.toFixed(1)}
-                        </Text>
-                        <Text style={styles.statSubtitle}>Total remaining</Text>
+                        <Text style={styles.statValue}>{totalLeaveRemaining.toFixed(1)}</Text>
+                        <Text style={styles.cardSubText}>Total remaining</Text>
                       </View>
                       <View style={styles.statCard}>
                         <Text style={styles.statLabel}>Team</Text>
-                        <Text style={[styles.statValue, styles.statValueGreen]}>{onlineList.length}</Text>
-                        <Text style={styles.statSubtitle}>Online now</Text>
+                        <Text style={styles.statValue}>{onlineList.length}</Text>
+                        <Text style={styles.cardSubText}>Online now</Text>
                       </View>
                       <View style={styles.statCard}>
                         <Text style={styles.statLabel}>Pending Requests</Text>
-                        <Text style={[styles.statValue, styles.statValueOrange]}>
-                          {pendingLeaves + pendingTimesheets}
-                        </Text>
-                        <Text style={styles.statSubtitle}>
+                        <Text style={styles.statValue}>{pendingLeaves + pendingTimesheets}</Text>
+                        <Text style={styles.cardSubText}>
                           Leaves: {pendingLeaves} • Timesheet: {pendingTimesheets}
                         </Text>
-                      </View>
-                      <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>On Leave Today</Text>
-                        <Text style={[styles.statValue, styles.statValueRed]}>{onLeaveList.length}</Text>
-                        <Text style={styles.statSubtitle}>Employees</Text>
                       </View>
                     </View>
                   </>
@@ -547,6 +635,23 @@ function EmployeeDashboardScreen() {
 
                 {activeTab === 'overview' && (
                   <>
+                    <View style={styles.card}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>Team Snapshot</Text>
+                        <View style={styles.pill}>
+                          <Text style={styles.pillText}>Today</Text>
+                        </View>
+                      </View>
+                      <View style={styles.snapshotRow}>
+                        <Text style={styles.snapshotLabel}>Online now:</Text>
+                        <Text style={styles.snapshotValue}>{onlineList.length}</Text>
+                      </View>
+                      <View style={styles.snapshotRow}>
+                        <Text style={styles.snapshotLabel}>On leave today:</Text>
+                        <Text style={styles.snapshotValue}>{onLeaveList.length}</Text>
+                      </View>
+                    </View>
+
                     <View style={styles.card}>
                       <View style={styles.cardHeader}>
                         <Text style={styles.cardTitle}>Next 7 Days Events</Text>
@@ -1112,13 +1217,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
     gap: 10,
   },
   statCard: {
-    width: '48%',
     backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 14,
@@ -1135,23 +1236,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#0f172a',
-  },
-  statValueBlue: {
-    color: '#2563eb',
-  },
-  statValueGreen: {
-    color: '#16a34a',
-  },
-  statValueOrange: {
-    color: '#f59e0b',
-  },
-  statValueRed: {
-    color: '#ef4444',
-  },
-  statSubtitle: {
-    marginTop: 6,
-    fontSize: 11,
-    color: '#94a3b8',
   },
   noticeCard: {
     marginTop: 12,
@@ -1176,6 +1260,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#2563eb',
     fontWeight: '600',
+  },
+  snapshotRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+  },
+  snapshotLabel: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  snapshotValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
   },
   sectionTitle: {
     marginTop: 10,

@@ -632,7 +632,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   editButton: {
-    backgroundColor: '#1450d3',
+    backgroundColor: '#2563eb',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,

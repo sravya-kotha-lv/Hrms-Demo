@@ -1,11 +1,6 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import {
-  clearStoredSession,
-  loadStoredSession,
-  storeSession,
-} from '../utils/sessionStorage';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 
-export type SessionPayload = {
+type SessionPayload = {
   token: string;
   loginData: any;
   profile: any | null;
@@ -28,7 +23,6 @@ type AuthContextValue = {
   logoutSuccessMessage: string | null;
   setLogoutSuccessMessage: (message: string | null) => void;
   clearLogoutSuccessMessage: () => void;
-  authReady: boolean;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -38,40 +32,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
   const [loginSuccessMessage, setLoginSuccessMessage] = useState<string | null>(null);
   const [logoutSuccessMessage, setLogoutSuccessMessage] = useState<string | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const restoreSession = async () => {
-      const storedSession = await loadStoredSession();
-      if (!mounted) return;
-
-      setSession(storedSession);
-      setAuthReady(true);
-    };
-
-    restoreSession();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!authReady) return;
-
-    const persistSession = async () => {
-      if (session) {
-        await storeSession(session);
-        return;
-      }
-
-      await clearStoredSession();
-    };
-
-    persistSession();
-  }, [authReady, session]);
 
   const updateProfile = (profile: any | null) => {
     setSession((current) => (current ? { ...current, profile } : current));
@@ -108,9 +68,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       logoutSuccessMessage,
       setLogoutSuccessMessage,
       clearLogoutSuccessMessage,
-      authReady,
     }),
-    [session, sessionExpiredMessage, loginSuccessMessage, logoutSuccessMessage, authReady]
+    [session, sessionExpiredMessage, loginSuccessMessage, logoutSuccessMessage]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
