@@ -55,13 +55,18 @@ import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/useAuth";
 import { useNavigate } from "react-router-dom";
-import { formatDateInOrgTimeZone } from "@/utils/timezone";
+import { formatDateInOrgTimeZone, toDateKeyInOrgCalendar, toDateKeyInOrgTimeZone } from "@/utils/timezone";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type PersonRef = {
   _id?: string;
   firstName?: string;
   lastName?: string;
   employeeCode?: string;
+  designationId?: {
+    _id?: string;
+    name?: string;
+  } | null;
 };
 
 type ApprovalStep = {
@@ -81,6 +86,7 @@ type LeaveTypeRef = {
 type LeaveRecord = {
   _id?: string;
   employeeId?: PersonRef | null;
+  actionBy?: PersonRef | null;
   leaveTypeId?: LeaveTypeRef | null;
   leaveTypeName?: string;
   fromDate?: string;
@@ -191,11 +197,51 @@ const getLeaveDurationLabel = (leave: LeaveRecord) => {
   return `Half Day (${session})`;
 };
 
+const getActorDisplayName = (employee: PersonRef | null | undefined) => {
+  if (!employee) return "-";
+  const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+  return fullName || employee.employeeCode || "Employee";
+};
+
+const getActionActor = (leave: LeaveRecord) => {
+  if (!["approved", "rejected"].includes(String(leave.status || ""))) return null;
+  if (leave.actionBy) return leave.actionBy;
+  const steps = Array.isArray(leave.approvalSteps) ? [...leave.approvalSteps] : [];
+  const latestActionStep = steps
+    .filter((step) => step.status === leave.status && step.actionBy)
+    .sort((a, b) => Number(b.stepNumber || 0) - Number(a.stepNumber || 0))[0];
+  return latestActionStep?.actionBy || null;
+};
+
+const getCurrentMonthValue = () => {
+  return toDateKeyInOrgTimeZone(new Date()).slice(0, 7);
+};
+
+const getMonthBoundary = (monthValue: string) => {
+  const [year, month] = monthValue.split("-").map(Number);
+  if (!year || !month) return null;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return {
+    startKey: `${year}-${String(month).padStart(2, "0")}-01`,
+    endKey: `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`
+  };
+};
+
+const leaveMatchesMonth = (leave: LeaveRecord, monthValue: string) => {
+  const boundary = getMonthBoundary(monthValue);
+  if (!boundary) return true;
+  const fromKey = leave.fromDate ? toDateKeyInOrgCalendar(leave.fromDate) : "";
+  const toKey = leave.toDate ? toDateKeyInOrgCalendar(leave.toDate) : fromKey;
+  if (!fromKey || !toKey) return false;
+  return fromKey <= boundary.endKey && toKey >= boundary.startKey;
+};
+
 const Leave = () => {
   const { hasAnyPermission, profile } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState(getCurrentMonthValue);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedLeave, setSelectedLeave] = useState<LeaveRecord | null>(null);
@@ -209,7 +255,7 @@ const Leave = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
-  const leavePageSize = 10;
+  const leavePageSize = 200;
   const tableViewportRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
   const resetPaginationRef = useRef(false);
@@ -280,7 +326,7 @@ const Leave = () => {
         limit: String(leavePageSize)
       });
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
-      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (monthFilter) params.set("month", monthFilter);
 
       let res = await getApiWithToken(`/leaves?${params.toString()}`, null, {
         requiredPermissions: ["LEAVE_VIEW_ALL"]
@@ -329,7 +375,7 @@ const Leave = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [canViewAny, leavePageSize, searchQuery, statusFilter]);
+  }, [canViewAny, leavePageSize, monthFilter, searchQuery, statusFilter]);
 
   const refreshLeaveList = useCallback(async () => {
     setLeaves([]);
@@ -348,7 +394,7 @@ const Leave = () => {
     }
     setCurrentPage(1);
     setLeaves([]);
-  }, [searchQuery, statusFilter]);
+  }, [monthFilter, searchQuery, statusFilter]);
 
   useEffect(() => {
     if (resetPaginationRef.current && currentPage !== 1) {
@@ -495,6 +541,37 @@ const Leave = () => {
     }
   };
 
+  const handleStatusCardClick = (nextStatus: "all" | "pending" | "approved" | "rejected") => {
+    setStatusFilter(nextStatus);
+  };
+
+  const getCardClassName = (active: boolean) =>
+    `stat-card transition-all cursor-pointer ${active ? "ring-2 ring-primary shadow-md" : "hover:-translate-y-0.5 hover:shadow-md"}`;
+
+  const monthScopedLeaves = useMemo(
+    () => leaves.filter((leave) => leaveMatchesMonth(leave, monthFilter)),
+    [leaves, monthFilter]
+  );
+
+  const filteredLeaves = useMemo(() => {
+    if (statusFilter === "all") return monthScopedLeaves;
+    return monthScopedLeaves.filter((leave) => leave.status === statusFilter);
+  }, [monthScopedLeaves, statusFilter]);
+
+  const derivedLeaveStats = useMemo(() => {
+    const todayKey = toDateKeyInOrgTimeZone(new Date());
+    const pending = monthScopedLeaves.filter((leave) => leave.status === "pending").length;
+    const approved = monthScopedLeaves.filter((leave) => leave.status === "approved").length;
+    const rejected = monthScopedLeaves.filter((leave) => leave.status === "rejected").length;
+    const onLeaveToday = monthScopedLeaves.filter((leave) => {
+      if (leave.status !== "approved" || !leave.fromDate || !leave.toDate) return false;
+      const fromKey = toDateKeyInOrgCalendar(leave.fromDate);
+      const toKey = toDateKeyInOrgCalendar(leave.toDate);
+      return todayKey >= fromKey && todayKey <= toKey;
+    }).length;
+    return { pending, approved, rejected, onLeaveToday };
+  }, [monthScopedLeaves]);
+
   return (
     <MainLayout
       title="Leave Management"
@@ -509,43 +586,47 @@ const Leave = () => {
       {canViewAny && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <motion.div
-          className="stat-card"
+          className={getCardClassName(statusFilter === "pending")}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
+          onClick={() => handleStatusCardClick("pending")}
         >
           <p className="text-sm text-muted-foreground mb-1">Pending Requests</p>
-          <p className="text-3xl font-bold text-warning">{leaveStats.pending}</p>
+          <p className="text-3xl font-bold text-warning">{derivedLeaveStats.pending}</p>
           <p className="text-sm text-muted-foreground mt-1">requires action</p>
         </motion.div>
         <motion.div
-          className="stat-card"
+          className={getCardClassName(statusFilter === "approved")}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
+          onClick={() => handleStatusCardClick("approved")}
         >
           <p className="text-sm text-muted-foreground mb-1">Approved</p>
-          <p className="text-3xl font-bold text-success">{leaveStats.approved}</p>
+          <p className="text-3xl font-bold text-success">{derivedLeaveStats.approved}</p>
           <p className="text-sm text-muted-foreground mt-1">total</p>
         </motion.div>
         <motion.div
-          className="stat-card"
+          className={getCardClassName(statusFilter === "rejected")}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
+          onClick={() => handleStatusCardClick("rejected")}
         >
           <p className="text-sm text-muted-foreground mb-1">Rejected</p>
-          <p className="text-3xl font-bold text-destructive">{leaveStats.rejected}</p>
+          <p className="text-3xl font-bold text-destructive">{derivedLeaveStats.rejected}</p>
           <p className="text-sm text-muted-foreground mt-1">total</p>
         </motion.div>
         <motion.div
-          className="stat-card"
+          className={getCardClassName(false)}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
+          onClick={() => handleStatusCardClick("approved")}
         >
           <p className="text-sm text-muted-foreground mb-1">On Leave Today</p>
-          <p className="text-3xl font-bold text-primary">{leaveStats.onLeaveToday}</p>
-          <p className="text-sm text-muted-foreground mt-1">employees</p>
+          <p className="text-3xl font-bold text-primary">{derivedLeaveStats.onLeaveToday}</p>
+          <p className="text-sm text-muted-foreground mt-1">employees on approved leave</p>
         </motion.div>
         </div>
       )}
@@ -563,6 +644,12 @@ const Leave = () => {
           />
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
+          <Input
+            type="month"
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value || getCurrentMonthValue())}
+            className="w-full sm:w-44"
+          />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="Status" />
@@ -619,6 +706,7 @@ const Leave = () => {
               <TableHead>Days</TableHead>
               <TableHead>Duration</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Action By</TableHead>
               <TableHead>Approval</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -633,21 +721,25 @@ const Leave = () => {
                 <TableCell><Skeleton className="h-4 w-12" /></TableCell>
                 <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                 <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                 <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                 <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-20" /></TableCell>
               </TableRow>
             ))}
-            {!loading && leaves.length === 0 && (
+            {!loading && filteredLeaves.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-10">
+                <TableCell colSpan={10} className="text-center py-10">
                   No leave requests found
                 </TableCell>
               </TableRow>
             )}
-            {leaves.map((leave) => {
+            {filteredLeaves.map((leave) => {
               const employeeName = leave.employeeId
                 ? `${leave.employeeId.firstName || ""} ${leave.employeeId.lastName || ""}`.trim()
                 : "You";
+              const actionActor = getActionActor(leave);
+              const actionActorName = getActorDisplayName(actionActor);
+              const actionActorDesignation = actionActor?.designationId?.name || "";
               return (
                 <TableRow key={leave._id}>
                   <TableCell>
@@ -684,6 +776,24 @@ const Leave = () => {
                   <TableCell>{leave.totalDays ?? "-"}</TableCell>
                   <TableCell>{getLeaveDurationLabel(leave)}</TableCell>
                   <TableCell>{getStatusBadge(leave.status)}</TableCell>
+                  <TableCell>
+                    {actionActor ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex cursor-default font-medium text-foreground">
+                              {actionActorName}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {actionActorDesignation || "Designation not available"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-[280px]">
                     {getApprovalProgressLabel(leave)}
                   </TableCell>
@@ -718,7 +828,7 @@ const Leave = () => {
         </Table>
         </div>
         <div className="border-t px-4 py-3 text-sm text-muted-foreground flex items-center justify-between">
-          <span>Showing {leaves.length} of {totalItems} leave records</span>
+          <span>Showing {filteredLeaves.length} of {monthScopedLeaves.length} leave records</span>
           <span>
             {loadingMore
               ? "Loading more leave records..."

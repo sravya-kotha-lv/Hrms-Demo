@@ -871,7 +871,7 @@ const Attendance = () => {
                         const cellUi = getCellUi(cell, isFuture);
                         const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
                         const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
-                        const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName);
+                        const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName) || cell.isWeekOff;
                         return (
                           <HoverCard key={day} openDelay={120} closeDelay={80}>
                             <HoverCardTrigger asChild>
@@ -890,6 +890,8 @@ const Attendance = () => {
                                     <p>
                                       {cell.holidayName
                                         ? `Holiday: ${cell.holidayName}`
+                                        : cell.isWeekOff
+                                          ? "Week Off"
                                         : `Leave: ${cell.leaveType || "Approved leave"}`}
                                     </p>
                                   ) : (
