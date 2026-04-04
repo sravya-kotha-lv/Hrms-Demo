@@ -26,6 +26,7 @@ const {
   addDaysToDateKey,
   startOfDayInTimeZone,
   endOfDayInTimeZone,
+  parseMonthRangeInTimeZone,
   getDayInTimeZone
 } = require("../../utils/timezone");
 
@@ -58,6 +59,13 @@ const toDateKeyInOrgTz = (value, timeZone) =>
   /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))
     ? String(value)
     : toDateKeyInTimeZone(value, timeZone);
+
+const applyMonthFilterToQuery = (query, monthValue, timeZone = "UTC") => {
+  if (!monthValue || !/^\d{4}-\d{2}$/.test(String(monthValue))) return;
+  const monthRange = parseMonthRangeInTimeZone(String(monthValue), timeZone);
+  query.fromDate = { $lte: monthRange.end };
+  query.toDate = { $gte: monthRange.start };
+};
 
 const getApplicableLeaveDateKeys = ({
   fromDate,
@@ -635,6 +643,11 @@ exports.getMyLeaves = async (req) => {
 
   const query = { employeeId: employee._id };
   const statsQuery = { ...query };
+  const organizationTimeZone = req.user.organizationTimeZone || "UTC";
+
+  applyMonthFilterToQuery(query, req.query.month, organizationTimeZone);
+  applyMonthFilterToQuery(statsQuery, req.query.month, organizationTimeZone);
+
   if (req.query.status && req.query.status !== "all") {
     query.status = req.query.status;
   }
@@ -651,8 +664,13 @@ exports.getMyLeaves = async (req) => {
   const limit = Math.min(parsePositiveInt(req.query.limit, 10), 100);
   const baseQuery = Leave.find(query)
     .populate("leaveTypeId", "name code")
+    .populate("actionBy", "firstName lastName employeeCode designationId")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
-    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
+    .populate({
+      path: "approvalSteps.actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .sort({ createdAt: -1 });
 
   if (!pageRequested) {
@@ -696,6 +714,7 @@ exports.getMyLeaves = async (req) => {
 exports.getAllLeaves = async (req) => {
   const query = { organizationId: req.user.organizationId };
   const requestedEmployeeId = req.query.employeeId ? String(req.query.employeeId) : "";
+  const organizationTimeZone = req.user.organizationTimeZone || "UTC";
 
   if (req.user.activeRoleId) {
     const role = await Role.findOne({
@@ -730,6 +749,9 @@ exports.getAllLeaves = async (req) => {
   }
   const statsQuery = { ...query };
 
+  applyMonthFilterToQuery(query, req.query.month, organizationTimeZone);
+  applyMonthFilterToQuery(statsQuery, req.query.month, organizationTimeZone);
+
   if (req.query.status && req.query.status !== "all") {
     query.status = req.query.status;
   }
@@ -763,8 +785,17 @@ exports.getAllLeaves = async (req) => {
   const baseQuery = Leave.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
+    .populate({
+      path: "actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
-    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
+    .populate({
+      path: "approvalSteps.actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .sort({ createdAt: -1 });
 
   if (!pageRequested) {
@@ -836,8 +867,17 @@ exports.getMyPendingApprovals = async (req) => {
   const rows = await Leave.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
+    .populate({
+      path: "actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
-    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
+    .populate({
+      path: "approvalSteps.actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .sort({ createdAt: -1 });
 
   const actorContext = await getActorApprovalContext(req);

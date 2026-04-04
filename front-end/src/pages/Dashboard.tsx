@@ -270,7 +270,9 @@ const doughnutPalette = {
   present: { color: "#22c55e", shadowColor: "#15803d" },
   absent: { color: "#f97316", shadowColor: "#c2410c" },
   leave: { color: "#3b82f6", shadowColor: "#1d4ed8" },
-  missed: { color: "#a855f7", shadowColor: "#7e22ce" }
+  missed: { color: "#a855f7", shadowColor: "#7e22ce" },
+  weekOff: { color: "#38bdf8", shadowColor: "#0284c7" },
+  holiday: { color: "#fb7185", shadowColor: "#e11d48" }
 };
 
 const Dashboard = () => {
@@ -827,11 +829,13 @@ const Dashboard = () => {
       { key: "present", label: "Present", value: kpis.presentToday, ...doughnutPalette.present },
       { key: "absent", label: "Absent", value: kpis.absentToday, ...doughnutPalette.absent },
       { key: "leave", label: "On Leave", value: kpis.onLeaveToday, ...doughnutPalette.leave },
-      { key: "missed", label: "Missed Checkout", value: kpis.checkedInOnly, ...doughnutPalette.missed }
+      { key: "missed", label: "Missed Checkout", value: kpis.checkedInOnly, ...doughnutPalette.missed },
+      { key: "weekOff", label: "Week Off", value: monthDaySummary.weekOff, ...doughnutPalette.weekOff },
+      { key: "holiday", label: "Holiday", value: monthDaySummary.holiday, ...doughnutPalette.holiday }
     ];
     const withValues = slices.filter((slice) => slice.value > 0);
     return withValues.length ? withValues : slices.slice(0, 1);
-  }, [kpis]);
+  }, [kpis, monthDaySummary.holiday, monthDaySummary.weekOff]);
 
   const workforceCompositionTotal = useMemo(
     () => workforceComposition.reduce((sum, slice) => sum + slice.value, 0),
@@ -841,7 +845,7 @@ const Dashboard = () => {
   const departmentChartData = useMemo(
     () =>
       departmentAnalytics.map((department) => ({
-        name: department.name.length > 18 ? `${department.name.slice(0, 18)}…` : department.name,
+        name: department.name,
         fullName: department.name,
         present: department.present,
         absent: department.absent,
@@ -850,12 +854,20 @@ const Dashboard = () => {
     [departmentAnalytics]
   );
 
+  const formatDepartmentAxisLabel = (value: string) => {
+    const text = String(value || "").trim();
+    if (text.length <= 16) return text;
+    return `${text.slice(0, 14)}...`;
+  };
+
   const chartConfig = {
     present: { label: "Present", color: doughnutPalette.present.color },
     absent: { label: "Absent", color: doughnutPalette.absent.color },
     leave: { label: "On Leave", color: doughnutPalette.leave.color },
     onLeave: { label: "On Leave", color: doughnutPalette.leave.color },
-    missed: { label: "Missed Checkout", color: doughnutPalette.missed.color }
+    missed: { label: "Missed Checkout", color: doughnutPalette.missed.color },
+    weekOff: { label: "Week Off", color: doughnutPalette.weekOff.color },
+    holiday: { label: "Holiday", color: doughnutPalette.holiday.color }
   };
 
   const hrLifecycle = useMemo(() => {
@@ -1824,8 +1836,8 @@ const Dashboard = () => {
             </div>
             <Badge variant="outline">Today</Badge>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-[320px,1fr] gap-4 items-center">
-            <ChartContainer config={chartConfig} className="h-[280px] w-full">
+          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(260px,320px),minmax(0,1fr)] gap-4 items-start">
+            <ChartContainer config={chartConfig} className="h-[280px] w-full min-w-0">
               <PieChart>
                 <defs>
                   <filter id="dashboard-pie-shadow" x="-30%" y="-30%" width="160%" height="160%">
@@ -1837,6 +1849,7 @@ const Dashboard = () => {
                   data={workforceComposition}
                   dataKey="value"
                   nameKey="key"
+                  legendType="none"
                   cx="50%"
                   cy="54%"
                   innerRadius={62}
@@ -1876,20 +1889,20 @@ const Dashboard = () => {
                 />
               </PieChart>
             </ChartContainer>
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Visible Workforce</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Total Employees</p>
                 <p className="mt-2 text-3xl font-semibold">{workforceCompositionTotal}</p>
-                <p className="text-sm text-muted-foreground">Employees currently represented in today&apos;s status mix.</p>
+                <p className="text-sm text-muted-foreground">Employees currently represented across today&apos;s status mix.</p>
               </div>
               {workforceComposition.map((slice) => {
                 const percentage = workforceCompositionTotal ? Math.round((slice.value / workforceCompositionTotal) * 100) : 0;
                 return (
                   <div key={`mix-${slice.key}`} className="rounded-xl border border-border/60 bg-background/80 p-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-center gap-2">
                         <span className="h-3 w-3 rounded-full" style={{ backgroundColor: slice.color, boxShadow: `0 4px 10px ${slice.shadowColor}55` }} />
-                        <span className="font-medium">{slice.label}</span>
+                        <span className="truncate font-medium">{slice.label}</span>
                       </div>
                       <span className="text-muted-foreground">{slice.value} employees</span>
                     </div>
@@ -1920,7 +1933,7 @@ const Dashboard = () => {
             </div>
             <Badge variant="outline">Live Split</Badge>
           </div>
-          <ChartContainer config={chartConfig} className="h-[320px] w-full">
+          <ChartContainer config={chartConfig} className="h-[360px] w-full xl:h-[320px]">
             <BarChart data={departmentChartData} barGap={8} barCategoryGap={22}>
               <defs>
                 <linearGradient id="dept-present-gradient" x1="0" y1="0" x2="1" y2="0">
@@ -1937,7 +1950,18 @@ const Dashboard = () => {
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis dataKey="name" tickLine={false} axisLine={false} interval={0} height={52} />
+              <XAxis
+                dataKey="name"
+                tickLine={false}
+                axisLine={false}
+                interval={0}
+                height={76}
+                angle={-18}
+                textAnchor="end"
+                tickMargin={10}
+                tickFormatter={formatDepartmentAxisLabel}
+                className="text-[11px]"
+              />
               <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
               <ChartTooltip
                 content={

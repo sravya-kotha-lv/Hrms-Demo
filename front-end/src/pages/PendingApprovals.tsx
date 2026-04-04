@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
-import { formatDateKeyInOrgCalendar, toDateKeyInOrgCalendar } from "@/utils/timezone";
+import { formatDateInOrgTimeZone, formatDateKeyInOrgCalendar, toDateKeyInOrgCalendar } from "@/utils/timezone";
 
 const toIdString = (value: unknown): string => {
   if (!value) return "";

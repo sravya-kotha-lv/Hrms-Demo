@@ -237,7 +237,19 @@ const ChartLegendContent = React.forwardRef<
 >(({ className, hideIcon = false, payload, verticalAlign = "bottom", nameKey }, ref) => {
   const { config } = useChart();
 
-  if (!payload?.length) {
+  const uniquePayload = React.useMemo(() => {
+    if (!payload?.length) return [];
+    const seen = new Set<string>();
+    return payload.filter((item, index) => {
+      const dedupeKey = `${nameKey || item.dataKey || item.value || "value"}-${index}-${item.color || ""}`;
+      const normalizedKey = `${nameKey || item.dataKey || item.value || "value"}-${item.color || ""}`;
+      if (seen.has(normalizedKey)) return false;
+      seen.add(normalizedKey);
+      return Boolean(dedupeKey);
+    });
+  }, [nameKey, payload]);
+
+  if (!uniquePayload.length) {
     return null;
   }
 
@@ -246,13 +258,13 @@ const ChartLegendContent = React.forwardRef<
       ref={ref}
       className={cn("flex items-center justify-center gap-4", verticalAlign === "top" ? "pb-3" : "pt-3", className)}
     >
-      {payload.map((item) => {
+      {uniquePayload.map((item, index) => {
         const key = `${nameKey || item.dataKey || "value"}`;
         const itemConfig = getPayloadConfigFromPayload(config, item, key);
 
         return (
           <div
-            key={item.value}
+            key={`${item.dataKey || item.value || "value"}-${item.color || ""}-${index}`}
             className={cn("flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground")}
           >
             {itemConfig?.icon && !hideIcon ? (
