@@ -1082,38 +1082,38 @@ const Timesheets = () => {
       title="Timesheets"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Timesheets" }]}
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+        <motion.div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-blue-50/70 p-6 shadow-sm" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <Timer className="w-4 h-4" />
             Today
           </div>
-          <div className="text-2xl font-semibold">
+          <div className="text-3xl font-semibold tracking-tight text-slate-900">
             {isCheckedOut
               ? "Checked Out"
               : isCheckedIn
                 ? "Checked In"
                 : "Not Checked In"}
           </div>
-          <div className="text-sm text-muted-foreground mt-1">
+          <div className="mt-2 inline-flex items-center rounded-full bg-white/90 px-3 py-1 text-sm text-slate-600 ring-1 ring-slate-200">
             {attendanceToday?.checkInAt
               ? formatTimeInOrgTimeZone(attendanceToday.checkInAt)
               : "-"}
           </div>
           {isCheckedIn && (
-            <div className="text-xs text-orange-700 mt-2">
+            <div className="text-xs text-orange-700 mt-3">
               Pending checkout. This session stays excluded from payroll until checkout is completed.
             </div>
           )}
           {isCheckedOut && (
-            <div className="text-xs text-emerald-700 mt-2">
+            <div className="text-xs text-emerald-700 mt-3">
               Check-in is allowed only once today. You can update the checkout time again if needed.
             </div>
           )}
         </motion.div>
 
         <motion.div
-          className="stat-card"
+          className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-emerald-50/70 p-6 shadow-sm"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
@@ -1122,19 +1122,19 @@ const Timesheets = () => {
             <ClipboardCheck className="w-4 h-4" />
             Week Status
           </div>
-          <div className="text-2xl font-semibold">
+          <div className="text-3xl font-semibold tracking-tight capitalize text-slate-900">
             {timesheet?.status ? timesheet.status : "Draft"}
           </div>
-          <div className="text-sm text-muted-foreground mt-1">
+          <div className="mt-2 inline-flex items-center rounded-full bg-white/90 px-3 py-1 text-sm text-slate-600 ring-1 ring-slate-200">
             {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
           </div>
-          <div className="text-xs text-muted-foreground mt-1">
+          <div className="text-xs text-muted-foreground mt-3">
             Week Total: {weekTotalHours}h · Min: {minWeeklyHours}h
           </div>
         </motion.div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-6">
+      <div className="flex flex-wrap items-center gap-3 mb-6 rounded-2xl border border-slate-200 bg-white/90 px-4 py-4 shadow-sm">
         <Button onClick={handleCheckIn} disabled={!canCheckIn || hasCheckedInToday || checkinLoading}>
           Check In
         </Button>
@@ -1148,7 +1148,7 @@ const Timesheets = () => {
         >
           Raise Attendance Request
         </Button>
-        <div className="ml-auto text-xs text-muted-foreground">
+        <div className="ml-auto rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
           Today: {toDateInput(new Date())}
         </div>
       </div>
@@ -1384,43 +1384,50 @@ const Timesheets = () => {
       )}
 
       <motion.div
-        className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
+        className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border bg-muted/20">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-semibold mr-2">Weekly Timesheet</h3>
+        <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-blue-50/60 px-6 py-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Weekly Timesheet
+                </div>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">
+                  {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
+                </h3>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="icon"
               onClick={() => shiftWeek(-1)}
               aria-label="Previous week"
+              className="rounded-xl"
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
-            <div className="text-sm font-medium">
-              {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
-            </div>
             <Button
               variant="outline"
               size="icon"
               onClick={() => shiftWeek(1)}
               aria-label="Next week"
+              className="rounded-xl"
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
-            <div className="ml-1 sm:ml-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-sm font-semibold">
+            <div className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700 ring-1 ring-blue-100">
               Worked hours: {weekTotalHours} / {minWeeklyHours}
             </div>
-            <div className="text-xs text-muted-foreground">
-              ({toDateInput(weekStart)} - {toDateInput(weekDates[6])})
+            </div>
             </div>
           </div>
           <div className="flex items-center gap-3">
             {timesheet?._id ? getStatusBadge(timesheet.status) : <Badge>Draft</Badge>}
-            <div className="text-xs text-muted-foreground">
+            <div className="max-w-48 text-right text-xs text-muted-foreground">
             {timesheet?.status === "submitted" && "Waiting for approval"}
             {timesheet?.status === "approved" && "Approved"}
             {timesheet?.status === "rejected" && "Rejected - update and resubmit"}
@@ -1539,7 +1546,7 @@ const Timesheets = () => {
             </TableBody>
           </Table>
         </div>
-        <div className="px-6 py-2 text-xs text-muted-foreground">
+        <div className="bg-slate-50/70 px-6 py-3 text-xs text-muted-foreground">
           Full day: {minWorkHoursPerDay}h · Half day: {minHalfDayHours}h ·
           Minimum weekly hours: {minWeeklyHours}h
         </div>
