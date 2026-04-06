@@ -63,29 +63,12 @@ const getStatusBadge = (status: string) => {
 
 const PendingApprovals = () => {
   const { hasAnyPermission } = useAuth();
-  const canLeaveAction = hasAnyPermission(["LEAVE_ACTION"]);
   const canAttendanceAction = hasAnyPermission(["ATTENDANCE_MANAGE"]);
-  const canViewAny = canLeaveAction || canAttendanceAction;
+  const canViewAny = canAttendanceAction;
 
-  const [leaveRows, setLeaveRows] = useState<any[]>([]);
   const [attendanceRows, setAttendanceRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-
-  const loadLeaveApprovals = async () => {
-    if (!canLeaveAction) {
-      setLeaveRows([]);
-      return;
-    }
-    const leaveRes = await getApiWithToken("/leaves/pending/my-approvals", null, {
-      requiredPermissions: ["LEAVE_ACTION"]
-    });
-    if (leaveRes?.success) {
-      setLeaveRows(leaveRes.data || []);
-    } else {
-      setLeaveRows([]);
-    }
-  };
 
   const loadAttendanceApprovals = async () => {
     if (!canAttendanceAction) {
@@ -108,7 +91,7 @@ const PendingApprovals = () => {
     if (!canViewAny) return;
     setLoading(true);
     try {
-      await Promise.allSettled([loadLeaveApprovals(), loadAttendanceApprovals()]);
+      await loadAttendanceApprovals();
     } finally {
       setLoading(false);
     }
@@ -116,7 +99,7 @@ const PendingApprovals = () => {
 
   useEffect(() => {
     loadData();
-  }, [canLeaveAction, canAttendanceAction, canViewAny]);
+  }, [canAttendanceAction, canViewAny]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -124,29 +107,6 @@ const PendingApprovals = () => {
       await loadData();
     } finally {
       setRefreshing(false);
-    }
-  };
-
-  const actionLeave = async (id: string, status: "approved" | "rejected") => {
-    const rejectionReason = status === "rejected"
-      ? (window.prompt("Enter rejection reason") || "").trim()
-      : "";
-    if (status === "rejected" && !rejectionReason) return;
-
-    const res = await putApiWithToken(
-      `/leaves/${id}/action`,
-      {
-        status,
-        rejectionReason
-      },
-      null,
-      { requiredPermissions: ["LEAVE_ACTION"] }
-    );
-    if (res?.success) {
-      toast.success(`Leave ${status}`);
-      loadData();
-    } else {
-      toast.error(res?.message || "Failed to action leave");
     }
   };
 
@@ -202,63 +162,6 @@ const PendingApprovals = () => {
               {loading || refreshing ? "Refreshing..." : "Refresh"}
             </Button>
           </div>
-
-          {canLeaveAction && (
-            <div className="bg-card rounded-xl card-shadow overflow-hidden mb-8">
-              <div className="px-6 py-4 border-b border-border">
-                <h3 className="text-lg font-semibold">Leave Approvals Assigned To Me</h3>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow className="table-header">
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Leave Type</TableHead>
-                    <TableHead>From</TableHead>
-                    <TableHead>To</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading && Array.from({ length: 4 }).map((_, idx) => (
-                    <TableRow key={`leave-approval-skeleton-${idx}`}>
-                      {Array.from({ length: 6 }).map((__, colIdx) => (
-                        <TableCell key={colIdx}>
-                          <Skeleton className="h-4 w-full" />
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                  {!loading && leaveRows.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-muted-foreground">
-                        No leave approvals assigned.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {!loading && leaveRows.map((row) => (
-                    <TableRow key={row._id} className="table-row-hover">
-                      <TableCell>
-                        {row.employeeId
-                          ? `${row.employeeId.firstName || ""} ${row.employeeId.lastName || ""}`.trim()
-                          : "-"}
-                      </TableCell>
-                      <TableCell>{row.leaveTypeId?.name || "-"}</TableCell>
-                      <TableCell>{row.fromDate ? formatDateInOrgTimeZone(row.fromDate) : "-"}</TableCell>
-                      <TableCell>{row.toDate ? formatDateInOrgTimeZone(row.toDate) : "-"}</TableCell>
-                      <TableCell>{getStatusBadge(row.status)}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={() => actionLeave(row._id, "approved")}>Approve</Button>
-                          <Button size="sm" variant="outline" onClick={() => actionLeave(row._id, "rejected")}>Reject</Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
 
           {canAttendanceAction && (
             <div className="bg-card rounded-xl card-shadow overflow-hidden">

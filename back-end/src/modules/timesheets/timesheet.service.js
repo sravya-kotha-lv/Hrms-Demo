@@ -286,6 +286,210 @@ const resolveCheckInSchedule = async (organizationId, employeeId, now, timeZone)
   };
 };
 
+const resolveAttendanceScheduleForRequest = async ({
+  organizationId,
+  employeeId,
+  attendanceRow,
+  attendanceDateKey,
+  organizationTimeZone
+}) => {
+  const storedStartTime = attendanceRow?.shiftStartTime || null;
+  const storedEndTime = attendanceRow?.shiftEndTime || null;
+  const hasStoredShiftWindow = Boolean(storedStartTime && storedEndTime);
+
+  if (!hasStoredShiftWindow) {
+    return resolveShiftSchedule(
+      organizationId,
+      employeeId,
+      attendanceDateKey,
+      organizationTimeZone
+    );
+  }
+
+  let storedShift = null;
+  if (attendanceRow?.shiftId) {
+    storedShift = await Shift.findOne({
+      _id: attendanceRow.shiftId,
+      organizationId,
+      status: "active"
+    }).select("name code startTime endTime graceMinutes");
+  }
+
+  const shift = storedShift || {
+    _id: attendanceRow?.shiftId || null,
+    name: attendanceRow?.shiftName || getDefaultShift().name,
+    code: attendanceRow?.shiftCode || getDefaultShift().code,
+    startTime: storedStartTime,
+    endTime: storedEndTime,
+    graceMinutes: 0
+  };
+
+  const startMinutes = parseTimeToMinutes(shift.startTime);
+  const endMinutes = parseTimeToMinutes(shift.endTime);
+  const scheduledStartAt = attendanceRow?.scheduledStartAt
+    ? new Date(attendanceRow.scheduledStartAt)
+    : zonedDateTimeToUtc(attendanceDateKey, shift.startTime, organizationTimeZone);
+  let scheduledEndAt = attendanceRow?.scheduledEndAt
+    ? new Date(attendanceRow.scheduledEndAt)
+    : zonedDateTimeToUtc(attendanceDateKey, shift.endTime, organizationTimeZone);
+
+  if (!attendanceRow?.scheduledEndAt && endMinutes !== null && startMinutes !== null && endMinutes <= startMinutes) {
+    scheduledEndAt = new Date(scheduledEndAt.getTime() + (24 * 60 * 60 * 1000));
+  }
+
+  return {
+    shift,
+    scheduledStartAt,
+    scheduledEndAt
+  };
+};
+
+const buildRequestedCheckOutAt = (attendanceDateKey, requestedCheckOutTime, checkInAt, timeZone) => {
+  if (!attendanceDateKey || !requestedCheckOutTime) return null;
+  let checkOutAt = zonedDateTimeToUtc(attendanceDateKey, requestedCheckOutTime, timeZone);
+  if (checkOutAt && checkInAt && checkOutAt <= checkInAt) {
+    checkOutAt = new Date(checkOutAt.getTime() + (24 * 60 * 60 * 1000));
+  }
+  return checkOutAt;
+};
+
+const isAttendanceRowOvernight = (attendanceRow, organizationTimeZone) => {
+  const attendanceDateKey = toDateKeyInTimeZone(attendanceRow.date, organizationTimeZone);
+  if (
+    attendanceRow?.scheduledEndAt
+    && toDateKeyInTimeZone(attendanceRow.scheduledEndAt, organizationTimeZone) !== attendanceDateKey
+  ) {
+    return true;
+  }
+
+  const startMinutes = parseTimeToMinutes(attendanceRow?.shiftStartTime);
+  const endMinutes = parseTimeToMinutes(attendanceRow?.shiftEndTime);
+  return startMinutes !== null && endMinutes !== null && endMinutes <= startMinutes;
+};
+
+const resolveMissedCheckoutAttendanceTarget = async ({
+  organizationId,
+  employeeId,
+  requestedDateKey,
+  requestedCheckOutTime,
+  organizationTimeZone
+}) => {
+  const requestedDate = startOfDayInTimeZone(requestedDateKey, organizationTimeZone);
+  const previousDateKey = addDaysToDateKey(requestedDateKey, -1);
+  const previousDate = startOfDayInTimeZone(previousDateKey, organizationTimeZone);
+  const candidateDates = [requestedDate, previousDate].filter(
+    (value, index, list) => list.findIndex((item) => item.getTime() === value.getTime()) === index
+  );
+
+  const rows = await Attendance.find({
+    organizationId,
+    employeeId,
+    date: { $in: candidateDates },
+    checkInAt: { $ne: null }
+  })
+    .select("date checkInAt checkOutAt scheduledEndAt shiftStartTime shiftEndTime")
+    .sort({ date: -1, checkInAt: -1 });
+
+  const exactOpenRow = rows.find((row) => {
+    const attendanceDateKey = toDateKeyInTimeZone(row.date, organizationTimeZone);
+    return attendanceDateKey === requestedDateKey && row.checkInAt && !row.checkOutAt;
+  });
+  if (exactOpenRow) {
+    return {
+      attendance: exactOpenRow,
+      attendanceDateKey: requestedDateKey,
+      attendanceDate: requestedDate
+    };
+  }
+
+  const previousOpenRow = rows.find((row) => {
+    const attendanceDateKey = toDateKeyInTimeZone(row.date, organizationTimeZone);
+    return attendanceDateKey === previousDateKey && row.checkInAt && !row.checkOutAt;
+  });
+  if (!previousOpenRow || !isAttendanceRowOvernight(previousOpenRow, organizationTimeZone)) {
+    return null;
+  }
+
+  const resolvedCheckOutAt = buildRequestedCheckOutAt(
+    previousDateKey,
+    requestedCheckOutTime,
+    previousOpenRow.checkInAt,
+    organizationTimeZone
+  );
+  if (!resolvedCheckOutAt) {
+    return null;
+  }
+
+  if (toDateKeyInTimeZone(resolvedCheckOutAt, organizationTimeZone) !== requestedDateKey) {
+    return null;
+  }
+
+  return {
+    attendance: previousOpenRow,
+    attendanceDateKey: previousDateKey,
+    attendanceDate: previousDate
+  };
+};
+
+const resolveAttendanceTargetForRequestDate = async ({
+  organizationId,
+  employeeId,
+  requestedDateKey,
+  requestedCheckOutTime,
+  organizationTimeZone
+}) => {
+  const requestedDate = startOfDayInTimeZone(requestedDateKey, organizationTimeZone);
+  const exactRow = await Attendance.findOne({
+    organizationId,
+    employeeId,
+    date: requestedDate
+  }).select("date checkInAt checkOutAt scheduledEndAt shiftStartTime shiftEndTime");
+
+  if (exactRow) {
+    return {
+      attendance: exactRow,
+      attendanceDateKey: requestedDateKey,
+      attendanceDate: requestedDate
+    };
+  }
+
+  if (!requestedCheckOutTime) {
+    return null;
+  }
+
+  const previousDateKey = addDaysToDateKey(requestedDateKey, -1);
+  const previousDate = startOfDayInTimeZone(previousDateKey, organizationTimeZone);
+  const previousRow = await Attendance.findOne({
+    organizationId,
+    employeeId,
+    date: previousDate
+  }).select("date checkInAt checkOutAt scheduledEndAt shiftStartTime shiftEndTime");
+
+  if (!previousRow || !isAttendanceRowOvernight(previousRow, organizationTimeZone)) {
+    return null;
+  }
+
+  const resolvedCheckOutAt = buildRequestedCheckOutAt(
+    previousDateKey,
+    requestedCheckOutTime,
+    previousRow.checkInAt,
+    organizationTimeZone
+  );
+  if (!resolvedCheckOutAt) {
+    return null;
+  }
+
+  if (toDateKeyInTimeZone(resolvedCheckOutAt, organizationTimeZone) !== requestedDateKey) {
+    return null;
+  }
+
+  return {
+    attendance: previousRow,
+    attendanceDateKey: previousDateKey,
+    attendanceDate: previousDate
+  };
+};
+
 const sendNotification = async ({ toEmail, toName, subject, message }) => {
   if (!toEmail) return;
   try {
@@ -878,6 +1082,53 @@ const rebuildAttendanceApprovalStepsFromFlow = async (request) => {
     }
     return step;
   });
+};
+
+const normalizeApprovalStateSnapshot = (steps = [], currentApprovalStep = null) =>
+  JSON.stringify({
+    currentApprovalStep: currentApprovalStep == null ? null : Number(currentApprovalStep),
+    steps: (steps || []).map((step) => ({
+      stepNumber: step?.stepNumber == null ? null : Number(step.stepNumber),
+      approverType: step?.approverType || null,
+      approverEmployeeId: step?.approverEmployeeId?._id || step?.approverEmployeeId || null,
+      approverRoleSlug: step?.approverRoleSlug || null,
+      status: step?.status || null,
+      actionBy: step?.actionBy?._id || step?.actionBy || null,
+      actionAt: step?.actionAt ? new Date(step.actionAt).toISOString() : null,
+      remarks: step?.remarks || null
+    }))
+  });
+
+const repairPendingAttendanceApprovalState = async (request) => {
+  if (!request || request.status !== "pending" || !request.approvalFlowId || !Array.isArray(request.approvalSteps) || !request.approvalSteps.length) {
+    return request;
+  }
+
+  const beforeSnapshot = normalizeApprovalStateSnapshot(
+    request.approvalSteps,
+    request.currentApprovalStep
+  );
+  const rebuiltSteps = await rebuildAttendanceApprovalStepsFromFlow(request);
+  if (!rebuiltSteps?.length) return request;
+
+  const resolvedProgress = resolveCurrentPendingStep({
+    steps: rebuiltSteps,
+    currentApprovalStep: request.currentApprovalStep
+  });
+
+  request.approvalSteps = resolvedProgress.steps;
+  request.currentApprovalStep = resolvedProgress.currentApprovalStep;
+  const afterSnapshot = normalizeApprovalStateSnapshot(
+    request.approvalSteps,
+    request.currentApprovalStep
+  );
+
+  if (beforeSnapshot !== afterSnapshot && typeof request.markModified === "function" && typeof request.save === "function") {
+    request.markModified("approvalSteps");
+    await request.save();
+  }
+
+  return request;
 };
 
 const canActorViewAttendanceSelfie = async (req) => {
@@ -1617,7 +1868,7 @@ exports.getAttendanceMatrix = async (req) => {
 
   const attendanceMap = new Map();
   attendanceRows.forEach((row) => {
-    const day = getDayInTimeZone(row.checkInAt || row.checkOutAt || row.date, organizationTimeZone);
+    const day = getDayInTimeZone(row.date, organizationTimeZone);
     const key = `${row.employeeId.toString()}-${day}`;
     const overriddenByName = row.overriddenBy
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
@@ -1855,7 +2106,7 @@ exports.getMyAttendanceMatrix = async (req) => {
     };
   }
   attendanceRows.forEach((row) => {
-    const day = getDayInTimeZone(row.checkInAt || row.checkOutAt || row.date, organizationTimeZone);
+    const day = getDayInTimeZone(row.date, organizationTimeZone);
     const overriddenByName = row.overriddenBy
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
       : null;
@@ -2002,14 +2253,14 @@ exports.getMyAttendanceCellHistory = async (req) => {
 exports.raiseAttendanceRequest = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
-  const dateKey = normalizeAttendanceRequestDateKey(req.body.date, organizationTimeZone);
-  const date = startOfDayInTimeZone(dateKey, organizationTimeZone);
+  let dateKey = normalizeAttendanceRequestDateKey(req.body.date, organizationTimeZone);
+  let date = startOfDayInTimeZone(dateKey, organizationTimeZone);
   const today = startOfDayInTimeZone(new Date(), organizationTimeZone);
   if (date > today) {
     throw new Error("Attendance request date cannot be in the future");
   }
 
-  const requestType = req.body.requestType;
+  let requestType = req.body.requestType;
   const requestedCheckInTime = req.body.requestedCheckInTime || null;
   const requestedCheckOutTime = req.body.requestedCheckOutTime || null;
 
@@ -2021,18 +2272,35 @@ exports.raiseAttendanceRequest = async (req) => {
   }
 
   if (requestType === "missed_checkout") {
-    const attendance = await Attendance.findOne({
+    const target = await resolveMissedCheckoutAttendanceTarget({
       organizationId: req.user.organizationId,
       employeeId: employee._id,
-      date
-    }).select("checkInAt checkOutAt");
+      requestedDateKey: dateKey,
+      requestedCheckOutTime,
+      organizationTimeZone
+    });
+    if (!target) {
+      const existingAttendanceTarget = await resolveAttendanceTargetForRequestDate({
+        organizationId: req.user.organizationId,
+        employeeId: employee._id,
+        requestedDateKey: dateKey,
+        requestedCheckOutTime,
+        organizationTimeZone
+      });
+      if (!existingAttendanceTarget?.attendance?.checkInAt) {
+        throw new Error("No unresolved check-in found for the provided date");
+      }
 
-    if (!attendance?.checkInAt) {
-      throw new Error("No check-in found for this date");
-    }
-
-    if (attendance.checkOutAt) {
-      throw new Error("Checkout already exists for this date");
+      if (existingAttendanceTarget.attendance.checkOutAt) {
+        requestType = "correction";
+        dateKey = existingAttendanceTarget.attendanceDateKey;
+        date = existingAttendanceTarget.attendanceDate;
+      } else {
+        throw new Error("No unresolved check-in found for the provided date");
+      }
+    } else {
+      dateKey = target.attendanceDateKey;
+      date = target.attendanceDate;
     }
   }
 
@@ -2099,6 +2367,7 @@ exports.getMyAttendanceRequests = async (req) => {
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 
+  await Promise.all(rows.map((row) => repairPendingAttendanceApprovalState(row)));
   return serializeMongoIdsDeep(rows);
 };
 
@@ -2129,6 +2398,8 @@ exports.getAttendanceRequests = async (req) => {
           managerId: managerEmployee._id
         }).distinct("_id");
         query.employeeId = { $in: reportIds };
+      } else {
+        query.employeeId = { $in: [] };
       }
     }
   }
@@ -2140,6 +2411,7 @@ exports.getAttendanceRequests = async (req) => {
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 
+  await Promise.all(rows.map((row) => repairPendingAttendanceApprovalState(row)));
   return serializeMongoIdsDeep(rows);
 };
 
@@ -2178,7 +2450,18 @@ exports.getMyPendingAttendanceApprovals = async (req) => {
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 
-  return serializeMongoIdsDeep(rows);
+  await Promise.all(rows.map((row) => repairPendingAttendanceApprovalState(row)));
+
+  const actorContext = await getActorApprovalContext(req);
+  const filteredRows = rows.filter((row) => {
+    const steps = Array.isArray(row.approvalSteps) ? row.approvalSteps : [];
+    if (!steps.length) return true;
+    const currentStep = getCurrentPendingStep(steps);
+    if (!currentStep) return false;
+    return canActorApproveStep(currentStep, actorContext);
+  });
+
+  return serializeMongoIdsDeep(filteredRows);
 };
 
 exports.actionAttendanceRequest = async (req) => {
@@ -2190,6 +2473,7 @@ exports.actionAttendanceRequest = async (req) => {
     organizationId: req.user.organizationId
   });
   if (!request) throw new Error("Attendance request not found");
+  await repairPendingAttendanceApprovalState(request);
   if (request.status !== "pending") throw new Error("Attendance request already actioned");
 
   const actorRoleSlug = await getActorRoleSlug(req);
@@ -2322,12 +2606,13 @@ exports.actionAttendanceRequest = async (req) => {
     checkOutAt = nextDay;
   }
 
-  const { shift, scheduledStartAt, scheduledEndAt } = await resolveShiftSchedule(
-    req.user.organizationId,
-    request.employeeId,
+  const { shift, scheduledStartAt, scheduledEndAt } = await resolveAttendanceScheduleForRequest({
+    organizationId: req.user.organizationId,
+    employeeId: request.employeeId,
+    attendanceRow: attendance,
     attendanceDateKey,
     organizationTimeZone
-  );
+  });
 
   const lateByMinutes = checkInAt
     ? Math.max(

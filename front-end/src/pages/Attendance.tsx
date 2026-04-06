@@ -24,7 +24,7 @@ import {
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
-import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
+import { formatDateKeyInOrgCalendar, formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowUpDown } from "lucide-react";
 
@@ -219,6 +219,34 @@ const toOrgDateKey = (value: string | number | Date) => {
   }).formatToParts(new Date(value));
   const read = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value || "00";
   return `${read("year")}-${read("month")}-${read("day")}`;
+};
+
+const addDaysToDateKey = (dateKey: string, dayDelta: number) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + dayDelta, 12, 0, 0));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+};
+
+const parseTimeToMinutes = (timeValue?: string | null) => {
+  if (!timeValue || !/^\d{2}:\d{2}$/.test(timeValue)) return null;
+  const [hours, minutes] = timeValue.split(":").map(Number);
+  return hours * 60 + minutes;
+};
+
+const resolveWorkedMinutes = (checkInAt?: string | null, checkOutAt?: string | null) => {
+  if (!checkInAt || !checkOutAt) return 0;
+  const start = new Date(checkInAt);
+  const end = new Date(checkOutAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+};
+
+const formatWorkedDuration = (workedMinutes: number) => {
+  if (!Number.isFinite(workedMinutes) || workedMinutes <= 0) return "";
+  const hours = Math.floor(workedMinutes / 60);
+  const minutes = workedMinutes % 60;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
 };
 
 const mergeAttendancePages = (existing: EmployeeRow[], incoming: EmployeeRow[]) => {
@@ -453,7 +481,15 @@ const Attendance = () => {
     }
   };
 
-  const formatHoverInfo = (cell: DayCell) => {
+  const isOvernightShiftCell = (cell: DayCell) => {
+    const startMinutes = parseTimeToMinutes(cell.shiftStartTime);
+    const endMinutes = parseTimeToMinutes(cell.shiftEndTime);
+    return startMinutes !== null && endMinutes !== null && endMinutes <= startMinutes;
+  };
+
+  const getAttendanceDateKey = (day: number) => `${month}-${String(day).padStart(2, "0")}`;
+
+  const formatHoverInfo = (cell: DayCell, day: number) => {
     const parts: string[] = [];
     const resolvedStatus = getAttendanceStatus({
       isHoliday: Boolean(cell.holidayName),
@@ -462,8 +498,14 @@ const Attendance = () => {
       attendanceStatus: cell.status,
       snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
     });
+    const attendanceDateKey = getAttendanceDateKey(day);
+    const isOvernightShift = isOvernightShiftCell(cell);
+    const workedMinutes = resolveWorkedMinutes(cell.checkInAt, cell.checkOutAt);
     const hideTimings = resolvedStatus === "Leave" || resolvedStatus === "Holiday";
     if (resolvedStatus !== "Absent") parts.push(`Status: ${resolvedStatus}`);
+    if (isOvernightShift) {
+      parts.push(`Attendance Date: ${formatDateKeyInOrgCalendar(attendanceDateKey)}`);
+    }
     if (cell.excludeFromPayroll) {
       parts.push("Excluded from payroll until checkout is completed");
     }
@@ -478,8 +520,15 @@ const Attendance = () => {
     }
     if (cell.isWeekOff) parts.push("Week Off");
     if (cell.holidayName) parts.push(`Holiday: ${cell.holidayName}`);
-    if (!hideTimings && cell.checkInAt) parts.push(`Check-in: ${formatTimeInOrgTimeZone(cell.checkInAt)}`);
-    if (!hideTimings && cell.checkOutAt) parts.push(`Check-out: ${formatTimeInOrgTimeZone(cell.checkOutAt)}`);
+    if (!hideTimings && cell.checkInAt) {
+      parts.push(`Check-in: ${isOvernightShift ? formatDateTimeInOrgTimeZone(cell.checkInAt) : formatTimeInOrgTimeZone(cell.checkInAt)}`);
+    }
+    if (!hideTimings && cell.checkOutAt) {
+      parts.push(`Check-out: ${isOvernightShift ? formatDateTimeInOrgTimeZone(cell.checkOutAt) : formatTimeInOrgTimeZone(cell.checkOutAt)}`);
+    }
+    if (!hideTimings && workedMinutes > 0) {
+      parts.push(`Worked: ${formatWorkedDuration(workedMinutes)}`);
+    }
     if (!hideTimings && canViewSelfieData && (cell.checkInAt || cell.checkOutAt)) {
       parts.push(`Selfie: ${cell.checkInSelfieProvided ? "Yes" : "No"}`);
     }
@@ -490,7 +539,11 @@ const Attendance = () => {
       parts.push(`Shift: ${cell.shiftName || ""}${cell.shiftCode ? ` (${cell.shiftCode})` : ""}`);
     }
     if (cell.shiftStartTime && cell.shiftEndTime) {
-      parts.push(`Shift Time: ${cell.shiftStartTime} - ${cell.shiftEndTime}`);
+      parts.push(
+        isOvernightShift
+          ? `Shift Window: ${formatDateKeyInOrgCalendar(attendanceDateKey)} ${cell.shiftStartTime} -> ${formatDateKeyInOrgCalendar(addDaysToDateKey(attendanceDateKey, 1))} ${cell.shiftEndTime}`
+          : `Shift Time: ${cell.shiftStartTime} - ${cell.shiftEndTime}`
+      );
     }
     if ((cell.lateByMinutes || 0) > 0) parts.push(`Late by: ${cell.lateByMinutes} min`);
     if ((cell.earlyLoginByMinutes || 0) > 0) parts.push(`Early login by: ${cell.earlyLoginByMinutes} min`);
@@ -872,6 +925,9 @@ const Attendance = () => {
                         const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
                         const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
                         const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName) || cell.isWeekOff;
+                        const isOvernightShift = isOvernightShiftCell(cell);
+                        const attendanceDateKey = getAttendanceDateKey(day);
+                        const workedMinutes = resolveWorkedMinutes(cell.checkInAt, cell.checkOutAt);
                         return (
                           <HoverCard key={day} openDelay={120} closeDelay={80}>
                             <HoverCardTrigger asChild>
@@ -906,14 +962,32 @@ const Attendance = () => {
                             <HoverCardContent className="w-72">
                               <div className="space-y-1.5">
                                 <p className="text-sm font-semibold">{month}-{String(day).padStart(2, "0")} • {cellUi.label}</p>
+                                {isOvernightShift && (
+                                  <p className="text-xs text-slate-700">
+                                    Attendance Date: {formatDateKeyInOrgCalendar(attendanceDateKey)}
+                                  </p>
+                                )}
                                 {!hideTimings && (
                                   <>
                                     <p className="text-xs text-muted-foreground">
-                                      Check-in: {cell.checkInAt ? formatTimeInOrgTimeZone(cell.checkInAt) : "Not recorded"}
+                                      Check-in: {cell.checkInAt
+                                        ? (isOvernightShift
+                                          ? formatDateTimeInOrgTimeZone(cell.checkInAt)
+                                          : formatTimeInOrgTimeZone(cell.checkInAt))
+                                        : "Not recorded"}
                                     </p>
                                     <p className="text-xs text-muted-foreground">
-                                      Check-out: {cell.checkOutAt ? formatTimeInOrgTimeZone(cell.checkOutAt) : "Not recorded"}
+                                      Check-out: {cell.checkOutAt
+                                        ? (isOvernightShift
+                                          ? formatDateTimeInOrgTimeZone(cell.checkOutAt)
+                                          : formatTimeInOrgTimeZone(cell.checkOutAt))
+                                        : "Not recorded"}
                                     </p>
+                                    {workedMinutes > 0 && (
+                                      <p className="text-xs text-muted-foreground">
+                                        Worked: {formatWorkedDuration(workedMinutes)}
+                                      </p>
+                                    )}
                                     {canViewSelfieData && (
                                       <>
                                         <p className="text-xs text-muted-foreground">
@@ -935,7 +1009,9 @@ const Attendance = () => {
                                 )}
                                 {cell.shiftStartTime && cell.shiftEndTime && (
                                   <p className="text-xs text-muted-foreground">
-                                    Shift Time: {cell.shiftStartTime} - {cell.shiftEndTime}
+                                    {isOvernightShift
+                                      ? `Shift Window: ${formatDateKeyInOrgCalendar(attendanceDateKey)} ${cell.shiftStartTime} -> ${formatDateKeyInOrgCalendar(addDaysToDateKey(attendanceDateKey, 1))} ${cell.shiftEndTime}`
+                                      : `Shift Time: ${cell.shiftStartTime} - ${cell.shiftEndTime}`}
                                   </p>
                                 )}
                                 {cell.holidayName && (
@@ -1202,7 +1278,7 @@ const Attendance = () => {
                                 type="button"
                                 onClick={() => !isNonInteractive && openCellDetails(row, day)}
                                 disabled={isNonInteractive}
-                                title={formatHoverInfo(cell)}
+                                title={formatHoverInfo(cell, day)}
                                 className={`w-full h-8 rounded-md text-xs font-semibold border transition-all duration-200 ${cellUi.className} ${
                                   isNonInteractive ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:opacity-95 hover:-translate-y-[1px] hover:shadow-sm"
                                 }`}

@@ -1,12 +1,26 @@
+const toPlainStep = (step) => {
+  if (!step) return {};
+  if (typeof step.toObject === "function") {
+    return step.toObject();
+  }
+  if (step._doc && typeof step._doc === "object") {
+    return { ...step._doc };
+  }
+  return { ...step };
+};
+
 const cloneSteps = (steps = []) =>
-  (steps || []).map((s) => ({
-    ...s,
-    approverEmployeeId: s.approverEmployeeId || null,
-    approverRoleSlug: s.approverRoleSlug || null,
-    actionBy: s.actionBy || null,
-    actionAt: s.actionAt || null,
-    remarks: s.remarks || null
-  }));
+  (steps || []).map((step) => {
+    const s = toPlainStep(step);
+    return {
+      ...s,
+      approverEmployeeId: s.approverEmployeeId || null,
+      approverRoleSlug: s.approverRoleSlug || null,
+      actionBy: s.actionBy || null,
+      actionAt: s.actionAt || null,
+      remarks: s.remarks || null
+    };
+  });
 
 const sortByStep = (steps = []) =>
   [...steps].sort((a, b) => Number(a.stepNumber || 0) - Number(b.stepNumber || 0));

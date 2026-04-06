@@ -105,8 +105,15 @@ const normalizeTimesheetRecord = (timesheet: TeamTimesheet | null | undefined) =
 };
 
 type AttendanceTodayRecord = {
+  date?: string | null;
   checkInAt?: string | null;
   checkOutAt?: string | null;
+};
+
+const shiftDateKey = (dateKey: string, dayDelta: number) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + dayDelta, 12, 0, 0));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
 };
 
 const normalizeEntries = (weekDates: Date[], rawEntries: WeeklyEntry[]) => {
@@ -200,6 +207,13 @@ const approverLabel = (step: AttendanceRequest["approvalSteps"] extends Array<in
   if (step.approverType === "role") return step.approverRoleSlug ? `Role: ${step.approverRoleSlug}` : "Role";
   return step.approverEmployeeId ? `Employee: ${toPersonLabel(step.approverEmployeeId)}` : "Employee";
 };
+
+const normalizeRoleKey = (value: string | null | undefined) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-")
+    .replace(/-+/g, "-");
 
 const approvalProgressLabel = (request: AttendanceRequest) => {
   const steps = Array.isArray(request.approvalSteps) ? request.approvalSteps : [];
@@ -442,7 +456,10 @@ const Timesheets = () => {
     const pending = steps.find((s) => s.status === "pending");
     if (!pending) return false;
     if (pending.approverType === "role") {
-      return Boolean(pending.approverRoleSlug && pending.approverRoleSlug === currentRoleSlug);
+      return Boolean(
+        normalizeRoleKey(pending.approverRoleSlug) &&
+        normalizeRoleKey(pending.approverRoleSlug) === normalizeRoleKey(currentRoleSlug)
+      );
     }
     const stepEmployeeId = toIdString(pending.approverEmployeeId);
     return Boolean(stepEmployeeId && currentEmployeeId && stepEmployeeId === currentEmployeeId);
@@ -780,11 +797,9 @@ const Timesheets = () => {
   };
 
   const openAttendanceRequestDialog = () => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
     setAttendanceRequestForm({
-      date: toDateInput(yesterday),
-      requestType: "missed_checkout",
+      date: attendanceRequestDefaultDate,
+      requestType: attendanceRequestDefaultType,
       requestedCheckInTime: "",
       requestedCheckOutTime: "",
       reason: ""
@@ -1067,6 +1082,10 @@ const Timesheets = () => {
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
   const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt);
+  const attendanceRequestDefaultDate = isCheckedIn && attendanceToday?.date
+    ? toDateKeyInOrgCalendar(attendanceToday.date)
+    : shiftDateKey(toDateKeyInOrgTimeZone(new Date()), -1);
+  const attendanceRequestDefaultType = attendanceToday?.checkOutAt ? "correction" : "missed_checkout";
 
   const timesheetLocked =
     timesheet?.status && ["submitted", "approved"].includes(timesheet.status);
@@ -1765,6 +1784,16 @@ const Timesheets = () => {
               ? "Provide the missing check-out time. Check-in time is taken from existing attendance."
               : "Provide one or both times to request correction."}
           </p>
+          {attendanceRequestForm.requestType === "correction" && attendanceToday?.checkOutAt && (
+            <p className="text-xs text-sky-700 mt-1">
+              Existing checkout found for this attendance day. New requests will be submitted as a correction.
+            </p>
+          )}
+          {attendanceRequestForm.requestType === "missed_checkout" && isCheckedIn && attendanceToday?.date && (
+            <p className="text-xs text-amber-700 mt-1">
+              Open shift detected for {formatDateKeyInOrgCalendar(attendanceRequestDefaultDate)}. Keep this date to update the overnight attendance correctly.
+            </p>
+          )}
           <Textarea
             className="mt-3"
             placeholder="Reason"

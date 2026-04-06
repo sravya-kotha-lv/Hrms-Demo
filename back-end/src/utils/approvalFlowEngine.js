@@ -3,6 +3,36 @@ const Employee = require("../modules/employees/employee.model");
 const Role = require("../modules/roles/role.model");
 const OrgUser = require("../modules/organizations/org-user.model");
 
+const normalizeRoleKey = (value = "") =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-")
+    .replace(/-+/g, "-");
+
+const roleMatchesStep = (stepRoleValue, actorRoleSlug, actorRoleName) => {
+  const normalizedStepRole = normalizeRoleKey(stepRoleValue);
+  if (!normalizedStepRole) return false;
+
+  const normalizedActorSlug = normalizeRoleKey(actorRoleSlug);
+  const normalizedActorName = normalizeRoleKey(actorRoleName);
+
+  return Boolean(
+    normalizedActorSlug && normalizedStepRole === normalizedActorSlug
+    || normalizedActorName && normalizedStepRole === normalizedActorName
+  );
+};
+
+const findRoleForStep = async ({ organizationId, roleValue }) => {
+  const normalizedRoleValue = normalizeRoleKey(roleValue);
+  if (!organizationId || !normalizedRoleValue) return null;
+
+  const roles = await Role.find({ organizationId }).select("_id slug name");
+  return roles.find((role) =>
+    roleMatchesStep(normalizedRoleValue, role.slug, role.name)
+  ) || null;
+};
+
 const buildRuntimeSteps = ({ flow, subjectEmployee }) => {
   const steps = [];
   for (const s of flow.steps || []) {
@@ -57,6 +87,9 @@ exports.resolveApplicableFlow = async ({
       moduleKey,
       isActive: true
     });
+    if (!flow) {
+      throw new Error("Assigned approval flow is missing, inactive, or invalid for this module");
+    }
   }
 
   if (!flow) {
@@ -92,13 +125,15 @@ exports.getActorApprovalContext = async (req) => {
       ? Role.findOne({
           _id: req.user.activeRoleId,
           organizationId: req.user.organizationId
-        }).select("slug")
+        }).select("_id slug name")
       : null
   ]);
 
   return {
     actorEmployeeId: actorEmployee?._id || null,
-    actorRoleSlug: actorRole?.slug || null
+    actorRoleId: actorRole?._id || null,
+    actorRoleSlug: actorRole?.slug || null,
+    actorRoleName: actorRole?.name || null
   };
 };
 
@@ -109,8 +144,11 @@ exports.canActorApproveStep = (step, actorContext) => {
     return step.approverEmployeeId.toString() === actorContext.actorEmployeeId.toString();
   }
   if (step.approverType === "role") {
-    if (!step.approverRoleSlug || !actorContext.actorRoleSlug) return false;
-    return step.approverRoleSlug === actorContext.actorRoleSlug;
+    return roleMatchesStep(
+      step.approverRoleSlug,
+      actorContext.actorRoleSlug,
+      actorContext.actorRoleName
+    );
   }
   return false;
 };
@@ -137,10 +175,10 @@ exports.resolveRecipientsForStep = async ({ organizationId, step }) => {
 
   if (step.approverType === "role") {
     if (!step.approverRoleSlug) return [];
-    const role = await Role.findOne({
+    const role = await findRoleForStep({
       organizationId,
-      slug: step.approverRoleSlug
-    }).select("_id");
+      roleValue: step.approverRoleSlug
+    });
     if (!role?._id) return [];
 
     const orgUsers = await OrgUser.find({
