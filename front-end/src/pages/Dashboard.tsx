@@ -41,7 +41,7 @@ import { useAuth } from "@/context/useAuth";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Label, LabelList, Pie, PieChart, XAxis, YAxis } from "recharts";
 
 /* ========================= Dashboard ========================= */
 
@@ -1840,32 +1840,41 @@ const Dashboard = () => {
             <ChartContainer config={chartConfig} className="h-[280px] w-full min-w-0">
               <PieChart>
                 <defs>
-                  <filter id="dashboard-pie-shadow" x="-30%" y="-30%" width="160%" height="160%">
-                    <feDropShadow dx="0" dy="10" stdDeviation="10" floodColor="#0f172a" floodOpacity="0.18" />
+                  <filter id="dashboard-pie-shadow" x="-40%" y="-40%" width="180%" height="190%">
+                    <feDropShadow dx="0" dy="16" stdDeviation="12" floodColor="#0f172a" floodOpacity="0.16" />
                   </filter>
+                  <filter id="dashboard-inner-shadow" x="-40%" y="-40%" width="180%" height="180%">
+                    <feOffset dx="0" dy="3" />
+                    <feGaussianBlur stdDeviation="6" result="offset-blur" />
+                    <feComposite operator="out" in="SourceGraphic" in2="offset-blur" result="inverse" />
+                    <feFlood floodColor="#0f172a" floodOpacity="0.08" result="color" />
+                    <feComposite operator="in" in="color" in2="inverse" result="shadow" />
+                    <feComposite operator="over" in="shadow" in2="SourceGraphic" />
+                  </filter>
+                  <radialGradient id="dashboard-donut-core" cx="50%" cy="40%" r="65%">
+                    <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+                    <stop offset="70%" stopColor="#ffffff" stopOpacity="0.96" />
+                    <stop offset="100%" stopColor="#e5e7eb" stopOpacity="1" />
+                  </radialGradient>
+                  <linearGradient id="dashboard-donut-rim" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
+                    <stop offset="100%" stopColor="#cbd5e1" stopOpacity="0.75" />
+                  </linearGradient>
+                  <linearGradient id="dashboard-donut-shine" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#ffffff" stopOpacity="0.75" />
+                    <stop offset="45%" stopColor="#ffffff" stopOpacity="0.18" />
+                    <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+                  </linearGradient>
                 </defs>
                 <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="key" />} />
-                <Pie
-                  data={workforceComposition}
-                  dataKey="value"
-                  nameKey="key"
-                  legendType="none"
-                  cx="50%"
-                  cy="54%"
-                  innerRadius={62}
-                  outerRadius={106}
-                  isAnimationActive={false}
-                >
-                  {workforceComposition.map((slice) => (
-                    <Cell key={`${slice.key}-shadow`} fill={slice.shadowColor} />
-                  ))}
-                </Pie>
+                <ellipse cx="50%" cy="65%" rx="94" ry="22" fill="#0f172a" opacity="0.08" />
+                <ellipse cx="50%" cy="63.5%" rx="82" ry="14" fill="#ffffff" opacity="0.55" />
                 <Pie
                   data={workforceComposition}
                   dataKey="value"
                   nameKey="key"
                   cx="50%"
-                  cy="48%"
+                  cy="50%"
                   innerRadius={62}
                   outerRadius={106}
                   paddingAngle={3}
@@ -1876,6 +1885,23 @@ const Dashboard = () => {
                   {workforceComposition.map((slice) => (
                     <Cell key={slice.key} fill={slice.color} />
                   ))}
+                  <Label
+                    position="center"
+                    content={({ viewBox }) => {
+                      if (!viewBox || !("cx" in viewBox) || !("cy" in viewBox)) return null;
+                      const { cx, cy } = viewBox;
+                      return (
+                        <g>
+                          <text x={cx} y={cy - 8} textAnchor="middle" className="fill-muted-foreground text-[11px] font-semibold tracking-[0.22em] uppercase">
+                            Total
+                          </text>
+                          <text x={cx} y={cy + 22} textAnchor="middle" className="fill-foreground text-[30px] font-bold">
+                            {workforceCompositionTotal}
+                          </text>
+                        </g>
+                      );
+                    }}
+                  />
                   <LabelList
                     dataKey="value"
                     position="outside"
@@ -1883,6 +1909,15 @@ const Dashboard = () => {
                     className="fill-foreground text-xs font-semibold"
                   />
                 </Pie>
+                <circle cx="50%" cy="50%" r="60" fill="url(#dashboard-donut-core)" filter="url(#dashboard-inner-shadow)" />
+                <circle cx="50%" cy="50%" r="62.5" fill="none" stroke="url(#dashboard-donut-rim)" strokeOpacity="0.9" strokeWidth="2.5" />
+                <path
+                  d="M 148 72 C 172 52, 228 52, 252 72"
+                  fill="none"
+                  stroke="url(#dashboard-donut-shine)"
+                  strokeWidth="16"
+                  strokeLinecap="round"
+                />
                 <ChartLegend
                   verticalAlign="bottom"
                   content={<ChartLegendContent nameKey="key" className="flex-wrap justify-center gap-3 pt-5" />}
@@ -1890,25 +1925,32 @@ const Dashboard = () => {
               </PieChart>
             </ChartContainer>
             <div className="min-w-0 space-y-3">
-              <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Total Employees</p>
-                <p className="mt-2 text-3xl font-semibold">{workforceCompositionTotal}</p>
-                <p className="text-sm text-muted-foreground">Employees currently represented across today&apos;s status mix.</p>
+              <div className="rounded-2xl border border-border/70 bg-gradient-to-br from-white via-muted/10 to-slate-50 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Total Employees</p>
+                    <p className="mt-2 text-3xl font-semibold">{workforceCompositionTotal}</p>
+                  </div>
+                  <div className="rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
+                    Live Mix
+                  </div>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">Employees currently represented across today&apos;s status mix.</p>
               </div>
               {workforceComposition.map((slice) => {
                 const percentage = workforceCompositionTotal ? Math.round((slice.value / workforceCompositionTotal) * 100) : 0;
                 return (
-                  <div key={`mix-${slice.key}`} className="rounded-xl border border-border/60 bg-background/80 p-3">
+                  <div key={`mix-${slice.key}`} className="rounded-2xl border border-border/60 bg-gradient-to-r from-background to-muted/20 p-3 shadow-sm">
                     <div className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex min-w-0 items-center gap-2">
-                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: slice.color, boxShadow: `0 4px 10px ${slice.shadowColor}55` }} />
+                        <span className="h-3.5 w-3.5 rounded-full" style={{ backgroundColor: slice.color, boxShadow: `0 4px 10px ${slice.shadowColor}55` }} />
                         <span className="truncate font-medium">{slice.label}</span>
                       </div>
-                      <span className="text-muted-foreground">{slice.value} employees</span>
+                      <span className="text-muted-foreground">{slice.value} employees • {percentage}%</span>
                     </div>
-                    <div className="mt-2 h-2 rounded-full bg-muted">
+                    <div className="mt-2 h-2.5 rounded-full bg-muted/80">
                       <div
-                        className="h-2 rounded-full"
+                        className="h-2.5 rounded-full"
                         style={{
                           width: `${percentage}%`,
                           background: `linear-gradient(90deg, ${slice.shadowColor}, ${slice.color})`

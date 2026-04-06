@@ -137,6 +137,16 @@ const employeeSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "employees"
     },
+    leaveApprovalFlowId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "approval_flows",
+      default: null
+    },
+    attendanceApprovalFlowId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "approval_flows",
+      default: null
+    },
     shiftId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "shifts",

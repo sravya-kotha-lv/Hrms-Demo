@@ -16,6 +16,57 @@ const getCurrentPendingStep = (steps = []) =>
 
 exports.getCurrentPendingStep = getCurrentPendingStep;
 
+exports.resolveCurrentPendingStep = ({
+  steps = [],
+  currentApprovalStep = null
+}) => {
+  const nextSteps = sortByStep(cloneSteps(steps));
+  const existingPending = getCurrentPendingStep(nextSteps);
+  if (existingPending) {
+    return {
+      steps: nextSteps,
+      currentStep: existingPending,
+      currentApprovalStep: existingPending.stepNumber || currentApprovalStep || null,
+      repaired: false
+    };
+  }
+
+  if (currentApprovalStep != null) {
+    const indexedStep = nextSteps.find(
+      (step) => Number(step.stepNumber || 0) === Number(currentApprovalStep)
+    );
+    if (indexedStep && indexedStep.status !== "approved" && indexedStep.status !== "rejected") {
+      indexedStep.status = "pending";
+      return {
+        steps: nextSteps,
+        currentStep: indexedStep,
+        currentApprovalStep: indexedStep.stepNumber || null,
+        repaired: true
+      };
+    }
+  }
+
+  const fallbackStep = nextSteps.find(
+    (step) => step.status !== "approved" && step.status !== "rejected"
+  );
+  if (!fallbackStep) {
+    return {
+      steps: nextSteps,
+      currentStep: null,
+      currentApprovalStep: null,
+      repaired: false
+    };
+  }
+
+  fallbackStep.status = "pending";
+  return {
+    steps: nextSteps,
+    currentStep: fallbackStep,
+    currentApprovalStep: fallbackStep.stepNumber || null,
+    repaired: true
+  };
+};
+
 exports.advanceApprovalSteps = ({
   steps = [],
   action,

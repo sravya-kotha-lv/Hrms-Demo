@@ -18,11 +18,17 @@ const payrollAttendanceService = require("../payroll/payrollAttendance.service")
 const { normalizeAttendanceRequestDateKey } = require("./attendanceRequest.utils");
 const {
   resolveApplicableFlow,
+  buildRuntimeSteps,
   getActorApprovalContext,
   canActorApproveStep,
   resolveRecipientsForStep
 } = require("../../utils/approvalFlowEngine");
-const { advanceApprovalSteps, getCurrentPendingStep } = require("../../utils/approvalProgress");
+const ApprovalFlow = require("../approvalFlows/approvalFlow.model");
+const {
+  advanceApprovalSteps,
+  getCurrentPendingStep,
+  resolveCurrentPendingStep
+} = require("../../utils/approvalProgress");
 const {
   isValidTimeZone,
   toDateKeyInTimeZone,
@@ -42,6 +48,7 @@ const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "org-admin",
   "superadmin"
 ]);
+
 const ATTENDANCE_SELFIE_VIEW_ROLE_SLUGS = new Set(["hr", "org-admin"]);
 const FACEPP_COMPARE_URL = process.env.FACEPP_COMPARE_URL || "https://api-us.faceplusplus.com/facepp/v3/compare";
 const FACE_MATCH_MIN_CONFIDENCE = Number(process.env.FACE_MATCH_MIN_CONFIDENCE || 70);
@@ -814,6 +821,63 @@ const getActorRoleSlug = async (req) => {
     organizationId: req.user.organizationId
   }).select("slug");
   return role?.slug || "";
+};
+
+const describeApprovalStep = (step) => {
+  if (!step) return "Unknown step";
+  if (step.approverType === "manager") {
+    return `S${step.stepNumber} Reporting Manager`;
+  }
+  if (step.approverType === "role") {
+    return `S${step.stepNumber} Role: ${step.approverRoleSlug || "-"}`;
+  }
+  return `S${step.stepNumber} Specific Employee`;
+};
+
+const isValidApprovalStepShape = (step) =>
+  Boolean(
+    step
+    && Number.isFinite(Number(step.stepNumber))
+    && ["manager", "role", "employee"].includes(String(step.approverType || ""))
+  );
+
+const rebuildAttendanceApprovalStepsFromFlow = async (request) => {
+  if (!request?.approvalFlowId || !request?.employeeId) return null;
+
+  const [flow, subjectEmployee] = await Promise.all([
+    ApprovalFlow.findOne({
+      _id: request.approvalFlowId,
+      organizationId: request.organizationId
+    }),
+    Employee.findOne({
+      _id: request.employeeId,
+      organizationId: request.organizationId
+    }).select("_id managerId")
+  ]);
+
+  if (!flow || !subjectEmployee) return null;
+
+  const rebuiltSteps = buildRuntimeSteps({ flow, subjectEmployee });
+  const existingByStep = new Map(
+    (request.approvalSteps || [])
+      .filter(isValidApprovalStepShape)
+      .map((step) => [Number(step.stepNumber), step])
+  );
+
+  return rebuiltSteps.map((step) => {
+    const existing = existingByStep.get(Number(step.stepNumber));
+    if (!existing) return step;
+    if (existing.status === "approved" || existing.status === "rejected") {
+      return {
+        ...step,
+        status: existing.status,
+        actionBy: existing.actionBy || null,
+        actionAt: existing.actionAt || null,
+        remarks: existing.remarks || null
+      };
+    }
+    return step;
+  });
 };
 
 const canActorViewAttendanceSelfie = async (req) => {
@@ -1985,7 +2049,8 @@ exports.raiseAttendanceRequest = async (req) => {
   const flowConfig = await resolveApplicableFlow({
     organizationId: req.user.organizationId,
     moduleKey: "attendance_request",
-    subjectEmployee: employee
+    subjectEmployee: employee,
+    preferredFlowId: employee.attendanceApprovalFlowId || null
   });
   const initialPendingStep = (flowConfig?.steps || []).find((s) => s.status === "pending");
 
@@ -2147,7 +2212,25 @@ exports.actionAttendanceRequest = async (req) => {
     && Array.isArray(request.approvalSteps)
     && request.approvalSteps.length
   ) {
-    const currentStep = getCurrentPendingStep(request.approvalSteps || []);
+    let resolvedProgress = resolveCurrentPendingStep({
+      steps: request.approvalSteps || [],
+      currentApprovalStep: request.currentApprovalStep
+    });
+    if (!isValidApprovalStepShape(resolvedProgress.currentStep)) {
+      const rebuiltSteps = await rebuildAttendanceApprovalStepsFromFlow(request);
+      if (rebuiltSteps?.length) {
+        request.approvalSteps = rebuiltSteps;
+        resolvedProgress = resolveCurrentPendingStep({
+          steps: rebuiltSteps,
+          currentApprovalStep: request.currentApprovalStep
+        });
+      }
+    }
+    if (resolvedProgress.repaired) {
+      request.approvalSteps = resolvedProgress.steps;
+      request.currentApprovalStep = resolvedProgress.currentApprovalStep;
+    }
+    const currentStep = resolvedProgress.currentStep;
     if (!currentStep) {
       throw new Error("No pending approval step found");
     }
@@ -2155,7 +2238,7 @@ exports.actionAttendanceRequest = async (req) => {
     const allowedByFlow = canActorApproveStep(currentStep, actorContext);
     if (allowedByFlow) {
       const progress = advanceApprovalSteps({
-        steps: request.approvalSteps || [],
+        steps: resolvedProgress.steps,
         action: req.body.status,
         actionBy: actorEmployee?._id || null,
         remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : null
@@ -2165,22 +2248,7 @@ exports.actionAttendanceRequest = async (req) => {
       finalStatusToApply = progress.finalStatus;
       isIntermediateApproval = progress.isIntermediateApproval;
     } else {
-      // Privileged override: reporting manager/HR/admin can finalize request even if flow step mismatches.
-      const overrideStatus = req.body.status === "approved" ? "approved" : "rejected";
-      const actionAt = new Date();
-      request.approvalSteps = (request.approvalSteps || []).map((step) => {
-        if (step.status === "approved" || step.status === "rejected") return step;
-        return {
-          ...step,
-          status: overrideStatus,
-          actionBy: actorEmployee?._id || null,
-          actionAt,
-          remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : "Approved by authorized approver"
-        };
-      });
-      request.currentApprovalStep = null;
-      finalStatusToApply = req.body.status;
-      isIntermediateApproval = false;
+      throw new Error(`You are not the current approver for this step. Pending step: ${describeApprovalStep(currentStep)}`);
     }
   }
 

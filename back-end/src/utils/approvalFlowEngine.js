@@ -39,24 +39,40 @@ const buildRuntimeSteps = ({ flow, subjectEmployee }) => {
   return steps;
 };
 
+exports.buildRuntimeSteps = buildRuntimeSteps;
+
 exports.resolveApplicableFlow = async ({
   organizationId,
   moduleKey,
   subjectEmployee,
+  preferredFlowId = null,
   totalDays = null
 }) => {
-  const flows = await ApprovalFlow.find({
-    organizationId,
-    moduleKey,
-    isActive: true
-  }).sort({ createdAt: -1 });
+  let flow = null;
 
-  const flow = flows.find((f) => {
-    if (totalDays == null) return true;
-    const minOk = f.minDays == null || Number(totalDays) >= Number(f.minDays);
-    const maxOk = f.maxDays == null || Number(totalDays) <= Number(f.maxDays);
-    return minOk && maxOk;
-  });
+  if (preferredFlowId) {
+    flow = await ApprovalFlow.findOne({
+      _id: preferredFlowId,
+      organizationId,
+      moduleKey,
+      isActive: true
+    });
+  }
+
+  if (!flow) {
+    const flows = await ApprovalFlow.find({
+      organizationId,
+      moduleKey,
+      isActive: true
+    }).sort({ createdAt: -1 });
+
+    flow = flows.find((f) => {
+      if (totalDays == null) return true;
+      const minOk = f.minDays == null || Number(totalDays) >= Number(f.minDays);
+      const maxOk = f.maxDays == null || Number(totalDays) <= Number(f.maxDays);
+      return minOk && maxOk;
+    });
+  }
 
   if (!flow) return null;
 
