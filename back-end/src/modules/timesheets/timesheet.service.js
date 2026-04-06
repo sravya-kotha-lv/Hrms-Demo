@@ -880,6 +880,53 @@ const rebuildAttendanceApprovalStepsFromFlow = async (request) => {
   });
 };
 
+const normalizeApprovalStateSnapshot = (steps = [], currentApprovalStep = null) =>
+  JSON.stringify({
+    currentApprovalStep: currentApprovalStep == null ? null : Number(currentApprovalStep),
+    steps: (steps || []).map((step) => ({
+      stepNumber: step?.stepNumber == null ? null : Number(step.stepNumber),
+      approverType: step?.approverType || null,
+      approverEmployeeId: step?.approverEmployeeId?._id || step?.approverEmployeeId || null,
+      approverRoleSlug: step?.approverRoleSlug || null,
+      status: step?.status || null,
+      actionBy: step?.actionBy?._id || step?.actionBy || null,
+      actionAt: step?.actionAt ? new Date(step.actionAt).toISOString() : null,
+      remarks: step?.remarks || null
+    }))
+  });
+
+const repairPendingAttendanceApprovalState = async (request) => {
+  if (!request || request.status !== "pending" || !request.approvalFlowId || !Array.isArray(request.approvalSteps) || !request.approvalSteps.length) {
+    return request;
+  }
+
+  const beforeSnapshot = normalizeApprovalStateSnapshot(
+    request.approvalSteps,
+    request.currentApprovalStep
+  );
+  const rebuiltSteps = await rebuildAttendanceApprovalStepsFromFlow(request);
+  if (!rebuiltSteps?.length) return request;
+
+  const resolvedProgress = resolveCurrentPendingStep({
+    steps: rebuiltSteps,
+    currentApprovalStep: request.currentApprovalStep
+  });
+
+  request.approvalSteps = resolvedProgress.steps;
+  request.currentApprovalStep = resolvedProgress.currentApprovalStep;
+  const afterSnapshot = normalizeApprovalStateSnapshot(
+    request.approvalSteps,
+    request.currentApprovalStep
+  );
+
+  if (beforeSnapshot !== afterSnapshot && typeof request.markModified === "function" && typeof request.save === "function") {
+    request.markModified("approvalSteps");
+    await request.save();
+  }
+
+  return request;
+};
+
 const canActorViewAttendanceSelfie = async (req) => {
   const roleSlug = await getActorRoleSlug(req);
   return ATTENDANCE_SELFIE_VIEW_ROLE_SLUGS.has(roleSlug);
@@ -2140,6 +2187,7 @@ exports.getAttendanceRequests = async (req) => {
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 
+  await Promise.all(rows.map((row) => repairPendingAttendanceApprovalState(row)));
   return serializeMongoIdsDeep(rows);
 };
 
@@ -2190,6 +2238,7 @@ exports.actionAttendanceRequest = async (req) => {
     organizationId: req.user.organizationId
   });
   if (!request) throw new Error("Attendance request not found");
+  await repairPendingAttendanceApprovalState(request);
   if (request.status !== "pending") throw new Error("Attendance request already actioned");
 
   const actorRoleSlug = await getActorRoleSlug(req);
