@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { getDefaultMaxActiveLoginsPerUser } = require("../../utils/orgSettingsDefaults");
 
 const orgSettingsSchema = new mongoose.Schema(
   {
@@ -100,6 +101,12 @@ const orgSettingsSchema = new mongoose.Schema(
     employeeIdPrefix: {
       type: String,
       default: ""
+    },
+    maxActiveLoginsPerUser: {
+      type: Number,
+      default: getDefaultMaxActiveLoginsPerUser,
+      min: 1,
+      max: 20
     }
   },
   { timestamps: true }

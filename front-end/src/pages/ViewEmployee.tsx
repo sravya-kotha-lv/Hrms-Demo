@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Edit, Trash2 } from "lucide-react";
+import { ArrowLeft, Edit, Eye, EyeOff, Trash2 } from "lucide-react";
 import { deleteApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
@@ -62,6 +62,42 @@ const formatAddress = (address: any) => {
   return parts.length ? parts.join(", ") : "-";
 };
 
+const maskValue = (value?: string, visibleTail = 4) => {
+  const text = String(value || "").trim();
+  if (!text) return "-";
+  if (text.length <= visibleTail) return "*".repeat(text.length);
+  return `${"*".repeat(Math.max(4, text.length - visibleTail))}${text.slice(-visibleTail)}`;
+};
+
+const maskEmail = (value?: string) => {
+  const text = String(value || "").trim();
+  if (!text || !text.includes("@")) return "-";
+  const [localPart, domain] = text.split("@");
+  const visibleLocal = localPart.slice(0, 2);
+  return `${visibleLocal}${"*".repeat(Math.max(3, localPart.length - 2))}@${domain}`;
+};
+
+const SensitiveValue = ({
+  value,
+  isEmail = false,
+  visible = false
+}: {
+  value?: string;
+  isEmail?: boolean;
+  visible?: boolean;
+}) => {
+  const hasValue = Boolean(String(value || "").trim());
+  const displayValue = visible
+    ? String(value || "-")
+    : isEmail
+      ? maskEmail(value)
+      : maskValue(value);
+
+  return (
+    <p>{hasValue ? displayValue : "-"}</p>
+  );
+};
+
 const ID_CARD_FRONT_SKELETON = (import.meta as any).env?.VITE_IDCARD_FRONT_SKELETON || "/idcard_front.jpg";
 const ID_CARD_BACK_SKELETON = (import.meta as any).env?.VITE_IDCARD_BACK_SKELETON || "/idcard_back.jpg";
 const ID_CARD_INFO_ROW_NUDGES = [2.5, 1.5, 1, -1];
@@ -107,6 +143,9 @@ const ViewEmployee = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [idCardSide, setIdCardSide] = useState<"front" | "back">("front");
   const [exportingBothPdf, setExportingBothPdf] = useState(false);
+  const [showIdCardSensitive, setShowIdCardSensitive] = useState(false);
+  const [showWorkSensitive, setShowWorkSensitive] = useState(false);
+  const [showPersonalSensitive, setShowPersonalSensitive] = useState(false);
   const idCardRef = useRef<HTMLDivElement | null>(null);
 
   const fetchEmployee = async () => {
@@ -530,15 +569,44 @@ const ViewEmployee = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="stat-card space-y-3">
-              <h3 className="text-base font-semibold">Work Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold">Work Information</h3>
+              </div>
+              <div className="relative">
+                {!showWorkSensitive && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/45 backdrop-blur-sm">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      className="h-11 w-11 rounded-full bg-white/90 shadow-sm"
+                      onClick={() => setShowWorkSensitive(true)}
+                    >
+                      <Eye className="w-5 h-5" />
+                    </Button>
+                  </div>
+                )}
+                {showWorkSensitive && (
+                  <div className="absolute right-0 top-0 z-10">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2"
+                      onClick={() => setShowWorkSensitive(false)}
+                    >
+                      <EyeOff className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+                <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm transition ${!showWorkSensitive ? "blur-[3px]" : ""}`}>
                 <div>
                   <p className="text-muted-foreground">Email</p>
-                  <p>{employee.userId?.email || "-"}</p>
+                  <SensitiveValue value={employee.userId?.email} isEmail visible={showWorkSensitive} />
                 </div>
                 <div>
                   <p className="text-muted-foreground">Phone</p>
-                  <p>{employee.phone || "-"}</p>
+                  <SensitiveValue value={employee.phone} visible={showWorkSensitive} />
                 </div>
                 <div>
                   <p className="text-muted-foreground">Department</p>
@@ -594,15 +662,45 @@ const ViewEmployee = () => {
                   <p className="text-muted-foreground">Notice End Date</p>
                   <p>{formatDate(employee.noticeEndDate)}</p>
                 </div>
+                </div>
               </div>
             </div>
 
             <div className="stat-card space-y-3">
-              <h3 className="text-base font-semibold">Personal Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold">Personal Information</h3>
+              </div>
+              <div className="relative">
+                {!showPersonalSensitive && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/45 backdrop-blur-sm">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      className="h-11 w-11 rounded-full bg-white/90 shadow-sm"
+                      onClick={() => setShowPersonalSensitive(true)}
+                    >
+                      <Eye className="w-5 h-5" />
+                    </Button>
+                  </div>
+                )}
+                {showPersonalSensitive && (
+                  <div className="absolute right-0 top-0 z-10">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2"
+                      onClick={() => setShowPersonalSensitive(false)}
+                    >
+                      <EyeOff className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+                <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm transition ${!showPersonalSensitive ? "blur-[3px]" : ""}`}>
                 <div>
                   <p className="text-muted-foreground">Date of Birth</p>
-                  <p>{formatDate(employee.dob)}</p>
+                  <SensitiveValue value={employee.dob ? formatDate(employee.dob) : "-"} visible={showPersonalSensitive} />
                 </div>
                 <div>
                   <p className="text-muted-foreground">Gender</p>
@@ -610,7 +708,8 @@ const ViewEmployee = () => {
                 </div>
                 <div className="sm:col-span-2">
                   <p className="text-muted-foreground">Address</p>
-                  <p>{formatAddress(employee.address)}</p>
+                  <SensitiveValue value={formatAddress(employee.address)} visible={showPersonalSensitive} />
+                </div>
                 </div>
               </div>
             </div>
@@ -623,7 +722,7 @@ const ViewEmployee = () => {
                     <div key={`${contact.phone}-${index}`} className="border rounded-lg p-3">
                       <p className="font-medium">{contact.name}</p>
                       <p className="text-muted-foreground">{contact.relation}</p>
-                      <p>{contact.phone}</p>
+                      <SensitiveValue value={contact.phone} visible={showPersonalSensitive} />
                     </div>
                   ))}
                 </div>
@@ -655,6 +754,14 @@ const ViewEmployee = () => {
                       Back
                     </Button>
                   </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowIdCardSensitive((prev) => !prev)}
+                  >
+                    {showIdCardSensitive ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
+                    {showIdCardSensitive ? "Hide Sensitive" : "Show Sensitive"}
+                  </Button>
                   <Button size="sm" variant="outline" onClick={downloadIdCardPng}>Download PNG</Button>
                   <Button size="sm" onClick={downloadIdCardPdf}>Download PDF</Button>
                   <Button size="sm" variant="secondary" onClick={downloadBothSidesPdf} disabled={exportingBothPdf}>
@@ -695,9 +802,9 @@ const ViewEmployee = () => {
 
                         <div className="absolute left-[53.2%] top-[75.2%] text-[#0a4874] text-[12px] sm:text-[13px] font-medium leading-[1.78]">
                           <p data-idcard-info>{employee?.employeeCode || "-"}</p>
-                          <p data-idcard-info>{employee?.phone || "-"}</p>
-                          <p data-idcard-info>{employee?.emergencyContacts?.[0]?.phone || "-"}</p>
-                          <p data-idcard-info>{employee?.bloodGroup || "-"}</p>
+                          <p data-idcard-info>{showIdCardSensitive ? (employee?.phone || "-") : maskValue(employee?.phone)}</p>
+                          <p data-idcard-info>{showIdCardSensitive ? (employee?.emergencyContacts?.[0]?.phone || "-") : maskValue(employee?.emergencyContacts?.[0]?.phone)}</p>
+                          <p data-idcard-info>{showIdCardSensitive ? (employee?.bloodGroup || "-") : maskValue(employee?.bloodGroup, 1)}</p>
                         </div>
                       </>
                     ) : null}

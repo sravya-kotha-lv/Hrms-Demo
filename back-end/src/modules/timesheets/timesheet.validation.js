@@ -1,5 +1,7 @@
 const Joi = require("joi");
 
+const localDateSchema = Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/);
+
 const entrySchema = Joi.object({
   date: Joi.date().required(),
   hours: Joi.number().min(0).max(24).required(),
@@ -47,8 +49,12 @@ exports.bulkOverrideAttendanceSchema = Joi.object({
   employeeIds: Joi.array().items(Joi.string().required()).min(1).required()
 });
 
+exports.lockAttendanceMonthSchema = Joi.object({
+  month: Joi.string().pattern(/^\d{4}-\d{2}$/).required()
+});
+
 exports.raiseAttendanceRequestSchema = Joi.object({
-  date: Joi.date().required(),
+  date: localDateSchema.required(),
   requestType: Joi.string().valid("missed_checkout", "correction").required(),
   requestedCheckInTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).allow(null, ""),
   requestedCheckOutTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).allow(null, ""),

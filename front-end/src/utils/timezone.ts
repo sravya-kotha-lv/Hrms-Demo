@@ -24,6 +24,8 @@ export const getOrgTimeZone = () => {
 const toDate = (value: string | number | Date) =>
   value instanceof Date ? value : new Date(value);
 
+const isDateKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
 export const toDateKeyInOrgTimeZone = (value: string | number | Date) => {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: getOrgTimeZone(),
@@ -46,6 +48,23 @@ export const formatDateInOrgTimeZone = (
     timeZone: getOrgTimeZone(),
     ...options
   });
+};
+
+export const toDateKeyInOrgCalendar = (value: string | number | Date) => {
+  if (typeof value === "string" && isDateKey(value)) return value;
+  return toDateKeyInOrgTimeZone(value);
+};
+
+export const formatDateKeyInOrgCalendar = (
+  value: string | number | Date,
+  options: Intl.DateTimeFormatOptions = {}
+) => {
+  const dateKey = toDateKeyInOrgCalendar(value);
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: getOrgTimeZone(),
+    ...options
+  }).format(new Date(Date.UTC(year, month - 1, day, 12, 0, 0)));
 };
 
 export const formatTimeInOrgTimeZone = (

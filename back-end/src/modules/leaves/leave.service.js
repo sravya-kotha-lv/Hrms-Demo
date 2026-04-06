@@ -26,6 +26,7 @@ const {
   addDaysToDateKey,
   startOfDayInTimeZone,
   endOfDayInTimeZone,
+  parseMonthRangeInTimeZone,
   getDayInTimeZone
 } = require("../../utils/timezone");
 
@@ -58,6 +59,13 @@ const toDateKeyInOrgTz = (value, timeZone) =>
   /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))
     ? String(value)
     : toDateKeyInTimeZone(value, timeZone);
+
+const applyMonthFilterToQuery = (query, monthValue, timeZone = "UTC") => {
+  if (!monthValue || !/^\d{4}-\d{2}$/.test(String(monthValue))) return;
+  const monthRange = parseMonthRangeInTimeZone(String(monthValue), timeZone);
+  query.fromDate = { $lte: monthRange.end };
+  query.toDate = { $gte: monthRange.start };
+};
 
 const getApplicableLeaveDateKeys = ({
   fromDate,
@@ -498,9 +506,6 @@ exports.getApplyContext = async (req) => {
   });
   if (!employee) throw new Error("Employee not found");
   const lifecycleStatus = employee.employmentLifecycleStatus || "confirmed";
-  if (lifecycleStatus !== "confirmed") {
-    throw new Error("Only confirmed employees can apply leave");
-  }
 
   const [holidays, leaveTypes, balances, myLeaves, settings, weekOffConfigs, organizationTimeZone] = await Promise.all([
     Holiday.find({
@@ -544,8 +549,23 @@ exports.getApplyContext = async (req) => {
   const shiftWeekOffDays =
     weekOffConfigs.find((cfg) => cfg.shiftId && String(cfg.shiftId._id || cfg.shiftId) === String(employee.shiftId))?.weekOffDays ||
     defaultWeekOffDays;
+  const leaveRestriction =
+    lifecycleStatus !== "confirmed"
+      ? {
+          blocked: true,
+          reason:
+            lifecycleStatus === "probation"
+              ? "Leave types are unavailable because you are currently on probation. You can apply for leave once your employment status changes to confirmed."
+              : "Leave types are unavailable because only confirmed employees can apply for leave."
+        }
+      : {
+          blocked: false,
+          reason: ""
+        };
 
   return {
+    employeeLifecycleStatus: lifecycleStatus,
+    leaveRestriction,
     weekOffDays: shiftWeekOffDays,
     weekOffConfig: {
       defaultWeekOffDays,
@@ -563,8 +583,8 @@ exports.getApplyContext = async (req) => {
     sandwichRuleEnabled: Boolean(settings?.sandwichRuleEnabled),
     leaveApplyWindow,
     holidays: holidays.map((h) => ({ _id: h._id, name: h.name, date: h.date })),
-    leaveTypes,
-    balances: balances.map((b) => ({
+    leaveTypes: leaveRestriction.blocked ? [] : leaveTypes,
+    balances: (leaveRestriction.blocked ? [] : balances).map((b) => ({
       leaveTypeId: b.leaveTypeId?._id || b.leaveTypeId,
       leaveType: b.leaveTypeId?.name || "",
       code: b.leaveTypeId?.code || "",
@@ -574,7 +594,7 @@ exports.getApplyContext = async (req) => {
       pending: b.pending || 0,
       remaining: b.remaining
     })),
-    myLeaves: myLeaves.map((l) => ({
+    myLeaves: (leaveRestriction.blocked ? [] : myLeaves).map((l) => ({
       _id: l._id,
       leaveTypeId: l.leaveTypeId?._id || l.leaveTypeId,
       leaveType: l.leaveTypeId?.name || "",
@@ -623,6 +643,11 @@ exports.getMyLeaves = async (req) => {
 
   const query = { employeeId: employee._id };
   const statsQuery = { ...query };
+  const organizationTimeZone = req.user.organizationTimeZone || "UTC";
+
+  applyMonthFilterToQuery(query, req.query.month, organizationTimeZone);
+  applyMonthFilterToQuery(statsQuery, req.query.month, organizationTimeZone);
+
   if (req.query.status && req.query.status !== "all") {
     query.status = req.query.status;
   }
@@ -639,8 +664,13 @@ exports.getMyLeaves = async (req) => {
   const limit = Math.min(parsePositiveInt(req.query.limit, 10), 100);
   const baseQuery = Leave.find(query)
     .populate("leaveTypeId", "name code")
+    .populate("actionBy", "firstName lastName employeeCode designationId")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
-    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
+    .populate({
+      path: "approvalSteps.actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .sort({ createdAt: -1 });
 
   if (!pageRequested) {
@@ -683,6 +713,8 @@ exports.getMyLeaves = async (req) => {
 
 exports.getAllLeaves = async (req) => {
   const query = { organizationId: req.user.organizationId };
+  const requestedEmployeeId = req.query.employeeId ? String(req.query.employeeId) : "";
+  const organizationTimeZone = req.user.organizationTimeZone || "UTC";
 
   if (req.user.activeRoleId) {
     const role = await Role.findOne({
@@ -701,11 +733,24 @@ exports.getAllLeaves = async (req) => {
           organizationId: req.user.organizationId,
           managerId: managerEmployee._id
         }).distinct("_id");
-        query.employeeId = { $in: reportIds };
+        if (requestedEmployeeId) {
+          const allowed = reportIds.some((id) => String(id) === requestedEmployeeId);
+          if (!allowed) throw new Error("Access denied");
+          query.employeeId = requestedEmployeeId;
+        } else {
+          query.employeeId = { $in: reportIds };
+        }
       }
     }
   }
+
+  if (requestedEmployeeId && !query.employeeId) {
+    query.employeeId = requestedEmployeeId;
+  }
   const statsQuery = { ...query };
+
+  applyMonthFilterToQuery(query, req.query.month, organizationTimeZone);
+  applyMonthFilterToQuery(statsQuery, req.query.month, organizationTimeZone);
 
   if (req.query.status && req.query.status !== "all") {
     query.status = req.query.status;
@@ -740,8 +785,17 @@ exports.getAllLeaves = async (req) => {
   const baseQuery = Leave.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
+    .populate({
+      path: "actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
-    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
+    .populate({
+      path: "approvalSteps.actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .sort({ createdAt: -1 });
 
   if (!pageRequested) {
@@ -813,8 +867,17 @@ exports.getMyPendingApprovals = async (req) => {
   const rows = await Leave.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
+    .populate({
+      path: "actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
-    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
+    .populate({
+      path: "approvalSteps.actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .sort({ createdAt: -1 });
 
   const actorContext = await getActorApprovalContext(req);

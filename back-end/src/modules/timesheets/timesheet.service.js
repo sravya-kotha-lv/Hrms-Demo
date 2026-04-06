@@ -14,6 +14,8 @@ const AuditLog = require("../auditLogs/auditLogs.model");
 const sendMail = require("../../utils/sendMail");
 const { createNotificationSafe } = require("../notifications/notification.service");
 const Shift = require("../shifts/shift.model");
+const payrollAttendanceService = require("../payroll/payrollAttendance.service");
+const { normalizeAttendanceRequestDateKey } = require("./attendanceRequest.utils");
 const {
   resolveApplicableFlow,
   getActorApprovalContext,
@@ -374,6 +376,23 @@ const assertValidObjectIdLike = (value, fieldName) => {
   return normalized;
 };
 
+const serializeMongoIdsDeep = (value) => {
+  if (value == null) return value;
+  if (value instanceof mongoose.Types.ObjectId) return value.toString();
+  if (Array.isArray(value)) return value.map((item) => serializeMongoIdsDeep(item));
+  if (value instanceof Date) return value;
+  if (typeof value !== "object") return value;
+
+  const source = typeof value.toObject === "function" ? value.toObject() : value;
+  const output = {};
+
+  Object.keys(source).forEach((key) => {
+    output[key] = serializeMongoIdsDeep(source[key]);
+  });
+
+  return output;
+};
+
 const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asia/Kolkata") => {
   const grouped = new Map();
 
@@ -668,14 +687,30 @@ const resolveWorkedMinutes = (attendanceRow) => {
   return 0;
 };
 
-const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8 }) => {
+const resolveWorkedMinutesForMatrixStatus = (attendanceRow, now = new Date()) => {
+  const resolvedMinutes = resolveWorkedMinutes(attendanceRow);
+  if (resolvedMinutes > 0) return resolvedMinutes;
+  if (!attendanceRow?.checkInAt || attendanceRow?.checkOutAt) return 0;
+
+  const checkInAt = new Date(attendanceRow.checkInAt);
+  const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : now;
+  if (Number.isNaN(checkInAt.getTime()) || Number.isNaN(shiftEndAt.getTime())) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round((shiftEndAt.getTime() - checkInAt.getTime()) / 60000));
+};
+
+const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8, now = new Date() }) => {
   const isOpenSession = Boolean(attendanceRow?.checkInAt && !attendanceRow?.checkOutAt);
+  const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : null;
+  const shiftStillRunning = shiftEndAt && !Number.isNaN(shiftEndAt.getTime()) && now < shiftEndAt;
   if (isOpenSession) return "pending_checkout";
 
   const hasAnyAttendance = Boolean(attendanceRow?.checkInAt || attendanceRow?.checkOutAt);
   if (!hasAnyAttendance) return "absent";
 
-  const workedMinutes = resolveWorkedMinutes(attendanceRow);
+  const workedMinutes = resolveWorkedMinutesForMatrixStatus(attendanceRow, now);
   const halfDayMinutes = Math.max(0, Number(minHalfDayHours || 0) * 60);
   const fullDayMinutes = Math.max(halfDayMinutes, Number(minWorkHoursPerDay || 0) * 60);
 
@@ -857,6 +892,113 @@ const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone 
 
   if (targetKey <= lockUntilKey) {
     throw new Error(`Attendance is locked through payroll cutoff date ${lockUntilKey}`);
+  }
+};
+
+const getAttendanceLockWindowMeta = (settings, timeZone = "UTC", now = new Date()) => {
+  const today = startOfDayInTimeZone(now, timeZone);
+  const todayKey = toDateKeyInTimeZone(today, timeZone);
+  const lockEnabled = Boolean(settings?.attendanceLockEnabled);
+  const mode = settings?.attendanceLockMode || "days_window";
+
+  if (!lockEnabled) {
+    return {
+      attendanceLockEnabled: false,
+      attendanceLockMode: mode,
+      attendanceLockAfterDays: Number(settings?.attendanceLockAfterDays ?? 7),
+      payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+      todayKey,
+      lockedThroughDateKey: null
+    };
+  }
+
+  if (mode === "days_window") {
+    const attendanceLockAfterDays = Number(settings?.attendanceLockAfterDays ?? 7);
+    return {
+      attendanceLockEnabled: true,
+      attendanceLockMode: mode,
+      attendanceLockAfterDays,
+      payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+      todayKey,
+      lockedThroughDateKey: addDaysToDateKey(todayKey, -attendanceLockAfterDays)
+    };
+  }
+
+  const cutoffDay = Number(settings?.payrollCutoffDay ?? 25);
+  const currentDay = getDayInTimeZone(today, timeZone);
+  const [todayYear, todayMonth] = todayKey.split("-").map(Number);
+  const lockedThroughDateKey = currentDay > cutoffDay
+    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`
+    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
+
+  return {
+    attendanceLockEnabled: true,
+    attendanceLockMode: mode,
+    attendanceLockAfterDays: Number(settings?.attendanceLockAfterDays ?? 7),
+    payrollCutoffDay: cutoffDay,
+    todayKey,
+    lockedThroughDateKey
+  };
+};
+
+const buildLockAttendanceActionMeta = ({
+  settings,
+  monthEndDateKey,
+  pendingCheckoutCount,
+  snapshotGenerated = false,
+  timeZone,
+  now = new Date()
+}) => {
+  const windowMeta = getAttendanceLockWindowMeta(settings, timeZone, now);
+
+  if (!windowMeta.attendanceLockEnabled) {
+    return {
+      enabled: false,
+      pendingCheckoutCount,
+      lockedThroughDateKey: windowMeta.lockedThroughDateKey,
+      reason: "Attendance lock is disabled in organization settings.",
+      snapshotGenerated
+    };
+  }
+
+  if (!windowMeta.lockedThroughDateKey || monthEndDateKey > windowMeta.lockedThroughDateKey) {
+    return {
+      enabled: false,
+      pendingCheckoutCount,
+      lockedThroughDateKey: windowMeta.lockedThroughDateKey,
+      reason: `Lock date has not been crossed yet for ${monthEndDateKey}.`,
+      snapshotGenerated
+    };
+  }
+
+  if (pendingCheckoutCount < 1) {
+    return {
+      enabled: false,
+      pendingCheckoutCount,
+      lockedThroughDateKey: windowMeta.lockedThroughDateKey,
+      reason: "No pending checkout rows found for the selected month.",
+      snapshotGenerated
+    };
+  }
+
+  return {
+    enabled: true,
+    pendingCheckoutCount,
+    lockedThroughDateKey: windowMeta.lockedThroughDateKey,
+    reason: null,
+    snapshotGenerated
+  };
+};
+
+const hasPayrollSnapshotForMonth = async (req, month) => {
+  try {
+    const snapshotData = await payrollAttendanceService.listMonthlyAttendanceSnapshots({
+      user: req.user,
+      query: { month }
+    });
+    return Boolean(snapshotData?.count > 0);
+  } catch (_) {
+    return false;
   }
 };
 
@@ -1240,10 +1382,16 @@ exports.getAttendance = async (req) => {
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const start = req.query.startDate ? new Date(req.query.startDate) : new Date();
   const end = req.query.endDate ? new Date(req.query.endDate) : start;
+  const requestedEmployeeId = req.query.employeeId ? String(req.query.employeeId) : "";
 
   const startDate = startOfDayInTimeZone(start, organizationTimeZone);
   const endDate = endOfDayInTimeZone(end, organizationTimeZone);
   const employeeFilter = {};
+
+  if (requestedEmployeeId) {
+    await assertManageAccessForEmployee(req, requestedEmployeeId);
+    employeeFilter.employeeId = requestedEmployeeId;
+  }
 
   if (req.user.activeRoleId) {
     const role = await Role.findOne({
@@ -1262,7 +1410,12 @@ exports.getAttendance = async (req) => {
           organizationId: req.user.organizationId,
           managerId: managerEmployee._id
         }).distinct("_id");
-        employeeFilter.employeeId = { $in: reportIds };
+        if (requestedEmployeeId) {
+          const allowed = reportIds.some((id) => String(id) === requestedEmployeeId);
+          if (!allowed) throw new Error("Access denied");
+        } else {
+          employeeFilter.employeeId = { $in: reportIds };
+        }
       }
     }
   }
@@ -1337,6 +1490,7 @@ exports.getAttendanceMatrix = async (req) => {
       month,
       daysInMonth,
       employees: [],
+      lockAttendance: null,
       pagination: {
         total: totalEmployees,
         page,
@@ -1374,10 +1528,23 @@ exports.getAttendanceMatrix = async (req) => {
       organizationId: req.user.organizationId,
       employees
     }),
-    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("minHalfDayHours minWorkHoursPerDay")
+    OrgSettings.findOne({ organizationId: req.user.organizationId })
+      .select("minHalfDayHours minWorkHoursPerDay attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay")
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
+  const pendingCheckoutCount = attendanceRows.filter(
+    (row) => Boolean(row.checkInAt && !row.checkOutAt)
+  ).length;
+  const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
+  const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
+  const lockAttendance = buildLockAttendanceActionMeta({
+    settings: orgSettings,
+    monthEndDateKey,
+    pendingCheckoutCount,
+    snapshotGenerated,
+    timeZone: organizationTimeZone
+  });
 
   const holidayByDay = new Map();
   holidays.forEach((h) => {
@@ -1520,6 +1687,7 @@ exports.getAttendanceMatrix = async (req) => {
     month,
     daysInMonth,
     employees: data,
+    lockAttendance,
     pagination: {
       total: totalEmployees,
       page,
@@ -1566,10 +1734,23 @@ exports.getMyAttendanceMatrix = async (req) => {
       organizationId: req.user.organizationId,
       shiftId: employee.shiftId
     }),
-    OrgSettings.findOne({ organizationId: req.user.organizationId }).select("minHalfDayHours minWorkHoursPerDay")
+    OrgSettings.findOne({ organizationId: req.user.organizationId })
+      .select("minHalfDayHours minWorkHoursPerDay attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay")
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
+  const pendingCheckoutCount = attendanceRows.filter(
+    (row) => Boolean(row.checkInAt && !row.checkOutAt)
+  ).length;
+  const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
+  const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
+  const lockAttendance = buildLockAttendanceActionMeta({
+    settings: orgSettings,
+    monthEndDateKey,
+    pendingCheckoutCount,
+    snapshotGenerated,
+    timeZone: organizationTimeZone
+  });
 
   const holidayByDay = new Map();
   holidays.forEach((h) => {
@@ -1686,6 +1867,7 @@ exports.getMyAttendanceMatrix = async (req) => {
     year,
     month,
     daysInMonth,
+    lockAttendance,
     employees: [{
       employeeId: String(employee._id),
       firstName: employee.firstName,
@@ -1756,7 +1938,8 @@ exports.getMyAttendanceCellHistory = async (req) => {
 exports.raiseAttendanceRequest = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
-  const date = startOfDayInTimeZone(req.body.date, organizationTimeZone);
+  const dateKey = normalizeAttendanceRequestDateKey(req.body.date, organizationTimeZone);
+  const date = startOfDayInTimeZone(dateKey, organizationTimeZone);
   const today = startOfDayInTimeZone(new Date(), organizationTimeZone);
   if (date > today) {
     throw new Error("Attendance request date cannot be in the future");
@@ -1792,7 +1975,7 @@ exports.raiseAttendanceRequest = async (req) => {
   const existingPending = await AttendanceRequest.findOne({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date,
+    date: dateKey,
     status: "pending"
   });
   if (existingPending) {
@@ -1809,7 +1992,7 @@ exports.raiseAttendanceRequest = async (req) => {
   const request = await AttendanceRequest.create({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date,
+    date: dateKey,
     requestType,
     requestedCheckInTime,
     requestedCheckOutTime,
@@ -1829,7 +2012,7 @@ exports.raiseAttendanceRequest = async (req) => {
       actorEmployeeId: employee._id,
       type: "attendance_request_pending_approval",
       title: "Attendance request approval pending",
-      message: `${employeeName} submitted an attendance request for ${date.toDateString()}.`,
+      message: `${employeeName} submitted an attendance request for ${dateKey}.`,
       meta: {
         attendanceRequestId: request._id,
         status: request.status,
@@ -1843,13 +2026,15 @@ exports.raiseAttendanceRequest = async (req) => {
 
 exports.getMyAttendanceRequests = async (req) => {
   const employee = await getEmployeeFromReq(req);
-  return AttendanceRequest.find({
+  const rows = await AttendanceRequest.find({
     organizationId: req.user.organizationId,
     employeeId: employee._id
   })
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
+
+  return serializeMongoIdsDeep(rows);
 };
 
 exports.getAttendanceRequests = async (req) => {
@@ -1883,12 +2068,14 @@ exports.getAttendanceRequests = async (req) => {
     }
   }
 
-  return AttendanceRequest.find(query)
+  const rows = await AttendanceRequest.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("actionBy", "firstName lastName employeeCode")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
+
+  return serializeMongoIdsDeep(rows);
 };
 
 exports.getMyPendingAttendanceApprovals = async (req) => {
@@ -1926,7 +2113,7 @@ exports.getMyPendingAttendanceApprovals = async (req) => {
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 
-  return rows;
+  return serializeMongoIdsDeep(rows);
 };
 
 exports.actionAttendanceRequest = async (req) => {
@@ -2030,8 +2217,8 @@ exports.actionAttendanceRequest = async (req) => {
     return request;
   }
 
-  const attendanceDate = startOfDayInTimeZone(request.date, organizationTimeZone);
-  const attendanceDateKey = toDateKeyInTimeZone(attendanceDate, organizationTimeZone);
+  const attendanceDateKey = normalizeAttendanceRequestDateKey(request.date, organizationTimeZone);
+  const attendanceDate = startOfDayInTimeZone(attendanceDateKey, organizationTimeZone);
   const attendance = await Attendance.findOneAndUpdate(
     {
       organizationId: req.user.organizationId,
@@ -2436,6 +2623,69 @@ exports.bulkOverrideAttendance = async (req) => {
     updatedCount,
     date,
     status: req.body.status
+  };
+};
+
+exports.lockAttendanceMonth = async (req) => {
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const { start, end } = parseMonthRangeInTimeZone(req.body.month, organizationTimeZone);
+  const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
+  const settings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
+    .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay");
+  const scopedEmployeeIds = await getScopedEmployeeIdsForViewer(req);
+
+  const attendanceQuery = {
+    organizationId: req.user.organizationId,
+    date: { $gte: start, $lte: end },
+    checkInAt: { $ne: null },
+    checkOutAt: null
+  };
+
+  if (Array.isArray(scopedEmployeeIds)) {
+    attendanceQuery.employeeId = { $in: scopedEmployeeIds };
+  }
+
+  const pendingCheckoutCount = await Attendance.countDocuments(attendanceQuery);
+  const lockAttendance = buildLockAttendanceActionMeta({
+    settings,
+    monthEndDateKey,
+    pendingCheckoutCount,
+    timeZone: organizationTimeZone
+  });
+
+  if (!lockAttendance.enabled) {
+    throwHttpError(400, lockAttendance.reason || "Attendance lock action is not available yet.");
+  }
+
+  const snapshotResult = await payrollAttendanceService.generateMonthlyAttendanceSnapshots({
+    ...req,
+    body: {
+      month: req.body.month,
+      forceRebuild: true,
+      employeeIds: Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length
+        ? scopedEmployeeIds.map((id) => String(id))
+        : undefined
+    }
+  });
+
+  await audit({
+    req,
+    module: "timesheets",
+    action: "ATTENDANCE_LOCK_MONTH",
+    entityId: req.user.organizationId,
+    after: {
+      month: req.body.month,
+      pendingCheckoutCount,
+      snapshotGenerated: true
+    }
+  });
+
+  return {
+    month: req.body.month,
+    updatedCount: snapshotResult?.generatedCount || 0,
+    pendingCheckoutCount,
+    lockedThroughDateKey: lockAttendance.lockedThroughDateKey,
+    snapshotGenerated: true
   };
 };
 

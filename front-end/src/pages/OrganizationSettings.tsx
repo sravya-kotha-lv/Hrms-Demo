@@ -34,6 +34,7 @@ const OrganizationSettings = () => {
   const [attendanceLockAfterDays, setAttendanceLockAfterDays] = useState(7);
   const [attendanceLockMode, setAttendanceLockMode] = useState("payroll_cutoff");
   const [timezone, setTimezone] = useState("Asia/Kolkata");
+  const [maxActiveLoginsPerUser, setMaxActiveLoginsPerUser] = useState(1);
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
@@ -67,6 +68,9 @@ const OrganizationSettings = () => {
       );
       setAttendanceLockMode(res.data?.attendanceLockMode || "payroll_cutoff");
       setTimezone(res.data?.timezone || "Asia/Kolkata");
+      setMaxActiveLoginsPerUser(
+        typeof res.data?.maxActiveLoginsPerUser === "number" ? res.data.maxActiveLoginsPerUser : 1
+      );
       if (res.data?.timezone) {
         setOrgTimeZone(res.data.timezone);
       }
@@ -130,6 +134,7 @@ const OrganizationSettings = () => {
         attendanceLockAfterDays: Number(attendanceLockAfterDays),
         attendanceLockMode,
         timezone,
+        maxActiveLoginsPerUser: Number(maxActiveLoginsPerUser || 1),
         payrollCutoffDay: Number(payrollCutoffDay),
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours),
@@ -348,6 +353,21 @@ const OrganizationSettings = () => {
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   Attendance boundaries use this timezone. Timestamps remain stored in UTC.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Max Active Logins Per User</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={maxActiveLoginsPerUser}
+                  onChange={(e) => setMaxActiveLoginsPerUser(Number(e.target.value))}
+                  disabled={!canManage}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Limits how many devices a user can stay logged into at the same time for this organization.
                 </p>
               </div>
 

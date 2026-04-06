@@ -1,4 +1,5 @@
 const Joi = require("joi");
+const { getDefaultMaxActiveLoginsPerUser } = require("../../utils/orgSettingsDefaults");
 
 exports.upsertOrgSettingsSchema = Joi.object({
   leaveCreditFrequency: Joi.string().valid("monthly", "quarterly", "yearly").required(),
@@ -21,5 +22,6 @@ exports.upsertOrgSettingsSchema = Joi.object({
   attendanceDevBypassEnabled: Joi.boolean().default(false),
   probationPeriodDays: Joi.number().integer().min(0).max(3650).default(90),
   noticePeriodDays: Joi.number().integer().min(0).max(3650).default(30),
-  employeeIdPrefix: Joi.string().trim().max(10).allow("").default("")
+  employeeIdPrefix: Joi.string().trim().max(10).allow("").default(""),
+  maxActiveLoginsPerUser: Joi.number().integer().min(1).max(20).default(getDefaultMaxActiveLoginsPerUser())
 });

@@ -87,6 +87,14 @@ type MatrixPagination = {
   totalPages: number;
 };
 
+type LockAttendanceMeta = {
+  enabled: boolean;
+  pendingCheckoutCount: number;
+  lockedThroughDateKey: string | null;
+  reason: string | null;
+  snapshotGenerated?: boolean;
+};
+
 const toEmployeeIdString = (value: unknown): string => {
   if (!value) return "";
   if (typeof value === "string") return value;
@@ -168,6 +176,40 @@ const emptyCell: DayCell = {
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
+const getAttendanceStatus = (dayData: {
+  isHoliday: boolean;
+  isWeekOff: boolean;
+  leaveType: string | null;
+  attendanceStatus: DayCell["status"];
+  isFuture?: boolean;
+  snapshotGenerated?: boolean;
+}) => {
+  const { isHoliday, isWeekOff, leaveType, attendanceStatus, isFuture = false, snapshotGenerated = false } = dayData;
+
+  if (isHoliday) return "Holiday";
+  if (isWeekOff) return "Week Off";
+  if (leaveType) return "Leave";
+  if (isFuture) return "Future";
+  if (attendanceStatus === "pending_checkout" && snapshotGenerated) return "Absent";
+  if (attendanceStatus === "pending_checkout") return "Pending Checkout";
+  if (attendanceStatus === "full_day_present" || attendanceStatus === "present") return "Present";
+  if (attendanceStatus === "half_day_present") return "Half Day";
+  return "Absent";
+};
+
+const toLeaveShortLabel = (leaveType: string | null) => {
+  const normalized = String(leaveType || "").trim();
+  if (!normalized) return "L";
+  const compact = normalized.replace(/[^a-zA-Z]/g, "").toUpperCase();
+  if (compact.length >= 2 && compact.length <= 4) return compact;
+  const initials = normalized
+    .split(/\s+/)
+    .map((part) => part[0] || "")
+    .join("")
+    .toUpperCase();
+  return initials || "L";
+};
+
 const toOrgDateKey = (value: string | number | Date) => {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: getOrgTimeZone(),
@@ -203,6 +245,8 @@ const Attendance = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [pagination, setPagination] = useState<MatrixPagination | null>(null);
+  const [lockAttendanceMeta, setLockAttendanceMeta] = useState<LockAttendanceMeta | null>(null);
+  const [lockingAttendance, setLockingAttendance] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"employeeCode" | "firstName">("employeeCode");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -254,6 +298,7 @@ const Attendance = () => {
       setRows((prev) => (canViewAll && currentPage > 1 ? mergeAttendancePages(prev, nextRows) : nextRows));
       setDaysInMonth(res.data?.daysInMonth || 31);
       setPagination(res.data?.pagination || null);
+      setLockAttendanceMeta(res.data?.lockAttendance || null);
       if (currentPage === 1) {
         setSelectedEmployeeIds((prev) => {
           const validIds = new Set(nextRows.map((e: EmployeeRow) => e.employeeId));
@@ -410,16 +455,15 @@ const Attendance = () => {
 
   const formatHoverInfo = (cell: DayCell) => {
     const parts: string[] = [];
-    const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
-    const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
-    const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName);
-    if (cell.status === "pending_checkout") {
-      parts.push("Status: Pending checkout");
-    } else if (cell.status === "half_day_present") {
-      parts.push("Status: Half day present");
-    } else if (cell.status === "full_day_present") {
-      parts.push("Status: Full day present");
-    }
+    const resolvedStatus = getAttendanceStatus({
+      isHoliday: Boolean(cell.holidayName),
+      isWeekOff: cell.isWeekOff,
+      leaveType: cell.leaveType,
+      attendanceStatus: cell.status,
+      snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
+    });
+    const hideTimings = resolvedStatus === "Leave" || resolvedStatus === "Holiday";
+    if (resolvedStatus !== "Absent") parts.push(`Status: ${resolvedStatus}`);
     if (cell.excludeFromPayroll) {
       parts.push("Excluded from payroll until checkout is completed");
     }
@@ -465,76 +509,62 @@ const Attendance = () => {
   };
 
   const getCellUi = (cell: DayCell, isFuture = false) => {
-    const isFullDayPresent = cell.status === "full_day_present";
-    const isHalfDayPresent = cell.status === "half_day_present";
-    const isPresent = isPresentLikeStatus(cell.status);
-    const isPendingCheckout = cell.status === "pending_checkout";
-    const isLeave = cell.isOnLeave;
-    const isPartialLeaveWithAttendance = isLeave && (isPresent || isPendingCheckout);
-    const isWeekOff = cell.isWeekOff;
-    const isHoliday = Boolean(cell.holidayName);
+    const resolvedStatus = getAttendanceStatus({
+      isHoliday: Boolean(cell.holidayName),
+      isWeekOff: cell.isWeekOff,
+      leaveType: cell.leaveType,
+      attendanceStatus: cell.status,
+      isFuture,
+      snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
+    });
 
-    if (isPartialLeaveWithAttendance) {
-      return {
-        label: "Present + Leave",
-        shortLabel: "PL",
-        className: "bg-indigo-100 text-indigo-700 border-indigo-300"
-      };
-    }
-    if (isHoliday) {
+    if (resolvedStatus === "Holiday") {
       return {
         label: "Holiday",
         shortLabel: "H",
         className: "bg-amber-100 text-amber-700 border-amber-300"
       };
     }
-    if (isWeekOff) {
+    if (resolvedStatus === "Week Off") {
       return {
         label: "Week Off",
         shortLabel: "W",
         className: "bg-sky-100 text-sky-700 border-sky-300"
       };
     }
-    if (isFuture) {
+    if (resolvedStatus === "Future") {
       return {
         label: "Not Marked",
         shortLabel: "-",
         className: "bg-slate-100 text-slate-500 border-slate-200"
       };
     }
-    if (isLeave) {
+    if (resolvedStatus === "Leave") {
       return {
-        label: "Leave",
-        shortLabel: "L",
+        label: cell.leaveType || "Leave",
+        shortLabel: toLeaveShortLabel(cell.leaveType),
         className: "bg-violet-100 text-violet-700 border-violet-300"
       };
     }
-    if (isPendingCheckout) {
+    if (resolvedStatus === "Pending Checkout") {
       return {
         label: "Pending Checkout",
         shortLabel: "PC",
         className: "bg-orange-100 text-orange-700 border-orange-300"
       };
     }
-    if (isFullDayPresent) {
-      return {
-        label: "Full Day Present",
-        shortLabel: "P",
-        className: "bg-emerald-100 text-emerald-700 border-emerald-300"
-      };
-    }
-    if (isHalfDayPresent) {
-      return {
-        label: "Half Day Present",
-        shortLabel: "HP",
-        className: "bg-lime-100 text-lime-700 border-lime-300"
-      };
-    }
-    if (isPresent) {
+    if (resolvedStatus === "Present") {
       return {
         label: "Present",
         shortLabel: "P",
         className: "bg-emerald-100 text-emerald-700 border-emerald-300"
+      };
+    }
+    if (resolvedStatus === "Half Day") {
+      return {
+        label: "Half Day",
+        shortLabel: "HP",
+        className: "bg-lime-100 text-lime-700 border-lime-300"
       };
     }
     return {
@@ -558,34 +588,42 @@ const Attendance = () => {
         continue;
       }
       const cell = row.days?.[day] || emptyCell;
+      const resolvedStatus = getAttendanceStatus({
+        isHoliday: Boolean(cell.holidayName),
+        isWeekOff: cell.isWeekOff,
+        leaveType: cell.leaveType,
+        attendanceStatus: cell.status,
+        snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
+      });
+
       if (cell.checkInSelfieProvided) {
         selfieDays += 1;
       }
-      if (cell.status === "pending_checkout") {
+      if (resolvedStatus === "Pending Checkout") {
         pendingCheckoutDays += 1;
         if (cell.excludeFromPayroll) {
           payrollExcludedDays += 1;
         }
         continue;
       }
-      if (cell.status === "half_day_present") {
+      if (resolvedStatus === "Half Day") {
         presentDays += 0.5;
         absentDays += 0.5;
         continue;
       }
-      if (cell.status === "full_day_present" || cell.status === "present") {
+      if (resolvedStatus === "Present") {
         presentDays += 1;
         continue;
       }
-      if (cell.isOnLeave) {
+      if (resolvedStatus === "Leave") {
         onLeaveDays += 1;
         continue;
       }
-      if (cell.isWeekOff) {
+      if (resolvedStatus === "Week Off") {
         weekOffDays += 1;
         continue;
       }
-      if (cell.holidayName) {
+      if (resolvedStatus === "Holiday") {
         holidayDays += 1;
         continue;
       }
@@ -656,6 +694,33 @@ const Attendance = () => {
     URL.revokeObjectURL(url);
   };
 
+  const runLockAttendance = async () => {
+    if (!canEdit || !lockAttendanceMeta?.enabled || lockingAttendance) return;
+    const confirmed = window.confirm(
+      `Lock attendance for ${month} and generate the payroll snapshot now? Pending checkout day(s) will be treated as absent inside payroll calculations until attendance is corrected and the snapshot is regenerated.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setLockingAttendance(true);
+      const res = await postApiWithToken(
+        "/timesheets/attendance/matrix/lock-month",
+        { month },
+        null,
+        { requiredPermissions: ["ATTENDANCE_MANAGE"] }
+      );
+      if (res?.skipped) return;
+      if (!res?.success) {
+        toast.error(res?.message || "Failed to lock attendance");
+        return;
+      }
+      toast.success(`Payroll attendance snapshot generated for ${month}.`);
+      await fetchMatrix();
+    } finally {
+      setLockingAttendance(false);
+    }
+  };
+
   const toggleEmployeeSelection = (employeeId: string) => {
     const normalizedEmployeeId = toEmployeeIdString(employeeId).trim();
     if (!normalizedEmployeeId) return;
@@ -720,6 +785,7 @@ const Attendance = () => {
   );
   const weekDayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const summaryColumnCount = canViewSelfieData ? 8 : 7;
+  const loadingRowCount = 6;
 
   return (
     <MainLayout
@@ -805,7 +871,7 @@ const Attendance = () => {
                         const cellUi = getCellUi(cell, isFuture);
                         const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
                         const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
-                        const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName);
+                        const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName) || cell.isWeekOff;
                         return (
                           <HoverCard key={day} openDelay={120} closeDelay={80}>
                             <HoverCardTrigger asChild>
@@ -824,6 +890,8 @@ const Attendance = () => {
                                     <p>
                                       {cell.holidayName
                                         ? `Holiday: ${cell.holidayName}`
+                                        : cell.isWeekOff
+                                          ? "Week Off"
                                         : `Leave: ${cell.leaveType || "Approved leave"}`}
                                     </p>
                                   ) : (
@@ -926,11 +994,30 @@ const Attendance = () => {
                     <Button variant="outline" className="bg-white/90" onClick={fetchMatrix}>
                       Refresh
                     </Button>
+                    {canEdit && (
+                      <Button
+                        className="bg-slate-900 text-white hover:bg-slate-800"
+                        onClick={runLockAttendance}
+                        disabled={!lockAttendanceMeta?.enabled || lockingAttendance}
+                        title={lockAttendanceMeta?.reason || undefined}
+                      >
+                        {lockingAttendance
+                          ? "Locking..."
+                          : `Lock Attendance${lockAttendanceMeta?.pendingCheckoutCount ? ` (${lockAttendanceMeta.pendingCheckoutCount})` : ""}`}
+                      </Button>
+                    )}
                     <Button variant="outline" className="bg-white/90" onClick={downloadCsv}>
                       Export CSV
                     </Button>
                   </div>
                 </div>
+                {canEdit && lockAttendanceMeta && (
+                  <div className="mt-3 text-xs text-slate-600">
+                    {lockAttendanceMeta.enabled
+                      ? `Lock date crossed. You can generate the payroll attendance snapshot for ${month}. Pending checkout day(s): ${lockAttendanceMeta.pendingCheckoutCount}.`
+                      : (lockAttendanceMeta.reason || "Attendance lock action is not available yet.")}
+                  </div>
+                )}
 
                 {canEdit && (
                   <div
@@ -970,6 +1057,42 @@ const Attendance = () => {
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white/95 shadow-sm overflow-hidden flex flex-col min-h-0 lg:h-[calc(100vh-290px)]">
+                <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-emerald-500" />
+                      Full Day Present
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-lime-200 bg-lime-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-lime-500" />
+                      Half Day Present
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-orange-500" />
+                      Pending Checkout
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-rose-500" />
+                      Absent
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-sky-500" />
+                      Week Off
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-violet-500" />
+                      Approved Leave
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-indigo-500" />
+                      Present + Leave
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-amber-500" />
+                      Holiday
+                    </div>
+                  </div>
+                </div>
                 <div
                   ref={tableViewportRef}
                   onScroll={handleMatrixScroll}
@@ -1035,7 +1158,7 @@ const Attendance = () => {
                       <tr>
                         <td colSpan={daysInMonth + summaryColumnCount + (canEdit ? 1 : 0)} className="p-3">
                           <div className="space-y-2">
-                            {Array.from({ length: 6 }).map((_, idx) => (
+                            {Array.from({ length: loadingRowCount }).map((_, idx) => (
                               <Skeleton key={`attendance-row-skeleton-${idx}`} className="h-10 w-full rounded-md" />
                             ))}
                           </div>
@@ -1124,6 +1247,17 @@ const Attendance = () => {
                         })()}
                       </tr>
                     ))}
+                    {loadingMore && rows.length > 0 && (
+                      <>
+                        {Array.from({ length: 3 }).map((_, idx) => (
+                          <tr key={`attendance-loading-more-${idx}`} className="border-b border-slate-100">
+                            <td colSpan={daysInMonth + summaryColumnCount + (canEdit ? 1 : 0)} className="p-3">
+                              <Skeleton className="h-10 w-full rounded-md" />
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
                   </tbody>
                   </table>
                 </div>
@@ -1158,41 +1292,6 @@ const Attendance = () => {
                   </div>
                 </div>
               )}
-
-              <div className="flex flex-wrap items-center gap-2 text-xs mt-3">
-                <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-emerald-500" />
-                  Full Day Present
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-lime-200 bg-lime-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-lime-500" />
-                  Half Day Present
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-orange-500" />
-                  Pending Checkout
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-rose-500" />
-                  Absent
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-sky-500" />
-                  Week Off
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-violet-500" />
-                  Approved Leave
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-indigo-500" />
-                  Present + Leave
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded bg-amber-500" />
-                  Holiday
-                </div>
-              </div>
             </>
           )}
         </>

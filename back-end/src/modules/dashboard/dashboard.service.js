@@ -100,10 +100,62 @@ const buildLeaveIndex = (leaves, timeZone, fromKey, toKey) => {
   return index;
 };
 
+const getAttendanceAnchorDateKey = (row, timeZone) => {
+  const anchorDate = row?.checkInAt || row?.checkOutAt || row?.date || row?.createdAt;
+  return anchorDate ? toDateKeyInTimeZone(anchorDate, timeZone) : null;
+};
+
+const isAttendanceRowRelevantForToday = (row, { timeZone, todayKey }) => {
+  const anchorDateKey = getAttendanceAnchorDateKey(row, timeZone);
+  if (!anchorDateKey) return false;
+  if (anchorDateKey === todayKey) return true;
+
+  const scheduledEndDateKey = row?.scheduledEndAt
+    ? toDateKeyInTimeZone(row.scheduledEndAt, timeZone)
+    : anchorDateKey;
+  const isOvernightShift = Boolean(row?.scheduledEndAt && scheduledEndDateKey !== anchorDateKey);
+
+  if (isOvernightShift && scheduledEndDateKey === todayKey) {
+    return true;
+  }
+
+  return false;
+};
+
+const buildDashboardTodayAttendance = ({ rows, activeEmployeeIds, timeZone, todayKey }) => {
+  const bestRows = new Map();
+
+  for (const row of rows || []) {
+    const employeeId = getEmployeeExternalId(row?.employeeId);
+    if (!employeeId || !activeEmployeeIds.has(employeeId)) continue;
+    if (!isAttendanceRowRelevantForToday(row, { timeZone, todayKey })) continue;
+
+    const anchorDateKey = getAttendanceAnchorDateKey(row, timeZone);
+    const scheduledEndDateKey = row?.scheduledEndAt
+      ? toDateKeyInTimeZone(row.scheduledEndAt, timeZone)
+      : anchorDateKey;
+    const isOvernightShift = Boolean(row?.scheduledEndAt && scheduledEndDateKey !== anchorDateKey);
+
+    const score = anchorDateKey === todayKey
+      ? 3
+      : isOvernightShift && scheduledEndDateKey === todayKey
+        ? 2
+        : 1;
+
+    const existing = bestRows.get(employeeId);
+    if (!existing || score > existing.score) {
+      bestRows.set(employeeId, { score, row });
+    }
+  }
+
+  return Array.from(bestRows.values()).map((entry) => entry.row);
+};
+
 const buildDashboardStats = ({
   employees,
   attendanceToday,
   attendanceLast7,
+  attendanceLast30,
   leaveList,
   holidays,
   weekOffMap,
@@ -117,7 +169,9 @@ const buildDashboardStats = ({
     (attendanceToday || []).map((row) => [String(row.employeeId?._id || row.employeeId), row])
   );
   const start7Key = addDaysToDateKey(todayKey, -6);
+  const start30Key = addDaysToDateKey(todayKey, -29);
   const leaveIndex = buildLeaveIndex(leaveList, timeZone, start7Key, todayKey);
+  const leaveIndex30 = buildLeaveIndex(leaveList, timeZone, start30Key, todayKey);
   const attendanceLast7Map = new Map(
     (attendanceLast7 || []).map((row) => {
       const employeeId = String(row.employeeId?._id || row.employeeId);
@@ -125,6 +179,14 @@ const buildDashboardStats = ({
       return [`${employeeId}-${dateKey}`, row];
     })
   );
+  const attendanceLast30Map = new Map(
+    (attendanceLast30 || []).map((row) => {
+      const employeeId = String(row.employeeId?._id || row.employeeId);
+      const dateKey = toDateKeyInTimeZone(row.checkInAt || row.checkOutAt || row.date, timeZone);
+      return [`${employeeId}-${dateKey}`, row];
+    })
+  );
+  const now = new Date();
 
   const todayStatusList = (employees || []).map((employee) => {
     const employeeId = String(employee._id);
@@ -137,7 +199,13 @@ const buildDashboardStats = ({
       && isApprovedLeaveOnDate(leave, todayKey, timeZone)
     );
     const hasAttendance = Boolean(attendance?.checkInAt || attendance?.checkOutAt);
-    const isPendingCheckout = Boolean(attendance?.checkInAt && !attendance?.checkOutAt);
+    const scheduledEndAt = attendance?.scheduledEndAt ? new Date(attendance.scheduledEndAt) : null;
+    const isShiftCompleted = Boolean(
+      scheduledEndAt
+      && !Number.isNaN(scheduledEndAt.getTime())
+      && now >= scheduledEndAt
+    );
+    const isPendingCheckout = Boolean(attendance?.checkInAt && !attendance?.checkOutAt && isShiftCompleted);
     const countAsAbsent = !holidayName
       && !isWeekOff
       && !isOnLeave
@@ -162,7 +230,7 @@ const buildDashboardStats = ({
 
   const kpis = {
     totalEmployees: employees.length,
-    presentToday: todayStatusList.filter((item) => item.present).length,
+    presentToday: todayStatusList.filter((item) => item.present && !item.pendingCheckout).length,
     absentToday: todayStatusList.filter((item) => item.absent).length,
     checkedInOnly: todayStatusList.filter((item) => item.pendingCheckout).length,
     lateArrivals: todayStatusList.filter((item) => item.present && item.lateByMinutes > 0).length,
@@ -232,13 +300,49 @@ const buildDashboardStats = ({
     };
   });
 
+  const attendanceTrendMonthly = Array.from({ length: 30 }).map((_, idx) => {
+    const key = addDaysToDateKey(start30Key, idx);
+    let present = 0;
+    let absent = 0;
+    let excluded = 0;
+
+    (employees || []).forEach((employee) => {
+      const employeeId = String(employee._id);
+      const holidayName = holidayKeyMap.get(key) || null;
+      const employeeWeekOffDays = weekOffMap.employeeMap.get(employeeId) || weekOffMap.defaultDays || [];
+      const isWeekOff = employeeWeekOffDays.includes(getWeekdayForDateKey(key, timeZone));
+      const isOnLeave = leaveIndex30.has(`${employeeId}-${key}`);
+      const attendance = attendanceLast30Map.get(`${employeeId}-${key}`) || null;
+
+      if (holidayName || isWeekOff || isOnLeave) {
+        excluded += 1;
+        return;
+      }
+
+      if (attendance?.checkInAt || attendance?.checkOutAt) {
+        present += 1;
+        return;
+      }
+
+      absent += 1;
+    });
+
+    return {
+      key,
+      present,
+      absent,
+      excluded
+    };
+  });
+
   return {
     todayStatusList,
     dashboardStats: {
       kpis,
       monthDaySummary,
       departmentAnalytics,
-      attendanceTrend
+      attendanceTrend,
+      attendanceTrendMonthly
     }
   };
 };
@@ -264,6 +368,7 @@ exports.getSummary = async (req) => {
     employeesData,
     attendanceToday,
     attendanceLast7,
+    attendanceLast30,
     leaveList,
     weeklyList,
     holidays,
@@ -279,6 +384,9 @@ exports.getSummary = async (req) => {
     canViewAttendance
       ? TimesheetService.getAttendance(withQuery(req, { startDate: start7Key, endDate: todayKey }))
       : Promise.resolve([]),
+    canViewAttendance
+      ? TimesheetService.getAttendance(withQuery(req, { startDate: addDaysToDateKey(todayKey, -29), endDate: todayKey }))
+      : Promise.resolve([]),
     canViewLeaves
       ? LeaveService.getAllLeaves(req)
       : Promise.resolve([]),
@@ -288,7 +396,8 @@ exports.getSummary = async (req) => {
     canViewHolidays
       ? Holiday.find({
         organizationId: req.user.organizationId,
-        year
+        year,
+        status: "active"
       }).sort({ date: 1 })
       : Promise.resolve([]),
     canViewOrgSettings
@@ -308,9 +417,11 @@ exports.getSummary = async (req) => {
     : { defaultDays: [], employeeMap: new Map() };
   const activeEmployeeIds = new Set(activeEmployees.map((employee) => String(employee._id)));
 
-  const activeAttendanceToday = (attendanceToday || []).filter((row) => {
-    const employeeId = getEmployeeExternalId(row?.employeeId);
-    return Boolean(employeeId && activeEmployeeIds.has(employeeId));
+  const activeAttendanceToday = buildDashboardTodayAttendance({
+    rows: [...(attendanceToday || []), ...(attendanceLast7 || [])],
+    activeEmployeeIds,
+    timeZone,
+    todayKey
   });
 
   const activeAttendanceLast7 = (attendanceLast7 || []).filter((row) => {
@@ -332,6 +443,10 @@ exports.getSummary = async (req) => {
     employees: activeEmployees,
     attendanceToday: activeAttendanceToday,
     attendanceLast7: activeAttendanceLast7,
+    attendanceLast30: (attendanceLast30 || []).filter((row) => {
+      const employeeId = getEmployeeExternalId(row?.employeeId);
+      return Boolean(employeeId && activeEmployeeIds.has(employeeId));
+    }),
     leaveList: activeLeaves,
     holidays: holidays || [],
     weekOffMap: weekOffMap || { defaultDays: [], employeeMap: new Map() },

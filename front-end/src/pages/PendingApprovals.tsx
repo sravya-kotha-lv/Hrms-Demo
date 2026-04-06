@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
-import { formatDateInOrgTimeZone } from "@/utils/timezone";
+import { formatDateInOrgTimeZone, formatDateKeyInOrgCalendar, toDateKeyInOrgCalendar } from "@/utils/timezone";
 
 const toIdString = (value: unknown): string => {
   if (!value) return "";
@@ -30,6 +30,8 @@ const toIdString = (value: unknown): string => {
     if (record.id) return toIdString(record.id);
     if (typeof record.$oid === "string") return record.$oid;
     if (record.buffer) return toIdString(record.buffer);
+    if (record.type === "Buffer" && record.data) return toIdString(record.data);
+    if (Array.isArray(record.data)) return toIdString(record.data);
     if (typeof (record as { toHexString?: unknown }).toHexString === "function") {
       return String((record as { toHexString: () => string }).toHexString());
     }
@@ -39,6 +41,18 @@ const toIdString = (value: unknown): string => {
     }
   }
   return String(value);
+};
+
+const getAttendanceRequestId = (request: any) => toIdString(request?._actionId || request?._id || request?.id || request);
+
+const normalizeAttendanceRequestRecord = (row: any) => {
+  const requestId = getAttendanceRequestId(row);
+  return {
+    ...row,
+    date: row?.date ? toDateKeyInOrgCalendar(row.date) : row?.date,
+    _id: requestId,
+    _actionId: requestId
+  };
 };
 
 const getStatusBadge = (status: string) => {
@@ -83,10 +97,7 @@ const PendingApprovals = () => {
     });
     if (attendanceRes?.success) {
       setAttendanceRows(
-        (attendanceRes.data || []).map((row: any) => ({
-          ...row,
-          _actionId: toIdString(row?._id || row?.id)
-        }))
+        (attendanceRes.data || []).map((row: any) => normalizeAttendanceRequestRecord(row))
       );
     } else {
       setAttendanceRows([]);
@@ -140,7 +151,7 @@ const PendingApprovals = () => {
   };
 
   const actionAttendance = async (requestRow: any, status: "approved" | "rejected") => {
-    const id = toIdString(requestRow);
+    const id = getAttendanceRequestId(requestRow);
     if (!id || id === "[object Object]") {
       toast.error("Invalid attendance request id");
       return;
@@ -289,7 +300,7 @@ const PendingApprovals = () => {
                           ? `${row.employeeId.firstName || ""} ${row.employeeId.lastName || ""}`.trim()
                           : "-"}
                       </TableCell>
-                      <TableCell>{formatDateInOrgTimeZone(row.date)}</TableCell>
+                      <TableCell>{formatDateKeyInOrgCalendar(row.date)}</TableCell>
                       <TableCell className="capitalize">{String(row.requestType || "").replace("_", " ")}</TableCell>
                       <TableCell>{row.requestedCheckInTime || "-"} / {row.requestedCheckOutTime || "-"}</TableCell>
                       <TableCell>{getStatusBadge(row.status)}</TableCell>

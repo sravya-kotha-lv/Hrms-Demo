@@ -46,7 +46,16 @@ module.exports = async (req, res, next) => {
       });
     }
 
-    if (!user.tokenList?.[0] || user.tokenList[0].token !== token) {
+    const hasMatchingActiveToken = Array.isArray(user.tokenList) && user.tokenList.some((entry) => {
+      if (!entry?.token || entry.token !== token) return false;
+      if (entry.status && entry.status !== "active") return false;
+      if (decoded.organizationId && entry.organizationId) {
+        return String(entry.organizationId) === String(decoded.organizationId);
+      }
+      return true;
+    });
+
+    if (!hasMatchingActiveToken) {
       return res.status(401).json({
         success: false,
         code: 401,
