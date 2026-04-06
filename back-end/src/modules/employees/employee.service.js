@@ -5,6 +5,7 @@ const OrgUser = require("../organizations/org-user.model");
 const Employee = require("./employee.model");
 const OrganizationService = require('../organizations/organization.service');
 const Role = require("../roles/role.model");
+const ApprovalFlow = require("../approvalFlows/approvalFlow.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
 const { getPayrollPgPool } = require("../../config/payrollDb");
 const { genHashedPassword } = require("../../utils/bcryptUtils");
@@ -70,6 +71,8 @@ exports.createByHr = async (req) => {
       dateOfJoining,
       employmentType,
       managerId,
+      leaveApprovalFlowId,
+      attendanceApprovalFlowId,
       shiftId
     } = req.body;
 
@@ -160,6 +163,16 @@ exports.createByHr = async (req) => {
       probationPeriodDays: orgSettings?.probationPeriodDays,
       noticePeriodDays: orgSettings?.noticePeriodDays
     });
+    const resolvedLeaveApprovalFlowId = await resolveAssignedApprovalFlowId({
+      organizationId,
+      moduleKey: "leave",
+      flowId: leaveApprovalFlowId
+    });
+    const resolvedAttendanceApprovalFlowId = await resolveAssignedApprovalFlowId({
+      organizationId,
+      moduleKey: "attendance_request",
+      flowId: attendanceApprovalFlowId
+    });
 
     const [employee] = useSession
       ? await Employee.create(
@@ -175,6 +188,8 @@ exports.createByHr = async (req) => {
               dateOfJoining,
               employmentType,
               managerId,
+              leaveApprovalFlowId: resolvedLeaveApprovalFlowId,
+              attendanceApprovalFlowId: resolvedAttendanceApprovalFlowId,
               shiftId: shiftId || undefined,
               profileCompleted: false,
               ...lifecyclePayload
@@ -194,6 +209,8 @@ exports.createByHr = async (req) => {
             dateOfJoining,
             employmentType,
             managerId,
+            leaveApprovalFlowId: resolvedLeaveApprovalFlowId,
+            attendanceApprovalFlowId: resolvedAttendanceApprovalFlowId,
             shiftId: shiftId || undefined,
             profileCompleted: false,
             ...lifecyclePayload
@@ -394,6 +411,31 @@ const buildProbationLifecyclePayload = ({
   };
 };
 
+const resolveAssignedApprovalFlowId = async ({
+  organizationId,
+  moduleKey,
+  flowId
+}) => {
+  if (!flowId) return null;
+
+  const flow = await ApprovalFlow.findOne({
+    _id: flowId,
+    organizationId,
+    moduleKey,
+    isActive: true
+  }).select("_id");
+
+  if (!flow) {
+    const moduleLabel = moduleKey === "leave" ? "leave" : "attendance request";
+    throw {
+      code: 400,
+      message: `Selected ${moduleLabel} approval flow is invalid or inactive`
+    };
+  }
+
+  return flow._id;
+};
+
 const applyLifecycleChange = (employee, nextLifecycleStatus) => {
   if (!nextLifecycleStatus) return;
 
@@ -470,6 +512,8 @@ const buildEmployeeResponse = async ({ employeeId, organizationId }) => {
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
+    .populate("leaveApprovalFlowId", "name moduleKey")
+    .populate("attendanceApprovalFlowId", "name moduleKey")
     .populate("shiftId", "name code startTime endTime graceMinutes status")
     .populate("userId", "email");
 
@@ -721,6 +765,8 @@ exports.listByOrganization = async (req) => {
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
+    .populate("leaveApprovalFlowId", "name moduleKey")
+    .populate("attendanceApprovalFlowId", "name moduleKey")
     .populate("shiftId", "name code startTime endTime graceMinutes status")
     .populate("userId", "email")
     .sort({ [sortField]: sortDirection, createdAt: -1 });
@@ -778,6 +824,8 @@ exports.exportCsv = async (req, res) => {
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
+    .populate("leaveApprovalFlowId", "name moduleKey")
+    .populate("attendanceApprovalFlowId", "name moduleKey")
     .populate("shiftId", "name")
     .populate("userId", "email")
     .sort({ [sortField]: sortDirection, createdAt: -1 })
@@ -914,6 +962,8 @@ exports.getById = async (req) => {
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
+    .populate("leaveApprovalFlowId", "name moduleKey")
+    .populate("attendanceApprovalFlowId", "name moduleKey")
     .populate("shiftId", "name code startTime endTime graceMinutes status")
     .populate("userId", "email");
 
@@ -969,6 +1019,8 @@ exports.getMe = async (req) => {
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
+    .populate("leaveApprovalFlowId", "name moduleKey")
+    .populate("attendanceApprovalFlowId", "name moduleKey")
     .populate("shiftId", "name code startTime endTime graceMinutes status");
 
   if (!employee) {
@@ -982,6 +1034,8 @@ exports.getMe = async (req) => {
       employmentType: "",
       dateOfJoining: null,
       managerId: null,
+      leaveApprovalFlowId: null,
+      attendanceApprovalFlowId: null,
       shiftId: null,
       profileCompleted: false,
       profileImage: null,
@@ -1023,6 +1077,8 @@ exports.updateByHr = async (req) => {
     status,
     employmentLifecycleStatus,
     managerId,
+    leaveApprovalFlowId,
+    attendanceApprovalFlowId,
     shiftId,
     dob,
     gender,
@@ -1077,6 +1133,21 @@ exports.updateByHr = async (req) => {
     employee.probationEndDate = addDays(dateOfJoining, probationDays);
   }
 
+  const resolvedLeaveApprovalFlowId = leaveApprovalFlowId !== undefined
+    ? await resolveAssignedApprovalFlowId({
+        organizationId,
+        moduleKey: "leave",
+        flowId: leaveApprovalFlowId
+      })
+    : undefined;
+  const resolvedAttendanceApprovalFlowId = attendanceApprovalFlowId !== undefined
+    ? await resolveAssignedApprovalFlowId({
+        organizationId,
+        moduleKey: "attendance_request",
+        flowId: attendanceApprovalFlowId
+      })
+    : undefined;
+
   const updates = {
     firstName: firstName !== undefined ? toNameCase(firstName) : undefined,
     lastName: lastName !== undefined ? toNameCase(lastName) : undefined,
@@ -1088,6 +1159,8 @@ exports.updateByHr = async (req) => {
     employmentType,
     status,
     managerId,
+    leaveApprovalFlowId: resolvedLeaveApprovalFlowId,
+    attendanceApprovalFlowId: resolvedAttendanceApprovalFlowId,
     shiftId,
     dob,
     gender,

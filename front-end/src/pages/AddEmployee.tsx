@@ -84,6 +84,8 @@ const emptyForm = {
   departmentId: "",
   designationId: "",
   managerId: "",
+  leaveApprovalFlowId: "",
+  attendanceApprovalFlowId: "",
   shiftId: "",
   roleIds: [] as string[],
   employmentType: "",
@@ -120,6 +122,8 @@ const AddEmployee = () => {
   const [designations, setDesignations] = useState<Option[]>([]);
   const [roles, setRoles] = useState<Option[]>([]);
   const [managers, setManagers] = useState<Option[]>([]);
+  const [leaveApprovalFlows, setLeaveApprovalFlows] = useState<Option[]>([]);
+  const [attendanceApprovalFlows, setAttendanceApprovalFlows] = useState<Option[]>([]);
   const [shifts, setShifts] = useState<Option[]>([]);
   const [orgProbationDays, setOrgProbationDays] = useState(90);
   const [orgNoticeDays, setOrgNoticeDays] = useState(30);
@@ -247,6 +251,7 @@ const AddEmployee = () => {
     fetchDesignations();
     fetchRoles();
     fetchManagers();
+    fetchApprovalFlows();
     fetchShifts();
     fetchOrgSettings();
     if (!isEdit) {
@@ -298,6 +303,8 @@ const AddEmployee = () => {
         departmentId: employee.departmentId?._id || "",
         designationId: employee.designationId?._id || "",
         managerId: employee.managerId?._id || "",
+        leaveApprovalFlowId: employee.leaveApprovalFlowId?._id || "",
+        attendanceApprovalFlowId: employee.attendanceApprovalFlowId?._id || "",
         shiftId: employee.shiftId?._id || "",
         roleIds: (employee.roleIds || []).map((r: any) => r?._id).filter(Boolean),
         employmentType: employee.employmentType || "",
@@ -355,6 +362,24 @@ const AddEmployee = () => {
         }))
       );
     }
+  };
+
+  const fetchApprovalFlows = async () => {
+    const [leaveRes, attendanceRes] = await Promise.all([
+      getApiWithToken("/approval-flows?moduleKey=leave"),
+      getApiWithToken("/approval-flows?moduleKey=attendance_request")
+    ]);
+
+    setLeaveApprovalFlows(
+      Array.isArray(leaveRes?.data)
+        ? leaveRes.data.map((flow: any) => ({ _id: flow._id, name: flow.name }))
+        : []
+    );
+    setAttendanceApprovalFlows(
+      Array.isArray(attendanceRes?.data)
+        ? attendanceRes.data.map((flow: any) => ({ _id: flow._id, name: flow.name }))
+        : []
+    );
   };
 
   const fetchShifts = async () => {
@@ -624,6 +649,8 @@ const AddEmployee = () => {
       departmentId: form.departmentId,
       designationId: form.designationId,
       managerId: form.managerId || undefined,
+      leaveApprovalFlowId: form.leaveApprovalFlowId || null,
+      attendanceApprovalFlowId: form.attendanceApprovalFlowId || null,
       shiftId: form.shiftId || undefined,
       employmentType: form.employmentType,
       dateOfJoining: form.dateOfJoining,
@@ -1204,6 +1231,70 @@ const AddEmployee = () => {
               {managers.map((m) => (
                 <SelectItem key={m._id} value={m._id}>
                   {m.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-1 mb-1">
+            <Label>Leave Approval Flow</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                Leave empty to use the organization default flow selected by your approval flow rules.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <Select
+            value={form.leaveApprovalFlowId || "none"}
+            onValueChange={(v) =>
+              setForm({ ...form, leaveApprovalFlowId: v === "none" ? "" : v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Leave Approval Flow" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Use Organization Default</SelectItem>
+              {leaveApprovalFlows.map((flow) => (
+                <SelectItem key={flow._id} value={flow._id}>
+                  {flow.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-1 mb-1">
+            <Label>Attendance Request Flow</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                Leave empty to use the organization default attendance request flow.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <Select
+            value={form.attendanceApprovalFlowId || "none"}
+            onValueChange={(v) =>
+              setForm({ ...form, attendanceApprovalFlowId: v === "none" ? "" : v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Attendance Request Flow" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Use Organization Default</SelectItem>
+              {attendanceApprovalFlows.map((flow) => (
+                <SelectItem key={flow._id} value={flow._id}>
+                  {flow.name}
                 </SelectItem>
               ))}
             </SelectContent>

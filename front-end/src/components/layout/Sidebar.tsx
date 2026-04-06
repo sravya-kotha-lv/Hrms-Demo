@@ -236,7 +236,7 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
       }
     ]
   },
-  { icon: <FileText size={20} />, label: "Documentation", to: "/documentation", permissions: ["EMP_VIEW", "EMP_SELF_VIEW", "EMP_CREATE", "EMP_UPDATE"] }
+  { icon: <FileText size={20} />, label: "Guidelines", to: "/documentation", permissions: ["EMP_VIEW", "EMP_SELF_VIEW", "EMP_CREATE", "EMP_UPDATE"] }
 ];
 
 export const Sidebar = memo(({
