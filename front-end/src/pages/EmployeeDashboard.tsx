@@ -322,7 +322,7 @@ const EmployeeDashboard = () => {
           requiredPermissions: ["WEEK_OFF_VIEW"]
         }),
         getApiWithToken(`/timesheets/attendance/matrix/my?month=${currentMonth}`, null, {
-          requiredPermissions: ["ATTENDANCE_VIEW_SELF"]
+          requiredPermissions: ["ATTENDANCE_VIEW_SELF", "TIMESHEET_VIEW_SELF"]
         }),
         getApiWithToken("/employees/me", null, {
           requiredPermissions: ["EMP_SELF_VIEW"]

@@ -1,5 +1,15 @@
 const pad2 = (value) => String(value).padStart(2, "0");
 
+const parseDateKey = (dateKey) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || ""));
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3])
+  };
+};
+
 const isValidTimeZone = (timeZone) => {
   try {
     if (!timeZone || typeof timeZone !== "string") return false;
@@ -42,18 +52,11 @@ const getZonedParts = (dateValue, timeZone) => {
 };
 
 const toDateKeyInTimeZone = (dateValue, timeZone) => {
+  if (parseDateKey(dateValue)) {
+    return String(dateValue);
+  }
   const parts = getZonedParts(dateValue, timeZone);
   return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
-};
-
-const parseDateKey = (dateKey) => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || ""));
-  if (!match) return null;
-  return {
-    year: Number(match[1]),
-    month: Number(match[2]),
-    day: Number(match[3])
-  };
 };
 
 const addDaysToDateKey = (dateKey, dayDelta) => {
@@ -164,6 +167,7 @@ const getWeekdayForDateKey = (dateKey, timeZone) => {
 
 module.exports = {
   isValidTimeZone,
+  parseDateKey,
   toDateKeyInTimeZone,
   addDaysToDateKey,
   zonedDateTimeToUtc,

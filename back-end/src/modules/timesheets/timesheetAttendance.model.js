@@ -21,6 +21,12 @@ const timesheetAttendanceSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    dateKey: {
+      type: String,
+      required: true,
+      match: /^\d{4}-\d{2}-\d{2}$/,
+      index: true
+    },
 
     checkInAt: Date,
     checkInIp: {
@@ -128,7 +134,7 @@ const timesheetAttendanceSchema = new mongoose.Schema(
 );
 
 timesheetAttendanceSchema.index(
-  { organizationId: 1, employeeId: 1, date: 1 },
+  { organizationId: 1, employeeId: 1, dateKey: 1 },
   { unique: true }
 );
 

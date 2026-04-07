@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
+const { ipKeyGenerator } = require("express-rate-limit");
 const { getRedisClient, isRedisEnabled } = require("../config/redis");
 
 let RedisStore = null;
@@ -49,7 +50,7 @@ const buildAuthRateLimitKey = (req) => {
     }
   }
 
-  return req.ip;
+  return ipKeyGenerator(req.ip);
 };
 
 /**
