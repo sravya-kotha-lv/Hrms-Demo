@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -36,6 +38,9 @@ const SESSION_OPTIONS = [
   { value: 'first_half', label: 'First Half' },
   { value: 'second_half', label: 'Second Half' },
 ] as const;
+
+const FONT_REGULAR = Platform.select({ android: 'sans-serif', ios: 'System', default: 'sans-serif' });
+const FONT_MEDIUM = Platform.select({ android: 'sans-serif-medium', ios: 'System', default: 'sans-serif' });
 
 function LeavesScreen() {
   const navigation = useNavigation<any>();
@@ -167,9 +172,31 @@ function LeavesScreen() {
     }
   }, [duration]);
 
+  useEffect(() => {
+    if (duration !== 'half_day') return;
+
+    if (fromDate) {
+      setToDate(fromDate);
+      setToDateInput(fromDateInput);
+    } else {
+      setToDate('');
+      setToDateInput('');
+    }
+
+    if (activeDateField === 'to') {
+      setActiveDateField('from');
+    }
+  }, [duration, fromDate, fromDateInput, activeDateField]);
+
   const applyLeave = async () => {
-    if (!leaveTypeId || !fromDate || !toDate || !reason) {
-      setError('Please select a leave type, choose both dates, and add a reason.');
+    const effectiveToDate = duration === 'half_day' ? fromDate : toDate;
+
+    if (!leaveTypeId || !fromDate || !effectiveToDate || !reason) {
+      setError(
+        duration === 'half_day'
+          ? 'Please select a leave type, choose the date, and add a reason.'
+          : 'Please select a leave type, choose both dates, and add a reason.'
+      );
       return;
     }
     setSubmitting(true);
@@ -177,7 +204,7 @@ function LeavesScreen() {
     const payload: any = {
       leaveTypeId,
       fromDate,
-      toDate,
+      toDate: effectiveToDate,
       reason,
       duration,
     };
@@ -200,9 +227,25 @@ function LeavesScreen() {
   const approvedCount = leaves.filter((l) => l.status === 'approved').length;
   const rejectedCount = leaves.filter((l) => l.status === 'rejected').length;
   const onLeaveToday = leaves.filter((l) => l.status === 'approved').length;
-  const primaryBalance = useMemo(() => {
-    return leaveBalances.length > 0 ? leaveBalances[0] : null;
-  }, [leaveBalances]);
+  const selectedLeaveType =
+    leaveTypes.find((type) => String(type?._id || '') === String(leaveTypeId || '')) || null;
+
+  const selectedBalance = (() => {
+    if (!leaveBalances.length) return null;
+    if (!leaveTypeId) return leaveBalances[0];
+
+    const normalizedLeaveTypeId = String(leaveTypeId);
+    const match = leaveBalances.find((balance) => {
+      const rawLeaveTypeId = balance?.leaveTypeId;
+      const balanceLeaveTypeId =
+        typeof rawLeaveTypeId === 'object' && rawLeaveTypeId !== null
+          ? String(rawLeaveTypeId._id || rawLeaveTypeId.id || '')
+          : String(rawLeaveTypeId || '');
+      return balanceLeaveTypeId === normalizedLeaveTypeId;
+    });
+
+    return match || null;
+  })();
   const filteredLeaves = useMemo(() => {
     const byStatus =
       statusFilter === 'all'
@@ -359,6 +402,12 @@ function LeavesScreen() {
     selectedLeave?.approvedBy?.name ||
     'Single-step';
   const detailReason = selectedLeave?.reason || selectedLeave?.leaveReason || '-';
+  const currentUserProfileImage =
+    session?.profile?.profileImage ||
+    session?.profile?.profilePhoto ||
+    session?.loginData?.profileImage ||
+    session?.loginData?.profilePhoto ||
+    null;
 
   const formatDisplayDate = (value?: string) => {
     if (!value) return '';
@@ -400,6 +449,10 @@ function LeavesScreen() {
     if (field === 'from') {
       setFromDate(isoValue);
       setFromDateInput(displayText);
+      if (duration === 'half_day') {
+        setToDate(isoValue);
+        setToDateInput(displayText);
+      }
       return;
     }
     setToDate(isoValue);
@@ -506,6 +559,7 @@ function LeavesScreen() {
                           styles.filterItemText,
                           statusFilter === key && styles.filterItemTextActive,
                         ]}
+                        allowFontScaling={false}
                       >
                         {key === 'all'
                           ? 'All Status'
@@ -585,6 +639,13 @@ function LeavesScreen() {
                       const status = leave?.status || 'pending';
                       const approvalLabel = leave?.approvalStatus || leave?.approvedBy?.name || 'Single-step';
                       const employeeInitial = (employee.trim()[0] || 'U').toUpperCase();
+                      const employeeProfileImage =
+                        leave?.employeeId?.profileImage ||
+                        leave?.employeeId?.profilePhoto ||
+                        leave?.employeeProfileImage ||
+                        leave?.profileImage ||
+                        currentUserProfileImage ||
+                        null;
                       const employeeIdText =
                         leave?.employeeId?.employeeCode ||
                         leave?.employeeId?.code ||
@@ -607,7 +668,14 @@ function LeavesScreen() {
                           <View style={styles.colEmployee}>
                             <View style={styles.employeeCell}>
                               <View style={styles.employeeBadge}>
-                                <Text style={styles.employeeBadgeText}>{employeeInitial}</Text>
+                                {employeeProfileImage ? (
+                                  <Image
+                                    source={{ uri: employeeProfileImage }}
+                                    style={styles.employeeBadgeImage}
+                                  />
+                                ) : (
+                                  <Text style={styles.employeeBadgeText}>{employeeInitial}</Text>
+                                )}
                               </View>
                               <View style={styles.employeeMeta}>
                                 <Text style={styles.tableCell} numberOfLines={1}>
@@ -827,23 +895,23 @@ function LeavesScreen() {
               <View style={styles.requestCard}>
                 <Text style={styles.cardTitle}>Leave Request</Text>
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
-                {primaryBalance && (
-                  <View style={styles.leaveBalancePanel}>
-                    <Text style={styles.leaveBalanceHeading}>Leave Balance</Text>
-                    <Text style={styles.leaveBalanceValue}>
-                      {primaryBalance?.remaining ?? 0}/{primaryBalance?.total ?? 0}
-                    </Text>
-                    <Text style={styles.leaveBalanceMeta}>
-                      Available: {primaryBalance?.remaining ?? 0}
-                    </Text>
-                    <Text style={styles.leaveBalanceMeta}>
-                      Pending: {primaryBalance?.pending ?? 0}
-                    </Text>
-                    <Text style={styles.leaveBalanceMeta}>
-                      Used: {primaryBalance?.used ?? 0}
-                    </Text>
-                  </View>
-                )}
+                <View style={styles.leaveBalancePanel}>
+                  <Text style={styles.leaveBalanceHeading}>
+                    {selectedLeaveType?.name ? `${selectedLeaveType.name} Balance` : 'Leave Balance'}
+                  </Text>
+                  <Text style={styles.leaveBalanceValue}>
+                    {selectedBalance?.remaining ?? 0}/{selectedBalance?.total ?? 0}
+                  </Text>
+                  <Text style={styles.leaveBalanceMeta}>
+                    Available: {selectedBalance?.remaining ?? 0}
+                  </Text>
+                  <Text style={styles.leaveBalanceMeta}>
+                    Pending: {selectedBalance?.pending ?? 0}
+                  </Text>
+                  <Text style={styles.leaveBalanceMeta}>
+                    Used: {selectedBalance?.used ?? 0}
+                  </Text>
+                </View>
                 <Text style={styles.fieldLabel}>Leave Type</Text>
                 <View style={styles.selectRow}>
                   <Pressable
@@ -1003,33 +1071,37 @@ function LeavesScreen() {
                       </Pressable>
                     </View>
                   </View>
-                  <View style={styles.dateField}>
-                    <Text style={styles.fieldLabel}>To Date</Text>
-                    <View style={styles.dateInput}>
-                      <TextInput
-                        style={styles.dateTextInput}
-                        placeholder="dd-mm-yyyy"
-                        placeholderTextColor="#94a3b8"
-                        value={toDateInput}
-                        onChangeText={(text) => handleDateInputChange('to', text)}
-                        keyboardType="number-pad"
-                        maxLength={10}
-                        onFocus={() => setActiveDateField('to')}
-                      />
-                      <Pressable onPress={() => openFieldCalendar('to')} hitSlop={6}>
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={18}
-                          color="#94a3b8"
+                  {duration !== 'half_day' && (
+                    <View style={styles.dateField}>
+                      <Text style={styles.fieldLabel}>To Date</Text>
+                      <View style={styles.dateInput}>
+                        <TextInput
+                          style={styles.dateTextInput}
+                          placeholder="dd-mm-yyyy"
+                          placeholderTextColor="#94a3b8"
+                          value={toDateInput}
+                          onChangeText={(text) => handleDateInputChange('to', text)}
+                          keyboardType="number-pad"
+                          maxLength={10}
+                          onFocus={() => setActiveDateField('to')}
                         />
-                      </Pressable>
+                        <Pressable onPress={() => openFieldCalendar('to')} hitSlop={6}>
+                          <MaterialCommunityIcons
+                            name="calendar-month-outline"
+                            size={18}
+                            color="#94a3b8"
+                          />
+                        </Pressable>
+                      </View>
                     </View>
-                  </View>
+                  )}
                 </View>
                 <Text style={styles.dateHint}>
-                  {activeDateField
-                    ? `Pick a date on the calendar for the ${activeDateField} field.`
-                    : 'Tap a date on the calendar above to set the From/To fields.'}
+                  {duration === 'half_day'
+                    ? 'Tap a date on the calendar above to set the leave date.'
+                    : activeDateField
+                      ? `Pick a date on the calendar for the ${activeDateField} field.`
+                      : 'Tap a date on the calendar above to set the From/To fields.'}
                 </Text>
 
                 <Text style={styles.fieldLabel}>Reason</Text>
@@ -1218,6 +1290,7 @@ const styles = StyleSheet.create({
   filterWrap: {
     flex: 1,
     position: 'relative',
+    zIndex: 30,
   },
   filterButton: {
     flexDirection: 'row',
@@ -1237,12 +1310,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 16,
     includeFontPadding: false,
+    fontFamily: FONT_MEDIUM,
   },
   filterMenu: {
     position: 'absolute',
     top: 44,
     left: 0,
-    right: 0,
+    minWidth: 140,
     backgroundColor: '#ffffff',
     borderRadius: 12,
     borderWidth: 1,
@@ -1252,7 +1326,8 @@ const styles = StyleSheet.create({
   },
   filterItem: {
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    minHeight: 40,
+    justifyContent: 'center',
   },
   filterItemActive: {
     backgroundColor: '#e0edff',
@@ -1260,10 +1335,14 @@ const styles = StyleSheet.create({
   filterItemText: {
     fontSize: 12,
     color: '#0f172a',
+    lineHeight: 16,
+    includeFontPadding: false,
+    fontFamily: FONT_REGULAR,
   },
   filterItemTextActive: {
     color: '#1d4ed8',
     fontWeight: '700',
+    fontFamily: FONT_MEDIUM,
   },
   refreshButton: {
     flexDirection: 'row',
@@ -1456,6 +1535,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#64748b',
+  },
+  employeeBadgeImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
   },
   employeeMeta: {
     flex: 1,
