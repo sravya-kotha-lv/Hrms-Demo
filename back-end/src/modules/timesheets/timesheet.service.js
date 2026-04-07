@@ -354,7 +354,7 @@ const buildRequestedCheckOutAt = (attendanceDateKey, requestedCheckOutTime, chec
 };
 
 const isAttendanceRowOvernight = (attendanceRow, organizationTimeZone) => {
-  const attendanceDateKey = toDateKeyInTimeZone(attendanceRow.date, organizationTimeZone);
+  const attendanceDateKey = getAttendanceStoredDateKey(attendanceRow, organizationTimeZone);
   if (
     attendanceRow?.scheduledEndAt
     && toDateKeyInTimeZone(attendanceRow.scheduledEndAt, organizationTimeZone) !== attendanceDateKey
@@ -374,20 +374,20 @@ const resolveMissedCheckoutAttendanceTarget = async ({
   requestedCheckOutTime,
   organizationTimeZone
 }) => {
-  const requestedDate = startOfDayInTimeZone(requestedDateKey, organizationTimeZone);
   const previousDateKey = addDaysToDateKey(requestedDateKey, -1);
-  const previousDate = startOfDayInTimeZone(previousDateKey, organizationTimeZone);
-  const candidateDates = [requestedDate, previousDate].filter(
-    (value, index, list) => list.findIndex((item) => item.getTime() === value.getTime()) === index
-  );
+  const candidateDateKeys = Array.from(new Set([requestedDateKey, previousDateKey].filter(Boolean)));
+  const candidateDates = candidateDateKeys.map((dateKey) => startOfDayInTimeZone(dateKey, organizationTimeZone));
 
   const rows = await Attendance.find({
     organizationId,
     employeeId,
-    date: { $in: candidateDates },
+    $or: [
+      { dateKey: { $in: candidateDateKeys } },
+      { date: { $in: candidateDates } }
+    ],
     checkInAt: { $ne: null }
   })
-    .select("date checkInAt checkOutAt scheduledEndAt shiftStartTime shiftEndTime")
+    .select("date dateKey checkInAt checkOutAt scheduledEndAt shiftStartTime shiftEndTime")
     .sort({ date: -1, checkInAt: -1 });
 
   const exactOpenRow = rows.find((row) => {
@@ -398,7 +398,7 @@ const resolveMissedCheckoutAttendanceTarget = async ({
     return {
       attendance: exactOpenRow,
       attendanceDateKey: requestedDateKey,
-      attendanceDate: requestedDate
+      attendanceDate: requestedDateKey
     };
   }
 
@@ -427,7 +427,7 @@ const resolveMissedCheckoutAttendanceTarget = async ({
   return {
     attendance: previousOpenRow,
     attendanceDateKey: previousDateKey,
-    attendanceDate: previousDate
+    attendanceDate: previousDateKey
   };
 };
 
@@ -438,18 +438,17 @@ const resolveAttendanceTargetForRequestDate = async ({
   requestedCheckOutTime,
   organizationTimeZone
 }) => {
-  const requestedDate = startOfDayInTimeZone(requestedDateKey, organizationTimeZone);
   const exactRow = await Attendance.findOne({
     organizationId,
     employeeId,
-    date: requestedDate
-  }).select("date checkInAt checkOutAt scheduledEndAt shiftStartTime shiftEndTime");
+    ...buildAttendanceDateMatch(requestedDateKey, organizationTimeZone)
+  }).select("date dateKey checkInAt checkOutAt scheduledEndAt shiftStartTime shiftEndTime");
 
   if (exactRow) {
     return {
       attendance: exactRow,
       attendanceDateKey: requestedDateKey,
-      attendanceDate: requestedDate
+      attendanceDate: requestedDateKey
     };
   }
 
@@ -458,12 +457,11 @@ const resolveAttendanceTargetForRequestDate = async ({
   }
 
   const previousDateKey = addDaysToDateKey(requestedDateKey, -1);
-  const previousDate = startOfDayInTimeZone(previousDateKey, organizationTimeZone);
   const previousRow = await Attendance.findOne({
     organizationId,
     employeeId,
-    date: previousDate
-  }).select("date checkInAt checkOutAt scheduledEndAt shiftStartTime shiftEndTime");
+    ...buildAttendanceDateMatch(previousDateKey, organizationTimeZone)
+  }).select("date dateKey checkInAt checkOutAt scheduledEndAt shiftStartTime shiftEndTime");
 
   if (!previousRow || !isAttendanceRowOvernight(previousRow, organizationTimeZone)) {
     return null;
@@ -486,7 +484,7 @@ const resolveAttendanceTargetForRequestDate = async ({
   return {
     attendance: previousRow,
     attendanceDateKey: previousDateKey,
-    attendanceDate: previousDate
+    attendanceDate: previousDateKey
   };
 };
 
@@ -604,6 +602,39 @@ const serializeMongoIdsDeep = (value) => {
   return output;
 };
 
+const isAttendanceDateKey = (value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const getAttendanceStoredDateKey = (row, organizationTimeZone = "Asia/Kolkata") => {
+  if (isAttendanceDateKey(row?.dateKey)) return row.dateKey;
+  if (isAttendanceDateKey(row?.date)) return row.date;
+  if (row?.date) return toDateKeyInTimeZone(row.date, organizationTimeZone);
+  return "";
+};
+
+const getAttendanceRowAnchorDate = (row) =>
+  row?.checkInAt || row?.checkOutAt || row?.dateKey || row?.date || row?.createdAt || null;
+
+const getAttendanceRowDayKey = (row, organizationTimeZone = "Asia/Kolkata") => {
+  const anchorDate = getAttendanceRowAnchorDate(row);
+  if (anchorDate) return toDateKeyInTimeZone(anchorDate, organizationTimeZone);
+  return getAttendanceStoredDateKey(row, organizationTimeZone);
+};
+
+const getAttendanceRowNormalizedDate = (row, organizationTimeZone = "Asia/Kolkata") => {
+  const dateKey = getAttendanceRowDayKey(row, organizationTimeZone);
+  return dateKey || null;
+};
+
+const buildAttendanceDateMatch = (dateKey, organizationTimeZone = "Asia/Kolkata") => {
+  const legacyDate = startOfDayInTimeZone(dateKey, organizationTimeZone);
+  return {
+    $or: [
+      { dateKey },
+      { date: legacyDate }
+    ]
+  };
+};
+
 const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asia/Kolkata") => {
   const grouped = new Map();
 
@@ -612,7 +643,7 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
     if (!source) continue;
 
     const employeeIdValue = source.employeeId?._id || source.employeeId;
-    const anchorDate = source.checkInAt || source.checkOutAt || source.date || source.createdAt;
+    const anchorDate = getAttendanceRowAnchorDate(source);
     if (!employeeIdValue || !anchorDate) continue;
     const employeeId = String(employeeIdValue);
     const dateKey = toDateKeyInTimeZone(anchorDate, organizationTimeZone);
@@ -621,7 +652,9 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
     if (!grouped.has(key)) {
       grouped.set(key, {
         ...source,
-        employeeId: source.employeeId
+        employeeId: source.employeeId,
+        date: dateKey,
+        dateKey
       });
       continue;
     }
@@ -689,6 +722,11 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
   }
 
   return Array.from(grouped.values()).map((row) => {
+    const normalizedDate = getAttendanceRowNormalizedDate(row, organizationTimeZone);
+    if (normalizedDate) {
+      row.date = normalizedDate;
+      row.dateKey = normalizedDate;
+    }
     const checkInAt = row.checkInAt ? new Date(row.checkInAt) : null;
     const checkOutAt = row.checkOutAt ? new Date(row.checkOutAt) : null;
     if (checkInAt && checkOutAt) {
@@ -706,19 +744,26 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
   });
 };
 
-const buildAttendanceRangeFilter = (organizationId, employeeFilter, startDate, endDate) => ({
+const buildAttendanceRangeFilter = (
   organizationId,
-  ...(employeeFilter || {}),
-  $or: [
-    { date: { $gte: startDate, $lte: endDate } },
-    { checkInAt: { $gte: startDate, $lte: endDate } },
-    { checkOutAt: { $gte: startDate, $lte: endDate } }
-  ]
-});
+  employeeFilter,
+  startDate,
+  endDate,
+  organizationTimeZone = "Asia/Kolkata"
+) => {
+  const startKey = toDateKeyInTimeZone(startDate, organizationTimeZone);
+  const endKey = toDateKeyInTimeZone(endDate, organizationTimeZone);
 
-const getAttendanceRowDayKey = (row, organizationTimeZone = "Asia/Kolkata") => {
-  const anchorDate = row?.checkInAt || row?.checkOutAt || row?.date || row?.createdAt;
-  return anchorDate ? toDateKeyInTimeZone(anchorDate, organizationTimeZone) : "";
+  return {
+    organizationId,
+    ...(employeeFilter || {}),
+    $or: [
+      { dateKey: { $gte: startKey, $lte: endKey } },
+      { date: { $gte: startDate, $lte: endDate } },
+      { checkInAt: { $gte: startDate, $lte: endDate } },
+      { checkOutAt: { $gte: startDate, $lte: endDate } }
+    ]
+  };
 };
 
 const normalizeIp = (rawIp = "") => {
@@ -941,9 +986,9 @@ const isActiveOvernightSession = (attendanceRow, organizationTimeZone = "Asia/Ko
     return false;
   }
 
-  const attendanceDayKey = toDateKeyInTimeZone(attendanceRow.date, organizationTimeZone);
+  const storedDayKey = getAttendanceStoredDateKey(attendanceRow, organizationTimeZone);
   const scheduledEndDayKey = toDateKeyInTimeZone(scheduledEndAt, organizationTimeZone);
-  return attendanceDayKey !== scheduledEndDayKey;
+  return storedDayKey !== scheduledEndDayKey;
 };
 
 const canCheckOutAttendance = (attendanceRow, organizationTimeZone = "Asia/Kolkata", now = new Date()) => {
@@ -954,7 +999,7 @@ const canCheckOutAttendance = (attendanceRow, organizationTimeZone = "Asia/Kolka
     return true;
   }
 
-  const attendanceDateKey = toDateKeyInTimeZone(attendanceRow.date, organizationTimeZone);
+  const attendanceDateKey = getAttendanceStoredDateKey(attendanceRow, organizationTimeZone);
   const todayKey = toDateKeyInTimeZone(now, organizationTimeZone);
   const yesterdayKey = addDaysToDateKey(todayKey, -1);
   return attendanceDateKey === todayKey || attendanceDateKey === yesterdayKey;
@@ -963,7 +1008,7 @@ const canCheckOutAttendance = (attendanceRow, organizationTimeZone = "Asia/Kolka
 const canUpdateClosedCheckout = (attendanceRow, organizationTimeZone = "Asia/Kolkata", now = new Date()) => {
   if (!attendanceRow?.checkInAt || !attendanceRow?.checkOutAt) return false;
 
-  const attendanceDateKey = toDateKeyInTimeZone(attendanceRow.date, organizationTimeZone);
+  const attendanceDateKey = getAttendanceStoredDateKey(attendanceRow, organizationTimeZone);
   const todayKey = toDateKeyInTimeZone(now, organizationTimeZone);
   return attendanceDateKey === todayKey;
 };
@@ -1404,21 +1449,43 @@ exports.checkIn = async (req) => {
     now,
     organizationTimeZone
   );
-  const attendanceDate = startOfDayInTimeZone(attendanceDateKey, organizationTimeZone);
+  const checkInDateKey = toDateKeyInTimeZone(now, organizationTimeZone);
+  const scheduledEndDateKey = toDateKeyInTimeZone(scheduledEndAt, organizationTimeZone);
+  const isOvernightShift = scheduledEndDateKey !== attendanceDateKey;
+  let effectiveAttendanceDateKey = attendanceDateKey;
+  let effectiveShift = shift;
+  let effectiveScheduledStartAt = scheduledStartAt;
+  let effectiveScheduledEndAt = scheduledEndAt;
+
+  // Day shifts should always be stored against the actual local check-in day.
+  if (!isOvernightShift && attendanceDateKey !== checkInDateKey) {
+    const recalculatedSchedule = await resolveShiftSchedule(
+      req.user.organizationId,
+      employee._id,
+      checkInDateKey,
+      organizationTimeZone
+    );
+    effectiveAttendanceDateKey = checkInDateKey;
+    effectiveShift = recalculatedSchedule.shift;
+    effectiveScheduledStartAt = recalculatedSchedule.scheduledStartAt;
+    effectiveScheduledEndAt = recalculatedSchedule.scheduledEndAt;
+  }
+
+  const attendanceDate = startOfDayInTimeZone(effectiveAttendanceDateKey, organizationTimeZone);
   const earliestCheckInAt = new Date(
-    scheduledStartAt.getTime() - CHECK_IN_EARLY_WINDOW_MINUTES * 60 * 1000
+    effectiveScheduledStartAt.getTime() - CHECK_IN_EARLY_WINDOW_MINUTES * 60 * 1000
   );
 
   if (now < earliestCheckInAt) {
     throwHttpError(403, "Check-in is allowed only within 2 hours before shift start");
   }
 
-  const graceMinutes = Number(shift.graceMinutes || 0);
-  const lateDiff = Math.round((now.getTime() - scheduledStartAt.getTime()) / 60000) - graceMinutes;
+  const graceMinutes = Number(effectiveShift.graceMinutes || 0);
+  const lateDiff = Math.round((now.getTime() - effectiveScheduledStartAt.getTime()) / 60000) - graceMinutes;
   const lateByMinutes = Math.max(0, lateDiff);
   const earlyLoginByMinutes = Math.max(
     0,
-    Math.round((scheduledStartAt.getTime() - now.getTime()) / 60000)
+    Math.round((effectiveScheduledStartAt.getTime() - now.getTime()) / 60000)
   );
 
   const openAttendance = await Attendance.findOne({
@@ -1429,7 +1496,7 @@ exports.checkIn = async (req) => {
   }).sort({ date: -1, checkInAt: -1 });
 
   if (openAttendance) {
-    if (toDateKeyInTimeZone(openAttendance.date, organizationTimeZone) === attendanceDateKey) {
+    if (getAttendanceStoredDateKey(openAttendance, organizationTimeZone) === effectiveAttendanceDateKey) {
       throw new Error("Already checked in for this shift");
     }
 
@@ -1442,12 +1509,13 @@ exports.checkIn = async (req) => {
   const attendanceFilter = {
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date: attendanceDate
+    dateKey: effectiveAttendanceDateKey
   };
   const insertPayload = {
     organizationId: req.user.organizationId,
     employeeId: employee._id,
     date: attendanceDate,
+    dateKey: effectiveAttendanceDateKey,
     checkInAt: now,
     checkInIp: checkInIp || null,
     checkInLatitude: Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null,
@@ -1455,13 +1523,13 @@ exports.checkIn = async (req) => {
     checkInSelfieProvided,
     checkInSelfieImage,
     status: "checked_in",
-    shiftId: shift._id || null,
-    shiftName: shift.name,
-    shiftCode: shift.code,
-    shiftStartTime: shift.startTime,
-    shiftEndTime: shift.endTime,
-    scheduledStartAt,
-    scheduledEndAt,
+    shiftId: effectiveShift._id || null,
+    shiftName: effectiveShift.name,
+    shiftCode: effectiveShift.code,
+    shiftStartTime: effectiveShift.startTime,
+    shiftEndTime: effectiveShift.endTime,
+    scheduledStartAt: effectiveScheduledStartAt,
+    scheduledEndAt: effectiveScheduledEndAt,
     lateByMinutes,
     earlyLoginByMinutes,
     earlyCheckoutByMinutes: 0,
@@ -1510,13 +1578,15 @@ exports.checkIn = async (req) => {
     existing.status = "checked_in";
     existing.overriddenBy = null;
     existing.overriddenAt = null;
-    existing.shiftId = shift._id || null;
-    existing.shiftName = shift.name;
-    existing.shiftCode = shift.code;
-    existing.shiftStartTime = shift.startTime;
-    existing.shiftEndTime = shift.endTime;
-    existing.scheduledStartAt = scheduledStartAt;
-    existing.scheduledEndAt = scheduledEndAt;
+    existing.date = attendanceDate;
+    existing.dateKey = effectiveAttendanceDateKey;
+    existing.shiftId = effectiveShift._id || null;
+    existing.shiftName = effectiveShift.name;
+    existing.shiftCode = effectiveShift.code;
+    existing.shiftStartTime = effectiveShift.startTime;
+    existing.shiftEndTime = effectiveShift.endTime;
+    existing.scheduledStartAt = effectiveScheduledStartAt;
+    existing.scheduledEndAt = effectiveScheduledEndAt;
     existing.lateByMinutes = lateByMinutes;
     existing.earlyLoginByMinutes = earlyLoginByMinutes;
     existing.earlyCheckoutByMinutes = 0;
@@ -1581,6 +1651,10 @@ exports.checkOut = async (req) => {
     }
   }
   const previousCheckOutAt = attendance.checkOutAt ? new Date(attendance.checkOutAt) : null;
+  const normalizedAttendanceDateKey = getAttendanceRowNormalizedDate(attendance, organizationTimeZone);
+  const normalizedAttendanceDate = normalizedAttendanceDateKey
+    ? startOfDayInTimeZone(normalizedAttendanceDateKey, organizationTimeZone)
+    : startOfDayInTimeZone(getAttendanceStoredDateKey(attendance, organizationTimeZone), organizationTimeZone);
 
   const totalMinutes = Math.max(
     0,
@@ -1597,7 +1671,7 @@ exports.checkOut = async (req) => {
       await resolveShiftSchedule(
         req.user.organizationId,
         employee._id,
-        toDateKeyInTimeZone(attendance.date, organizationTimeZone),
+        normalizedAttendanceDateKey,
         organizationTimeZone
       )
     ).scheduledEndAt;
@@ -1611,6 +1685,10 @@ exports.checkOut = async (req) => {
   );
 
   attendance.checkOutAt = now;
+  if (normalizedAttendanceDate) {
+    attendance.date = normalizedAttendanceDate;
+    attendance.dateKey = normalizedAttendanceDateKey;
+  }
   attendance.totalMinutes = totalMinutes;
   attendance.status = "checked_out";
   attendance.overriddenBy = null;
@@ -1627,7 +1705,7 @@ exports.checkOut = async (req) => {
   await upsertTimesheetHours({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    dateValue: attendance.date,
+    dateValue: normalizedAttendanceDate || attendance.date,
     hoursWorked
   });
 
@@ -1657,7 +1735,8 @@ exports.getMyAttendance = async (req) => {
       req.user.organizationId,
       { employeeId: employee._id },
       dayStart,
-      dayEnd
+      dayEnd,
+      organizationTimeZone
     )
   ).sort({ date: -1, checkInAt: -1 });
   const mergedRows = mergeAttendanceRowsByEmployeeDay(rows, organizationTimeZone);
@@ -1670,11 +1749,10 @@ exports.getMyAttendance = async (req) => {
       organizationTimeZone
     );
     if (attendanceDateKey !== requestedDayKey) {
-      const currentShiftDate = startOfDayInTimeZone(attendanceDateKey, organizationTimeZone);
       const currentShiftRows = await Attendance.find({
         organizationId: req.user.organizationId,
         employeeId: employee._id,
-        date: currentShiftDate
+        ...buildAttendanceDateMatch(attendanceDateKey, organizationTimeZone)
       }).sort({ date: -1, checkInAt: -1 });
       const mergedCurrentShiftRows = mergeAttendanceRowsByEmployeeDay(currentShiftRows, organizationTimeZone)
         .filter((row) => getAttendanceRowDayKey(row, organizationTimeZone) === attendanceDateKey);
@@ -1740,7 +1818,8 @@ exports.getAttendance = async (req) => {
       req.user.organizationId,
       employeeFilter,
       startDate,
-      endDate
+      endDate,
+      organizationTimeZone
     )
   )
     .populate("employeeId", "firstName lastName employeeCode")
@@ -1822,7 +1901,8 @@ exports.getAttendanceMatrix = async (req) => {
         req.user.organizationId,
         { employeeId: { $in: employeeIds } },
         start,
-        end
+        end,
+        organizationTimeZone
       )
     )
       .select("employeeId date checkInAt checkOutAt checkInIp checkInSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
@@ -2028,7 +2108,8 @@ exports.getMyAttendanceMatrix = async (req) => {
         req.user.organizationId,
         { employeeId: employee._id },
         start,
-        end
+        end,
+        organizationTimeZone
       )
     )
       .select("employeeId date checkInAt checkOutAt checkInIp checkInSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
@@ -2204,12 +2285,22 @@ exports.getAttendanceCellHistory = async (req) => {
   const canViewSelfie = await canActorViewAttendanceSelfie(req);
 
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
-  const day = startOfDayInTimeZone(date, organizationTimeZone);
-  const attendance = await Attendance.findOne({
-    organizationId: req.user.organizationId,
-    employeeId,
-    date: day
-  }).populate("overriddenBy", "firstName lastName employeeCode");
+  const requestedDayKey = normalizeAttendanceRequestDateKey(date, organizationTimeZone);
+  const dayStart = startOfDayInTimeZone(requestedDayKey, organizationTimeZone);
+  const dayEnd = endOfDayInTimeZone(requestedDayKey, organizationTimeZone);
+  const attendanceRows = await Attendance.find(
+    buildAttendanceRangeFilter(
+      req.user.organizationId,
+      { employeeId },
+      dayStart,
+      dayEnd,
+      organizationTimeZone
+    )
+  )
+    .populate("overriddenBy", "firstName lastName employeeCode")
+    .sort({ date: -1, checkInAt: -1 });
+  const attendance = mergeAttendanceRowsByEmployeeDay(attendanceRows, organizationTimeZone)
+    .find((row) => getAttendanceRowDayKey(row, organizationTimeZone) === requestedDayKey) || null;
 
   if (!attendance) {
     return { attendance: null, history: [] };
@@ -3460,4 +3551,10 @@ exports.recallWeekly = async (req) => {
   });
 
   return timesheet;
+};
+
+exports.__private__ = {
+  getAttendanceRowDayKey,
+  getAttendanceRowNormalizedDate,
+  mergeAttendanceRowsByEmployeeDay
 };

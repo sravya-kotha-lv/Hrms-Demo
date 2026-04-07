@@ -59,7 +59,7 @@ router.get(
 router.get(
   "/attendance/matrix/my",
   auth,
-  authorize("ATTENDANCE_VIEW_SELF"),
+  authorize(["ATTENDANCE_VIEW_SELF", "TIMESHEET_VIEW_SELF"]),
   asyncHandler(controller.myAttendanceMatrix)
 );
 
@@ -73,7 +73,7 @@ router.get(
 router.get(
   "/attendance/matrix/history/my",
   auth,
-  authorize("ATTENDANCE_VIEW_SELF"),
+  authorize(["ATTENDANCE_VIEW_SELF", "TIMESHEET_VIEW_SELF"]),
   asyncHandler(controller.myAttendanceCellHistory)
 );
 
