@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { formatDateKeyInOrgCalendar, formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowUpDown } from "lucide-react";
+import { getAttendanceDisplayStatus, isThresholdQualifiedAttendance } from "./attendanceMatrixStatus";
 
 type DayCell = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
@@ -78,6 +79,30 @@ type AttendanceSnapshot = {
   checkInIp?: string | null;
   checkInSelfieProvided?: boolean;
   checkInSelfieImage?: string | null;
+} | null;
+
+type ApprovedLeaveDetail = {
+  leaveType?: string | null;
+  leaveCode?: string | null;
+  duration?: "full_day" | "half_day" | null;
+  halfDaySession?: "first_half" | "second_half" | null;
+  reason?: string | null;
+  status?: string | null;
+  approvedBy?: string | null;
+  approvedByEmployeeCode?: string | null;
+  approvedAt?: string | null;
+} | null;
+
+type AttendanceRequestDetail = {
+  requestType?: "missed_checkout" | "correction" | null;
+  requestedCheckInTime?: string | null;
+  requestedCheckOutTime?: string | null;
+  reason?: string | null;
+  status?: string | null;
+  approvedBy?: string | null;
+  approvedByEmployeeCode?: string | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
 } | null;
 
 type MatrixPagination = {
@@ -175,27 +200,6 @@ const emptyCell: DayCell = {
 
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
-
-const getAttendanceStatus = (dayData: {
-  isHoliday: boolean;
-  isWeekOff: boolean;
-  leaveType: string | null;
-  attendanceStatus: DayCell["status"];
-  isFuture?: boolean;
-  snapshotGenerated?: boolean;
-}) => {
-  const { isHoliday, isWeekOff, leaveType, attendanceStatus, isFuture = false, snapshotGenerated = false } = dayData;
-
-  if (isHoliday) return "Holiday";
-  if (isWeekOff) return "Week Off";
-  if (leaveType) return "Leave";
-  if (isFuture) return "Future";
-  if (attendanceStatus === "pending_checkout" && snapshotGenerated) return "Absent";
-  if (attendanceStatus === "pending_checkout") return "Pending Checkout";
-  if (attendanceStatus === "full_day_present" || attendanceStatus === "present") return "Present";
-  if (attendanceStatus === "half_day_present") return "Half Day";
-  return "Absent";
-};
 
 const toLeaveShortLabel = (leaveType: string | null) => {
   const normalized = String(leaveType || "").trim();
@@ -338,6 +342,8 @@ const Attendance = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [history, setHistory] = useState<AttendanceHistoryItem[]>([]);
   const [selectedAttendanceSnapshot, setSelectedAttendanceSnapshot] = useState<AttendanceSnapshot>(null);
+  const [selectedLeaveDetail, setSelectedLeaveDetail] = useState<ApprovedLeaveDetail>(null);
+  const [selectedAttendanceRequestDetail, setSelectedAttendanceRequestDetail] = useState<AttendanceRequestDetail>(null);
 
   const fetchMatrix = useCallback(async () => {
     if (!canView) {
@@ -457,11 +463,12 @@ const Attendance = () => {
     if (isFutureDay(day) || cell.isWeekOff) return;
     setSelectedEmployee(row);
     setSelectedDay(day);
-    const cellStatus = row.days?.[day]?.status || "absent";
-    setSelectedStatus(cellStatus === "absent" ? "absent" : "present");
+    setSelectedStatus(isThresholdQualifiedAttendance(cell.status) ? "present" : "absent");
     setOpen(true);
     setHistory([]);
     setSelectedAttendanceSnapshot(null);
+    setSelectedLeaveDetail(null);
+    setSelectedAttendanceRequestDetail(null);
     try {
       setHistoryLoading(true);
       const date = `${month}-${String(day).padStart(2, "0")}`;
@@ -476,6 +483,8 @@ const Attendance = () => {
       if (res?.success) {
         setHistory(res.data?.history || []);
         setSelectedAttendanceSnapshot(res.data?.attendance || null);
+        setSelectedLeaveDetail(res.data?.leave || null);
+        setSelectedAttendanceRequestDetail(res.data?.attendanceRequest || null);
       }
     } finally {
       setHistoryLoading(false);
@@ -542,11 +551,15 @@ const Attendance = () => {
 
   const formatHoverInfo = (cell: DayCell, day: number) => {
     const parts: string[] = [];
-    const resolvedStatus = getAttendanceStatus({
+    const resolvedStatus = getAttendanceDisplayStatus({
       isHoliday: Boolean(cell.holidayName),
       isWeekOff: cell.isWeekOff,
+      isOnLeave: cell.isOnLeave,
       leaveType: cell.leaveType,
+      leaveDuration: cell.leaveDuration,
       attendanceStatus: cell.status,
+      checkInAt: cell.checkInAt,
+      checkOutAt: cell.checkOutAt,
       snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
     });
     const attendanceDateKey = getAttendanceDateKey(day);
@@ -613,11 +626,15 @@ const Attendance = () => {
   };
 
   const getCellUi = (cell: DayCell, isFuture = false) => {
-    const resolvedStatus = getAttendanceStatus({
+    const resolvedStatus = getAttendanceDisplayStatus({
       isHoliday: Boolean(cell.holidayName),
       isWeekOff: cell.isWeekOff,
+      isOnLeave: cell.isOnLeave,
       leaveType: cell.leaveType,
+      leaveDuration: cell.leaveDuration,
       attendanceStatus: cell.status,
+      checkInAt: cell.checkInAt,
+      checkOutAt: cell.checkOutAt,
       isFuture,
       snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
     });
@@ -648,6 +665,13 @@ const Attendance = () => {
         label: cell.leaveType || "Leave",
         shortLabel: toLeaveShortLabel(cell.leaveType),
         className: "bg-violet-100 text-violet-700 border-violet-300"
+      };
+    }
+    if (resolvedStatus === "Absent + Leave") {
+      return {
+        label: `Absent + ${cell.leaveType || "Leave"}`,
+        shortLabel: "AL",
+        className: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300"
       };
     }
     if (resolvedStatus === "Pending Checkout") {
@@ -692,11 +716,15 @@ const Attendance = () => {
         continue;
       }
       const cell = row.days?.[day] || emptyCell;
-      const resolvedStatus = getAttendanceStatus({
+      const resolvedStatus = getAttendanceDisplayStatus({
         isHoliday: Boolean(cell.holidayName),
         isWeekOff: cell.isWeekOff,
+        isOnLeave: cell.isOnLeave,
         leaveType: cell.leaveType,
+        leaveDuration: cell.leaveDuration,
         attendanceStatus: cell.status,
+        checkInAt: cell.checkInAt,
+        checkOutAt: cell.checkOutAt,
         snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
       });
 
@@ -721,6 +749,11 @@ const Attendance = () => {
       }
       if (resolvedStatus === "Leave") {
         onLeaveDays += 1;
+        continue;
+      }
+      if (resolvedStatus === "Absent + Leave") {
+        absentDays += 0.5;
+        onLeaveDays += 0.5;
         continue;
       }
       if (resolvedStatus === "Week Off") {
@@ -1210,9 +1243,9 @@ const Attendance = () => {
                       <span className="inline-block h-2.5 w-2.5 rounded bg-violet-500" />
                       Approved Leave
                     </div>
-                    <div className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
-                      <span className="inline-block h-2.5 w-2.5 rounded bg-indigo-500" />
-                      Present + Leave
+                    <div className="flex items-center gap-2 rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-fuchsia-500" />
+                      Absent + Leave
                     </div>
                     <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1">
                       <span className="inline-block h-2.5 w-2.5 rounded bg-amber-500" />
@@ -1470,6 +1503,127 @@ const Attendance = () => {
                       />
                     </div>
                   )}
+                </div>
+              )}
+              {(selectedLeaveDetail || selectedCell?.isOnLeave) && (
+                <div className="mb-2 pb-2 border-b">
+                  <p className="text-xs font-medium mb-1">Approved Leave</p>
+                  <p className="text-xs text-muted-foreground">
+                    Type: {selectedLeaveDetail?.leaveType || selectedCell?.leaveType || "Leave"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Duration: {(selectedLeaveDetail?.duration || selectedCell?.leaveDuration) === "half_day" ? "Half Day" : "Full Day"}
+                  </p>
+                  {((selectedLeaveDetail?.duration || selectedCell?.leaveDuration) === "half_day") && (
+                    <p className="text-xs text-muted-foreground">
+                      Session: {(selectedLeaveDetail?.halfDaySession || selectedCell?.leaveHalfDaySession) === "second_half" ? "Second Half" : "First Half"}
+                    </p>
+                  )}
+                  {selectedLeaveDetail?.approvedBy && (
+                    <p className="text-xs text-muted-foreground">
+                      Approved by: {selectedLeaveDetail.approvedBy}{selectedLeaveDetail.approvedByEmployeeCode ? ` (${selectedLeaveDetail.approvedByEmployeeCode})` : ""}
+                    </p>
+                  )}
+                  {selectedLeaveDetail?.approvedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Approved at: {formatDateTimeInOrgTimeZone(selectedLeaveDetail.approvedAt)}
+                    </p>
+                  )}
+                  {selectedLeaveDetail?.reason && (
+                    <p className="text-xs text-muted-foreground">
+                      Reason: {selectedLeaveDetail.reason}
+                    </p>
+                  )}
+                </div>
+              )}
+              {selectedAttendanceRequestDetail && (
+                <div className="mb-2 pb-2 border-b">
+                  <p className="text-xs font-medium mb-1">Attendance Request</p>
+                  <p className="text-xs text-muted-foreground">
+                    Type: {selectedAttendanceRequestDetail.requestType === "missed_checkout" ? "Missed Checkout" : "Correction"}
+                  </p>
+                  {selectedAttendanceRequestDetail.requestedCheckInTime && (
+                    <p className="text-xs text-muted-foreground">
+                      Requested check-in: {selectedAttendanceRequestDetail.requestedCheckInTime}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.requestedCheckOutTime && (
+                    <p className="text-xs text-muted-foreground">
+                      Requested check-out: {selectedAttendanceRequestDetail.requestedCheckOutTime}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.status && (
+                    <p className="text-xs text-muted-foreground">
+                      Status: {selectedAttendanceRequestDetail.status}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.approvedBy && (
+                    <p className="text-xs text-muted-foreground">
+                      Approved by: {selectedAttendanceRequestDetail.approvedBy}{selectedAttendanceRequestDetail.approvedByEmployeeCode ? ` (${selectedAttendanceRequestDetail.approvedByEmployeeCode})` : ""}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.approvedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Approved at: {formatDateTimeInOrgTimeZone(selectedAttendanceRequestDetail.approvedAt)}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.reason && (
+                    <p className="text-xs text-muted-foreground">
+                      Reason: {selectedAttendanceRequestDetail.reason}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.rejectionReason && (
+                    <p className="text-xs text-muted-foreground">
+                      Rejection reason: {selectedAttendanceRequestDetail.rejectionReason}
+                    </p>
+                  )}
+                </div>
+              )}
+              {selectedCell && (
+                <div className="mb-2 pb-2 border-b">
+                  <p className="text-xs font-medium mb-1">Attendance Details</p>
+                  {selectedCell.shiftName || selectedCell.shiftCode ? (
+                    <p className="text-xs text-muted-foreground">
+                      Shift: {selectedCell.shiftName || ""}{selectedCell.shiftCode ? ` (${selectedCell.shiftCode})` : ""}
+                    </p>
+                  ) : null}
+                  {selectedCell.shiftStartTime && selectedCell.shiftEndTime ? (
+                    <p className="text-xs text-muted-foreground">
+                      Shift Time: {selectedCell.shiftStartTime} - {selectedCell.shiftEndTime}
+                    </p>
+                  ) : null}
+                  {selectedCell.checkInAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Check-in: {formatDateTimeInOrgTimeZone(selectedCell.checkInAt)}
+                    </p>
+                  ) : null}
+                  {selectedCell.checkOutAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Check-out: {formatDateTimeInOrgTimeZone(selectedCell.checkOutAt)}
+                    </p>
+                  ) : null}
+                  {(selectedCell.lateByMinutes || 0) > 0 ? (
+                    <p className="text-xs text-muted-foreground">Late by: {selectedCell.lateByMinutes} min</p>
+                  ) : null}
+                  {(selectedCell.earlyLoginByMinutes || 0) > 0 ? (
+                    <p className="text-xs text-muted-foreground">Early login by: {selectedCell.earlyLoginByMinutes} min</p>
+                  ) : null}
+                  {(selectedCell.earlyCheckoutByMinutes || 0) > 0 ? (
+                    <p className="text-xs text-muted-foreground">Early checkout by: {selectedCell.earlyCheckoutByMinutes} min</p>
+                  ) : null}
+                  {(selectedCell.overtimeMinutes || 0) > 0 ? (
+                    <p className="text-xs text-muted-foreground">Overtime: {selectedCell.overtimeMinutes} min</p>
+                  ) : null}
+                  {selectedCell.overriddenBy ? (
+                    <p className="text-xs text-muted-foreground">
+                      Overridden by: {selectedCell.overriddenBy}
+                    </p>
+                  ) : null}
+                  {selectedCell.overriddenAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Overridden at: {formatDateTimeInOrgTimeZone(selectedCell.overriddenAt)}
+                    </p>
+                  ) : null}
                 </div>
               )}
               <p className="text-xs font-medium mb-2">Activity Timeline</p>
