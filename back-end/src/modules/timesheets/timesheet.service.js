@@ -154,6 +154,38 @@ const buildAttendanceActivityHistory = (history, attendance) => {
   return normalizedHistory.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 };
 
+const toEmployeeDisplayName = (employee) => {
+  if (!employee) return null;
+  const name = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+  return name || employee.employeeCode || null;
+};
+
+const resolveActionEmployeeFromRequest = (requestLike) => {
+  if (!requestLike) return null;
+  if (requestLike.actionBy) return requestLike.actionBy;
+  const approvedSteps = Array.isArray(requestLike.approvalSteps)
+    ? requestLike.approvalSteps.filter((step) => step?.status === "approved" && step?.actionBy)
+    : [];
+  if (!approvedSteps.length) return null;
+  const latestApprovedStep = approvedSteps
+    .slice()
+    .sort((left, right) => new Date(right.actionAt || 0).getTime() - new Date(left.actionAt || 0).getTime())[0];
+  return latestApprovedStep?.actionBy || null;
+};
+
+const resolveActionAtFromRequest = (requestLike) => {
+  if (!requestLike) return null;
+  if (requestLike.actionAt) return requestLike.actionAt;
+  const approvedSteps = Array.isArray(requestLike.approvalSteps)
+    ? requestLike.approvalSteps.filter((step) => step?.status === "approved" && step?.actionAt)
+    : [];
+  if (!approvedSteps.length) return null;
+  return approvedSteps
+    .slice()
+    .sort((left, right) => new Date(right.actionAt || 0).getTime() - new Date(left.actionAt || 0).getTime())[0]
+    ?.actionAt || null;
+};
+
 const eachDateBetween = (from, to) => {
   const dates = [];
   const start = startOfDay(from);
@@ -2350,8 +2382,62 @@ exports.getAttendanceCellHistory = async (req) => {
   const attendance = mergeAttendanceRowsByEmployeeDay(attendanceRows, organizationTimeZone)
     .find((row) => getAttendanceRowDayKey(row, organizationTimeZone) === requestedDayKey) || null;
 
+  const approvedLeave = await Leave.findOne({
+    organizationId: req.user.organizationId,
+    employeeId,
+    status: "approved",
+    fromDate: { $lte: dayEnd },
+    toDate: { $gte: dayStart }
+  })
+    .populate("leaveTypeId", "name code")
+    .populate("actionBy", "firstName lastName employeeCode")
+    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
+    .sort({ createdAt: -1 });
+
+  const attendanceRequest = await AttendanceRequest.findOne({
+    organizationId: req.user.organizationId,
+    employeeId,
+    date: requestedDayKey
+  })
+    .populate("actionBy", "firstName lastName employeeCode")
+    .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
+    .sort({ createdAt: -1 });
+
+  const leaveActionBy = resolveActionEmployeeFromRequest(approvedLeave);
+  const leaveActionAt = resolveActionAtFromRequest(approvedLeave);
+
+  const leaveData = approvedLeave
+    ? {
+        leaveType: approvedLeave.leaveTypeId?.name || "Leave",
+        leaveCode: approvedLeave.leaveTypeId?.code || "",
+        duration: approvedLeave.duration || "full_day",
+        halfDaySession: approvedLeave.halfDaySession || null,
+        reason: approvedLeave.reason || "",
+        status: approvedLeave.status,
+        approvedBy: toEmployeeDisplayName(leaveActionBy),
+        approvedByEmployeeCode: leaveActionBy?.employeeCode || null,
+        approvedAt: leaveActionAt
+      }
+    : null;
+
+  const requestActionBy = resolveActionEmployeeFromRequest(attendanceRequest);
+  const requestActionAt = resolveActionAtFromRequest(attendanceRequest);
+  const attendanceRequestData = attendanceRequest
+    ? {
+        requestType: attendanceRequest.requestType,
+        requestedCheckInTime: attendanceRequest.requestedCheckInTime || null,
+        requestedCheckOutTime: attendanceRequest.requestedCheckOutTime || null,
+        reason: attendanceRequest.reason || "",
+        status: attendanceRequest.status,
+        approvedBy: toEmployeeDisplayName(requestActionBy),
+        approvedByEmployeeCode: requestActionBy?.employeeCode || null,
+        approvedAt: requestActionAt,
+        rejectionReason: attendanceRequest.rejectionReason || null
+      }
+    : null;
+
   if (!attendance) {
-    return { attendance: null, history: [] };
+    return { attendance: null, leave: leaveData, attendanceRequest: attendanceRequestData, history: [] };
   }
 
   const attendanceData = attendance.toObject ? attendance.toObject() : attendance;
@@ -2373,6 +2459,8 @@ exports.getAttendanceCellHistory = async (req) => {
 
   return {
     attendance: attendanceData,
+    leave: leaveData,
+    attendanceRequest: attendanceRequestData,
     history: buildAttendanceActivityHistory(history, attendanceData)
   };
 };
