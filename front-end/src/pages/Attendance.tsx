@@ -24,15 +24,21 @@ import {
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
-import { formatDateKeyInOrgCalendar, formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
+import { formatDateKeyInOrgCalendar, formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowUpDown } from "lucide-react";
-import { getAttendanceDisplayStatus, isThresholdQualifiedAttendance } from "./attendanceMatrixStatus";
 
 type DayCell = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
+  displayStatus?: string;
+  displayLabel?: string;
+  displayShortLabel?: string;
+  displayTone?: string;
   checkInAt: string | null;
   checkOutAt: string | null;
+  totalMinutes?: number;
+  workedMinutes?: number;
+  workedDuration?: string;
   checkInIp?: string | null;
   checkInSelfieProvided?: boolean;
   isOpenSession?: boolean;
@@ -57,6 +63,10 @@ type DayCell = {
   leaveUnits?: number;
   isWeekOff: boolean;
   holidayName: string | null;
+  isFuture?: boolean;
+  isThresholdQualified?: boolean;
+  isOvernightShift?: boolean;
+  attendanceDateKey?: string | null;
 };
 
 type EmployeeRow = {
@@ -65,6 +75,17 @@ type EmployeeRow = {
   lastName: string;
   employeeCode: string;
   days: Record<number, DayCell>;
+  summary?: {
+    presentDays: number;
+    pendingCheckoutDays: number;
+    absentDays: number;
+    onLeaveDays: number;
+    weekOffDays: number;
+    holidayDays: number;
+    selfieDays: number;
+    payrollExcludedDays: number;
+    totalDays: number;
+  };
 };
 
 type AttendanceHistoryItem = {
@@ -152,23 +173,6 @@ const normalizeEmployeeIds = (values: unknown[]): string[] =>
     )
   );
 
-const buildUpdatedCell = (cell: DayCell, status: "present" | "absent"): DayCell => ({
-  ...cell,
-  status,
-  checkInAt: status === "present" ? (cell.checkInAt || new Date().toISOString()) : null,
-  checkOutAt: status === "present" ? (cell.checkOutAt || new Date().toISOString()) : null,
-  isOpenSession: false,
-  excludeFromPayroll: false,
-  payrollReconciledByLeave: false,
-  missedCheckout: false,
-  missedCheckoutMarkedAt: null,
-  lateByMinutes: 0,
-  earlyLoginByMinutes: 0,
-  earlyCheckoutByMinutes: 0,
-  overtimeMinutes: 0,
-  overriddenAt: new Date().toISOString()
-});
-
 const currentMonth = () => {
   const now = new Date();
   const y = now.getFullYear();
@@ -201,56 +205,10 @@ const emptyCell: DayCell = {
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
-const toLeaveShortLabel = (leaveType: string | null) => {
-  const normalized = String(leaveType || "").trim();
-  if (!normalized) return "L";
-  const compact = normalized.replace(/[^a-zA-Z]/g, "").toUpperCase();
-  if (compact.length >= 2 && compact.length <= 4) return compact;
-  const initials = normalized
-    .split(/\s+/)
-    .map((part) => part[0] || "")
-    .join("")
-    .toUpperCase();
-  return initials || "L";
-};
-
-const toOrgDateKey = (value: string | number | Date) => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: getOrgTimeZone(),
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(new Date(value));
-  const read = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value || "00";
-  return `${read("year")}-${read("month")}-${read("day")}`;
-};
-
 const addDaysToDateKey = (dateKey: string, dayDelta: number) => {
   const [year, month, day] = dateKey.split("-").map(Number);
   const shifted = new Date(Date.UTC(year, month - 1, day + dayDelta, 12, 0, 0));
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
-};
-
-const parseTimeToMinutes = (timeValue?: string | null) => {
-  if (!timeValue || !/^\d{2}:\d{2}$/.test(timeValue)) return null;
-  const [hours, minutes] = timeValue.split(":").map(Number);
-  return hours * 60 + minutes;
-};
-
-const resolveWorkedMinutes = (checkInAt?: string | null, checkOutAt?: string | null) => {
-  if (!checkInAt || !checkOutAt) return 0;
-  const start = new Date(checkInAt);
-  const end = new Date(checkOutAt);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
-  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
-};
-
-const formatWorkedDuration = (workedMinutes: number) => {
-  if (!Number.isFinite(workedMinutes) || workedMinutes <= 0) return "";
-  const hours = Math.floor(workedMinutes / 60);
-  const minutes = workedMinutes % 60;
-  if (minutes === 0) return `${hours}h`;
-  return `${hours}h ${minutes}m`;
 };
 
 const mergeAttendancePages = (existing: EmployeeRow[], incoming: EmployeeRow[]) => {
@@ -372,6 +330,20 @@ const Attendance = () => {
         employeeId: toEmployeeIdString(employee.employeeId)
       }));
 
+      const sampleCell = nextRows[0]
+        ? Object.values(nextRows[0].days || {}).find((cell) => Boolean(cell))
+        : null;
+      const backendDisplayPayloadMissing = Boolean(
+        nextRows.length > 0
+          && sampleCell
+          && typeof sampleCell === "object"
+          && !("displayStatus" in sampleCell)
+      );
+      if (backendDisplayPayloadMissing) {
+        toast.error("Attendance backend is outdated. Restart or redeploy the backend to load computed attendance statuses.");
+        return;
+      }
+
       setRows((prev) => (canViewAll && currentPage > 1 ? mergeAttendancePages(prev, nextRows) : nextRows));
       setDaysInMonth(res.data?.daysInMonth || 31);
       setPagination(res.data?.pagination || null);
@@ -452,18 +424,12 @@ const Attendance = () => {
     setSortOrder("asc");
   };
 
-  const isFutureDay = (day: number) => {
-    const dateKey = `${month}-${String(day).padStart(2, "0")}`;
-    const todayKey = toOrgDateKey(new Date());
-    return dateKey > todayKey;
-  };
-
   const openCellDetails = async (row: EmployeeRow, day: number) => {
     const cell = row.days?.[day] || emptyCell;
-    if (isFutureDay(day) || cell.isWeekOff) return;
+    if (cell.isFuture || cell.isWeekOff) return;
     setSelectedEmployee(row);
     setSelectedDay(day);
-    setSelectedStatus(isThresholdQualifiedAttendance(cell.status) ? "present" : "absent");
+    setSelectedStatus(cell.isThresholdQualified ? "present" : "absent");
     setOpen(true);
     setHistory([]);
     setSelectedAttendanceSnapshot(null);
@@ -511,60 +477,20 @@ const Attendance = () => {
       }
 
       toast.success("Attendance updated");
-      setRows((prev) =>
-        prev.map((row) => {
-          if (toEmployeeIdString(row.employeeId) !== employeeId) return row;
-          const currentCell = row.days?.[selectedDay] || emptyCell;
-          return {
-            ...row,
-            days: {
-              ...row.days,
-              [selectedDay]: buildUpdatedCell(currentCell, selectedStatus)
-            }
-          };
-        })
-      );
-      setSelectedEmployee((prev) => (
-        prev && toEmployeeIdString(prev.employeeId) === employeeId
-          ? {
-              ...prev,
-              days: {
-                ...prev.days,
-                [selectedDay]: buildUpdatedCell(prev.days?.[selectedDay] || emptyCell, selectedStatus)
-              }
-            }
-          : prev
-      ));
       setOpen(false);
+      await fetchMatrix();
     } finally {
       setSaving(false);
     }
-  };
-
-  const isOvernightShiftCell = (cell: DayCell) => {
-    const startMinutes = parseTimeToMinutes(cell.shiftStartTime);
-    const endMinutes = parseTimeToMinutes(cell.shiftEndTime);
-    return startMinutes !== null && endMinutes !== null && endMinutes <= startMinutes;
   };
 
   const getAttendanceDateKey = (day: number) => `${month}-${String(day).padStart(2, "0")}`;
 
   const formatHoverInfo = (cell: DayCell, day: number) => {
     const parts: string[] = [];
-    const resolvedStatus = getAttendanceDisplayStatus({
-      isHoliday: Boolean(cell.holidayName),
-      isWeekOff: cell.isWeekOff,
-      isOnLeave: cell.isOnLeave,
-      leaveType: cell.leaveType,
-      leaveDuration: cell.leaveDuration,
-      attendanceStatus: cell.status,
-      checkInAt: cell.checkInAt,
-      checkOutAt: cell.checkOutAt,
-      snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
-    });
-    const attendanceDateKey = getAttendanceDateKey(day);
-    const isOvernightShift = isOvernightShiftCell(cell);
-    const workedMinutes = resolveWorkedMinutes(cell.checkInAt, cell.checkOutAt);
+    const resolvedStatus = cell.displayStatus || "Absent";
+    const attendanceDateKey = cell.attendanceDateKey || getAttendanceDateKey(day);
+    const isOvernightShift = Boolean(cell.isOvernightShift);
     const hideTimings = resolvedStatus === "Leave" || resolvedStatus === "Holiday";
     if (resolvedStatus !== "Absent") parts.push(`Status: ${resolvedStatus}`);
     if (isOvernightShift) {
@@ -590,8 +516,8 @@ const Attendance = () => {
     if (!hideTimings && cell.checkOutAt) {
       parts.push(`Check-out: ${isOvernightShift ? formatDateTimeInOrgTimeZone(cell.checkOutAt) : formatTimeInOrgTimeZone(cell.checkOutAt)}`);
     }
-    if (!hideTimings && workedMinutes > 0) {
-      parts.push(`Worked: ${formatWorkedDuration(workedMinutes)}`);
+    if (!hideTimings && cell.workedDuration) {
+      parts.push(`Worked: ${cell.workedDuration}`);
     }
     if (!hideTimings && canViewSelfieData && (cell.checkInAt || cell.checkOutAt)) {
       parts.push(`Selfie: ${cell.checkInSelfieProvided ? "Yes" : "No"}`);
@@ -625,163 +551,22 @@ const Attendance = () => {
     return parts.join(" | ") || "No details";
   };
 
-  const getCellUi = (cell: DayCell, isFuture = false) => {
-    const resolvedStatus = getAttendanceDisplayStatus({
-      isHoliday: Boolean(cell.holidayName),
-      isWeekOff: cell.isWeekOff,
-      isOnLeave: cell.isOnLeave,
-      leaveType: cell.leaveType,
-      leaveDuration: cell.leaveDuration,
-      attendanceStatus: cell.status,
-      checkInAt: cell.checkInAt,
-      checkOutAt: cell.checkOutAt,
-      isFuture,
-      snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
-    });
-
-    if (resolvedStatus === "Holiday") {
-      return {
-        label: "Holiday",
-        shortLabel: "H",
-        className: "bg-amber-100 text-amber-700 border-amber-300"
-      };
-    }
-    if (resolvedStatus === "Week Off") {
-      return {
-        label: "Week Off",
-        shortLabel: "W",
-        className: "bg-sky-100 text-sky-700 border-sky-300"
-      };
-    }
-    if (resolvedStatus === "Future") {
-      return {
-        label: "Not Marked",
-        shortLabel: "-",
-        className: "bg-slate-100 text-slate-500 border-slate-200"
-      };
-    }
-    if (resolvedStatus === "Leave") {
-      return {
-        label: cell.leaveType || "Leave",
-        shortLabel: toLeaveShortLabel(cell.leaveType),
-        className: "bg-violet-100 text-violet-700 border-violet-300"
-      };
-    }
-    if (resolvedStatus === "Absent + Leave") {
-      return {
-        label: `Absent + ${cell.leaveType || "Leave"}`,
-        shortLabel: "AL",
-        className: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300"
-      };
-    }
-    if (resolvedStatus === "Pending Checkout") {
-      return {
-        label: "Pending Checkout",
-        shortLabel: "PC",
-        className: "bg-orange-100 text-orange-700 border-orange-300"
-      };
-    }
-    if (resolvedStatus === "Present") {
-      return {
-        label: "Present",
-        shortLabel: "P",
-        className: "bg-emerald-100 text-emerald-700 border-emerald-300"
-      };
-    }
-    if (resolvedStatus === "Half Day") {
-      return {
-        label: "Half Day",
-        shortLabel: "HP",
-        className: "bg-lime-100 text-lime-700 border-lime-300"
-      };
-    }
-    return {
-      label: "Absent",
-      shortLabel: "A",
-      className: "bg-rose-100 text-rose-700 border-rose-300"
+  const getCellUi = (cell: DayCell) => {
+    const toneClasses: Record<string, string> = {
+      holiday: "bg-amber-100 text-amber-700 border-amber-300",
+      week_off: "bg-sky-100 text-sky-700 border-sky-300",
+      future: "bg-slate-100 text-slate-500 border-slate-200",
+      leave: "bg-violet-100 text-violet-700 border-violet-300",
+      absent_leave: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300",
+      pending_checkout: "bg-orange-100 text-orange-700 border-orange-300",
+      present: "bg-emerald-100 text-emerald-700 border-emerald-300",
+      half_day: "bg-lime-100 text-lime-700 border-lime-300",
+      absent: "bg-rose-100 text-rose-700 border-rose-300"
     };
-  };
-
-  const getEmployeeTotals = (row: EmployeeRow) => {
-    let presentDays = 0;
-    let pendingCheckoutDays = 0;
-    let absentDays = 0;
-    let onLeaveDays = 0;
-    let weekOffDays = 0;
-    let holidayDays = 0;
-    let payrollExcludedDays = 0;
-    let selfieDays = 0;
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      if (isFutureDay(day)) {
-        continue;
-      }
-      const cell = row.days?.[day] || emptyCell;
-      const resolvedStatus = getAttendanceDisplayStatus({
-        isHoliday: Boolean(cell.holidayName),
-        isWeekOff: cell.isWeekOff,
-        isOnLeave: cell.isOnLeave,
-        leaveType: cell.leaveType,
-        leaveDuration: cell.leaveDuration,
-        attendanceStatus: cell.status,
-        checkInAt: cell.checkInAt,
-        checkOutAt: cell.checkOutAt,
-        snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
-      });
-
-      if (cell.checkInSelfieProvided) {
-        selfieDays += 1;
-      }
-      if (resolvedStatus === "Pending Checkout") {
-        pendingCheckoutDays += 1;
-        if (cell.excludeFromPayroll) {
-          payrollExcludedDays += 1;
-        }
-        continue;
-      }
-      if (resolvedStatus === "Half Day") {
-        presentDays += 0.5;
-        absentDays += 0.5;
-        continue;
-      }
-      if (resolvedStatus === "Present") {
-        presentDays += 1;
-        continue;
-      }
-      if (resolvedStatus === "Leave") {
-        onLeaveDays += 1;
-        continue;
-      }
-      if (resolvedStatus === "Absent + Leave") {
-        absentDays += 0.5;
-        onLeaveDays += 0.5;
-        continue;
-      }
-      if (resolvedStatus === "Week Off") {
-        weekOffDays += 1;
-        continue;
-      }
-      if (resolvedStatus === "Holiday") {
-        holidayDays += 1;
-        continue;
-      }
-      absentDays += 1;
-    }
     return {
-      presentDays,
-      pendingCheckoutDays,
-      absentDays,
-      onLeaveDays,
-      weekOffDays,
-      holidayDays,
-      selfieDays,
-      payrollExcludedDays,
-      totalDays:
-        presentDays
-        + pendingCheckoutDays
-        + absentDays
-        + onLeaveDays
-        + weekOffDays
-        + holidayDays
+      label: cell.displayLabel || "Absent",
+      shortLabel: cell.displayShortLabel || "A",
+      className: toneClasses[cell.displayTone || "absent"] || toneClasses.absent
     };
   };
 
@@ -803,7 +588,17 @@ const Attendance = () => {
     }
     const lines = [header.join(",")];
     filteredRows.forEach((row) => {
-      const t = getEmployeeTotals(row);
+      const t = row.summary || {
+        presentDays: 0,
+        pendingCheckoutDays: 0,
+        absentDays: 0,
+        onLeaveDays: 0,
+        weekOffDays: 0,
+        holidayDays: 0,
+        selfieDays: 0,
+        payrollExcludedDays: 0,
+        totalDays: 0
+      };
       const name = `${row.firstName || ""} ${row.lastName || ""}`.trim();
       const rowData = [
         row.employeeCode || "",
@@ -1003,15 +798,14 @@ const Attendance = () => {
                         if (!day) {
                           return <div key={`blank-${idx}`} className="h-[86px] sm:h-[96px] rounded-xl bg-slate-50/60 border border-slate-100" />;
                         }
-                        const isFuture = isFutureDay(day);
                         const cell = selfRow.days?.[day] || emptyCell;
-                        const cellUi = getCellUi(cell, isFuture);
+                        const isFuture = Boolean(cell.isFuture);
+                        const cellUi = getCellUi(cell);
                         const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
                         const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
                         const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName) || cell.isWeekOff;
-                        const isOvernightShift = isOvernightShiftCell(cell);
-                        const attendanceDateKey = getAttendanceDateKey(day);
-                        const workedMinutes = resolveWorkedMinutes(cell.checkInAt, cell.checkOutAt);
+                        const isOvernightShift = Boolean(cell.isOvernightShift);
+                        const attendanceDateKey = cell.attendanceDateKey || getAttendanceDateKey(day);
                         return (
                           <HoverCard key={day} openDelay={120} closeDelay={80}>
                             <HoverCardTrigger asChild>
@@ -1067,9 +861,9 @@ const Attendance = () => {
                                           : formatTimeInOrgTimeZone(cell.checkOutAt))
                                         : "Not recorded"}
                                     </p>
-                                    {workedMinutes > 0 && (
+                                    {cell.workedDuration && (
                                       <p className="text-xs text-muted-foreground">
-                                        Worked: {formatWorkedDuration(workedMinutes)}
+                                        Worked: {cell.workedDuration}
                                       </p>
                                     )}
                                     {canViewSelfieData && (
@@ -1351,10 +1145,10 @@ const Attendance = () => {
                         </td>
                         {Array.from({ length: daysInMonth }).map((_, idx) => {
                           const day = idx + 1;
-                          const isFuture = isFutureDay(day);
                           const cell = row.days?.[day] || emptyCell;
+                          const isFuture = Boolean(cell.isFuture);
                           const isNonInteractive = isFuture || cell.isWeekOff;
-                          const cellUi = getCellUi(cell, isFuture);
+                          const cellUi = getCellUi(cell);
 
                           return (
                             <td key={day} className="p-1">
@@ -1373,7 +1167,17 @@ const Attendance = () => {
                           );
                         })}
                         {(() => {
-                          const totals = getEmployeeTotals(row);
+                          const totals = row.summary || {
+                            presentDays: 0,
+                            pendingCheckoutDays: 0,
+                            absentDays: 0,
+                            onLeaveDays: 0,
+                            weekOffDays: 0,
+                            holidayDays: 0,
+                            selfieDays: 0,
+                            payrollExcludedDays: 0,
+                            totalDays: 0
+                          };
                           return (
                             <>
                               <td className="text-center text-sm font-medium text-emerald-700">
