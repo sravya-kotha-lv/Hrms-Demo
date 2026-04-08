@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { motion } from "framer-motion";
 import {
@@ -54,12 +54,32 @@ type AttendanceDay = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
   checkInAt: string | null;
   checkOutAt: string | null;
+  displayStatus?: string;
+  displayLabel?: string;
+  displayShortLabel?: string;
+  displayTone?: string;
+  workedMinutes?: number;
+  workedDuration?: string;
+  attendanceDateKey?: string;
+  isFuture?: boolean;
   excludeFromPayroll?: boolean;
   missedCheckout?: boolean;
   isOnLeave: boolean;
   leaveType: string | null;
   isWeekOff: boolean;
   holidayName: string | null;
+};
+
+type AttendanceMatrixSummary = {
+  presentDays: number;
+  pendingCheckoutDays: number;
+  absentDays: number;
+  onLeaveDays: number;
+  weekOffDays: number;
+  holidayDays: number;
+  selfieDays: number;
+  payrollExcludedDays: number;
+  totalDays: number;
 };
 
 type CheckInPolicy = {
@@ -152,9 +172,6 @@ type AttendanceTodayRecord = AttendanceDay & {
 };
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-const isPresentLikeStatus = (status?: string | null) =>
-  status === "present" || status === "half_day_present" || status === "full_day_present";
 
 const formatShiftTime = (value?: string | null) => {
   if (!value || !/^\d{2}:\d{2}$/.test(value)) return null;
@@ -270,6 +287,7 @@ const EmployeeDashboard = () => {
     anniversaries: []
   });
   const [matrixDays, setMatrixDays] = useState<Record<number, AttendanceDay>>({});
+  const [matrixSummary, setMatrixSummary] = useState<AttendanceMatrixSummary | null>(null);
   const [daysInMonth, setDaysInMonth] = useState<number>(31);
   const [myProfile, setMyProfile] = useState<MyProfile | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
@@ -285,6 +303,7 @@ const EmployeeDashboard = () => {
     attendanceGeoFenceEnabled: false,
     attendanceGeoRadiusMeters: 200
   });
+  const hasShownMatrixCompatibilityErrorRef = useRef(false);
 
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
 
@@ -349,8 +368,6 @@ const EmployeeDashboard = () => {
 
     if (attendanceRes?.success) {
       const record = (attendanceRes.data || [])[0];
-      console.log(record,"record");
-      
       setAttendanceToday(record || null);
     } else {
       setAttendanceToday(null);
@@ -384,10 +401,27 @@ const EmployeeDashboard = () => {
 
     if (matrixRes?.success) {
       const row = matrixRes.data?.employees?.[0];
-      setMatrixDays(row?.days || {});
-      setDaysInMonth(Number(matrixRes.data?.daysInMonth || 31));
+      const decoratedDays = row?.days || {};
+      const sampleDay = Object.values(decoratedDays).find(Boolean) as AttendanceDay | undefined;
+      const hasDecoratedCell = sampleDay ? typeof sampleDay.displayStatus === "string" : true;
+
+      if (!hasDecoratedCell) {
+        setMatrixDays({});
+        setMatrixSummary(null);
+        setDaysInMonth(Number(matrixRes.data?.daysInMonth || 31));
+        if (!hasShownMatrixCompatibilityErrorRef.current) {
+          hasShownMatrixCompatibilityErrorRef.current = true;
+          toast.error("Attendance backend is outdated. Restart backend to load dashboard attendance statuses.");
+        }
+      } else {
+        hasShownMatrixCompatibilityErrorRef.current = false;
+        setMatrixDays(decoratedDays);
+        setMatrixSummary(row?.summary || null);
+        setDaysInMonth(Number(matrixRes.data?.daysInMonth || 31));
+      }
     } else {
       setMatrixDays({});
+      setMatrixSummary(null);
       setDaysInMonth(31);
     }
 
@@ -412,34 +446,14 @@ const EmployeeDashboard = () => {
     return () => window.clearInterval(timer);
   }, [loadDashboard]);
 
-  const monthlySummary = useMemo(() => {
-    let present = 0;
-    let pendingCheckout = 0;
-    let absent = 0;
-    let onLeave = 0;
-    let weekOff = 0;
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      const cell = matrixDays[day];
-      if (!cell) continue;
-      if (cell.holidayName) continue;
-      if (cell.isWeekOff) {
-        weekOff += 1;
-        continue;
-      }
-      if (cell.isOnLeave) {
-        onLeave += 1;
-        continue;
-      }
-      if (cell.status === "pending_checkout") {
-        pendingCheckout += 1;
-      } else if (isPresentLikeStatus(cell.status)) {
-        present += 1;
-      } else {
-        absent += 1;
-      }
-    }
-    return { present, pendingCheckout, absent, onLeave, weekOff, total: daysInMonth };
-  }, [matrixDays, daysInMonth]);
+  const monthlySummary = useMemo(() => ({
+    present: Number(matrixSummary?.presentDays || 0),
+    pendingCheckout: Number(matrixSummary?.pendingCheckoutDays || 0),
+    absent: Number(matrixSummary?.absentDays || 0),
+    onLeave: Number(matrixSummary?.onLeaveDays || 0),
+    weekOff: Number(matrixSummary?.weekOffDays || 0),
+    total: Number(matrixSummary?.totalDays || daysInMonth)
+  }), [daysInMonth, matrixSummary]);
 
   const pendingLeaves = useMemo(
     () => (myLeaves || []).filter((l) => l.status === "pending").length,
@@ -481,13 +495,6 @@ const EmployeeDashboard = () => {
     const sundayStart = new Date(todayStart);
     sundayStart.setDate(todayStart.getDate() - todayStart.getDay());
 
-    let todayLiveHours = 0;
-    if (attendanceToday?.checkInAt) {
-      const inAt = new Date(attendanceToday.checkInAt);
-      const outAt = attendanceToday?.checkOutAt ? new Date(attendanceToday.checkOutAt) : now;
-      todayLiveHours = Math.max(0, (outAt.getTime() - inAt.getTime()) / (1000 * 60 * 60));
-    }
-
     const dayRows = Array.from({ length: 7 }, (_, idx) => {
       const dayDate = new Date(sundayStart);
       dayDate.setDate(sundayStart.getDate() + idx);
@@ -505,15 +512,10 @@ const EmployeeDashboard = () => {
         ? matrixDays[dayDate.getDate()]
         : null;
 
-      let attendanceHours = 0;
-      if (matrixCell?.checkInAt) {
-        const inAt = new Date(matrixCell.checkInAt);
-        const outAt = matrixCell?.checkOutAt ? new Date(matrixCell.checkOutAt) : now;
-        attendanceHours = Math.max(0, (outAt.getTime() - inAt.getTime()) / (1000 * 60 * 60));
-      }
+      const attendanceHours = Number(matrixCell?.workedMinutes || 0) / 60;
 
       const completedHours = dayKey === todayKey
-        ? Math.max(timesheetHours, attendanceHours, todayLiveHours)
+        ? Math.max(timesheetHours, attendanceHours)
         : Math.max(timesheetHours, attendanceHours);
 
       return {
@@ -538,15 +540,13 @@ const EmployeeDashboard = () => {
     return {
       completedTimesheetHours,
       todayTimesheetHours,
-      todayLiveHours,
+      todayLiveHours: Number((matrixDays[new Date().getDate()]?.workedMinutes || 0) / 60),
       completedIncludingToday,
       dayRows
     };
-  }, [weeklyEntries, attendanceToday, matrixDays]);
+  }, [weeklyEntries, matrixDays]);
 
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
-  console.log(hasCheckedInToday,"has",attendanceToday?.checkInAt);
-  
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
   const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt);
 
@@ -972,28 +972,23 @@ const EmployeeDashboard = () => {
               {monthCells.map((day, idx) => {
                 if (!day) return <div key={`empty-${idx}`} className="h-14 rounded-lg bg-transparent" />;
                 const cell = matrixDays[day];
-                const isFuture = day > today.getDate();
                 const baseClass = "h-14 rounded-lg border text-xs p-2 flex flex-col justify-between";
                 let toneClass = "bg-muted/20";
                 let label = "";
-                if (cell?.holidayName) {
-                  toneClass = "bg-rose-100 border-rose-300";
-                  label = "Holiday";
-                } else if (cell?.isWeekOff) {
-                  toneClass = "bg-sky-100 border-sky-300";
-                  label = "WO";
-                } else if (cell?.isOnLeave) {
-                  toneClass = "bg-emerald-100 border-emerald-300";
-                  label = "Leave";
-                } else if (cell?.status === "pending_checkout") {
-                  toneClass = "bg-orange-100 border-orange-300";
-                  label = "Pending";
-                } else if (isPresentLikeStatus(cell?.status)) {
-                  toneClass = "bg-blue-100 border-blue-300";
-                  label = "Present";
-                } else if (!isFuture) {
-                  toneClass = "bg-rose-100 border-rose-300";
-                  label = "Absent";
+                const toneMap: Record<string, string> = {
+                  holiday: "bg-rose-100 border-rose-300",
+                  week_off: "bg-sky-100 border-sky-300",
+                  leave: "bg-emerald-100 border-emerald-300",
+                  pending_checkout: "bg-orange-100 border-orange-300",
+                  present: "bg-blue-100 border-blue-300",
+                  half_day: "bg-lime-100 border-lime-300",
+                  absent_leave: "bg-fuchsia-100 border-fuchsia-300",
+                  absent: "bg-rose-100 border-rose-300",
+                  future: "bg-muted/20"
+                };
+                if (cell?.displayTone) {
+                  toneClass = toneMap[cell.displayTone] || toneClass;
+                  label = cell.displayShortLabel || cell.displayLabel || "";
                 }
                 return (
                   <div key={day} className={`${baseClass} ${toneClass}`}>

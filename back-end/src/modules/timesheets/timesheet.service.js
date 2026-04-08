@@ -730,7 +730,7 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
       grouped.set(key, {
         ...source,
         employeeId: source.employeeId,
-        date: dateKey,
+        date: startOfDayInTimeZone(dateKey, organizationTimeZone),
         dateKey
       });
       continue;
@@ -801,7 +801,7 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
   return Array.from(grouped.values()).map((row) => {
     const normalizedDate = getAttendanceRowNormalizedDate(row, organizationTimeZone);
     if (normalizedDate) {
-      row.date = normalizedDate;
+      row.date = startOfDayInTimeZone(normalizedDate, organizationTimeZone);
       row.dateKey = normalizedDate;
     }
     const checkInAt = row.checkInAt ? new Date(row.checkInAt) : null;
@@ -1050,6 +1050,182 @@ const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, min
   if (workedMinutes >= fullDayMinutes) return "full_day_present";
   if (workedMinutes >= halfDayMinutes) return "half_day_present";
   return "absent";
+};
+
+const isThresholdQualifiedAttendance = (status) =>
+  status === "present" || status === "half_day_present" || status === "full_day_present";
+
+const isOvernightShiftWindow = (shiftStartTime, shiftEndTime) => {
+  const startMinutes = parseTimeToMinutes(shiftStartTime);
+  const endMinutes = parseTimeToMinutes(shiftEndTime);
+  return startMinutes !== null && endMinutes !== null && endMinutes <= startMinutes;
+};
+
+const formatWorkedDuration = (workedMinutes) => {
+  if (!Number.isFinite(workedMinutes) || workedMinutes <= 0) return "";
+  const hours = Math.floor(workedMinutes / 60);
+  const minutes = workedMinutes % 60;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+};
+
+const resolveAttendanceDisplayStatus = ({
+  isHoliday,
+  isWeekOff,
+  isOnLeave,
+  leaveType,
+  leaveDuration,
+  attendanceStatus,
+  isFuture,
+  snapshotGenerated
+}) => {
+  if (isHoliday) return "Holiday";
+  if (isWeekOff) return "Week Off";
+  if (isFuture) return "Future";
+  if (attendanceStatus === "pending_checkout" && snapshotGenerated) return "Absent";
+  if (attendanceStatus === "pending_checkout") return "Pending Checkout";
+  if (isOnLeave && leaveDuration === "full_day" && leaveType) return "Leave";
+  if (attendanceStatus === "full_day_present" || attendanceStatus === "present") return "Present";
+  if (attendanceStatus === "half_day_present") return "Half Day";
+  if (isOnLeave && leaveDuration === "half_day" && leaveType) return "Absent + Leave";
+  if (leaveType && leaveDuration !== "half_day") return "Leave";
+  return "Absent";
+};
+
+const resolveAttendanceUiMeta = ({ displayStatus, leaveType }) => {
+  if (displayStatus === "Holiday") {
+    return { label: "Holiday", shortLabel: "H", tone: "holiday" };
+  }
+  if (displayStatus === "Week Off") {
+    return { label: "Week Off", shortLabel: "W", tone: "week_off" };
+  }
+  if (displayStatus === "Future") {
+    return { label: "Not Marked", shortLabel: "-", tone: "future" };
+  }
+  if (displayStatus === "Leave") {
+    const normalized = String(leaveType || "").trim();
+    const compact = normalized.replace(/[^a-zA-Z]/g, "").toUpperCase();
+    const initials = normalized
+      .split(/\s+/)
+      .map((part) => part[0] || "")
+      .join("")
+      .toUpperCase();
+    const shortLabel = !normalized
+      ? "L"
+      : compact.length >= 2 && compact.length <= 4
+        ? compact
+        : initials || "L";
+    return { label: leaveType || "Leave", shortLabel, tone: "leave" };
+  }
+  if (displayStatus === "Absent + Leave") {
+    return { label: `Absent + ${leaveType || "Leave"}`, shortLabel: "AL", tone: "absent_leave" };
+  }
+  if (displayStatus === "Pending Checkout") {
+    return { label: "Pending Checkout", shortLabel: "PC", tone: "pending_checkout" };
+  }
+  if (displayStatus === "Present") {
+    return { label: "Present", shortLabel: "P", tone: "present" };
+  }
+  if (displayStatus === "Half Day") {
+    return { label: "Half Day", shortLabel: "HP", tone: "half_day" };
+  }
+  return { label: "Absent", shortLabel: "A", tone: "absent" };
+};
+
+const buildAttendanceSummary = (days, daysInMonth) => {
+  const summary = {
+    presentDays: 0,
+    pendingCheckoutDays: 0,
+    absentDays: 0,
+    onLeaveDays: 0,
+    weekOffDays: 0,
+    holidayDays: 0,
+    selfieDays: 0,
+    payrollExcludedDays: 0,
+    totalDays: 0
+  };
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const cell = days[day];
+    if (!cell || cell.isFuture) continue;
+    if (cell.checkInSelfieProvided) summary.selfieDays += 1;
+
+    if (cell.displayStatus === "Pending Checkout") {
+      summary.pendingCheckoutDays += 1;
+      if (cell.excludeFromPayroll) summary.payrollExcludedDays += 1;
+      continue;
+    }
+    if (cell.displayStatus === "Half Day") {
+      summary.presentDays += 0.5;
+      summary.absentDays += 0.5;
+      continue;
+    }
+    if (cell.displayStatus === "Present") {
+      summary.presentDays += 1;
+      continue;
+    }
+    if (cell.displayStatus === "Absent + Leave") {
+      summary.absentDays += 0.5;
+      summary.onLeaveDays += 0.5;
+      continue;
+    }
+    if (cell.displayStatus === "Leave") {
+      summary.onLeaveDays += 1;
+      continue;
+    }
+    if (cell.displayStatus === "Week Off") {
+      summary.weekOffDays += 1;
+      continue;
+    }
+    if (cell.displayStatus === "Holiday") {
+      summary.holidayDays += 1;
+      continue;
+    }
+    summary.absentDays += 1;
+  }
+
+  summary.totalDays =
+    summary.presentDays
+    + summary.pendingCheckoutDays
+    + summary.absentDays
+    + summary.onLeaveDays
+    + summary.weekOffDays
+    + summary.holidayDays;
+
+  return summary;
+};
+
+const decorateAttendanceCell = ({
+  cell,
+  dayKey,
+  todayKey,
+  snapshotGenerated
+}) => {
+  const workedMinutes = Number(cell.totalMinutes || 0);
+  const displayStatus = resolveAttendanceDisplayStatus({
+    isHoliday: Boolean(cell.holidayName),
+    isWeekOff: Boolean(cell.isWeekOff),
+    isOnLeave: Boolean(cell.isOnLeave),
+    leaveType: cell.leaveType || null,
+    leaveDuration: cell.leaveDuration || null,
+    attendanceStatus: cell.status,
+    isFuture: dayKey > todayKey,
+    snapshotGenerated
+  });
+  const ui = resolveAttendanceUiMeta({ displayStatus, leaveType: cell.leaveType || null });
+  return {
+    ...cell,
+    isFuture: dayKey > todayKey,
+    displayStatus,
+    displayLabel: ui.label,
+    displayShortLabel: ui.shortLabel,
+    displayTone: ui.tone,
+    isThresholdQualified: isThresholdQualifiedAttendance(cell.status),
+    workedMinutes,
+    workedDuration: formatWorkedDuration(workedMinutes),
+    isOvernightShift: isOvernightShiftWindow(cell.shiftStartTime, cell.shiftEndTime),
+    attendanceDateKey: dayKey
+  };
 };
 
 const isActiveOvernightSession = (attendanceRow, organizationTimeZone = "Asia/Kolkata") => {
@@ -2147,13 +2323,20 @@ exports.getAttendanceMatrix = async (req) => {
       }
       days[day].isWeekOff = isWeekOff;
       days[day].holidayName = holidayName;
+      days[day] = decorateAttendanceCell({
+        cell: days[day],
+        dayKey,
+        todayKey,
+        snapshotGenerated: Boolean(snapshotGenerated)
+      });
     }
     return {
       employeeId: String(emp._id),
       firstName: emp.firstName,
       lastName: emp.lastName,
       employeeCode: emp.employeeCode,
-      days
+      days,
+      summary: buildAttendanceSummary(days, daysInMonth)
     };
   });
 
@@ -2339,6 +2522,16 @@ exports.getMyAttendanceMatrix = async (req) => {
     });
   });
 
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dayKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    days[day] = decorateAttendanceCell({
+      cell: days[day],
+      dayKey,
+      todayKey,
+      snapshotGenerated: Boolean(snapshotGenerated)
+    });
+  }
+
   return {
     year,
     month,
@@ -2349,7 +2542,8 @@ exports.getMyAttendanceMatrix = async (req) => {
       firstName: employee.firstName,
       lastName: employee.lastName,
       employeeCode: employee.employeeCode,
-      days
+      days,
+      summary: buildAttendanceSummary(days, daysInMonth)
     }]
   };
 };
