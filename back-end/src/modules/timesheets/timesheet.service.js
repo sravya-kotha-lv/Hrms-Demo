@@ -119,6 +119,41 @@ const toDateKey = (value) => {
   return `${year}-${month}-${day}`;
 };
 
+const buildAttendanceActivityHistory = (history, attendance) => {
+  const normalizedHistory = history.map((entry) => ({
+    action: entry.action,
+    createdAt: entry.createdAt,
+    actor: entry.userId?.email || "Unknown",
+    before: entry.before || null,
+    after: entry.after || null
+  }));
+
+  const hasCheckInEvent = normalizedHistory.some((entry) => entry.action === "CHECK_IN");
+  const hasCheckOutEvent = normalizedHistory.some((entry) => entry.action === "CHECK_OUT");
+
+  if (!hasCheckInEvent && attendance?.checkInAt) {
+    normalizedHistory.push({
+      action: "CHECK_IN",
+      createdAt: attendance.checkInAt,
+      actor: "Employee",
+      before: null,
+      after: null
+    });
+  }
+
+  if (!hasCheckOutEvent && attendance?.checkOutAt) {
+    normalizedHistory.push({
+      action: "CHECK_OUT",
+      createdAt: attendance.checkOutAt,
+      actor: "Employee",
+      before: null,
+      after: null
+    });
+  }
+
+  return normalizedHistory.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+};
+
 const eachDateBetween = (from, to) => {
   const dates = [];
   const start = startOfDay(from);
@@ -623,6 +658,16 @@ const getAttendanceRowDayKey = (row, organizationTimeZone = "Asia/Kolkata") => {
 const getAttendanceRowNormalizedDate = (row, organizationTimeZone = "Asia/Kolkata") => {
   const dateKey = getAttendanceRowDayKey(row, organizationTimeZone);
   return dateKey || null;
+};
+
+const normalizeAttendanceDocumentDateFields = (attendance, organizationTimeZone = "Asia/Kolkata") => {
+  if (!attendance) return attendance;
+  const normalizedDateKey = getAttendanceRowNormalizedDate(attendance, organizationTimeZone);
+  if (!normalizedDateKey) return attendance;
+
+  attendance.dateKey = normalizedDateKey;
+  attendance.date = startOfDayInTimeZone(normalizedDateKey, organizationTimeZone);
+  return attendance;
 };
 
 const buildAttendanceDateMatch = (dateKey, organizationTimeZone = "Asia/Kolkata") => {
@@ -1500,6 +1545,7 @@ exports.checkIn = async (req) => {
       throw new Error("Already checked in for this shift");
     }
 
+    normalizeAttendanceDocumentDateFields(openAttendance, organizationTimeZone);
     openAttendance.missedCheckout = true;
     openAttendance.missedCheckoutMarkedAt = now;
     openAttendance.missedCheckoutResolvedRequestId = null;
@@ -1594,6 +1640,7 @@ exports.checkIn = async (req) => {
     existing.missedCheckout = false;
     existing.missedCheckoutMarkedAt = null;
     existing.missedCheckoutResolvedRequestId = null;
+    normalizeAttendanceDocumentDateFields(existing, organizationTimeZone);
     await existing.save();
     return existing;
   }
@@ -1698,6 +1745,7 @@ exports.checkOut = async (req) => {
   attendance.missedCheckout = false;
   attendance.missedCheckoutMarkedAt = null;
   attendance.missedCheckoutResolvedRequestId = null;
+  normalizeAttendanceDocumentDateFields(attendance, organizationTimeZone);
   await attendance.save();
 
   // Update weekly timesheet hours for today
@@ -2325,13 +2373,7 @@ exports.getAttendanceCellHistory = async (req) => {
 
   return {
     attendance: attendanceData,
-    history: history.map((h) => ({
-      action: h.action,
-      createdAt: h.createdAt,
-      actor: h.userId?.email || "Unknown",
-      before: h.before || null,
-      after: h.after || null
-    }))
+    history: buildAttendanceActivityHistory(history, attendanceData)
   };
 };
 

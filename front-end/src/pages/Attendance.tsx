@@ -256,6 +256,49 @@ const mergeAttendancePages = (existing: EmployeeRow[], incoming: EmployeeRow[]) 
   return Array.from(merged.values());
 };
 
+const buildActivityTimeline = (
+  history: AttendanceHistoryItem[],
+  attendanceSnapshot: AttendanceSnapshot,
+  attendanceCell?: DayCell | null
+): AttendanceHistoryItem[] => {
+  const items = [...history];
+  const hasCheckInEvent = items.some((item) => item.action === "CHECK_IN");
+  const hasCheckOutEvent = items.some((item) => item.action === "CHECK_OUT");
+  const fallbackCheckInAt = attendanceSnapshot?.checkInAt || attendanceCell?.checkInAt || null;
+  const fallbackCheckOutAt = attendanceSnapshot?.checkOutAt || attendanceCell?.checkOutAt || null;
+
+  if (!hasCheckInEvent && fallbackCheckInAt) {
+    items.push({
+      action: "CHECK_IN",
+      createdAt: fallbackCheckInAt,
+      actor: "Employee"
+    });
+  }
+
+  if (!hasCheckOutEvent && fallbackCheckOutAt) {
+    items.push({
+      action: "CHECK_OUT",
+      createdAt: fallbackCheckOutAt,
+      actor: "Employee"
+    });
+  }
+
+  return items.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+};
+
+const formatActivityAction = (action: string) => {
+  switch (action) {
+    case "CHECK_IN":
+      return "Checked in";
+    case "CHECK_OUT":
+      return "Checked out";
+    case "ATTENDANCE_OVERRIDE":
+      return "Attendance overridden";
+    default:
+      return action.replace(/_/g, " ").toLowerCase().replace(/^\w/, (char) => char.toUpperCase());
+  }
+};
+
 const Attendance = () => {
   const { hasAnyPermission, profile } = useAuth();
   const canViewAll = hasAnyPermission(["ATTENDANCE_VIEW_ALL"]);
@@ -363,6 +406,14 @@ const Attendance = () => {
   const visibleRows = filteredRows;
 
   const hasMoreRows = Boolean(canViewAll && pagination && pagination.page < pagination.totalPages);
+  const selectedCell = useMemo(() => {
+    if (!selectedEmployee || !selectedDay) return null;
+    return selectedEmployee.days?.[selectedDay] || null;
+  }, [selectedDay, selectedEmployee]);
+  const activityTimeline = useMemo(
+    () => buildActivityTimeline(history, selectedAttendanceSnapshot, selectedCell),
+    [history, selectedAttendanceSnapshot, selectedCell]
+  );
 
   const handleMatrixScroll = () => {
     const viewport = tableViewportRef.current;
@@ -1423,12 +1474,12 @@ const Attendance = () => {
               )}
               <p className="text-xs font-medium mb-2">Activity Timeline</p>
               {historyLoading && <p className="text-xs text-muted-foreground">Loading...</p>}
-              {!historyLoading && history.length === 0 && (
+              {!historyLoading && activityTimeline.length === 0 && (
                 <p className="text-xs text-muted-foreground">No activity found.</p>
               )}
-              {!historyLoading && history.map((h, idx) => (
+              {!historyLoading && activityTimeline.map((h, idx) => (
                 <p key={`${h.createdAt}-${idx}`} className="text-xs mb-1">
-                  {formatDateTimeInOrgTimeZone(h.createdAt)} - {h.action} by {h.actor}
+                  {formatDateTimeInOrgTimeZone(h.createdAt)} - {formatActivityAction(h.action)} by {h.actor}
                 </p>
               ))}
             </div>
