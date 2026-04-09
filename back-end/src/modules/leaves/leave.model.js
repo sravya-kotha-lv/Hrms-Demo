@@ -87,6 +87,11 @@ const leaveSchema = new mongoose.Schema(
       required: true
     },
 
+    effectiveDateKeys: {
+      type: [String],
+      default: []
+    },
+
     reason: {
       type: String,
       required: true

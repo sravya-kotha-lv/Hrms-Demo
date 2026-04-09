@@ -39,6 +39,7 @@ type CalendarLeave = {
   leaveTypeId: string;
   fromDate: string;
   toDate: string;
+  effectiveDateKeys?: string[];
   status: "pending" | "approved";
 };
 
@@ -70,6 +71,12 @@ const dateKey = (date: Date) => {
 const parseDateInput = (value: string) => {
   if (!value) return undefined;
   const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return undefined;
+  return new Date(y, m - 1, d);
+};
+
+const parseDateKey = (value: string) => {
+  const [y, m, d] = String(value || "").split("-").map(Number);
   if (!y || !m || !d) return undefined;
   return new Date(y, m - 1, d);
 };
@@ -114,6 +121,21 @@ const getApplicableLeaveDays = ({
   if (firstWorkingIdx === -1 || lastWorkingIdx === -1) return 0;
 
   return dayMeta.filter((d, index) => !d.excluded || (index > firstWorkingIdx && index < lastWorkingIdx)).length;
+};
+
+const getRangeExcludedDays = ({
+  from,
+  to,
+  weekOffDays,
+  holidayKeys
+}: {
+  from?: Date;
+  to?: Date;
+  weekOffDays: number[];
+  holidayKeys: Set<string>;
+}) => {
+  if (!from || !to) return 0;
+  return datesInRange(from, to).filter((d) => weekOffDays.includes(d.getDay()) || holidayKeys.has(dateKey(d))).length;
 };
 
 const LEAVE_REASON_REGEX = /^(?=.*[A-Za-z])[A-Za-z\s.,'()&/-]+$/;
@@ -188,20 +210,46 @@ const LeaveApply = () => {
     (myLeaves || [])
       .filter((l) => l.status === "approved")
       .forEach((l) => {
+        if (Array.isArray(l.effectiveDateKeys) && l.effectiveDateKeys.length > 0) {
+          result.push(
+            ...l.effectiveDateKeys
+              .map((key) => parseDateKey(key))
+              .filter((value): value is Date => Boolean(value))
+          );
+          return;
+        }
         result.push(...datesInRange(new Date(l.fromDate), new Date(l.toDate)));
       });
     return result;
   }, [myLeaves]);
+
+  const approvedDateKeySet = useMemo(
+    () => new Set(approvedDates.map((date) => dateKey(date))),
+    [approvedDates]
+  );
 
   const pendingDates = useMemo(() => {
     const result: Date[] = [];
     (myLeaves || [])
       .filter((l) => l.status === "pending")
       .forEach((l) => {
+        if (Array.isArray(l.effectiveDateKeys) && l.effectiveDateKeys.length > 0) {
+          result.push(
+            ...l.effectiveDateKeys
+              .map((key) => parseDateKey(key))
+              .filter((value): value is Date => Boolean(value))
+          );
+          return;
+        }
         result.push(...datesInRange(new Date(l.fromDate), new Date(l.toDate)));
       });
     return result;
   }, [myLeaves]);
+
+  const pendingDateKeySet = useMemo(
+    () => new Set(pendingDates.map((date) => dateKey(date))),
+    [pendingDates]
+  );
 
   const selectedBalance = useMemo(() => {
     if (!leaveTypeId) return null;
@@ -229,6 +277,15 @@ const LeaveApply = () => {
     if (duration === "half_day" && days > 0) return 0.5;
     return days;
   }, [selectedRange, weekOffDays, holidayKeys, sandwichRuleEnabled, duration]);
+
+  const selectedExcludedDays = useMemo(() => {
+    return getRangeExcludedDays({
+      from: selectedRange?.from,
+      to: selectedRange?.to,
+      weekOffDays,
+      holidayKeys
+    });
+  }, [holidayKeys, selectedRange, weekOffDays]);
 
   const dateError = useMemo(() => {
     if (!fromDate || !toDate) return "";
@@ -379,16 +436,22 @@ const LeaveApply = () => {
                       month: "space-y-4 min-w-[270px]"
                     }}
                     modifiers={{
-                      weekOff: (date) => weekOffDays.includes(date.getDay()),
-                      holiday: (date) => holidayKeys.has(dateKey(date)),
+                      weekOff: (date) => {
+                        const key = dateKey(date);
+                        return weekOffDays.includes(date.getDay()) && !approvedDateKeySet.has(key) && !pendingDateKeySet.has(key);
+                      },
+                      holiday: (date) => {
+                        const key = dateKey(date);
+                        return holidayKeys.has(key) && !approvedDateKeySet.has(key) && !pendingDateKeySet.has(key);
+                      },
                       approved: approvedDates,
                       pending: pendingDates
                     }}
                     modifiersClassNames={{
                       weekOff: "bg-sky-100 text-sky-700 border border-sky-300 rounded-md !opacity-100",
                       holiday: "bg-rose-100 text-rose-700 border border-rose-300 rounded-md !opacity-100",
-                      approved: "bg-green-100 text-green-700 font-semibold rounded-md",
-                      pending: "bg-orange-100 text-orange-700 font-semibold rounded-md"
+                      approved: "bg-green-100 text-green-700 border border-green-300 font-semibold rounded-md !opacity-100",
+                      pending: "bg-orange-100 text-orange-700 border border-orange-300 font-semibold rounded-md !opacity-100"
                     }}
                   />
                 </div>
@@ -532,6 +595,12 @@ const LeaveApply = () => {
               Applicable leave days {sandwichRuleEnabled ? "(sandwich rule enabled):" : "(excluding holidays/week-offs):"}{" "}
               <span className="font-semibold">{applicableDays}</span>
             </div>
+
+            {sandwichRuleEnabled && selectedExcludedDays > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Applying leave beside holidays or week offs can lead to leave deduction on those holidays and week offs under the sandwich rule.
+              </div>
+            )}
 
             <div className="flex justify-start sm:justify-end">
               <Button onClick={submit} disabled={submitting || loading || Boolean(dateError) || leaveRestriction.blocked}>
