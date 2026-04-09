@@ -41,7 +41,7 @@ import { useAuth } from "@/context/useAuth";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Label, LabelList, Pie, PieChart, XAxis, YAxis } from "recharts";
 
 /* ========================= Dashboard ========================= */
 
@@ -95,11 +95,6 @@ type NotificationRecord = {
   title?: string;
   message?: string;
   createdAt?: string;
-  type?: string;
-  meta?: {
-    module?: string;
-    [key: string]: unknown;
-  };
 };
 
 type TodayStatusRecord = {
@@ -283,16 +278,6 @@ const doughnutPalette = {
 const Dashboard = () => {
   const navigate = useNavigate();
   const { isSuperAdmin, permissions } = useAuth();
-  const getNotificationTarget = (notification: NotificationRecord) => {
-    const moduleName = String(notification?.meta?.module || "").toLowerCase();
-    const type = String(notification?.type || "").toLowerCase();
-    const text = `${String(notification?.title || "").toLowerCase()} ${String(notification?.message || "").toLowerCase()}`;
-
-    if (moduleName === "leaves" || type.startsWith("leave_") || text.includes("leave")) return "/leave";
-    if (type === "attendance_request_pending_approval" || text.includes("approval")) return "/pending-approvals";
-    if (type === "attendance_override" || text.includes("attendance")) return "/attendance";
-    return "/dashboard";
-  };
   const today = new Date();
   const todayKey = toOrgDateKey(today);
   const [todayYearStr, todayMonthStr, todayDayStr] = todayKey.split("-");
@@ -868,6 +853,45 @@ const Dashboard = () => {
       })),
     [departmentAnalytics]
   );
+
+  const departmentMixHighlights = useMemo(() => {
+    if (!departmentAnalytics.length) return [];
+
+    const largestTeam = [...departmentAnalytics].sort((a, b) => b.employees - a.employees)[0];
+    const bestPresentRate = [...departmentAnalytics]
+      .filter((department) => department.employees > 0)
+      .sort((a, b) => (b.present / b.employees) - (a.present / a.employees))[0];
+    const highestAbsence = [...departmentAnalytics].sort((a, b) => b.absent - a.absent)[0];
+
+    return [
+      {
+        key: "largest",
+        eyebrow: "Largest Team",
+        label: largestTeam?.name || "-",
+        value: largestTeam?.employees || 0,
+        suffix: "employees",
+        tone: "slate"
+      },
+      {
+        key: "best",
+        eyebrow: "Best Present Rate",
+        label: bestPresentRate?.name || "-",
+        value: bestPresentRate?.employees
+          ? `${Math.round((bestPresentRate.present / bestPresentRate.employees) * 100)}%`
+          : "0%",
+        suffix: "present",
+        tone: "green"
+      },
+      {
+        key: "risk",
+        eyebrow: "Highest Absent",
+        label: highestAbsence?.name || "-",
+        value: highestAbsence?.absent || 0,
+        suffix: "employees",
+        tone: "orange"
+      }
+    ];
+  }, [departmentAnalytics]);
 
   const formatDepartmentAxisLabel = (value: string) => {
     const text = String(value || "").trim();
@@ -1846,94 +1870,172 @@ const Dashboard = () => {
         >
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h3 className="font-semibold">Workforce Distribution</h3>
-              <p className="text-sm text-muted-foreground">3D-style snapshot of today&apos;s workforce mix. Click for weekly and monthly attendance trend.</p>
-            </div>
-            <Badge variant="outline">Today</Badge>
-          </div>
-          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(260px,320px),minmax(0,1fr)] gap-4 items-start">
-            <ChartContainer config={chartConfig} className="h-[280px] w-full min-w-0">
-              <PieChart>
-                <defs>
-                  <filter id="dashboard-pie-shadow" x="-30%" y="-30%" width="160%" height="160%">
-                    <feDropShadow dx="0" dy="10" stdDeviation="10" floodColor="#0f172a" floodOpacity="0.18" />
-                  </filter>
-                </defs>
-                <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="key" />} />
-                <Pie
-                  data={workforceComposition}
-                  dataKey="value"
-                  nameKey="key"
-                  legendType="none"
-                  cx="50%"
-                  cy="54%"
-                  innerRadius={62}
-                  outerRadius={106}
-                  isAnimationActive={false}
-                >
-                  {workforceComposition.map((slice) => (
-                    <Cell key={`${slice.key}-shadow`} fill={slice.shadowColor} />
-                  ))}
-                </Pie>
-                <Pie
-                  data={workforceComposition}
-                  dataKey="value"
-                  nameKey="key"
-                  cx="50%"
-                  cy="48%"
-                  innerRadius={62}
-                  outerRadius={106}
-                  paddingAngle={3}
-                  stroke="rgba(255,255,255,0.95)"
-                  strokeWidth={2}
-                  filter="url(#dashboard-pie-shadow)"
+	              <h3 className="font-semibold">Workforce Distribution</h3>
+	              <p className="text-sm text-muted-foreground">Live snapshot of today&apos;s workforce mix with a cleaner attendance split view.</p>
+	            </div>
+	            <Badge variant="outline">Live Today</Badge>
+	          </div>
+	          <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(280px,340px),minmax(0,1fr)] items-start">
+	            <div className="rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(248,250,252,0.92)_55%,_rgba(241,245,249,0.9))] p-4 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)]">
+	              <ChartContainer config={chartConfig} className="h-[304px] w-full min-w-0">
+	                <PieChart>
+	                <defs>
+	                  <filter id="dashboard-pie-shadow" x="-40%" y="-40%" width="180%" height="190%">
+	                    <feDropShadow dx="0" dy="10" stdDeviation="10" floodColor="#0f172a" floodOpacity="0.14" />
+	                  </filter>
+	                  <filter id="dashboard-core-shadow" x="-40%" y="-40%" width="180%" height="180%">
+	                    <feOffset dx="0" dy="6" />
+	                    <feGaussianBlur stdDeviation="10" result="offset-blur" />
+	                    <feComposite operator="out" in="SourceGraphic" in2="offset-blur" result="inverse" />
+	                    <feFlood floodColor="#0f172a" floodOpacity="0.08" result="color" />
+	                    <feComposite operator="in" in="color" in2="inverse" result="shadow" />
+	                    <feComposite operator="over" in="shadow" in2="SourceGraphic" />
+	                  </filter>
+	                  <radialGradient id="dashboard-donut-halo" cx="50%" cy="45%" r="70%">
+	                    <stop offset="0%" stopColor="#fff7ed" stopOpacity="0.95" />
+	                    <stop offset="55%" stopColor="#ffffff" stopOpacity="0.72" />
+	                    <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+	                  </radialGradient>
+	                  <radialGradient id="dashboard-donut-core" cx="50%" cy="38%" r="72%">
+	                    <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+	                    <stop offset="78%" stopColor="#f8fafc" stopOpacity="0.98" />
+	                    <stop offset="100%" stopColor="#e2e8f0" stopOpacity="1" />
+	                  </radialGradient>
+	                  <linearGradient id="dashboard-donut-rim" x1="0" y1="0" x2="1" y2="1">
+	                    <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
+	                    <stop offset="100%" stopColor="#cbd5e1" stopOpacity="0.8" />
+	                  </linearGradient>
+	                  <linearGradient id="dashboard-donut-sheen" x1="0" y1="0" x2="1" y2="1">
+	                    <stop offset="0%" stopColor="#ffffff" stopOpacity="0.72" />
+	                    <stop offset="42%" stopColor="#ffffff" stopOpacity="0.16" />
+	                    <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+	                  </linearGradient>
+	                </defs>
+	                <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="key" />} />
+	                <circle cx="50%" cy="50%" r="116" fill="url(#dashboard-donut-halo)" />
+	                <Pie
+	                  data={workforceComposition}
+	                  dataKey="value"
+	                  nameKey="key"
+	                  cx="50%"
+	                  cy="50%"
+	                  innerRadius={72}
+	                  outerRadius={110}
+	                  paddingAngle={2}
+	                  stroke="rgba(255,255,255,0.95)"
+	                  strokeWidth={2}
+	                  filter="url(#dashboard-pie-shadow)"
                 >
                   {workforceComposition.map((slice) => (
                     <Cell key={slice.key} fill={slice.color} />
                   ))}
-                  <LabelList
-                    dataKey="value"
-                    position="outside"
-                    formatter={(value: number) => (value > 0 ? value : "")}
-                    className="fill-foreground text-xs font-semibold"
-                  />
-                </Pie>
-                <ChartLegend
-                  verticalAlign="bottom"
-                  content={<ChartLegendContent nameKey="key" className="flex-wrap justify-center gap-3 pt-5" />}
-                />
-              </PieChart>
-            </ChartContainer>
-            <div className="min-w-0 space-y-3">
-              <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Total Employees</p>
-                <p className="mt-2 text-3xl font-semibold">{workforceCompositionTotal}</p>
-                <p className="text-sm text-muted-foreground">Employees currently represented across today&apos;s status mix.</p>
-              </div>
-              {workforceComposition.map((slice) => {
-                const percentage = workforceCompositionTotal ? Math.round((slice.value / workforceCompositionTotal) * 100) : 0;
-                return (
-                  <div key={`mix-${slice.key}`} className="rounded-xl border border-border/60 bg-background/80 p-3">
-                    <div className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: slice.color, boxShadow: `0 4px 10px ${slice.shadowColor}55` }} />
-                        <span className="truncate font-medium">{slice.label}</span>
-                      </div>
-                      <span className="text-muted-foreground">{slice.value} employees</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-muted">
-                      <div
-                        className="h-2 rounded-full"
-                        style={{
-                          width: `${percentage}%`,
-                          background: `linear-gradient(90deg, ${slice.shadowColor}, ${slice.color})`
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  <Label
+                    position="center"
+                    content={({ viewBox }) => {
+                      if (!viewBox || !("cx" in viewBox) || !("cy" in viewBox)) return null;
+	                      const { cx, cy } = viewBox;
+	                      return (
+	                        <g>
+	                          <text x={cx} y={cy - 16} textAnchor="middle" className="fill-slate-400 text-[10px] font-semibold tracking-[0.28em] uppercase">
+	                            Workforce
+	                          </text>
+	                          <text x={cx} y={cy + 10} textAnchor="middle" className="fill-slate-900 text-[34px] font-bold">
+	                            {workforceCompositionTotal}
+	                          </text>
+	                          <text x={cx} y={cy + 30} textAnchor="middle" className="fill-slate-500 text-[11px] font-medium">
+	                            employees today
+	                          </text>
+	                        </g>
+	                      );
+	                    }}
+	                  />
+	                </Pie>
+	                <circle cx="50%" cy="50%" r="66" fill="url(#dashboard-donut-core)" filter="url(#dashboard-core-shadow)" />
+	                <circle cx="50%" cy="50%" r="69" fill="none" stroke="url(#dashboard-donut-rim)" strokeOpacity="0.92" strokeWidth="2.5" />
+	                <path
+	                  d="M 146 74 C 172 50, 228 50, 254 74"
+	                  fill="none"
+	                  stroke="url(#dashboard-donut-sheen)"
+	                  strokeWidth="14"
+	                  strokeLinecap="round"
+	                />
+	                </PieChart>
+	              </ChartContainer>
+	              <div className="mt-4 flex flex-wrap justify-center gap-2.5">
+	                {workforceComposition.map((slice) => {
+	                  const percentage = workforceCompositionTotal ? Math.round((slice.value / workforceCompositionTotal) * 100) : 0;
+	                  return (
+	                    <div
+	                      key={`legend-${slice.key}`}
+	                      className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.35)] backdrop-blur"
+	                    >
+	                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
+	                      <span>{slice.label}</span>
+	                      <span className="text-slate-400">{percentage}%</span>
+	                    </div>
+	                  );
+	                })}
+	              </div>
+	            </div>
+	            <div className="min-w-0 space-y-3">
+	              <div className="rounded-[28px] border border-slate-200/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] p-5 shadow-[0_22px_60px_-28px_rgba(15,23,42,0.3)]">
+	                <div className="flex items-start justify-between gap-4">
+	                  <div className="min-w-0">
+	                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Workforce Total</p>
+	                    <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-900">{workforceCompositionTotal}</p>
+	                    <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">
+	                      Employees represented across today&apos;s live attendance mix.
+	                    </p>
+	                  </div>
+	                  <div className="shrink-0 rounded-full border border-slate-200/80 bg-white/90 px-3 py-1.5 text-xs font-semibold tracking-[0.16em] text-slate-500 uppercase shadow-[0_10px_24px_-18px_rgba(15,23,42,0.35)]">
+	                    Live Mix
+	                  </div>
+	                </div>
+	              </div>
+	              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-1">
+	                {workforceComposition.map((slice) => {
+	                  const percentage = workforceCompositionTotal ? Math.round((slice.value / workforceCompositionTotal) * 100) : 0;
+	                  return (
+	                    <div
+	                      key={`mix-${slice.key}`}
+	                      className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.32)]"
+	                    >
+	                      <div className="flex items-start justify-between gap-3">
+	                        <div className="min-w-0 flex-1">
+	                          <div className="flex items-center gap-2.5">
+	                            <span
+	                              className="h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-white"
+	                              style={{ backgroundColor: slice.color, boxShadow: `0 8px 20px -10px ${slice.shadowColor}88` }}
+	                            />
+	                            <span className="text-sm font-semibold leading-5 text-slate-900 break-words">{slice.label}</span>
+	                          </div>
+	                          <div className="mt-3 flex items-end justify-between gap-3">
+	                            <div>
+	                              <p className="text-[28px] font-semibold leading-none tracking-tight text-slate-900">{slice.value}</p>
+	                              <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">Employees</p>
+	                            </div>
+	                            <div className="shrink-0 text-right">
+	                              <p className="text-lg font-semibold leading-none text-slate-700">{percentage}%</p>
+	                              <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-400">Share</p>
+	                            </div>
+	                          </div>
+	                        </div>
+	                      </div>
+	                      <div className="mt-4 h-2 rounded-full bg-slate-100">
+	                        <div
+	                          className="h-2 rounded-full"
+	                          style={{
+	                            width: `${percentage}%`,
+	                            background: `linear-gradient(90deg, ${slice.shadowColor}, ${slice.color})`,
+	                            boxShadow: `0 10px 18px -12px ${slice.shadowColor}`
+	                          }}
+	                        />
+	                      </div>
+	                    </div>
+	                  );
+	                })}
+	              </div>
+	            </div>
           </div>
         </div>
 
@@ -1948,52 +2050,69 @@ const Dashboard = () => {
             </div>
             <Badge variant="outline">Live Split</Badge>
           </div>
-          <ChartContainer config={chartConfig} className="h-[360px] w-full xl:h-[320px]">
-            <BarChart data={departmentChartData} barGap={8} barCategoryGap={22}>
-              <defs>
-                <linearGradient id="dept-present-gradient" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#15803d" />
-                  <stop offset="100%" stopColor="#4ade80" />
-                </linearGradient>
-                <linearGradient id="dept-absent-gradient" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#c2410c" />
-                  <stop offset="100%" stopColor="#fb923c" />
-                </linearGradient>
-                <linearGradient id="dept-leave-gradient" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#1d4ed8" />
-                  <stop offset="100%" stopColor="#60a5fa" />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis
-                dataKey="name"
-                tickLine={false}
-                axisLine={false}
-                interval={0}
-                height={76}
-                angle={-18}
-                textAnchor="end"
-                tickMargin={10}
-                tickFormatter={formatDepartmentAxisLabel}
-                className="text-[11px]"
-              />
-              <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-              <ChartTooltip
-                content={
-                  <ChartTooltipContent
-                    labelFormatter={(_, payload) => String(payload?.[0]?.payload?.fullName || "")}
-                  />
-                }
-              />
-              <Bar dataKey="present" stackId="dept" radius={[10, 10, 0, 0]} fill="url(#dept-present-gradient)" />
-              <Bar dataKey="onLeave" stackId="dept" radius={[10, 10, 0, 0]} fill="url(#dept-leave-gradient)" />
-              <Bar dataKey="absent" stackId="dept" radius={[10, 10, 0, 0]} fill="url(#dept-absent-gradient)" />
-              <ChartLegend
-                verticalAlign="bottom"
-                content={<ChartLegendContent nameKey="dataKey" className="justify-center gap-4 pt-4" />}
-              />
-            </BarChart>
-          </ChartContainer>
+          <div className="space-y-4">
+            <ChartContainer config={chartConfig} className="h-[290px] w-full xl:h-[272px]">
+              <BarChart data={departmentChartData} barGap={8} barCategoryGap={22}>
+                <defs>
+                  <linearGradient id="dept-present-gradient" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#15803d" />
+                    <stop offset="100%" stopColor="#4ade80" />
+                  </linearGradient>
+                  <linearGradient id="dept-absent-gradient" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#c2410c" />
+                    <stop offset="100%" stopColor="#fb923c" />
+                  </linearGradient>
+                  <linearGradient id="dept-leave-gradient" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#1d4ed8" />
+                    <stop offset="100%" stopColor="#60a5fa" />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="name"
+                  tickLine={false}
+                  axisLine={false}
+                  interval={0}
+                  height={76}
+                  angle={-18}
+                  textAnchor="end"
+                  tickMargin={10}
+                  tickFormatter={formatDepartmentAxisLabel}
+                  className="text-[11px]"
+                />
+                <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(_, payload) => String(payload?.[0]?.payload?.fullName || "")}
+                    />
+                  }
+                />
+                <Bar dataKey="present" stackId="dept" radius={[10, 10, 0, 0]} fill="url(#dept-present-gradient)" />
+                <Bar dataKey="onLeave" stackId="dept" radius={[10, 10, 0, 0]} fill="url(#dept-leave-gradient)" />
+                <Bar dataKey="absent" stackId="dept" radius={[10, 10, 0, 0]} fill="url(#dept-absent-gradient)" />
+                <ChartLegend
+                  verticalAlign="bottom"
+                  content={<ChartLegendContent nameKey="dataKey" className="justify-center gap-4 pt-4" />}
+                />
+              </BarChart>
+            </ChartContainer>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              {departmentMixHighlights.map((item) => (
+                <div
+                  key={item.key}
+                  className="rounded-[22px] border border-slate-200/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] p-4 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.32)]"
+                >
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">{item.eyebrow}</p>
+                  <p className="mt-2 truncate text-sm font-semibold text-slate-900">{item.label}</p>
+                  <div className="mt-4 flex items-end justify-between gap-3">
+                    <p className="text-2xl font-semibold tracking-tight text-slate-900">{item.value}</p>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">{item.suffix}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div
@@ -2360,15 +2479,10 @@ const Dashboard = () => {
           <div className="space-y-2 max-h-56 overflow-auto custom-scroll pr-1">
             {notifications.length === 0 && <p className="text-sm text-muted-foreground">No notifications</p>}
             {notifications.map((n) => (
-              <button
-                key={n._id}
-                type="button"
-                className="w-full rounded-lg border p-2 text-left text-sm transition hover:border-primary/40"
-                onClick={() => navigate(getNotificationTarget(n))}
-              >
+              <div key={n._id} className="p-2 rounded-lg border text-sm">
                 <p className="font-medium">{n.title}</p>
                 <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
-              </button>
+              </div>
             ))}
           </div>
         </div>
