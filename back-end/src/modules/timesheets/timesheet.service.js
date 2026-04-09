@@ -2990,13 +2990,14 @@ exports.actionAttendanceRequest = async (req) => {
     {
       organizationId: req.user.organizationId,
       employeeId: request.employeeId,
-      date: attendanceDate
+      ...buildAttendanceDateMatch(attendanceDateKey, organizationTimeZone)
     },
     {
       $setOnInsert: {
         organizationId: req.user.organizationId,
         employeeId: request.employeeId,
-        date: attendanceDate
+        date: attendanceDate,
+        dateKey: attendanceDateKey
       }
     },
     { upsert: true, new: true }
@@ -3050,6 +3051,8 @@ exports.actionAttendanceRequest = async (req) => {
       ? Math.max(0, Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000))
       : 0;
 
+  attendance.date = attendanceDate;
+  attendance.dateKey = attendanceDateKey;
   attendance.checkInAt = checkInAt || null;
   attendance.checkOutAt = checkOutAt || null;
   attendance.totalMinutes = totalMinutes;
@@ -3182,14 +3185,19 @@ exports.overrideAttendance = async (req) => {
     {
       organizationId: req.user.organizationId,
       employeeId: employee._id,
-      date
+      ...buildAttendanceDateMatch(dateKey, organizationTimeZone)
     },
     {
-      $set: update,
+      $set: {
+        ...update,
+        date,
+        dateKey
+      },
       $setOnInsert: {
         organizationId: req.user.organizationId,
         employeeId: employee._id,
-        date
+        date,
+        dateKey
       }
     },
     { upsert: true, new: true }
@@ -3329,14 +3337,19 @@ exports.bulkOverrideAttendance = async (req) => {
       {
         organizationId: req.user.organizationId,
         employeeId: employee._id,
-        date
+        ...buildAttendanceDateMatch(dateKey, organizationTimeZone)
       },
       {
-        $set: update,
+        $set: {
+          ...update,
+          date,
+          dateKey
+        },
         $setOnInsert: {
           organizationId: req.user.organizationId,
           employeeId: employee._id,
-          date
+          date,
+          dateKey
         }
       },
       { upsert: true, new: true }
