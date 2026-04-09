@@ -114,6 +114,47 @@ const getApplicableLeaveDateKeys = ({
     .map((d) => d.key);
 };
 
+const getStoredOrDerivedLeaveDateKeys = ({
+  leave,
+  weekOffDays,
+  holidaySet,
+  timeZone = "Asia/Kolkata"
+}) => {
+  const storedKeys = Array.isArray(leave?.effectiveDateKeys)
+    ? leave.effectiveDateKeys.filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(String(key || "")))
+    : [];
+  if (storedKeys.length) return storedKeys;
+
+  const fromDateKey = toDateKeyInOrgTz(leave.fromDate, timeZone);
+  const toDateKey = toDateKeyInOrgTz(leave.toDate, timeZone);
+  if ((leave.duration || "full_day") === "half_day") return [fromDateKey];
+
+  const workingDateKeys = getApplicableLeaveDateKeys({
+    fromDate: fromDateKey,
+    toDate: toDateKey,
+    weekOffDays,
+    holidaySet,
+    sandwichRuleEnabled: false,
+    timeZone
+  });
+
+  const sandwichDateKeys = getApplicableLeaveDateKeys({
+    fromDate: fromDateKey,
+    toDate: toDateKey,
+    weekOffDays,
+    holidaySet,
+    sandwichRuleEnabled: true,
+    timeZone
+  });
+
+  const totalDays = Number(leave.totalDays || 0);
+  if (Number.isFinite(totalDays) && totalDays > workingDateKeys.length && sandwichDateKeys.length) {
+    return sandwichDateKeys;
+  }
+
+  return workingDateKeys;
+};
+
 const sendNotification = async ({ toEmail, toName, subject, message }) => {
   if (!toEmail) return;
   try {
@@ -543,6 +584,7 @@ exports.applyLeave = async (req) => {
       duration,
       halfDaySession,
       totalDays,
+      effectiveDateKeys: validLeaveDateKeys,
       status: "pending",
       reason: req.body.reason,
       approvalFlowId: flowConfig?.flowId || null,
@@ -660,6 +702,7 @@ exports.getApplyContext = async (req) => {
   const shiftWeekOffDays =
     weekOffConfigs.find((cfg) => cfg.shiftId && String(cfg.shiftId._id || cfg.shiftId) === String(employee.shiftId))?.weekOffDays ||
     defaultWeekOffDays;
+  const holidaySet = new Set((holidays || []).map((h) => toDateKeyInTimeZone(h.date, organizationTimeZone)));
   const leaveRestriction =
     lifecycleStatus !== "confirmed"
       ? {
@@ -711,6 +754,12 @@ exports.getApplyContext = async (req) => {
       leaveType: l.leaveTypeId?.name || "",
       fromDate: l.fromDate,
       toDate: l.toDate,
+      effectiveDateKeys: getStoredOrDerivedLeaveDateKeys({
+        leave: l,
+        weekOffDays: shiftWeekOffDays,
+        holidaySet,
+        timeZone: organizationTimeZone
+      }),
       duration: l.duration || "full_day",
       halfDaySession: l.halfDaySession || null,
       status: l.status,

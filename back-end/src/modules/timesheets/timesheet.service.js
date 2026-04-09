@@ -1079,15 +1079,17 @@ const resolveAttendanceDisplayStatus = ({
   isFuture,
   snapshotGenerated
 }) => {
+  // When sandwich rule turns a holiday/week off into a deducted leave day,
+  // the calendar should reflect the leave outcome rather than the base day type.
+  if (isOnLeave && leaveDuration === "full_day" && leaveType) return "Leave";
+  if (isOnLeave && leaveDuration === "half_day" && leaveType) return "Absent + Leave";
   if (isHoliday) return "Holiday";
   if (isWeekOff) return "Week Off";
   if (isFuture) return "Future";
   if (attendanceStatus === "pending_checkout" && snapshotGenerated) return "Absent";
   if (attendanceStatus === "pending_checkout") return "Pending Checkout";
-  if (isOnLeave && leaveDuration === "full_day" && leaveType) return "Leave";
   if (attendanceStatus === "full_day_present" || attendanceStatus === "present") return "Present";
   if (attendanceStatus === "half_day_present") return "Half Day";
-  if (isOnLeave && leaveDuration === "half_day" && leaveType) return "Absent + Leave";
   if (leaveType && leaveDuration !== "half_day") return "Leave";
   return "Absent";
 };
@@ -1130,6 +1132,51 @@ const resolveAttendanceUiMeta = ({ displayStatus, leaveType }) => {
     return { label: "Half Day", shortLabel: "HP", tone: "half_day" };
   }
   return { label: "Absent", shortLabel: "A", tone: "absent" };
+};
+
+const getLeaveDateKeysForDisplay = ({
+  leave,
+  holidayKeySet,
+  weekOffDays,
+  timeZone
+}) => {
+  const storedKeys = Array.isArray(leave?.effectiveDateKeys)
+    ? leave.effectiveDateKeys.filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(String(key || "")))
+    : [];
+  if (storedKeys.length) return storedKeys;
+
+  const fromDateKey = toDateKeyInTimeZone(leave.fromDate, timeZone);
+  const toDateKey = toDateKeyInTimeZone(leave.toDate, timeZone);
+  if (leave.duration === "half_day") return [fromDateKey];
+
+  const dayMeta = [];
+  let cursorKey = fromDateKey;
+  while (cursorKey <= toDateKey) {
+    const isWeekOff = weekOffDays.includes(getWeekdayForDateKey(cursorKey, timeZone));
+    const isHoliday = holidayKeySet.has(cursorKey);
+    dayMeta.push({
+      key: cursorKey,
+      excluded: isWeekOff || isHoliday
+    });
+    cursorKey = addDaysToDateKey(cursorKey, 1);
+  }
+
+  const workingDateKeys = dayMeta.filter((day) => !day.excluded).map((day) => day.key);
+  const firstWorkingIdx = dayMeta.findIndex((day) => !day.excluded);
+  const lastWorkingIdx = dayMeta.length - 1 - [...dayMeta].reverse().findIndex((day) => !day.excluded);
+  const sandwichDateKeys =
+    firstWorkingIdx === -1 || lastWorkingIdx === -1
+      ? []
+      : dayMeta
+          .filter((day, index) => !day.excluded || (index > firstWorkingIdx && index < lastWorkingIdx))
+          .map((day) => day.key);
+
+  const totalDays = Number(leave.totalDays || 0);
+  if (Number.isFinite(totalDays) && totalDays > workingDateKeys.length && sandwichDateKeys.length) {
+    return sandwichDateKeys;
+  }
+
+  return workingDateKeys;
 };
 
 const buildAttendanceSummary = (days, daysInMonth) => {
@@ -2201,6 +2248,9 @@ exports.getAttendanceMatrix = async (req) => {
   holidays.forEach((h) => {
     holidayByDay.set(getDayInTimeZone(h.date, organizationTimeZone), h.name);
   });
+  const holidayKeySet = new Set(
+    holidays.map((holiday) => toDateKeyInTimeZone(holiday.date, organizationTimeZone))
+  );
 
   const attendanceMap = new Map();
   attendanceRows.forEach((row) => {
@@ -2255,10 +2305,16 @@ exports.getAttendanceMatrix = async (req) => {
 
   const leaveMap = new Map();
   approvedLeaves.forEach((leave) => {
-    const leaveStart = new Date(leave.fromDate) < start ? start : new Date(leave.fromDate);
-    const leaveEnd = new Date(leave.toDate) > end ? end : new Date(leave.toDate);
-    eachDateBetween(leaveStart, leaveEnd).forEach((d) => {
-      const key = `${leave.employeeId.toString()}-${getDayInTimeZone(d, organizationTimeZone)}`;
+    const employeeWeekOffDays = weekOffMap.employeeMap.get(String(leave.employeeId)) || weekOffMap.defaultDays || [];
+    getLeaveDateKeysForDisplay({
+      leave,
+      holidayKeySet,
+      weekOffDays: employeeWeekOffDays,
+      timeZone: organizationTimeZone
+    }).forEach((dateKey) => {
+      const leaveDate = startOfDayInTimeZone(dateKey, organizationTimeZone);
+      if (leaveDate < start || leaveDate > end) return;
+      const key = `${leave.employeeId.toString()}-${getDayInTimeZone(leaveDate, organizationTimeZone)}`;
       leaveMap.set(key, {
         isOnLeave: true,
         leaveType: leave.leaveTypeId?.name || "Leave",
@@ -2415,6 +2471,9 @@ exports.getMyAttendanceMatrix = async (req) => {
   holidays.forEach((h) => {
     holidayByDay.set(getDayInTimeZone(h.date, organizationTimeZone), h.name);
   });
+  const holidayKeySet = new Set(
+    holidays.map((holiday) => toDateKeyInTimeZone(holiday.date, organizationTimeZone))
+  );
 
   const days = {};
   for (let day = 1; day <= daysInMonth; day += 1) {
@@ -2500,10 +2559,15 @@ exports.getMyAttendanceMatrix = async (req) => {
   });
 
   approvedLeaves.forEach((leave) => {
-    const leaveStart = new Date(leave.fromDate) < start ? start : new Date(leave.fromDate);
-    const leaveEnd = new Date(leave.toDate) > end ? end : new Date(leave.toDate);
-    eachDateBetween(leaveStart, leaveEnd).forEach((d) => {
-      const day = getDayInTimeZone(d, organizationTimeZone);
+    getLeaveDateKeysForDisplay({
+      leave,
+      holidayKeySet,
+      weekOffDays,
+      timeZone: organizationTimeZone
+    }).forEach((dateKey) => {
+      const leaveDate = startOfDayInTimeZone(dateKey, organizationTimeZone);
+      if (leaveDate < start || leaveDate > end) return;
+      const day = getDayInTimeZone(leaveDate, organizationTimeZone);
       days[day] = {
         ...days[day],
         isOnLeave: true,
