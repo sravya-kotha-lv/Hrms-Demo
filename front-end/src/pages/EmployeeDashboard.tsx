@@ -184,6 +184,25 @@ const formatShiftTime = (value?: string | null) => {
   return `${normalizedHours}:${String(minutes).padStart(2, "0")} ${meridiem}`;
 };
 
+const shiftTimeToMinutes = (value?: string | null) => {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return null;
+  const [hoursText, minutesText] = value.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return (hours * 60) + minutes;
+};
+
+const formatMinutesAsShiftTime = (totalMinutes: number | null) => {
+  if (!Number.isFinite(totalMinutes)) return null;
+  const normalizedMinutes = ((Number(totalMinutes) % (24 * 60)) + (24 * 60)) % (24 * 60);
+  const hours = Math.floor(normalizedMinutes / 60);
+  const minutes = normalizedMinutes % 60;
+  const meridiem = hours >= 12 ? "PM" : "AM";
+  const normalizedHours = hours % 12 || 12;
+  return `${normalizedHours}:${String(minutes).padStart(2, "0")} ${meridiem}`;
+};
+
 const captureSelfieFromCamera = async (): Promise<string | null> => {
   if (!navigator.mediaDevices?.getUserMedia) return null;
 
@@ -557,11 +576,17 @@ const EmployeeDashboard = () => {
     ? formatTimeInOrgTimeZone(attendanceToday.checkOutAt)
     : "-";
   const assignedShift = myProfile?.shiftId || null;
+  const shiftNameText = attendanceToday?.shiftName || assignedShift?.name || "Assigned Shift";
   const shiftStartText = formatShiftTime(attendanceToday?.shiftStartTime || assignedShift?.startTime);
   const shiftEndText = formatShiftTime(attendanceToday?.shiftEndTime || assignedShift?.endTime);
   const shiftTimingsText = shiftStartText && shiftEndText
     ? `${shiftStartText} - ${shiftEndText}`
     : shiftStartText || shiftEndText || "-";
+  const checkInWindowStartText = useMemo(() => {
+    const startMinutes = shiftTimeToMinutes(attendanceToday?.shiftStartTime || assignedShift?.startTime);
+    if (startMinutes === null) return null;
+    return formatMinutesAsShiftTime(startMinutes - 120);
+  }, [assignedShift?.startTime, attendanceToday?.shiftStartTime]);
   const statusHeroClassName = isCheckedOut
     ? "border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(220,252,231,0.84)_42%,rgba(255,255,255,0.98))]"
     : isCheckedIn
@@ -638,6 +663,7 @@ const EmployeeDashboard = () => {
     });
     setCheckinLoading(false);
     if (!res?.success) {
+      await loadDashboard(true);
       toast.error(res?.message || "Check-in failed");
       return;
     }
@@ -749,8 +775,13 @@ const EmployeeDashboard = () => {
               Check-in: {checkInTimeText} • Check-out: {checkOutTimeText}
             </p>
             <p className="text-sm text-muted-foreground mt-1">
-              Shift: {shiftTimingsText}
+              Shift: {shiftNameText} • {shiftTimingsText}
             </p>
+            {!hasCheckedInToday && checkInWindowStartText && shiftStartText && (
+              <p className="text-xs text-sky-700 mt-1">
+                Check-in is allowed only within 2 hours before shift start, from {checkInWindowStartText} to {shiftStartText}.
+              </p>
+            )}
             {isCheckedIn && (
               <p className="text-xs text-orange-700 mt-1">
                 Session is open and excluded from payroll until check-out.
