@@ -15,11 +15,17 @@ const sendMail = require("../../utils/sendMail");
 const { createNotificationSafe } = require("../notifications/notification.service");
 const {
   resolveApplicableFlow,
+  buildRuntimeSteps,
   getActorApprovalContext,
   canActorApproveStep,
   resolveRecipientsForStep
 } = require("../../utils/approvalFlowEngine");
-const { advanceApprovalSteps, getCurrentPendingStep } = require("../../utils/approvalProgress");
+const ApprovalFlow = require("../approvalFlows/approvalFlow.model");
+const {
+  advanceApprovalSteps,
+  getCurrentPendingStep,
+  resolveCurrentPendingStep
+} = require("../../utils/approvalProgress");
 const {
   isValidTimeZone,
   toDateKeyInTimeZone,
@@ -149,6 +155,110 @@ const getActorRoleSlug = async (req) => {
     organizationId: req.user.organizationId
   }).select("slug");
   return role?.slug || "";
+};
+
+const describeApprovalStep = (step) => {
+  if (!step) return "Unknown step";
+  if (step.approverType === "manager") {
+    return `S${step.stepNumber} Reporting Manager`;
+  }
+  if (step.approverType === "role") {
+    return `S${step.stepNumber} Role: ${step.approverRoleSlug || "-"}`;
+  }
+  return `S${step.stepNumber} Specific Employee`;
+};
+
+const isValidApprovalStepShape = (step) =>
+  Boolean(
+    step
+    && Number.isFinite(Number(step.stepNumber))
+    && ["manager", "role", "employee"].includes(String(step.approverType || ""))
+  );
+
+const rebuildLeaveApprovalStepsFromFlow = async (leave) => {
+  if (!leave?.approvalFlowId || !leave?.employeeId) return null;
+
+  const [flow, subjectEmployee] = await Promise.all([
+    ApprovalFlow.findOne({
+      _id: leave.approvalFlowId,
+      organizationId: leave.organizationId
+    }),
+    Employee.findOne({
+      _id: leave.employeeId,
+      organizationId: leave.organizationId
+    }).select("_id managerId")
+  ]);
+
+  if (!flow || !subjectEmployee) return null;
+
+  const rebuiltSteps = buildRuntimeSteps({ flow, subjectEmployee });
+  const existingByStep = new Map(
+    (leave.approvalSteps || [])
+      .filter(isValidApprovalStepShape)
+      .map((step) => [Number(step.stepNumber), step])
+  );
+
+  return rebuiltSteps.map((step) => {
+    const existing = existingByStep.get(Number(step.stepNumber));
+    if (!existing) return step;
+    if (existing.status === "approved" || existing.status === "rejected") {
+      return {
+        ...step,
+        status: existing.status,
+        actionBy: existing.actionBy || null,
+        actionAt: existing.actionAt || null,
+        remarks: existing.remarks || null
+      };
+    }
+    return step;
+  });
+};
+
+const normalizeApprovalStateSnapshot = (steps = [], currentApprovalStep = null) =>
+  JSON.stringify({
+    currentApprovalStep: currentApprovalStep == null ? null : Number(currentApprovalStep),
+    steps: (steps || []).map((step) => ({
+      stepNumber: step?.stepNumber == null ? null : Number(step.stepNumber),
+      approverType: step?.approverType || null,
+      approverEmployeeId: step?.approverEmployeeId?._id || step?.approverEmployeeId || null,
+      approverRoleSlug: step?.approverRoleSlug || null,
+      status: step?.status || null,
+      actionBy: step?.actionBy?._id || step?.actionBy || null,
+      actionAt: step?.actionAt ? new Date(step.actionAt).toISOString() : null,
+      remarks: step?.remarks || null
+    }))
+  });
+
+const repairPendingLeaveApprovalState = async (leave) => {
+  if (!leave || leave.status !== "pending" || !leave.approvalFlowId || !Array.isArray(leave.approvalSteps) || !leave.approvalSteps.length) {
+    return leave;
+  }
+
+  const beforeSnapshot = normalizeApprovalStateSnapshot(
+    leave.approvalSteps,
+    leave.currentApprovalStep
+  );
+  const rebuiltSteps = await rebuildLeaveApprovalStepsFromFlow(leave);
+  if (!rebuiltSteps?.length) return leave;
+
+  const resolvedProgress = resolveCurrentPendingStep({
+    steps: rebuiltSteps,
+    currentApprovalStep: leave.currentApprovalStep
+  });
+
+  leave.approvalSteps = resolvedProgress.steps;
+  leave.currentApprovalStep = resolvedProgress.currentApprovalStep;
+  const afterSnapshot = normalizeApprovalStateSnapshot(
+    leave.approvalSteps,
+    leave.currentApprovalStep
+  );
+
+  if (beforeSnapshot !== afterSnapshot && typeof leave.markModified === "function" && typeof leave.save === "function") {
+    leave.markModified("approvalSteps");
+    await leave.save();
+  }
+
+  return leave;
 };
 
 const getOrganizationTimeZone = async (organizationId) => {
@@ -419,6 +529,7 @@ exports.applyLeave = async (req) => {
     organizationId: req.user.organizationId,
     moduleKey: "leave",
     subjectEmployee: employee,
+    preferredFlowId: employee.leaveApprovalFlowId || null,
     totalDays
   });
   const initialPendingStep = (flowConfig?.steps || []).find((s) => s.status === "pending");
@@ -664,6 +775,7 @@ exports.getMyLeaves = async (req) => {
   const limit = Math.min(parsePositiveInt(req.query.limit, 10), 100);
   const baseQuery = Leave.find(query)
     .populate("leaveTypeId", "name code")
+    .populate("approvalFlowId", "name moduleKey minDays maxDays")
     .populate("actionBy", "firstName lastName employeeCode designationId")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate({
@@ -674,13 +786,16 @@ exports.getMyLeaves = async (req) => {
     .sort({ createdAt: -1 });
 
   if (!pageRequested) {
-    return baseQuery;
+    const rows = await baseQuery;
+    await Promise.all(rows.map((row) => repairPendingLeaveApprovalState(row)));
+    return rows;
   }
 
   const [items, total] = await Promise.all([
     baseQuery.skip((page - 1) * limit).limit(limit),
     Leave.countDocuments(query)
   ]);
+  await Promise.all(items.map((item) => repairPendingLeaveApprovalState(item)));
   const today = new Date();
   const [pending, approved, rejected, onLeaveToday] = await Promise.all([
     Leave.countDocuments({ ...statsQuery, status: "pending" }),
@@ -740,6 +855,8 @@ exports.getAllLeaves = async (req) => {
         } else {
           query.employeeId = { $in: reportIds };
         }
+      } else {
+        query.employeeId = { $in: [] };
       }
     }
   }
@@ -785,6 +902,7 @@ exports.getAllLeaves = async (req) => {
   const baseQuery = Leave.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
+    .populate("approvalFlowId", "name moduleKey minDays maxDays")
     .populate({
       path: "actionBy",
       select: "firstName lastName employeeCode designationId",
@@ -799,13 +917,16 @@ exports.getAllLeaves = async (req) => {
     .sort({ createdAt: -1 });
 
   if (!pageRequested) {
-    return baseQuery;
+    const rows = await baseQuery;
+    await Promise.all(rows.map((row) => repairPendingLeaveApprovalState(row)));
+    return rows;
   }
 
   const [items, total] = await Promise.all([
     baseQuery.skip((page - 1) * limit).limit(limit),
     Leave.countDocuments(query)
   ]);
+  await Promise.all(items.map((item) => repairPendingLeaveApprovalState(item)));
   const today = new Date();
   const [pending, approved, rejected, onLeaveToday] = await Promise.all([
     Leave.countDocuments({ ...statsQuery, status: "pending" }),
@@ -867,6 +988,7 @@ exports.getMyPendingApprovals = async (req) => {
   const rows = await Leave.find(query)
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
+    .populate("approvalFlowId", "name moduleKey minDays maxDays")
     .populate({
       path: "actionBy",
       select: "firstName lastName employeeCode designationId",
@@ -879,6 +1001,8 @@ exports.getMyPendingApprovals = async (req) => {
       populate: { path: "designationId", select: "name" }
     })
     .sort({ createdAt: -1 });
+
+  await Promise.all(rows.map((row) => repairPendingLeaveApprovalState(row)));
 
   const actorContext = await getActorApprovalContext(req);
   return rows.filter((row) => {
@@ -893,6 +1017,7 @@ exports.getMyPendingApprovals = async (req) => {
 exports.actionLeave = async (req) => {
   const leave = await Leave.findById(req.params.id);
   if (!leave) throw new Error("Leave not found");
+  await repairPendingLeaveApprovalState(leave);
 
   // 🔒 store previous status (VERY IMPORTANT)
   const previousStatus = leave.status;
@@ -922,7 +1047,25 @@ exports.actionLeave = async (req) => {
   let isIntermediateApproval = false;
 
   if (["approved", "rejected"].includes(req.body.status) && Array.isArray(leave.approvalSteps) && leave.approvalSteps.length) {
-    const currentStep = getCurrentPendingStep(leave.approvalSteps || []);
+    let resolvedProgress = resolveCurrentPendingStep({
+      steps: leave.approvalSteps || [],
+      currentApprovalStep: leave.currentApprovalStep
+    });
+    if (!isValidApprovalStepShape(resolvedProgress.currentStep)) {
+      const rebuiltSteps = await rebuildLeaveApprovalStepsFromFlow(leave);
+      if (rebuiltSteps?.length) {
+        leave.approvalSteps = rebuiltSteps;
+        resolvedProgress = resolveCurrentPendingStep({
+          steps: rebuiltSteps,
+          currentApprovalStep: leave.currentApprovalStep
+        });
+      }
+    }
+    if (resolvedProgress.repaired) {
+      leave.approvalSteps = resolvedProgress.steps;
+      leave.currentApprovalStep = resolvedProgress.currentApprovalStep;
+    }
+    const currentStep = resolvedProgress.currentStep;
     if (!currentStep) {
       throw new Error("No pending approval step found");
     }
@@ -930,7 +1073,7 @@ exports.actionLeave = async (req) => {
     const allowedByFlow = canActorApproveStep(currentStep, actorContext);
     if (allowedByFlow) {
       const progress = advanceApprovalSteps({
-        steps: leave.approvalSteps || [],
+        steps: resolvedProgress.steps,
         action: req.body.status,
         actionBy: actor?._id || null,
         remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : null
@@ -940,22 +1083,7 @@ exports.actionLeave = async (req) => {
       finalStatusToApply = progress.finalStatus;
       isIntermediateApproval = progress.isIntermediateApproval;
     } else {
-      // Privileged override: reporting manager/HR/admin can finalize request even if flow step mismatches.
-      const overrideStatus = req.body.status === "approved" ? "approved" : "rejected";
-      const actionAt = new Date();
-      leave.approvalSteps = (leave.approvalSteps || []).map((step) => {
-        if (step.status === "approved" || step.status === "rejected") return step;
-        return {
-          ...step,
-          status: overrideStatus,
-          actionBy: actor?._id || null,
-          actionAt,
-          remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : "Approved by authorized approver"
-        };
-      });
-      leave.currentApprovalStep = null;
-      finalStatusToApply = req.body.status;
-      isIntermediateApproval = false;
+      throw new Error(`You are not the current approver for this step. Pending step: ${describeApprovalStep(currentStep)}`);
     }
   }
 

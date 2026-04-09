@@ -83,6 +83,14 @@ type LeaveTypeRef = {
   name?: string;
 };
 
+type ApprovalFlowRef = {
+  _id?: string;
+  name?: string;
+  moduleKey?: string;
+  minDays?: number | null;
+  maxDays?: number | null;
+};
+
 type LeaveRecord = {
   _id?: string;
   employeeId?: PersonRef | null;
@@ -97,6 +105,7 @@ type LeaveRecord = {
   status?: "pending" | "approved" | "rejected";
   reason?: string;
   rejectionReason?: string;
+  approvalFlowId?: ApprovalFlowRef | null;
   approvalSteps?: ApprovalStep[];
 };
 
@@ -893,6 +902,13 @@ const Leave = () => {
               <p><span className="font-medium">Duration:</span> {getLeaveDurationLabel(selectedLeave)}</p>
               <p><span className="font-medium">Status:</span> {selectedLeave.status || "-"}</p>
               <p><span className="font-medium">Approval:</span> {getApprovalProgressLabel(selectedLeave)}</p>
+              <p><span className="font-medium">Attached Flow:</span> {selectedLeave.approvalFlowId?.name || "No named flow attached"}</p>
+              <p><span className="font-medium">Saved Step Count:</span> {Array.isArray(selectedLeave.approvalSteps) ? selectedLeave.approvalSteps.length : 0}</p>
+              {(!Array.isArray(selectedLeave.approvalSteps) || selectedLeave.approvalSteps.length === 0) && (
+                <p className="text-xs text-amber-600">
+                  This request has no saved approval steps, so it behaves like a single-step request.
+                </p>
+              )}
               <p><span className="font-medium">Reason:</span> {selectedLeave.reason || "-"}</p>
               {selectedLeave.rejectionReason && (
                 <p><span className="font-medium">Rejection Reason:</span> {selectedLeave.rejectionReason}</p>

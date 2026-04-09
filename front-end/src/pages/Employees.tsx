@@ -122,6 +122,8 @@ const Employees = () => {
   const [departments, setDepartments] = useState<any[]>([]);
   const [designations, setDesignations] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
+  const [leaveApprovalFlows, setLeaveApprovalFlows] = useState<any[]>([]);
+  const [attendanceApprovalFlows, setAttendanceApprovalFlows] = useState<any[]>([]);
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [shifts, setShifts] = useState<any[]>([]);
   const [managers, setManagers] = useState<any[]>([]);
@@ -158,6 +160,8 @@ const Employees = () => {
     departmentId: "",
     designationId: "",
     managerId: "",
+    leaveApprovalFlowId: "",
+    attendanceApprovalFlowId: "",
     shiftId: "",
     roleIds: [] as string[],
     employmentType: "",
@@ -246,6 +250,16 @@ const Employees = () => {
     } else {
       toast.error(res?.message || "Failed to load departments");
     }
+  };
+
+  const fetchApprovalFlows = async () => {
+    const [leaveRes, attendanceRes] = await Promise.all([
+      getApiWithToken("/approval-flows?moduleKey=leave"),
+      getApiWithToken("/approval-flows?moduleKey=attendance_request")
+    ]);
+
+    setLeaveApprovalFlows(Array.isArray(leaveRes?.data) ? leaveRes.data : []);
+    setAttendanceApprovalFlows(Array.isArray(attendanceRes?.data) ? attendanceRes.data : []);
   };
 
   const fetchOrganizations = async () => {
@@ -471,6 +485,8 @@ const Employees = () => {
       departmentId: "",
       designationId: "",
       managerId: "",
+      leaveApprovalFlowId: "",
+      attendanceApprovalFlowId: "",
       shiftId: "",
       roleIds: [],
       employmentType: "",
@@ -505,6 +521,8 @@ const Employees = () => {
       departmentId: employee?.departmentId?._id || "",
       designationId: employee?.designationId?._id || "",
       managerId: employee?.managerId?._id || "",
+      leaveApprovalFlowId: employee?.leaveApprovalFlowId?._id || "",
+      attendanceApprovalFlowId: employee?.attendanceApprovalFlowId?._id || "",
       shiftId: employee?.shiftId?._id || "",
       roleIds: Array.isArray(employee?.roleIds)
         ? employee.roleIds
@@ -545,6 +563,8 @@ const Employees = () => {
       departmentId: employeeForm.departmentId,
       designationId: employeeForm.designationId,
       managerId: employeeForm.managerId || undefined,
+      leaveApprovalFlowId: employeeForm.leaveApprovalFlowId || null,
+      attendanceApprovalFlowId: employeeForm.attendanceApprovalFlowId || null,
       shiftId: employeeForm.shiftId || undefined,
       roleIds: employeeForm.roleIds,
       employmentType: employeeForm.employmentType,
@@ -565,6 +585,8 @@ const Employees = () => {
     const selectedDepartment = departments.find((d: any) => d._id === payload.departmentId) || null;
     const selectedDesignation = designations.find((d: any) => d._id === payload.designationId) || null;
     const selectedManager = managers.find((m: any) => m._id === payload.managerId) || null;
+    const selectedLeaveApprovalFlow = leaveApprovalFlows.find((flow: any) => flow._id === payload.leaveApprovalFlowId) || null;
+    const selectedAttendanceApprovalFlow = attendanceApprovalFlows.find((flow: any) => flow._id === payload.attendanceApprovalFlowId) || null;
     const selectedShift = shifts.find((s: any) => s._id === payload.shiftId) || null;
     const selectedRoles = (roles || []).filter((r: any) => payload.roleIds.includes(r._id));
 
@@ -580,6 +602,8 @@ const Employees = () => {
         managerId: selectedManager
           ? { _id: selectedManager._id, firstName: selectedManager.name.split(" ")[0], lastName: selectedManager.name.split(" ").slice(1).join(" ") }
           : null,
+        leaveApprovalFlowId: selectedLeaveApprovalFlow || null,
+        attendanceApprovalFlowId: selectedAttendanceApprovalFlow || null,
         shiftId: selectedShift || null,
         roleIds: selectedRoles,
         userId: { email: payload.email }
@@ -604,6 +628,8 @@ const Employees = () => {
           managerId: selectedManager
             ? { _id: selectedManager._id, firstName: selectedManager.name.split(" ")[0], lastName: selectedManager.name.split(" ").slice(1).join(" ") }
             : null,
+          leaveApprovalFlowId: selectedLeaveApprovalFlow || null,
+          attendanceApprovalFlowId: selectedAttendanceApprovalFlow || null,
           shiftId: selectedShift || null,
           roleIds: selectedRoles,
           phone: "",
@@ -621,6 +647,7 @@ const Employees = () => {
   useEffect(() => {
     fetchDesignations();
     fetchRoles();
+    fetchApprovalFlows();
     fetchOrganizations();
     fetchShifts();
   }, []);
@@ -1215,6 +1242,14 @@ const Employees = () => {
             <Select value={employeeForm.managerId || "none"} onValueChange={(value) => setEmployeeForm({ ...employeeForm, managerId: value === "none" ? "" : value })}>
               <SelectTrigger><SelectValue placeholder="Manager" /></SelectTrigger>
               <SelectContent><SelectItem value="none">No Manager</SelectItem>{managers.map((m: any) => <SelectItem key={m._id} value={m._id}>{m.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={employeeForm.leaveApprovalFlowId || "none"} onValueChange={(value) => setEmployeeForm({ ...employeeForm, leaveApprovalFlowId: value === "none" ? "" : value })}>
+              <SelectTrigger><SelectValue placeholder="Leave Approval Flow" /></SelectTrigger>
+              <SelectContent><SelectItem value="none">Use Organization Default</SelectItem>{leaveApprovalFlows.map((flow: any) => <SelectItem key={flow._id} value={flow._id}>{flow.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={employeeForm.attendanceApprovalFlowId || "none"} onValueChange={(value) => setEmployeeForm({ ...employeeForm, attendanceApprovalFlowId: value === "none" ? "" : value })}>
+              <SelectTrigger><SelectValue placeholder="Attendance Request Flow" /></SelectTrigger>
+              <SelectContent><SelectItem value="none">Use Organization Default</SelectItem>{attendanceApprovalFlows.map((flow: any) => <SelectItem key={flow._id} value={flow._id}>{flow.name}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={employeeForm.shiftId || "none"} onValueChange={(value) => setEmployeeForm({ ...employeeForm, shiftId: value === "none" ? "" : value })}>
               <SelectTrigger><SelectValue placeholder="Shift" /></SelectTrigger>

@@ -24,14 +24,21 @@ import {
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
-import { formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone, getOrgTimeZone } from "@/utils/timezone";
+import { formatDateKeyInOrgCalendar, formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowUpDown } from "lucide-react";
 
 type DayCell = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
+  displayStatus?: string;
+  displayLabel?: string;
+  displayShortLabel?: string;
+  displayTone?: string;
   checkInAt: string | null;
   checkOutAt: string | null;
+  totalMinutes?: number;
+  workedMinutes?: number;
+  workedDuration?: string;
   checkInIp?: string | null;
   checkInSelfieProvided?: boolean;
   isOpenSession?: boolean;
@@ -56,6 +63,10 @@ type DayCell = {
   leaveUnits?: number;
   isWeekOff: boolean;
   holidayName: string | null;
+  isFuture?: boolean;
+  isThresholdQualified?: boolean;
+  isOvernightShift?: boolean;
+  attendanceDateKey?: string | null;
 };
 
 type EmployeeRow = {
@@ -64,6 +75,17 @@ type EmployeeRow = {
   lastName: string;
   employeeCode: string;
   days: Record<number, DayCell>;
+  summary?: {
+    presentDays: number;
+    pendingCheckoutDays: number;
+    absentDays: number;
+    onLeaveDays: number;
+    weekOffDays: number;
+    holidayDays: number;
+    selfieDays: number;
+    payrollExcludedDays: number;
+    totalDays: number;
+  };
 };
 
 type AttendanceHistoryItem = {
@@ -78,6 +100,30 @@ type AttendanceSnapshot = {
   checkInIp?: string | null;
   checkInSelfieProvided?: boolean;
   checkInSelfieImage?: string | null;
+} | null;
+
+type ApprovedLeaveDetail = {
+  leaveType?: string | null;
+  leaveCode?: string | null;
+  duration?: "full_day" | "half_day" | null;
+  halfDaySession?: "first_half" | "second_half" | null;
+  reason?: string | null;
+  status?: string | null;
+  approvedBy?: string | null;
+  approvedByEmployeeCode?: string | null;
+  approvedAt?: string | null;
+} | null;
+
+type AttendanceRequestDetail = {
+  requestType?: "missed_checkout" | "correction" | null;
+  requestedCheckInTime?: string | null;
+  requestedCheckOutTime?: string | null;
+  reason?: string | null;
+  status?: string | null;
+  approvedBy?: string | null;
+  approvedByEmployeeCode?: string | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
 } | null;
 
 type MatrixPagination = {
@@ -127,23 +173,6 @@ const normalizeEmployeeIds = (values: unknown[]): string[] =>
     )
   );
 
-const buildUpdatedCell = (cell: DayCell, status: "present" | "absent"): DayCell => ({
-  ...cell,
-  status,
-  checkInAt: status === "present" ? (cell.checkInAt || new Date().toISOString()) : null,
-  checkOutAt: status === "present" ? (cell.checkOutAt || new Date().toISOString()) : null,
-  isOpenSession: false,
-  excludeFromPayroll: false,
-  payrollReconciledByLeave: false,
-  missedCheckout: false,
-  missedCheckoutMarkedAt: null,
-  lateByMinutes: 0,
-  earlyLoginByMinutes: 0,
-  earlyCheckoutByMinutes: 0,
-  overtimeMinutes: 0,
-  overriddenAt: new Date().toISOString()
-});
-
 const currentMonth = () => {
   const now = new Date();
   const y = now.getFullYear();
@@ -176,49 +205,10 @@ const emptyCell: DayCell = {
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
-const getAttendanceStatus = (dayData: {
-  isHoliday: boolean;
-  isWeekOff: boolean;
-  leaveType: string | null;
-  attendanceStatus: DayCell["status"];
-  isFuture?: boolean;
-  snapshotGenerated?: boolean;
-}) => {
-  const { isHoliday, isWeekOff, leaveType, attendanceStatus, isFuture = false, snapshotGenerated = false } = dayData;
-
-  if (isHoliday) return "Holiday";
-  if (isWeekOff) return "Week Off";
-  if (leaveType) return "Leave";
-  if (isFuture) return "Future";
-  if (attendanceStatus === "pending_checkout" && snapshotGenerated) return "Absent";
-  if (attendanceStatus === "pending_checkout") return "Pending Checkout";
-  if (attendanceStatus === "full_day_present" || attendanceStatus === "present") return "Present";
-  if (attendanceStatus === "half_day_present") return "Half Day";
-  return "Absent";
-};
-
-const toLeaveShortLabel = (leaveType: string | null) => {
-  const normalized = String(leaveType || "").trim();
-  if (!normalized) return "L";
-  const compact = normalized.replace(/[^a-zA-Z]/g, "").toUpperCase();
-  if (compact.length >= 2 && compact.length <= 4) return compact;
-  const initials = normalized
-    .split(/\s+/)
-    .map((part) => part[0] || "")
-    .join("")
-    .toUpperCase();
-  return initials || "L";
-};
-
-const toOrgDateKey = (value: string | number | Date) => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: getOrgTimeZone(),
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(new Date(value));
-  const read = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value || "00";
-  return `${read("year")}-${read("month")}-${read("day")}`;
+const addDaysToDateKey = (dateKey: string, dayDelta: number) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + dayDelta, 12, 0, 0));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
 };
 
 const mergeAttendancePages = (existing: EmployeeRow[], incoming: EmployeeRow[]) => {
@@ -226,6 +216,49 @@ const mergeAttendancePages = (existing: EmployeeRow[], incoming: EmployeeRow[]) 
   existing.forEach((row) => merged.set(toEmployeeIdString(row.employeeId), row));
   incoming.forEach((row) => merged.set(toEmployeeIdString(row.employeeId), row));
   return Array.from(merged.values());
+};
+
+const buildActivityTimeline = (
+  history: AttendanceHistoryItem[],
+  attendanceSnapshot: AttendanceSnapshot,
+  attendanceCell?: DayCell | null
+): AttendanceHistoryItem[] => {
+  const items = [...history];
+  const hasCheckInEvent = items.some((item) => item.action === "CHECK_IN");
+  const hasCheckOutEvent = items.some((item) => item.action === "CHECK_OUT");
+  const fallbackCheckInAt = attendanceSnapshot?.checkInAt || attendanceCell?.checkInAt || null;
+  const fallbackCheckOutAt = attendanceSnapshot?.checkOutAt || attendanceCell?.checkOutAt || null;
+
+  if (!hasCheckInEvent && fallbackCheckInAt) {
+    items.push({
+      action: "CHECK_IN",
+      createdAt: fallbackCheckInAt,
+      actor: "Employee"
+    });
+  }
+
+  if (!hasCheckOutEvent && fallbackCheckOutAt) {
+    items.push({
+      action: "CHECK_OUT",
+      createdAt: fallbackCheckOutAt,
+      actor: "Employee"
+    });
+  }
+
+  return items.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+};
+
+const formatActivityAction = (action: string) => {
+  switch (action) {
+    case "CHECK_IN":
+      return "Checked in";
+    case "CHECK_OUT":
+      return "Checked out";
+    case "ATTENDANCE_OVERRIDE":
+      return "Attendance overridden";
+    default:
+      return action.replace(/_/g, " ").toLowerCase().replace(/^\w/, (char) => char.toUpperCase());
+  }
 };
 
 const Attendance = () => {
@@ -267,6 +300,8 @@ const Attendance = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [history, setHistory] = useState<AttendanceHistoryItem[]>([]);
   const [selectedAttendanceSnapshot, setSelectedAttendanceSnapshot] = useState<AttendanceSnapshot>(null);
+  const [selectedLeaveDetail, setSelectedLeaveDetail] = useState<ApprovedLeaveDetail>(null);
+  const [selectedAttendanceRequestDetail, setSelectedAttendanceRequestDetail] = useState<AttendanceRequestDetail>(null);
 
   const fetchMatrix = useCallback(async () => {
     if (!canView) {
@@ -294,6 +329,20 @@ const Attendance = () => {
         ...employee,
         employeeId: toEmployeeIdString(employee.employeeId)
       }));
+
+      const sampleCell = nextRows[0]
+        ? Object.values(nextRows[0].days || {}).find((cell) => Boolean(cell))
+        : null;
+      const backendDisplayPayloadMissing = Boolean(
+        nextRows.length > 0
+          && sampleCell
+          && typeof sampleCell === "object"
+          && !("displayStatus" in sampleCell)
+      );
+      if (backendDisplayPayloadMissing) {
+        toast.error("Attendance backend is outdated. Restart or redeploy the backend to load computed attendance statuses.");
+        return;
+      }
 
       setRows((prev) => (canViewAll && currentPage > 1 ? mergeAttendancePages(prev, nextRows) : nextRows));
       setDaysInMonth(res.data?.daysInMonth || 31);
@@ -335,6 +384,14 @@ const Attendance = () => {
   const visibleRows = filteredRows;
 
   const hasMoreRows = Boolean(canViewAll && pagination && pagination.page < pagination.totalPages);
+  const selectedCell = useMemo(() => {
+    if (!selectedEmployee || !selectedDay) return null;
+    return selectedEmployee.days?.[selectedDay] || null;
+  }, [selectedDay, selectedEmployee]);
+  const activityTimeline = useMemo(
+    () => buildActivityTimeline(history, selectedAttendanceSnapshot, selectedCell),
+    [history, selectedAttendanceSnapshot, selectedCell]
+  );
 
   const handleMatrixScroll = () => {
     const viewport = tableViewportRef.current;
@@ -367,22 +424,17 @@ const Attendance = () => {
     setSortOrder("asc");
   };
 
-  const isFutureDay = (day: number) => {
-    const dateKey = `${month}-${String(day).padStart(2, "0")}`;
-    const todayKey = toOrgDateKey(new Date());
-    return dateKey > todayKey;
-  };
-
   const openCellDetails = async (row: EmployeeRow, day: number) => {
     const cell = row.days?.[day] || emptyCell;
-    if (isFutureDay(day) || cell.isWeekOff) return;
+    if (cell.isFuture || cell.isWeekOff) return;
     setSelectedEmployee(row);
     setSelectedDay(day);
-    const cellStatus = row.days?.[day]?.status || "absent";
-    setSelectedStatus(cellStatus === "absent" ? "absent" : "present");
+    setSelectedStatus(cell.isThresholdQualified ? "present" : "absent");
     setOpen(true);
     setHistory([]);
     setSelectedAttendanceSnapshot(null);
+    setSelectedLeaveDetail(null);
+    setSelectedAttendanceRequestDetail(null);
     try {
       setHistoryLoading(true);
       const date = `${month}-${String(day).padStart(2, "0")}`;
@@ -397,6 +449,8 @@ const Attendance = () => {
       if (res?.success) {
         setHistory(res.data?.history || []);
         setSelectedAttendanceSnapshot(res.data?.attendance || null);
+        setSelectedLeaveDetail(res.data?.leave || null);
+        setSelectedAttendanceRequestDetail(res.data?.attendanceRequest || null);
       }
     } finally {
       setHistoryLoading(false);
@@ -423,47 +477,25 @@ const Attendance = () => {
       }
 
       toast.success("Attendance updated");
-      setRows((prev) =>
-        prev.map((row) => {
-          if (toEmployeeIdString(row.employeeId) !== employeeId) return row;
-          const currentCell = row.days?.[selectedDay] || emptyCell;
-          return {
-            ...row,
-            days: {
-              ...row.days,
-              [selectedDay]: buildUpdatedCell(currentCell, selectedStatus)
-            }
-          };
-        })
-      );
-      setSelectedEmployee((prev) => (
-        prev && toEmployeeIdString(prev.employeeId) === employeeId
-          ? {
-              ...prev,
-              days: {
-                ...prev.days,
-                [selectedDay]: buildUpdatedCell(prev.days?.[selectedDay] || emptyCell, selectedStatus)
-              }
-            }
-          : prev
-      ));
       setOpen(false);
+      await fetchMatrix();
     } finally {
       setSaving(false);
     }
   };
 
-  const formatHoverInfo = (cell: DayCell) => {
+  const getAttendanceDateKey = (day: number) => `${month}-${String(day).padStart(2, "0")}`;
+
+  const formatHoverInfo = (cell: DayCell, day: number) => {
     const parts: string[] = [];
-    const resolvedStatus = getAttendanceStatus({
-      isHoliday: Boolean(cell.holidayName),
-      isWeekOff: cell.isWeekOff,
-      leaveType: cell.leaveType,
-      attendanceStatus: cell.status,
-      snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
-    });
+    const resolvedStatus = cell.displayStatus || "Absent";
+    const attendanceDateKey = cell.attendanceDateKey || getAttendanceDateKey(day);
+    const isOvernightShift = Boolean(cell.isOvernightShift);
     const hideTimings = resolvedStatus === "Leave" || resolvedStatus === "Holiday";
     if (resolvedStatus !== "Absent") parts.push(`Status: ${resolvedStatus}`);
+    if (isOvernightShift) {
+      parts.push(`Attendance Date: ${formatDateKeyInOrgCalendar(attendanceDateKey)}`);
+    }
     if (cell.excludeFromPayroll) {
       parts.push("Excluded from payroll until checkout is completed");
     }
@@ -478,8 +510,15 @@ const Attendance = () => {
     }
     if (cell.isWeekOff) parts.push("Week Off");
     if (cell.holidayName) parts.push(`Holiday: ${cell.holidayName}`);
-    if (!hideTimings && cell.checkInAt) parts.push(`Check-in: ${formatTimeInOrgTimeZone(cell.checkInAt)}`);
-    if (!hideTimings && cell.checkOutAt) parts.push(`Check-out: ${formatTimeInOrgTimeZone(cell.checkOutAt)}`);
+    if (!hideTimings && cell.checkInAt) {
+      parts.push(`Check-in: ${isOvernightShift ? formatDateTimeInOrgTimeZone(cell.checkInAt) : formatTimeInOrgTimeZone(cell.checkInAt)}`);
+    }
+    if (!hideTimings && cell.checkOutAt) {
+      parts.push(`Check-out: ${isOvernightShift ? formatDateTimeInOrgTimeZone(cell.checkOutAt) : formatTimeInOrgTimeZone(cell.checkOutAt)}`);
+    }
+    if (!hideTimings && cell.workedDuration) {
+      parts.push(`Worked: ${cell.workedDuration}`);
+    }
     if (!hideTimings && canViewSelfieData && (cell.checkInAt || cell.checkOutAt)) {
       parts.push(`Selfie: ${cell.checkInSelfieProvided ? "Yes" : "No"}`);
     }
@@ -490,7 +529,11 @@ const Attendance = () => {
       parts.push(`Shift: ${cell.shiftName || ""}${cell.shiftCode ? ` (${cell.shiftCode})` : ""}`);
     }
     if (cell.shiftStartTime && cell.shiftEndTime) {
-      parts.push(`Shift Time: ${cell.shiftStartTime} - ${cell.shiftEndTime}`);
+      parts.push(
+        isOvernightShift
+          ? `Shift Window: ${formatDateKeyInOrgCalendar(attendanceDateKey)} ${cell.shiftStartTime} -> ${formatDateKeyInOrgCalendar(addDaysToDateKey(attendanceDateKey, 1))} ${cell.shiftEndTime}`
+          : `Shift Time: ${cell.shiftStartTime} - ${cell.shiftEndTime}`
+      );
     }
     if ((cell.lateByMinutes || 0) > 0) parts.push(`Late by: ${cell.lateByMinutes} min`);
     if ((cell.earlyLoginByMinutes || 0) > 0) parts.push(`Early login by: ${cell.earlyLoginByMinutes} min`);
@@ -508,143 +551,22 @@ const Attendance = () => {
     return parts.join(" | ") || "No details";
   };
 
-  const getCellUi = (cell: DayCell, isFuture = false) => {
-    const resolvedStatus = getAttendanceStatus({
-      isHoliday: Boolean(cell.holidayName),
-      isWeekOff: cell.isWeekOff,
-      leaveType: cell.leaveType,
-      attendanceStatus: cell.status,
-      isFuture,
-      snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
-    });
-
-    if (resolvedStatus === "Holiday") {
-      return {
-        label: "Holiday",
-        shortLabel: "H",
-        className: "bg-amber-100 text-amber-700 border-amber-300"
-      };
-    }
-    if (resolvedStatus === "Week Off") {
-      return {
-        label: "Week Off",
-        shortLabel: "W",
-        className: "bg-sky-100 text-sky-700 border-sky-300"
-      };
-    }
-    if (resolvedStatus === "Future") {
-      return {
-        label: "Not Marked",
-        shortLabel: "-",
-        className: "bg-slate-100 text-slate-500 border-slate-200"
-      };
-    }
-    if (resolvedStatus === "Leave") {
-      return {
-        label: cell.leaveType || "Leave",
-        shortLabel: toLeaveShortLabel(cell.leaveType),
-        className: "bg-violet-100 text-violet-700 border-violet-300"
-      };
-    }
-    if (resolvedStatus === "Pending Checkout") {
-      return {
-        label: "Pending Checkout",
-        shortLabel: "PC",
-        className: "bg-orange-100 text-orange-700 border-orange-300"
-      };
-    }
-    if (resolvedStatus === "Present") {
-      return {
-        label: "Present",
-        shortLabel: "P",
-        className: "bg-emerald-100 text-emerald-700 border-emerald-300"
-      };
-    }
-    if (resolvedStatus === "Half Day") {
-      return {
-        label: "Half Day",
-        shortLabel: "HP",
-        className: "bg-lime-100 text-lime-700 border-lime-300"
-      };
-    }
-    return {
-      label: "Absent",
-      shortLabel: "A",
-      className: "bg-rose-100 text-rose-700 border-rose-300"
+  const getCellUi = (cell: DayCell) => {
+    const toneClasses: Record<string, string> = {
+      holiday: "bg-amber-100 text-amber-700 border-amber-300",
+      week_off: "bg-sky-100 text-sky-700 border-sky-300",
+      future: "bg-slate-100 text-slate-500 border-slate-200",
+      leave: "bg-violet-100 text-violet-700 border-violet-300",
+      absent_leave: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300",
+      pending_checkout: "bg-orange-100 text-orange-700 border-orange-300",
+      present: "bg-emerald-100 text-emerald-700 border-emerald-300",
+      half_day: "bg-lime-100 text-lime-700 border-lime-300",
+      absent: "bg-rose-100 text-rose-700 border-rose-300"
     };
-  };
-
-  const getEmployeeTotals = (row: EmployeeRow) => {
-    let presentDays = 0;
-    let pendingCheckoutDays = 0;
-    let absentDays = 0;
-    let onLeaveDays = 0;
-    let weekOffDays = 0;
-    let holidayDays = 0;
-    let payrollExcludedDays = 0;
-    let selfieDays = 0;
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      if (isFutureDay(day)) {
-        continue;
-      }
-      const cell = row.days?.[day] || emptyCell;
-      const resolvedStatus = getAttendanceStatus({
-        isHoliday: Boolean(cell.holidayName),
-        isWeekOff: cell.isWeekOff,
-        leaveType: cell.leaveType,
-        attendanceStatus: cell.status,
-        snapshotGenerated: Boolean(lockAttendanceMeta?.snapshotGenerated)
-      });
-
-      if (cell.checkInSelfieProvided) {
-        selfieDays += 1;
-      }
-      if (resolvedStatus === "Pending Checkout") {
-        pendingCheckoutDays += 1;
-        if (cell.excludeFromPayroll) {
-          payrollExcludedDays += 1;
-        }
-        continue;
-      }
-      if (resolvedStatus === "Half Day") {
-        presentDays += 0.5;
-        absentDays += 0.5;
-        continue;
-      }
-      if (resolvedStatus === "Present") {
-        presentDays += 1;
-        continue;
-      }
-      if (resolvedStatus === "Leave") {
-        onLeaveDays += 1;
-        continue;
-      }
-      if (resolvedStatus === "Week Off") {
-        weekOffDays += 1;
-        continue;
-      }
-      if (resolvedStatus === "Holiday") {
-        holidayDays += 1;
-        continue;
-      }
-      absentDays += 1;
-    }
     return {
-      presentDays,
-      pendingCheckoutDays,
-      absentDays,
-      onLeaveDays,
-      weekOffDays,
-      holidayDays,
-      selfieDays,
-      payrollExcludedDays,
-      totalDays:
-        presentDays
-        + pendingCheckoutDays
-        + absentDays
-        + onLeaveDays
-        + weekOffDays
-        + holidayDays
+      label: cell.displayLabel || "Absent",
+      shortLabel: cell.displayShortLabel || "A",
+      className: toneClasses[cell.displayTone || "absent"] || toneClasses.absent
     };
   };
 
@@ -666,7 +588,17 @@ const Attendance = () => {
     }
     const lines = [header.join(",")];
     filteredRows.forEach((row) => {
-      const t = getEmployeeTotals(row);
+      const t = row.summary || {
+        presentDays: 0,
+        pendingCheckoutDays: 0,
+        absentDays: 0,
+        onLeaveDays: 0,
+        weekOffDays: 0,
+        holidayDays: 0,
+        selfieDays: 0,
+        payrollExcludedDays: 0,
+        totalDays: 0
+      };
       const name = `${row.firstName || ""} ${row.lastName || ""}`.trim();
       const rowData = [
         row.employeeCode || "",
@@ -866,12 +798,14 @@ const Attendance = () => {
                         if (!day) {
                           return <div key={`blank-${idx}`} className="h-[86px] sm:h-[96px] rounded-xl bg-slate-50/60 border border-slate-100" />;
                         }
-                        const isFuture = isFutureDay(day);
                         const cell = selfRow.days?.[day] || emptyCell;
-                        const cellUi = getCellUi(cell, isFuture);
+                        const isFuture = Boolean(cell.isFuture);
+                        const cellUi = getCellUi(cell);
                         const hasAttendance = isPresentLikeStatus(cell.status) || cell.status === "pending_checkout";
                         const isLeaveOnlyDay = Boolean(cell.isOnLeave) && !hasAttendance;
                         const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName) || cell.isWeekOff;
+                        const isOvernightShift = Boolean(cell.isOvernightShift);
+                        const attendanceDateKey = cell.attendanceDateKey || getAttendanceDateKey(day);
                         return (
                           <HoverCard key={day} openDelay={120} closeDelay={80}>
                             <HoverCardTrigger asChild>
@@ -906,14 +840,32 @@ const Attendance = () => {
                             <HoverCardContent className="w-72">
                               <div className="space-y-1.5">
                                 <p className="text-sm font-semibold">{month}-{String(day).padStart(2, "0")} • {cellUi.label}</p>
+                                {isOvernightShift && (
+                                  <p className="text-xs text-slate-700">
+                                    Attendance Date: {formatDateKeyInOrgCalendar(attendanceDateKey)}
+                                  </p>
+                                )}
                                 {!hideTimings && (
                                   <>
                                     <p className="text-xs text-muted-foreground">
-                                      Check-in: {cell.checkInAt ? formatTimeInOrgTimeZone(cell.checkInAt) : "Not recorded"}
+                                      Check-in: {cell.checkInAt
+                                        ? (isOvernightShift
+                                          ? formatDateTimeInOrgTimeZone(cell.checkInAt)
+                                          : formatTimeInOrgTimeZone(cell.checkInAt))
+                                        : "Not recorded"}
                                     </p>
                                     <p className="text-xs text-muted-foreground">
-                                      Check-out: {cell.checkOutAt ? formatTimeInOrgTimeZone(cell.checkOutAt) : "Not recorded"}
+                                      Check-out: {cell.checkOutAt
+                                        ? (isOvernightShift
+                                          ? formatDateTimeInOrgTimeZone(cell.checkOutAt)
+                                          : formatTimeInOrgTimeZone(cell.checkOutAt))
+                                        : "Not recorded"}
                                     </p>
+                                    {cell.workedDuration && (
+                                      <p className="text-xs text-muted-foreground">
+                                        Worked: {cell.workedDuration}
+                                      </p>
+                                    )}
                                     {canViewSelfieData && (
                                       <>
                                         <p className="text-xs text-muted-foreground">
@@ -935,7 +887,9 @@ const Attendance = () => {
                                 )}
                                 {cell.shiftStartTime && cell.shiftEndTime && (
                                   <p className="text-xs text-muted-foreground">
-                                    Shift Time: {cell.shiftStartTime} - {cell.shiftEndTime}
+                                    {isOvernightShift
+                                      ? `Shift Window: ${formatDateKeyInOrgCalendar(attendanceDateKey)} ${cell.shiftStartTime} -> ${formatDateKeyInOrgCalendar(addDaysToDateKey(attendanceDateKey, 1))} ${cell.shiftEndTime}`
+                                      : `Shift Time: ${cell.shiftStartTime} - ${cell.shiftEndTime}`}
                                   </p>
                                 )}
                                 {cell.holidayName && (
@@ -1083,9 +1037,9 @@ const Attendance = () => {
                       <span className="inline-block h-2.5 w-2.5 rounded bg-violet-500" />
                       Approved Leave
                     </div>
-                    <div className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
-                      <span className="inline-block h-2.5 w-2.5 rounded bg-indigo-500" />
-                      Present + Leave
+                    <div className="flex items-center gap-2 rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-fuchsia-500" />
+                      Absent + Leave
                     </div>
                     <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1">
                       <span className="inline-block h-2.5 w-2.5 rounded bg-amber-500" />
@@ -1191,10 +1145,10 @@ const Attendance = () => {
                         </td>
                         {Array.from({ length: daysInMonth }).map((_, idx) => {
                           const day = idx + 1;
-                          const isFuture = isFutureDay(day);
                           const cell = row.days?.[day] || emptyCell;
+                          const isFuture = Boolean(cell.isFuture);
                           const isNonInteractive = isFuture || cell.isWeekOff;
-                          const cellUi = getCellUi(cell, isFuture);
+                          const cellUi = getCellUi(cell);
 
                           return (
                             <td key={day} className="p-1">
@@ -1202,7 +1156,7 @@ const Attendance = () => {
                                 type="button"
                                 onClick={() => !isNonInteractive && openCellDetails(row, day)}
                                 disabled={isNonInteractive}
-                                title={formatHoverInfo(cell)}
+                                title={formatHoverInfo(cell, day)}
                                 className={`w-full h-8 rounded-md text-xs font-semibold border transition-all duration-200 ${cellUi.className} ${
                                   isNonInteractive ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:opacity-95 hover:-translate-y-[1px] hover:shadow-sm"
                                 }`}
@@ -1213,7 +1167,17 @@ const Attendance = () => {
                           );
                         })}
                         {(() => {
-                          const totals = getEmployeeTotals(row);
+                          const totals = row.summary || {
+                            presentDays: 0,
+                            pendingCheckoutDays: 0,
+                            absentDays: 0,
+                            onLeaveDays: 0,
+                            weekOffDays: 0,
+                            holidayDays: 0,
+                            selfieDays: 0,
+                            payrollExcludedDays: 0,
+                            totalDays: 0
+                          };
                           return (
                             <>
                               <td className="text-center text-sm font-medium text-emerald-700">
@@ -1345,14 +1309,135 @@ const Attendance = () => {
                   )}
                 </div>
               )}
+              {(selectedLeaveDetail || selectedCell?.isOnLeave) && (
+                <div className="mb-2 pb-2 border-b">
+                  <p className="text-xs font-medium mb-1">Approved Leave</p>
+                  <p className="text-xs text-muted-foreground">
+                    Type: {selectedLeaveDetail?.leaveType || selectedCell?.leaveType || "Leave"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Duration: {(selectedLeaveDetail?.duration || selectedCell?.leaveDuration) === "half_day" ? "Half Day" : "Full Day"}
+                  </p>
+                  {((selectedLeaveDetail?.duration || selectedCell?.leaveDuration) === "half_day") && (
+                    <p className="text-xs text-muted-foreground">
+                      Session: {(selectedLeaveDetail?.halfDaySession || selectedCell?.leaveHalfDaySession) === "second_half" ? "Second Half" : "First Half"}
+                    </p>
+                  )}
+                  {selectedLeaveDetail?.approvedBy && (
+                    <p className="text-xs text-muted-foreground">
+                      Approved by: {selectedLeaveDetail.approvedBy}{selectedLeaveDetail.approvedByEmployeeCode ? ` (${selectedLeaveDetail.approvedByEmployeeCode})` : ""}
+                    </p>
+                  )}
+                  {selectedLeaveDetail?.approvedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Approved at: {formatDateTimeInOrgTimeZone(selectedLeaveDetail.approvedAt)}
+                    </p>
+                  )}
+                  {selectedLeaveDetail?.reason && (
+                    <p className="text-xs text-muted-foreground">
+                      Reason: {selectedLeaveDetail.reason}
+                    </p>
+                  )}
+                </div>
+              )}
+              {selectedAttendanceRequestDetail && (
+                <div className="mb-2 pb-2 border-b">
+                  <p className="text-xs font-medium mb-1">Attendance Request</p>
+                  <p className="text-xs text-muted-foreground">
+                    Type: {selectedAttendanceRequestDetail.requestType === "missed_checkout" ? "Missed Checkout" : "Correction"}
+                  </p>
+                  {selectedAttendanceRequestDetail.requestedCheckInTime && (
+                    <p className="text-xs text-muted-foreground">
+                      Requested check-in: {selectedAttendanceRequestDetail.requestedCheckInTime}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.requestedCheckOutTime && (
+                    <p className="text-xs text-muted-foreground">
+                      Requested check-out: {selectedAttendanceRequestDetail.requestedCheckOutTime}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.status && (
+                    <p className="text-xs text-muted-foreground">
+                      Status: {selectedAttendanceRequestDetail.status}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.approvedBy && (
+                    <p className="text-xs text-muted-foreground">
+                      Approved by: {selectedAttendanceRequestDetail.approvedBy}{selectedAttendanceRequestDetail.approvedByEmployeeCode ? ` (${selectedAttendanceRequestDetail.approvedByEmployeeCode})` : ""}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.approvedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Approved at: {formatDateTimeInOrgTimeZone(selectedAttendanceRequestDetail.approvedAt)}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.reason && (
+                    <p className="text-xs text-muted-foreground">
+                      Reason: {selectedAttendanceRequestDetail.reason}
+                    </p>
+                  )}
+                  {selectedAttendanceRequestDetail.rejectionReason && (
+                    <p className="text-xs text-muted-foreground">
+                      Rejection reason: {selectedAttendanceRequestDetail.rejectionReason}
+                    </p>
+                  )}
+                </div>
+              )}
+              {selectedCell && (
+                <div className="mb-2 pb-2 border-b">
+                  <p className="text-xs font-medium mb-1">Attendance Details</p>
+                  {selectedCell.shiftName || selectedCell.shiftCode ? (
+                    <p className="text-xs text-muted-foreground">
+                      Shift: {selectedCell.shiftName || ""}{selectedCell.shiftCode ? ` (${selectedCell.shiftCode})` : ""}
+                    </p>
+                  ) : null}
+                  {selectedCell.shiftStartTime && selectedCell.shiftEndTime ? (
+                    <p className="text-xs text-muted-foreground">
+                      Shift Time: {selectedCell.shiftStartTime} - {selectedCell.shiftEndTime}
+                    </p>
+                  ) : null}
+                  {selectedCell.checkInAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Check-in: {formatDateTimeInOrgTimeZone(selectedCell.checkInAt)}
+                    </p>
+                  ) : null}
+                  {selectedCell.checkOutAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Check-out: {formatDateTimeInOrgTimeZone(selectedCell.checkOutAt)}
+                    </p>
+                  ) : null}
+                  {(selectedCell.lateByMinutes || 0) > 0 ? (
+                    <p className="text-xs text-muted-foreground">Late by: {selectedCell.lateByMinutes} min</p>
+                  ) : null}
+                  {(selectedCell.earlyLoginByMinutes || 0) > 0 ? (
+                    <p className="text-xs text-muted-foreground">Early login by: {selectedCell.earlyLoginByMinutes} min</p>
+                  ) : null}
+                  {(selectedCell.earlyCheckoutByMinutes || 0) > 0 ? (
+                    <p className="text-xs text-muted-foreground">Early checkout by: {selectedCell.earlyCheckoutByMinutes} min</p>
+                  ) : null}
+                  {(selectedCell.overtimeMinutes || 0) > 0 ? (
+                    <p className="text-xs text-muted-foreground">Overtime: {selectedCell.overtimeMinutes} min</p>
+                  ) : null}
+                  {selectedCell.overriddenBy ? (
+                    <p className="text-xs text-muted-foreground">
+                      Overridden by: {selectedCell.overriddenBy}
+                    </p>
+                  ) : null}
+                  {selectedCell.overriddenAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Overridden at: {formatDateTimeInOrgTimeZone(selectedCell.overriddenAt)}
+                    </p>
+                  ) : null}
+                </div>
+              )}
               <p className="text-xs font-medium mb-2">Activity Timeline</p>
               {historyLoading && <p className="text-xs text-muted-foreground">Loading...</p>}
-              {!historyLoading && history.length === 0 && (
+              {!historyLoading && activityTimeline.length === 0 && (
                 <p className="text-xs text-muted-foreground">No activity found.</p>
               )}
-              {!historyLoading && history.map((h, idx) => (
+              {!historyLoading && activityTimeline.map((h, idx) => (
                 <p key={`${h.createdAt}-${idx}`} className="text-xs mb-1">
-                  {formatDateTimeInOrgTimeZone(h.createdAt)} - {h.action} by {h.actor}
+                  {formatDateTimeInOrgTimeZone(h.createdAt)} - {formatActivityAction(h.action)} by {h.actor}
                 </p>
               ))}
             </div>

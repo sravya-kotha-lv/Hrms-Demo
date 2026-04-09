@@ -1,12 +1,26 @@
+const toPlainStep = (step) => {
+  if (!step) return {};
+  if (typeof step.toObject === "function") {
+    return step.toObject();
+  }
+  if (step._doc && typeof step._doc === "object") {
+    return { ...step._doc };
+  }
+  return { ...step };
+};
+
 const cloneSteps = (steps = []) =>
-  (steps || []).map((s) => ({
-    ...s,
-    approverEmployeeId: s.approverEmployeeId || null,
-    approverRoleSlug: s.approverRoleSlug || null,
-    actionBy: s.actionBy || null,
-    actionAt: s.actionAt || null,
-    remarks: s.remarks || null
-  }));
+  (steps || []).map((step) => {
+    const s = toPlainStep(step);
+    return {
+      ...s,
+      approverEmployeeId: s.approverEmployeeId || null,
+      approverRoleSlug: s.approverRoleSlug || null,
+      actionBy: s.actionBy || null,
+      actionAt: s.actionAt || null,
+      remarks: s.remarks || null
+    };
+  });
 
 const sortByStep = (steps = []) =>
   [...steps].sort((a, b) => Number(a.stepNumber || 0) - Number(b.stepNumber || 0));
@@ -15,6 +29,57 @@ const getCurrentPendingStep = (steps = []) =>
   (steps || []).find((s) => s.status === "pending") || null;
 
 exports.getCurrentPendingStep = getCurrentPendingStep;
+
+exports.resolveCurrentPendingStep = ({
+  steps = [],
+  currentApprovalStep = null
+}) => {
+  const nextSteps = sortByStep(cloneSteps(steps));
+  const existingPending = getCurrentPendingStep(nextSteps);
+  if (existingPending) {
+    return {
+      steps: nextSteps,
+      currentStep: existingPending,
+      currentApprovalStep: existingPending.stepNumber || currentApprovalStep || null,
+      repaired: false
+    };
+  }
+
+  if (currentApprovalStep != null) {
+    const indexedStep = nextSteps.find(
+      (step) => Number(step.stepNumber || 0) === Number(currentApprovalStep)
+    );
+    if (indexedStep && indexedStep.status !== "approved" && indexedStep.status !== "rejected") {
+      indexedStep.status = "pending";
+      return {
+        steps: nextSteps,
+        currentStep: indexedStep,
+        currentApprovalStep: indexedStep.stepNumber || null,
+        repaired: true
+      };
+    }
+  }
+
+  const fallbackStep = nextSteps.find(
+    (step) => step.status !== "approved" && step.status !== "rejected"
+  );
+  if (!fallbackStep) {
+    return {
+      steps: nextSteps,
+      currentStep: null,
+      currentApprovalStep: null,
+      repaired: false
+    };
+  }
+
+  fallbackStep.status = "pending";
+  return {
+    steps: nextSteps,
+    currentStep: fallbackStep,
+    currentApprovalStep: fallbackStep.stepNumber || null,
+    repaired: true
+  };
+};
 
 exports.advanceApprovalSteps = ({
   steps = [],
