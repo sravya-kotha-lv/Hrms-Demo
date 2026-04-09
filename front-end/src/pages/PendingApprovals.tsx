@@ -1,21 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { DataTable, type Column } from "@/components/ui/DataTable";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/table";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
+import { RefreshCw, Search, Users, ClipboardList, Clock3, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
-import { formatDateInOrgTimeZone, formatDateKeyInOrgCalendar, toDateKeyInOrgCalendar } from "@/utils/timezone";
+import { formatDateKeyInOrgCalendar, toDateKeyInOrgCalendar } from "@/utils/timezone";
 
 const toIdString = (value: unknown): string => {
   if (!value) return "";
@@ -61,14 +62,35 @@ const getStatusBadge = (status: string) => {
   return <Badge className="status-badge status-pending">Pending</Badge>;
 };
 
+const getEmployeeName = (row: any) =>
+  row?.employeeId ? `${row.employeeId.firstName || ""} ${row.employeeId.lastName || ""}`.trim() : "-";
+
+const getRequestTypeLabel = (requestType: string | null | undefined) =>
+  String(requestType || "").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) || "-";
+
+type ApprovalTableRow = {
+  id: string;
+  employee: string;
+  dateKey: string;
+  dateLabel: string;
+  type: string;
+  requestedTime: string;
+  status: string;
+  request: any;
+};
+
 const PendingApprovals = () => {
   const { hasAnyPermission } = useAuth();
   const canAttendanceAction = hasAnyPermission(["ATTENDANCE_MANAGE"]);
   const canViewAny = canAttendanceAction;
+  const currentMonthKey = useMemo(() => toDateKeyInOrgCalendar(new Date()).slice(0, 7), []);
 
   const [attendanceRows, setAttendanceRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [requestTypeFilter, setRequestTypeFilter] = useState("all");
+  const [requestDateFilter, setRequestDateFilter] = useState(currentMonthKey);
 
   const loadAttendanceApprovals = async () => {
     if (!canAttendanceAction) {
@@ -138,6 +160,104 @@ const PendingApprovals = () => {
     }
   };
 
+  const filteredAttendanceRows = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLowerCase();
+
+    return attendanceRows.filter((row) => {
+      const employeeName = getEmployeeName(row).toLowerCase();
+      const requestType = String(row.requestType || "").toLowerCase();
+      const reason = String(row.reason || "").toLowerCase();
+      const requestedTime = `${row.requestedCheckInTime || "-"} ${row.requestedCheckOutTime || "-"}`.toLowerCase();
+      const formattedDate = String(row.date || "");
+
+      const matchesSearch =
+        !normalizedSearch
+        || employeeName.includes(normalizedSearch)
+        || requestType.includes(normalizedSearch)
+        || reason.includes(normalizedSearch)
+        || requestedTime.includes(normalizedSearch)
+        || formattedDate.includes(normalizedSearch);
+
+      const matchesType = requestTypeFilter === "all" || requestType === requestTypeFilter;
+      const matchesDate = !requestDateFilter || formattedDate.startsWith(requestDateFilter);
+
+      return matchesSearch && matchesType && matchesDate;
+    });
+  }, [attendanceRows, requestDateFilter, requestTypeFilter, searchText]);
+
+  const tableRows = useMemo<ApprovalTableRow[]>(() => {
+    return filteredAttendanceRows.map((row) => ({
+      id: row._actionId || row._id || row.id,
+      employee: getEmployeeName(row),
+      dateKey: String(row.date || ""),
+      dateLabel: formatDateKeyInOrgCalendar(row.date),
+      type: getRequestTypeLabel(row.requestType),
+      requestedTime: `${row.requestedCheckInTime || "-"} / ${row.requestedCheckOutTime || "-"}`,
+      status: String(row.status || "pending"),
+      request: row
+    }));
+  }, [filteredAttendanceRows]);
+
+  const kpis = useMemo(() => {
+    const uniqueEmployees = new Set(
+      filteredAttendanceRows
+        .map((row) => getEmployeeName(row))
+        .filter((name) => name && name !== "-")
+    ).size;
+
+    return {
+      total: filteredAttendanceRows.length,
+      uniqueEmployees,
+      missedCheckout: filteredAttendanceRows.filter((row) => row.requestType === "missed_checkout").length,
+      corrections: filteredAttendanceRows.filter((row) => row.requestType === "correction").length
+    };
+  }, [filteredAttendanceRows]);
+
+  const approvalColumns = useMemo<Column<ApprovalTableRow>[]>(() => ([
+    {
+      header: "Employee",
+      accessor: "employee",
+      sortable: true,
+      className: "min-w-[220px] font-medium"
+    },
+    {
+      header: "Date",
+      accessor: "dateKey",
+      sortable: true,
+      render: (row) => row.dateLabel,
+      className: "min-w-[140px]"
+    },
+    {
+      header: "Type",
+      accessor: "type",
+      sortable: true,
+      className: "min-w-[180px]"
+    },
+    {
+      header: "Requested Time",
+      accessor: "requestedTime",
+      className: "min-w-[180px]"
+    },
+    {
+      header: "Status",
+      accessor: "status",
+      sortable: true,
+      render: (row) => getStatusBadge(row.status),
+      className: "min-w-[140px]"
+    },
+    {
+      header: "Actions",
+      accessor: "id",
+      render: (row) => (
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => actionAttendance(row.request, "approved")}>Approve</Button>
+          <Button size="sm" variant="outline" onClick={() => actionAttendance(row.request, "rejected")}>Reject</Button>
+        </div>
+      ),
+      className: "min-w-[180px]"
+    }
+  ]), []);
+
   return (
     <MainLayout
       title="Pending Approvals"
@@ -151,72 +271,148 @@ const PendingApprovals = () => {
 
       {canViewAny && (
         <>
-          <div className="flex justify-end mb-4">
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={handleRefresh}
-              disabled={loading || refreshing}
-            >
-              <RefreshCw className={`w-4 h-4 ${loading || refreshing ? "animate-spin" : ""}`} />
-              {loading || refreshing ? "Refreshing..." : "Refresh"}
-            </Button>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 mb-4">
+            {[
+              {
+                label: "Total Pending",
+                value: kpis.total,
+                note: requestDateFilter ? `For ${requestDateFilter}` : "Requests waiting for your action",
+                icon: ClipboardList,
+                shell: "from-sky-500/15 via-cyan-500/10 to-white",
+                accent: "bg-sky-500/15 text-sky-700 border-sky-200",
+                glow: "shadow-[0_20px_45px_-30px_rgba(14,165,233,0.55)]"
+              },
+              {
+                label: "Employees",
+                value: kpis.uniqueEmployees,
+                note: "Unique employees in queue",
+                icon: Users,
+                shell: "from-violet-500/15 via-fuchsia-500/10 to-white",
+                accent: "bg-violet-500/15 text-violet-700 border-violet-200",
+                glow: "shadow-[0_20px_45px_-30px_rgba(139,92,246,0.55)]"
+              },
+              {
+                label: "Missed Checkout",
+                value: kpis.missedCheckout,
+                note: "Checkout regularization requests",
+                icon: Clock3,
+                shell: "from-amber-500/20 via-orange-500/10 to-white",
+                accent: "bg-amber-500/15 text-amber-700 border-amber-200",
+                glow: "shadow-[0_20px_45px_-30px_rgba(245,158,11,0.6)]"
+              },
+              {
+                label: "Corrections",
+                value: kpis.corrections,
+                note: "Check-in or check-out corrections",
+                icon: Sparkles,
+                shell: "from-emerald-500/15 via-teal-500/10 to-white",
+                accent: "bg-emerald-500/15 text-emerald-700 border-emerald-200",
+                glow: "shadow-[0_20px_45px_-30px_rgba(16,185,129,0.55)]"
+              }
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.label}
+                  className={`relative overflow-hidden rounded-2xl border border-white/70 bg-gradient-to-br ${item.shell} p-4 backdrop-blur-sm ${item.glow}`}
+                >
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.9),transparent_42%)] pointer-events-none" />
+                  <div className="relative flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-600">{item.label}</p>
+                      <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{item.value}</p>
+                      <p className="text-xs text-slate-500 mt-2">{item.note}</p>
+                    </div>
+                    <div className={`rounded-xl border p-2.5 backdrop-blur-sm ${item.accent}`}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 flex-1">
+              <div className="relative">
+                <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input
+                  value={searchText}
+                  onChange={(event) => setSearchText(event.target.value)}
+                  placeholder="Search employee, type, reason or date"
+                  className="pl-9"
+                />
+              </div>
+
+              <Select value={requestTypeFilter} onValueChange={setRequestTypeFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="missed_checkout">Missed Checkout</SelectItem>
+                  <SelectItem value="correction">Correction</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Input
+                type="month"
+                value={requestDateFilter}
+                onChange={(event) => setRequestDateFilter(event.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSearchText("");
+                  setRequestTypeFilter("all");
+                  setRequestDateFilter(currentMonthKey);
+                }}
+                disabled={!searchText && requestTypeFilter === "all" && requestDateFilter === currentMonthKey}
+              >
+                Clear Filters
+              </Button>
+
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={handleRefresh}
+                disabled={loading || refreshing}
+              >
+                <RefreshCw className={`w-4 h-4 ${loading || refreshing ? "animate-spin" : ""}`} />
+                {loading || refreshing ? "Refreshing..." : "Refresh"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mb-4 text-sm text-muted-foreground">
+            Showing <span className="font-medium text-foreground">{filteredAttendanceRows.length}</span> of{" "}
+            <span className="font-medium text-foreground">{attendanceRows.length}</span> pending attendance approvals.
           </div>
 
           {canAttendanceAction && (
-            <div className="bg-card rounded-xl card-shadow overflow-hidden">
+            <div className="rounded-2xl border border-white/70 bg-card/95 card-shadow overflow-hidden backdrop-blur-sm">
               <div className="px-6 py-4 border-b border-border">
                 <h3 className="text-lg font-semibold">Attendance Approvals Assigned To Me</h3>
               </div>
-              <Table>
-                <TableHeader>
-                  <TableRow className="table-header">
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Requested Time</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading && Array.from({ length: 4 }).map((_, idx) => (
-                    <TableRow key={`attendance-approval-skeleton-${idx}`}>
-                      {Array.from({ length: 6 }).map((__, colIdx) => (
-                        <TableCell key={colIdx}>
-                          <Skeleton className="h-4 w-full" />
-                        </TableCell>
-                      ))}
-                    </TableRow>
+              {loading ? (
+                <div className="p-6 space-y-3">
+                  {Array.from({ length: 4 }).map((_, idx) => (
+                    <Skeleton key={`attendance-approval-skeleton-${idx}`} className="h-12 w-full" />
                   ))}
-                  {!loading && attendanceRows.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-muted-foreground">
-                        No attendance approvals assigned.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {!loading && attendanceRows.map((row) => (
-                    <TableRow key={row._actionId || row._id || row.id} className="table-row-hover">
-                      <TableCell>
-                        {row.employeeId
-                          ? `${row.employeeId.firstName || ""} ${row.employeeId.lastName || ""}`.trim()
-                          : "-"}
-                      </TableCell>
-                      <TableCell>{formatDateKeyInOrgCalendar(row.date)}</TableCell>
-                      <TableCell className="capitalize">{String(row.requestType || "").replace("_", " ")}</TableCell>
-                      <TableCell>{row.requestedCheckInTime || "-"} / {row.requestedCheckOutTime || "-"}</TableCell>
-                      <TableCell>{getStatusBadge(row.status)}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={() => actionAttendance(row, "approved")}>Approve</Button>
-                          <Button size="sm" variant="outline" onClick={() => actionAttendance(row, "rejected")}>Reject</Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                </div>
+              ) : (
+                <DataTable
+                  columns={approvalColumns}
+                  data={tableRows}
+                  rowKey="id"
+                  tableClassName="w-full min-w-[960px] border-collapse"
+                  containerClassName="rounded-none border-0 shadow-none bg-transparent"
+                  viewportClassName="max-h-[62vh]"
+                />
+              )}
             </div>
           )}
         </>
