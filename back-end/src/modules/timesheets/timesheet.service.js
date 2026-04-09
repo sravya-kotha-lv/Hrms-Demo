@@ -2670,6 +2670,7 @@ exports.raiseAttendanceRequest = async (req) => {
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   let dateKey = normalizeAttendanceRequestDateKey(req.body.date, organizationTimeZone);
   let date = startOfDayInTimeZone(dateKey, organizationTimeZone);
+  const requestedDateKey = dateKey;
   const today = startOfDayInTimeZone(new Date(), organizationTimeZone);
   if (date > today) {
     throw new Error("Attendance request date cannot be in the future");
@@ -2708,21 +2709,16 @@ exports.raiseAttendanceRequest = async (req) => {
 
       if (existingAttendanceTarget.attendance.checkOutAt) {
         requestType = "correction";
-        dateKey = existingAttendanceTarget.attendanceDateKey;
-        date = existingAttendanceTarget.attendanceDate;
       } else {
         throw new Error("No unresolved check-in found for the provided date");
       }
-    } else {
-      dateKey = target.attendanceDateKey;
-      date = target.attendanceDate;
     }
   }
 
   const existingPending = await AttendanceRequest.findOne({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date: dateKey,
+    date: requestedDateKey,
     status: "pending"
   });
   if (existingPending) {
@@ -2740,7 +2736,7 @@ exports.raiseAttendanceRequest = async (req) => {
   const request = await AttendanceRequest.create({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
-    date: dateKey,
+    date: requestedDateKey,
     requestType,
     requestedCheckInTime,
     requestedCheckOutTime,
@@ -2760,7 +2756,7 @@ exports.raiseAttendanceRequest = async (req) => {
       actorEmployeeId: employee._id,
       type: "attendance_request_pending_approval",
       title: "Attendance request approval pending",
-      message: `${employeeName} submitted an attendance request for ${dateKey}.`,
+      message: `${employeeName} submitted an attendance request for ${requestedDateKey}.`,
       meta: {
         attendanceRequestId: request._id,
         status: request.status,
@@ -2984,7 +2980,31 @@ exports.actionAttendanceRequest = async (req) => {
     return request;
   }
 
-  const attendanceDateKey = normalizeAttendanceRequestDateKey(request.date, organizationTimeZone);
+  let attendanceDateKey = normalizeAttendanceRequestDateKey(request.date, organizationTimeZone);
+  if (request.requestType === "missed_checkout") {
+    const target = await resolveMissedCheckoutAttendanceTarget({
+      organizationId: req.user.organizationId,
+      employeeId: request.employeeId,
+      requestedDateKey: attendanceDateKey,
+      requestedCheckOutTime: request.requestedCheckOutTime || null,
+      organizationTimeZone
+    });
+    if (target?.attendanceDateKey) {
+      attendanceDateKey = target.attendanceDateKey;
+    }
+  } else if (request.requestType === "correction" && request.requestedCheckOutTime) {
+    const correctionTarget = await resolveAttendanceTargetForRequestDate({
+      organizationId: req.user.organizationId,
+      employeeId: request.employeeId,
+      requestedDateKey: attendanceDateKey,
+      requestedCheckOutTime: request.requestedCheckOutTime,
+      organizationTimeZone
+    });
+    if (correctionTarget?.attendanceDateKey) {
+      attendanceDateKey = correctionTarget.attendanceDateKey;
+    }
+  }
+
   const attendanceDate = startOfDayInTimeZone(attendanceDateKey, organizationTimeZone);
   const attendance = await Attendance.findOneAndUpdate(
     {
