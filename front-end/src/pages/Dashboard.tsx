@@ -84,6 +84,13 @@ type TimesheetRecord = {
   submittedAt?: string;
 };
 
+type AttendanceApprovalRequestRecord = {
+  _id?: string;
+  status?: string;
+  requestType?: string;
+  date?: string;
+};
+
 type HolidayRecord = {
   _id?: string;
   date?: string;
@@ -330,6 +337,7 @@ const Dashboard = () => {
   const [attendanceMatrix, setAttendanceMatrix] = useState<AttendanceActivityRow[]>([]);
   const [leaveList, setLeaveList] = useState<LeaveRecord[]>([]);
   const [weeklyList, setWeeklyList] = useState<TimesheetRecord[]>([]);
+  const [attendanceApprovalRequests, setAttendanceApprovalRequests] = useState<AttendanceApprovalRequestRecord[]>([]);
   const [holidays, setHolidays] = useState<HolidayRecord[]>([]);
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
   const [todayStatusList, setTodayStatusList] = useState<TodayStatusRecord[]>([]);
@@ -438,10 +446,33 @@ const Dashboard = () => {
     }
   }, [monthValue, yearValue]);
 
+  const loadAttendanceApprovalRequests = useCallback(async () => {
+    const res = await getApiWithToken("/timesheets/attendance/requests/pending/my-approvals", null, {
+      requiredPermissions: ["ATTENDANCE_MANAGE"]
+    });
+
+    if (res?.skipped) {
+      setAttendanceApprovalRequests([]);
+      return;
+    }
+
+    if (res?.success) {
+      setAttendanceApprovalRequests(res.data || []);
+      return;
+    }
+
+    setAttendanceApprovalRequests([]);
+  }, []);
+
   useEffect(() => {
     if (!isSuperAdmin && permissions.length === 0) return;
     loadDashboardData();
   }, [isSuperAdmin, loadDashboardData, permissions]);
+
+  useEffect(() => {
+    if (!isSuperAdmin && permissions.length === 0) return;
+    loadAttendanceApprovalRequests();
+  }, [isSuperAdmin, loadAttendanceApprovalRequests, permissions]);
 
   useEffect(() => {
     if (!showOrgPopup) return;
@@ -780,9 +811,10 @@ const Dashboard = () => {
     const submittedTimesheets = weeklyList.filter((w) => w.status === "submitted");
     return {
       pendingLeaves,
-      submittedTimesheets
+      submittedTimesheets,
+      attendanceRequests: attendanceApprovalRequests.filter((request) => request.status === "pending")
     };
-  }, [leaveList, weeklyList]);
+  }, [attendanceApprovalRequests, leaveList, weeklyList]);
 
   const departmentAnalytics = useMemo(() => {
     if (dashboardStats?.departmentAnalytics) return dashboardStats.departmentAnalytics;
@@ -2450,7 +2482,7 @@ const Dashboard = () => {
             <h3 className="font-semibold">Approval Center</h3>
             <Badge variant="outline">Action Required</Badge>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="p-3 rounded-lg border">
               <p className="text-sm text-muted-foreground mb-1">Pending Leave Requests</p>
               <p className="text-xl font-semibold">{pendingApprovals.pendingLeaves.length}</p>
@@ -2465,9 +2497,16 @@ const Dashboard = () => {
                 Open Timesheet Queue
               </Button>
             </div>
+            <div className="p-3 rounded-lg border">
+              <p className="text-sm text-muted-foreground mb-1">Pending Attendance Requests</p>
+              <p className="text-xl font-semibold">{pendingApprovals.attendanceRequests.length}</p>
+              <Button className="mt-3" size="sm" variant="outline" onClick={() => navigate("/approvals")}>
+                Open Attendance Queue
+              </Button>
+            </div>
           </div>
           <div className="mt-4 text-sm text-muted-foreground">
-            {dashboardLoading ? "Refreshing dashboard data..." : "Last synced from live attendance, leave and timesheet data."}
+            {dashboardLoading ? "Refreshing dashboard data..." : "Last synced from live attendance, leave, approval, and timesheet data."}
           </div>
         </div>
 

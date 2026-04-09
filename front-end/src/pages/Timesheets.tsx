@@ -141,18 +141,21 @@ const normalizeEntries = (weekDates: Date[], rawEntries: WeeklyEntry[]) => {
   });
 };
 
-const getStatusBadge = (status: string) => {
-  switch (status) {
+const getStatusBadge = (status?: string | null) => {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+
+  switch (normalizedStatus) {
     case "approved":
       return (
         <Badge className="status-badge status-active gap-1">
           <CheckCircle className="w-3 h-3" /> Approved
         </Badge>
       );
+    case "pending":
     case "submitted":
       return (
         <Badge className="status-badge status-pending gap-1">
-          <Clock className="w-3 h-3" /> Submitted
+          <Clock className="w-3 h-3" /> {normalizedStatus === "submitted" ? "Submitted" : "Pending"}
         </Badge>
       );
     case "rejected":
@@ -226,6 +229,19 @@ const approvalProgressLabel = (request: AttendanceRequest) => {
   }
   if (!pending) return "Pending";
   return `S${pending.stepNumber}/${steps.length} • ${approverLabel(pending)}`;
+};
+
+const getAttendanceRequestStatus = (request: AttendanceRequest) => {
+  const normalizedStatus = String(request.status || "").trim().toLowerCase();
+  if (["pending", "approved", "rejected"].includes(normalizedStatus)) return normalizedStatus;
+
+  const steps = Array.isArray(request.approvalSteps) ? request.approvalSteps : [];
+  if (steps.some((step) => String(step.status || "").trim().toLowerCase() === "pending")) {
+    return "pending";
+  }
+
+  if (request.currentApprovalStep != null) return "pending";
+  return normalizedStatus || "draft";
 };
 
 const toIdString = (value: unknown) => {
@@ -1209,7 +1225,7 @@ const Timesheets = () => {
                 <TableCell>{formatDateKeyInOrgCalendar(r.date)}</TableCell>
                 <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
                 <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
-                <TableCell>{getStatusBadge(r.status)}</TableCell>
+                <TableCell>{getStatusBadge(getAttendanceRequestStatus(r))}</TableCell>
                 <TableCell className="max-w-[260px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
                   {approvalProgressLabel(r)}
                 </TableCell>
