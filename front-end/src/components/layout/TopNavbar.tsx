@@ -32,13 +32,6 @@ interface NotificationItem {
   message: string;
   isRead: boolean;
   createdAt: string;
-  type?: string;
-  meta?: {
-    module?: string;
-    leaveId?: string;
-    status?: string;
-    [key: string]: unknown;
-  };
 }
 
 export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) => {
@@ -113,36 +106,13 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
     navigate("/login", { replace: true });
   };
 
-  const getNotificationTarget = (notification: NotificationItem) => {
-    const moduleName = String(notification?.meta?.module || "").toLowerCase();
-    const type = String(notification?.type || "").toLowerCase();
-    const title = String(notification?.title || "").toLowerCase();
-    const message = String(notification?.message || "").toLowerCase();
-    const text = `${title} ${message}`;
-
-    if (moduleName === "leaves") return "/leave";
-    if (type.startsWith("leave_")) {
-      return type === "leave_pending_approval" ? "/pending-approvals" : "/leave";
-    }
-    if (type === "attendance_request_pending_approval") return "/pending-approvals";
-    if (type === "attendance_override") return "/attendance";
-    if (text.includes("leave")) return "/leave";
-    if (text.includes("attendance")) return "/attendance";
-    if (text.includes("approval")) return "/pending-approvals";
-    return "/dashboard";
-  };
-
-  const markOneNotificationRead = async (notification: NotificationItem) => {
-    const id = notification?._id;
-    if (!id) return;
-
+  const markOneNotificationRead = async (id: string) => {
     const res: any = await patchApiWithToken(`/notifications/${id}/read`, {}, null, {
       requiredPermissions: ["NOTIFICATION_MANAGE_SELF"]
     });
     if (!res?.success) return;
     setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, isRead: true } : n)));
     setUnreadCount((prev) => Math.max(0, prev - 1));
-    navigate(getNotificationTarget(notification));
   };
 
   const markAllNotificationsRead = async () => {
@@ -241,7 +211,7 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
                 <DropdownMenuItem
                   key={item._id}
                   className={`group flex flex-col items-start gap-1 py-3 ${item.isRead ? "" : "bg-muted/40"}`}
-                  onClick={() => markOneNotificationRead(item)}
+                  onClick={() => markOneNotificationRead(item._id)}
                 >
                   <span className="font-medium group-data-[highlighted]:text-accent-foreground">
                     {item.title}
