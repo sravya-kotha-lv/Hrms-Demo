@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { AttendanceDay } from '../types/attendance';
 
@@ -20,6 +20,64 @@ const isPresentLikeStatus = (status?: string | null) =>
   status === 'half_day_present' ||
   status === 'full_day_present';
 
+const getStatusMeta = (status?: string | null) => {
+  const normalized = String(status || '').toLowerCase();
+  if (!normalized) {
+    return {
+      label: 'No record',
+      icon: 'calendar-blank-outline',
+      chip: styles.statusNeutral,
+      chipText: styles.statusNeutralText,
+    };
+  }
+  if (isPresentLikeStatus(normalized)) {
+    return {
+      label: normalized.replace(/_/g, ' '),
+      icon: 'check-circle',
+      chip: styles.statusPresent,
+      chipText: styles.statusPresentText,
+    };
+  }
+  if (normalized === 'absent') {
+    return {
+      label: 'Absent',
+      icon: 'close-circle',
+      chip: styles.statusAbsent,
+      chipText: styles.statusAbsentText,
+    };
+  }
+  if (normalized.includes('leave')) {
+    return {
+      label: normalized.replace(/_/g, ' '),
+      icon: 'beach',
+      chip: styles.statusLeave,
+      chipText: styles.statusLeaveText,
+    };
+  }
+  if (normalized.includes('week')) {
+    return {
+      label: normalized.replace(/_/g, ' '),
+      icon: 'calendar-week',
+      chip: styles.statusWeekOff,
+      chipText: styles.statusWeekOffText,
+    };
+  }
+  if (normalized.includes('holiday')) {
+    return {
+      label: normalized.replace(/_/g, ' '),
+      icon: 'party-popper',
+      chip: styles.statusHoliday,
+      chipText: styles.statusHolidayText,
+    };
+  }
+  return {
+    label: normalized.replace(/_/g, ' '),
+    icon: 'information-outline',
+    chip: styles.statusNeutral,
+    chipText: styles.statusNeutralText,
+  };
+};
+
 const formatHolidayDate = (value?: string) => {
   if (!value) return 'Date unavailable';
   const date = new Date(value);
@@ -29,6 +87,12 @@ const formatHolidayDate = (value?: string) => {
     day: 'numeric',
     year: 'numeric',
   });
+};
+
+const normalizeHolidayName = (value?: string) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.replace(/\s*\/?\s*festivals?\b/gi, '').trim();
 };
 
 const AttendanceTab = ({
@@ -101,6 +165,10 @@ const AttendanceTab = ({
     setSelectedDay((prev) => (prev === day ? null : day));
   };
 
+  const closeDetailCard = () => {
+    setSelectedDay(null);
+  };
+
   return (
     <View style={styles.container}>
 
@@ -152,57 +220,93 @@ const AttendanceTab = ({
         })}
       </View>
 
-      {selectedDay && (
-        <View style={styles.detailCard}>
-          <View style={styles.detailHeader}>
-            <View>
-              <Text style={styles.detailLabel}>Day {selectedDay}</Text>
-              <Text style={styles.detailTitle}>{employeeName}</Text>
-            </View>
-            <Pressable style={styles.detailClose} onPress={() => setSelectedDay(null)}>
-              <MaterialCommunityIcons name="close" size={16} color="#64748b" />
-            </Pressable>
-          </View>
-          <View style={styles.detailBody}>
-            {(() => {
-              const cell = matrixDays[selectedDay] || {};
-              const status = cell.status ? cell.status.replace(/_/g, ' ') : 'No record';
-              return (
-                <>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailKey}>Status</Text>
-                    <Text style={styles.detailValue}>{status}</Text>
+      <Modal visible={selectedDay !== null} transparent animationType="fade" onRequestClose={closeDetailCard}>
+        <Pressable style={styles.detailModalBackdrop} onPress={closeDetailCard}>
+          <Pressable style={styles.detailModalCard} onPress={(event) => event.stopPropagation()}>
+            {selectedDay && (
+              <>
+                <View style={styles.detailTopBand}>
+                  <View style={styles.detailDateBadge}>
+                    <Text style={styles.detailDateDay}>{selectedDay}</Text>
+                    <Text style={styles.detailDateMonth}>
+                      {monthDate.toLocaleDateString(undefined, { month: 'short' })}
+                    </Text>
                   </View>
-                  {cell.checkInAt && (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailKey}>Check-in</Text>
-                      <Text style={styles.detailValue}>{formatTime(cell.checkInAt)}</Text>
-                    </View>
-                  )}
-                  {cell.checkOutAt && (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailKey}>Check-out</Text>
-                      <Text style={styles.detailValue}>{formatTime(cell.checkOutAt)}</Text>
-                    </View>
-                  )}
-                  {cell.leaveType && (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailKey}>Leave Type</Text>
-                      <Text style={styles.detailValue}>{cell.leaveType}</Text>
-                    </View>
-                  )}
-                  {cell.holidayName && (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailKey}>Holiday</Text>
-                      <Text style={styles.detailValue}>{cell.holidayName}</Text>
-                    </View>
-                  )}
-                </>
-              );
-            })()}
-          </View>
-        </View>
-      )}
+                  <View style={styles.detailHeaderTextWrap}>
+                    <Text style={styles.detailLabel}>{monthLabel}</Text>
+                    <Text style={styles.detailTitle} numberOfLines={2}>{employeeName}</Text>
+                  </View>
+                  <Pressable style={styles.detailClose} onPress={closeDetailCard}>
+                    <MaterialCommunityIcons name="close" size={16} color="#64748b" />
+                  </Pressable>
+                </View>
+                <View style={styles.detailBody}>
+                  {(() => {
+                    const cell = matrixDays[selectedDay] || {};
+                    const statusMeta = getStatusMeta(cell.status);
+                    return (
+                      <>
+                        <View style={styles.statusRow}>
+                          <View style={[styles.statusChip, statusMeta.chip]}>
+                            <MaterialCommunityIcons name={statusMeta.icon as any} size={13} color="#0f172a" />
+                            <Text style={[styles.statusChipText, statusMeta.chipText]}>
+                              {statusMeta.label.charAt(0).toUpperCase() + statusMeta.label.slice(1)}
+                            </Text>
+                          </View>
+                        </View>
+                        {cell.checkInAt && (
+                          <View style={styles.detailRowCard}>
+                            <View style={styles.detailRow}>
+                            <View style={styles.detailKeyWrap}>
+                              <MaterialCommunityIcons name="login" size={14} color="#64748b" />
+                              <Text style={styles.detailKey}>Check-in</Text>
+                            </View>
+                            <Text style={styles.detailValue}>{formatTime(cell.checkInAt)}</Text>
+                            </View>
+                          </View>
+                        )}
+                        {cell.checkOutAt && (
+                          <View style={styles.detailRowCard}>
+                            <View style={styles.detailRow}>
+                            <View style={styles.detailKeyWrap}>
+                              <MaterialCommunityIcons name="logout" size={14} color="#64748b" />
+                              <Text style={styles.detailKey}>Check-out</Text>
+                            </View>
+                            <Text style={styles.detailValue}>{formatTime(cell.checkOutAt)}</Text>
+                            </View>
+                          </View>
+                        )}
+                        {cell.leaveType && (
+                          <View style={styles.detailRowCard}>
+                            <View style={styles.detailRow}>
+                            <View style={styles.detailKeyWrap}>
+                              <MaterialCommunityIcons name="beach" size={14} color="#64748b" />
+                              <Text style={styles.detailKey}>Leave Type</Text>
+                            </View>
+                            <Text style={styles.detailValue}>{cell.leaveType}</Text>
+                            </View>
+                          </View>
+                        )}
+                        {cell.holidayName && (
+                          <View style={styles.detailRowCard}>
+                            <View style={styles.detailRow}>
+                            <View style={styles.detailKeyWrap}>
+                              <MaterialCommunityIcons name="party-popper" size={14} color="#64748b" />
+                              <Text style={styles.detailKey}>Holiday</Text>
+                            </View>
+                            <Text style={styles.detailValue}>{normalizeHolidayName(cell.holidayName)}</Text>
+                            </View>
+                          </View>
+                        )}
+                      </>
+                    );
+                  })()}
+                </View>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <View style={styles.holidaysSection}>
         <View style={styles.holidaysHeader}>
@@ -215,20 +319,25 @@ const AttendanceTab = ({
         ) : upcomingHolidays.length === 0 ? (
           <Text style={styles.holidaysEmptyText}>No holidays found.</Text>
         ) : (
-          upcomingHolidays.map((holiday: any) => (
-            <View
-              key={holiday?._id || `${holiday?.name || 'holiday'}-${holiday?.date || ''}`}
-              style={styles.holidayRow}
-            >
-              <View style={styles.holidayBadge}>
-                <MaterialCommunityIcons name="calendar-blank" size={14} color="#2563eb" />
+          upcomingHolidays.map((holiday: any) => {
+            const displayName = normalizeHolidayName(holiday?.name);
+            if (!displayName) return null;
+
+            return (
+              <View
+                key={holiday?._id || `${holiday?.name || 'holiday'}-${holiday?.date || ''}`}
+                style={styles.holidayRow}
+              >
+                <View style={styles.holidayBadge}>
+                  <MaterialCommunityIcons name="calendar-blank" size={14} color="#2563eb" />
+                </View>
+                <View style={styles.holidayInfo}>
+                  <Text style={styles.holidayName}>{displayName}</Text>
+                  <Text style={styles.holidayMeta}>{formatHolidayDate(holiday?.date)}</Text>
+                </View>
               </View>
-              <View style={styles.holidayInfo}>
-                <Text style={styles.holidayName}>{holiday?.name || 'Holiday'}</Text>
-                <Text style={styles.holidayMeta}>{formatHolidayDate(holiday?.date)}</Text>
-              </View>
-            </View>
-          ))
+            );
+          })
         )}
       </View>
     </View>
@@ -376,10 +485,68 @@ calendarHoliday: {
     elevation: 4,
     gap: 10,
   },
+  detailModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  detailModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    padding: 14,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+    gap: 10,
+  },
   detailHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
+  },
+  detailHeaderTextWrap: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  detailTopBand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
+    padding: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  detailDateBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#dbeafe',
+    borderWidth: 1,
+    borderColor: '#93c5fd',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailDateDay: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1d4ed8',
+    lineHeight: 18,
+  },
+  detailDateMonth: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#1e3a8a',
+    textTransform: 'uppercase',
   },
   detailLabel: {
     fontSize: 12,
@@ -404,23 +571,98 @@ calendarHoliday: {
     backgroundColor: '#f8fafc',
   },
   detailBody: {
-    gap: 8,
+    gap: 10,
+  },
+  statusRow: {
+    marginBottom: 2,
+  },
+  statusChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  statusChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'capitalize',
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 2,
+  },
+  detailRowCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   detailKey: {
     fontSize: 12,
     color: '#94a3b8',
     fontWeight: '600',
   },
+  detailKeyWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   detailValue: {
     fontSize: 13,
     color: '#0f172a',
     fontWeight: '600',
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  statusPresent: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#86efac',
+  },
+  statusPresentText: {
+    color: '#166534',
+  },
+  statusAbsent: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#fca5a5',
+  },
+  statusAbsentText: {
+    color: '#b91c1c',
+  },
+  statusLeave: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#4ade80',
+  },
+  statusLeaveText: {
+    color: '#15803d',
+  },
+  statusWeekOff: {
+    backgroundColor: '#dbeafe',
+    borderColor: '#93c5fd',
+  },
+  statusWeekOffText: {
+    color: '#1d4ed8',
+  },
+  statusHoliday: {
+    backgroundColor: '#fef3c7',
+    borderColor: '#fcd34d',
+  },
+  statusHolidayText: {
+    color: '#92400e',
+  },
+  statusNeutral: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#cbd5e1',
+  },
+  statusNeutralText: {
+    color: '#334155',
   },
   holidaysSection: {
     marginTop: 16,

@@ -20,6 +20,13 @@ import { launchCamera } from 'react-native-image-picker';
 import Geolocation from 'react-native-geolocation-service';
 import AttendanceTab from '../components/AttendanceTab';
 import { AttendanceDay } from '../types/attendance';
+
+const pressedStyle = {
+  transform: [{ scale: 0.96 }],
+  shadowOffset: { width: 2, height: 2 },
+  shadowOpacity: 0.2,
+};
+
 type CheckInPolicy = {
   attendanceIpEnabled: boolean;
   attendanceSelfieRequired: boolean;
@@ -111,38 +118,39 @@ function EmployeeDashboardScreen() {
   const loadDashboard = async (silent = false) => {
     if (!silent) setLoading(true);
     if (silent) setRefreshing(true);
-    const todayIso = toDateInput(new Date());
-    const weekStartIso = toDateInput(weekStart);
+    try {
+      const todayIso = toDateInput(new Date());
+      const weekStartIso = toDateInput(weekStart);
 
-    const [
-      weeklyRes,
-      attendanceRes,
-      leaveRes,
-      balanceRes,
-      onlineRes,
-      onLeaveRes,
-      notifRes,
-      holidayRes,
-      weekOffRes,
-      matrixRes,
-      profileRes,
-      eventsRes,
-      checkInPolicyRes,
-    ] = await Promise.all([
-      getApiWithToken<any>(`/timesheets/weekly/my?weekStart=${weekStartIso}`, token),
-      getApiWithToken<any>(`/timesheets/attendance/my?date=${todayIso}`, token),
-      getApiWithToken<any>('/leaves/my', token),
-      getApiWithToken<any>('/leave-balances/my', token),
-      getApiWithToken<any>('/timesheets/online', token),
-      getApiWithToken<any>('/timesheets/on-leave', token),
-      getApiWithToken<any>('/notifications/my?limit=6', token),
-      getApiWithToken<any>(`/holidays?year=${currentYear}`, token),
-      getApiWithToken<any>('/week-offs', token),
-      getApiWithToken<any>(`/timesheets/attendance/matrix/my?month=${currentMonth}`, token),
-      getApiWithToken<any>('/employees/me', token),
-      getApiWithToken<any>('/employees/upcoming-events?days=7', token),
-      getApiWithToken<any>('/timesheets/checkin-policy', token),
-    ]);
+      const [
+        weeklyRes,
+        attendanceRes,
+        leaveRes,
+        balanceRes,
+        onlineRes,
+        onLeaveRes,
+        notifRes,
+        holidayRes,
+        weekOffRes,
+        matrixRes,
+        profileRes,
+        eventsRes,
+        checkInPolicyRes,
+      ] = await Promise.all([
+        getApiWithToken<any>(`/timesheets/weekly/my?weekStart=${weekStartIso}`, token),
+        getApiWithToken<any>(`/timesheets/attendance/my?date=${todayIso}`, token),
+        getApiWithToken<any>('/leaves/my', token),
+        getApiWithToken<any>('/leave-balances/my', token),
+        getApiWithToken<any>('/timesheets/online', token),
+        getApiWithToken<any>('/timesheets/on-leave', token),
+        getApiWithToken<any>('/notifications/my?limit=6', token),
+        getApiWithToken<any>(`/holidays?year=${currentYear}`, token),
+        getApiWithToken<any>('/week-offs', token),
+        getApiWithToken<any>(`/timesheets/attendance/matrix/my?month=${currentMonth}`, token),
+        getApiWithToken<any>('/employees/me', token),
+        getApiWithToken<any>('/employees/upcoming-events?days=7', token),
+        getApiWithToken<any>('/timesheets/checkin-policy', token),
+      ]);
 
     if (weeklyRes?.success && weeklyRes?.data) {
       setWeeklyStatus(weeklyRes.data.status || 'draft');
@@ -215,8 +223,13 @@ function EmployeeDashboardScreen() {
       }
     }
 
-    if (!silent) setLoading(false);
-    if (silent) setRefreshing(false);
+    } catch (error) {
+      console.warn('Dashboard load failed', error);
+      setPolicyWarning('Unable to load dashboard data. Pull to refresh.');
+    } finally {
+      if (!silent) setLoading(false);
+      if (silent) setRefreshing(false);
+    }
   };
 
   useEffect(() => {
@@ -345,6 +358,15 @@ function EmployeeDashboardScreen() {
   const checkOutTimeText = attendanceToday?.checkOutAt
     ? formatTime(attendanceToday.checkOutAt)
     : '-';
+  const shiftStartText = attendanceToday?.shiftStartTime || myProfile?.shiftId?.startTime || null;
+  const shiftEndText = attendanceToday?.shiftEndTime || myProfile?.shiftId?.endTime || null;
+  const shiftNameText =
+    attendanceToday?.shiftName ||
+    myProfile?.shiftId?.name ||
+    myProfile?.shiftId?.code ||
+    'General Shift';
+  const shiftTimeText =
+    shiftStartText && shiftEndText ? `${shiftStartText} - ${shiftEndText}` : 'Not assigned';
 
   const lateFlag = useMemo(() => Number(attendanceToday?.lateByMinutes || 0) > 0, [attendanceToday]);
 
@@ -503,7 +525,7 @@ function EmployeeDashboardScreen() {
               </View>
               <View style={styles.topBarRight}>
                 <Pressable
-                  style={styles.iconButton}
+                  style={({ pressed }) => [styles.iconButton, pressed && styles.surfacePressed]}
                   onPress={() => {
                     setProfileMenuOpen(false);
                     const parentNavigation = navigation.getParent?.();
@@ -521,7 +543,7 @@ function EmployeeDashboardScreen() {
                   <MaterialCommunityIcons name="bell-outline" size={18} color="#0f172a" />
                 </Pressable>
                 <Pressable
-                  style={styles.avatar}
+                  style={({ pressed }) => [styles.avatar, pressed && styles.surfacePressed]}
                   onPress={() => setProfileMenuOpen((current) => !current)}
                 >
                   {profileImage ? (
@@ -569,9 +591,16 @@ function EmployeeDashboardScreen() {
                       <Text style={styles.cardSubText}>
                         Check-in: {checkInTimeText} • Check-out: {checkOutTimeText}
                       </Text>
+                      <Text style={styles.cardSubText}>
+                        Shift: {shiftNameText} ({shiftTimeText})
+                      </Text>
                       <View style={styles.actionRow}>
                         <Pressable
-                          style={[styles.primaryAction, isCheckedIn && styles.primaryDisabled]}
+                          style={({ pressed }) => [
+                            styles.primaryAction,
+                            pressed && styles.surfacePressed,
+                            isCheckedIn && styles.primaryDisabled,
+                          ]}
                           onPress={handleCheckIn}
                           disabled={checkinLoading || isCheckedIn}
                         >
@@ -583,7 +612,11 @@ function EmployeeDashboardScreen() {
                           <Text style={styles.primaryActionText}>Check In</Text>
                         </Pressable>
                         <Pressable
-                          style={[styles.secondaryAction, !isCheckedIn && styles.secondaryDisabled]}
+                          style={({ pressed }) => [
+                            styles.secondaryAction,
+                            pressed && styles.surfacePressed,
+                            !isCheckedIn && styles.secondaryDisabled,
+                          ]}
                           onPress={handleCheckOut}
                           disabled={checkoutLoading || !isCheckedIn}
                         >
@@ -597,13 +630,13 @@ function EmployeeDashboardScreen() {
                       </View>
                       <View style={styles.actionRow}>
                         <Pressable
-                          style={styles.secondaryAction}
+                          style={({ pressed }) => [styles.secondaryAction, pressed && styles.surfacePressed]}
                           onPress={() => navigation.navigate('Leaves', { openApplyModal: true })}
                         >
                           <Text style={styles.secondaryActionText}>Apply Leave</Text>
                         </Pressable>
                         <Pressable
-                          style={styles.secondaryAction}
+                          style={({ pressed }) => [styles.secondaryAction, pressed && styles.surfacePressed]}
                           onPress={() => navigation.navigate('Timesheets')}
                         >
                           <Text style={styles.secondaryActionText}>Timesheet</Text>
@@ -614,20 +647,25 @@ function EmployeeDashboardScreen() {
                     <View style={styles.statsGrid}>
                       <View style={styles.statCard}>
                         <Text style={styles.statLabel}>Leave Balance</Text>
-                        <Text style={styles.statValue}>{totalLeaveRemaining.toFixed(1)}</Text>
+                        <Text style={[styles.statValue, styles.statValueBlue]}>{totalLeaveRemaining.toFixed(1)}</Text>
                         <Text style={styles.cardSubText}>Total remaining</Text>
                       </View>
                       <View style={styles.statCard}>
                         <Text style={styles.statLabel}>Team</Text>
-                        <Text style={styles.statValue}>{onlineList.length}</Text>
+                        <Text style={[styles.statValue, styles.statValueGreen]}>{onlineList.length}</Text>
                         <Text style={styles.cardSubText}>Online now</Text>
                       </View>
                       <View style={styles.statCard}>
                         <Text style={styles.statLabel}>Pending Requests</Text>
-                        <Text style={styles.statValue}>{pendingLeaves + pendingTimesheets}</Text>
+                        <Text style={[styles.statValue, styles.statValueAmber]}>{pendingLeaves + pendingTimesheets}</Text>
                         <Text style={styles.cardSubText}>
                           Leaves: {pendingLeaves} • Timesheet: {pendingTimesheets}
                         </Text>
+                      </View>
+                      <View style={styles.statCard}>
+                        <Text style={styles.statLabel}>On Leave Today</Text>
+                        <Text style={[styles.statValue, styles.statValueRed]}>{onLeaveList.length}</Text>
+                        <Text style={styles.cardSubText}>Employees</Text>
                       </View>
                     </View>
                   </>
@@ -635,23 +673,6 @@ function EmployeeDashboardScreen() {
 
                 {activeTab === 'overview' && (
                   <>
-                    <View style={styles.card}>
-                      <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle}>Team Snapshot</Text>
-                        <View style={styles.pill}>
-                          <Text style={styles.pillText}>Today</Text>
-                        </View>
-                      </View>
-                      <View style={styles.snapshotRow}>
-                        <Text style={styles.snapshotLabel}>Online now:</Text>
-                        <Text style={styles.snapshotValue}>{onlineList.length}</Text>
-                      </View>
-                      <View style={styles.snapshotRow}>
-                        <Text style={styles.snapshotLabel}>On leave today:</Text>
-                        <Text style={styles.snapshotValue}>{onLeaveList.length}</Text>
-                      </View>
-                    </View>
-
                     <View style={styles.card}>
                       <View style={styles.cardHeader}>
                         <Text style={styles.cardTitle}>Next 7 Days Events</Text>
@@ -933,12 +954,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   topBarLeft: {
     flexDirection: 'row',
@@ -960,7 +986,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     fontSize: 11,
     fontWeight: '600',
-    color: '#334155',
+    color: '#475569',
   },
   topBarTitle: {
     flexShrink: 1,
@@ -1068,7 +1094,7 @@ const styles = StyleSheet.create({
   tab: {
     flex: 1,
     paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -1118,8 +1144,8 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 20,
+    padding: 18,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     shadowColor: '#0f172a',
@@ -1141,11 +1167,11 @@ const styles = StyleSheet.create({
   cardSubText: {
     marginTop: 6,
     fontSize: 12,
-    color: '#64748b',
+    color: '#6b7280',
   },
   bigStatus: {
     marginTop: 6,
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '700',
     color: '#0f172a',
   },
@@ -1180,13 +1206,20 @@ const styles = StyleSheet.create({
   },
   primaryAction: {
     flex: 1,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#5b7cfa',
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#3b66d9',
+    borderWidth: 1,
+    borderColor: '#335cc9',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 6,
+    shadowColor: '#2f58c7',
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 5,
   },
   primaryDisabled: {
     opacity: 0.6,
@@ -1198,8 +1231,8 @@ const styles = StyleSheet.create({
   },
   secondaryAction: {
     flex: 1,
-    height: 38,
-    borderRadius: 10,
+    height: 42,
+    borderRadius: 12,
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -1207,6 +1240,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 6,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
   secondaryDisabled: {
     opacity: 0.5,
@@ -1217,19 +1255,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   statsGrid: {
-    gap: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginTop: 2,
   },
   statCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 18,
+    padding: 16,
+    minHeight: 116,
+    width: '48%',
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  surfacePressed: {
+    ...pressedStyle,
   },
   statLabel: {
     fontSize: 12,
-    color: '#64748b',
-    fontWeight: '600',
+    color: '#475569',
+    fontWeight: '700',
   },
   statValue: {
     marginTop: 6,
@@ -1237,9 +1289,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0f172a',
   },
+  statValueBlue: {
+    color: '#3b63db',
+  },
+  statValueGreen: {
+    color: '#16934f',
+  },
+  statValueAmber: {
+    color: '#d48a00',
+  },
+  statValueRed: {
+    color: '#d94b4b',
+  },
   noticeCard: {
     marginTop: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -1287,8 +1351,8 @@ const styles = StyleSheet.create({
   },
   eventRow: {
     marginTop: 8,
-    padding: 10,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#f8fafc',

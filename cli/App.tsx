@@ -1,11 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BlurView } from '@react-native-community/blur';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { Image, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, StatusBar, StyleSheet, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
@@ -19,6 +19,7 @@ import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
 import AttendanceScreen from './src/screens/AttendanceScreen';
 import { setUnauthorizedHandler } from './src/services/api';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { setupFirebaseMessaging } from './src/services/fcm';
 
 const patchResponseForStatusZero = () => {
   if (typeof globalThis === 'undefined' || !globalThis.Response) {
@@ -117,9 +118,14 @@ function EmployeeTabs() {
     <LinearGradient colors={['#dbeafe', '#eef2ff', '#e0f2fe']} style={{ flex: 1 }}>
       <Tabs.Navigator
         initialRouteName="Dashboard"
+        backBehavior="history"
+        detachInactiveScreens={false}
         screenOptions={{
           headerShown: false,
           tabBarShowLabel: false,
+          lazy: false,
+          freezeOnBlur: false,
+          animation: 'fade',
           tabBarBackground: () => <TabBarBackground />,
           tabBarStyle: {
             position: 'absolute',
@@ -219,6 +225,31 @@ function EmployeeTabs() {
 }
 
 function TabIcon({ focused, icon, activeIcon }: TabIconProps) {
+  const activeScale = useRef(new Animated.Value(focused ? 1 : 0.92)).current;
+  const inactiveOpacity = useRef(new Animated.Value(focused ? 0 : 1)).current;
+  const inactiveScale = useRef(new Animated.Value(focused ? 0.92 : 1)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(activeScale, {
+        toValue: focused ? 1 : 0.92,
+        useNativeDriver: true,
+        friction: 7,
+        tension: 100,
+      }),
+      Animated.timing(inactiveOpacity, {
+        toValue: focused ? 0 : 1,
+        duration: 170,
+        useNativeDriver: true,
+      }),
+      Animated.timing(inactiveScale, {
+        toValue: focused ? 0.92 : 1,
+        duration: 170,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [focused, activeScale, inactiveOpacity, inactiveScale]);
+
   return (
     <View
       accessible
@@ -229,21 +260,30 @@ function TabIcon({ focused, icon, activeIcon }: TabIconProps) {
       style={styles.tabIconWrapper}
     >
       {focused ? (
-        <LinearGradient colors={TAB_BAR_ACTIVE_GRADIENT} style={styles.activeIconBubble}>
-          <MaterialCommunityIcons
-            name={(activeIcon || icon) as any}
-            size={22}
-            color={TAB_BAR_ACTIVE_ICON}
-          />
-        </LinearGradient>
+        <Animated.View style={{ transform: [{ scale: activeScale }] }}>
+          <LinearGradient colors={TAB_BAR_ACTIVE_GRADIENT} style={styles.activeIconBubble}>
+            <MaterialCommunityIcons
+              name={(activeIcon || icon) as any}
+              size={22}
+              color={TAB_BAR_ACTIVE_ICON}
+            />
+          </LinearGradient>
+        </Animated.View>
       ) : (
-        <View style={styles.inactiveIconBubble}>
-          <MaterialCommunityIcons
-            name={icon as any}
-            size={24}
-            color={TAB_BAR_INACTIVE_ICON}
-          />
-        </View>
+        <Animated.View
+          style={{
+            opacity: inactiveOpacity,
+            transform: [{ scale: inactiveScale }],
+          }}
+        >
+          <View style={styles.inactiveIconBubble}>
+            <MaterialCommunityIcons
+              name={icon as any}
+              size={24}
+              color={TAB_BAR_INACTIVE_ICON}
+            />
+          </View>
+        </Animated.View>
       )}
     </View>
   );
@@ -258,21 +298,34 @@ function ProfileTabIcon({
   image?: string | null;
   initials: string;
 }) {
+  const profileScale = useRef(new Animated.Value(focused ? 1 : 0.96)).current;
+
+  useEffect(() => {
+    Animated.spring(profileScale, {
+      toValue: focused ? 1 : 0.96,
+      useNativeDriver: true,
+      friction: 7,
+      tension: 90,
+    }).start();
+  }, [focused, profileScale]);
+
   return (
     <View style={styles.profileTabWrapper}>
-      <View style={[styles.profileBubble, focused && styles.profileBubbleActive]}>
-        {image ? (
-          <Image
-            source={{ uri: image }}
-            style={[
-              styles.profileAvatar,
-              focused && styles.profileAvatarActive,
-            ]}
-          />
-        ) : (
-          <Text style={[styles.profileInitials, focused && styles.profileInitialsActive]}>{initials}</Text>
-        )}
-      </View>
+      <Animated.View style={{ transform: [{ scale: profileScale }] }}>
+        <View style={[styles.profileBubble, focused && styles.profileBubbleActive]}>
+          {image ? (
+            <Image
+              source={{ uri: image }}
+              style={[
+                styles.profileAvatar,
+                focused && styles.profileAvatarActive,
+              ]}
+            />
+          ) : (
+            <Text style={[styles.profileInitials, focused && styles.profileInitialsActive]}>{initials}</Text>
+          )}
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -294,10 +347,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.34)',
     shadowColor: '#60a5fa',
-    shadowOpacity: 0.34,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
   },
   inactiveIconBubble: {
     width: 48,
@@ -368,6 +421,26 @@ function AppNavigator() {
     setUnauthorizedHandler(handler);
     return () => setUnauthorizedHandler(null);
   }, [logout, setSessionExpiredMessage]);
+
+  useEffect(() => {
+    if (!session?.token) return;
+
+    let unsubscribeMessaging: (() => void) | undefined;
+
+    void setupFirebaseMessaging(session.token)
+      .then((unsubscribe) => {
+        unsubscribeMessaging = unsubscribe;
+      })
+      .catch((error) => {
+        console.log('FCM setup failed:', error);
+      });
+
+    return () => {
+      if (unsubscribeMessaging) {
+        unsubscribeMessaging();
+      }
+    };
+  }, [session?.token]);
 
   return (
     <NavigationContainer>

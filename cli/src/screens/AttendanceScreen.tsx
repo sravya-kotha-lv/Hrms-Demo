@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,6 +31,8 @@ const getDaysInMonth = (date: Date) => new Date(date.getFullYear(), date.getMont
 const getMonthLabel = (date: Date) =>
   date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
+const FONT_MEDIUM = Platform.select({ android: 'sans-serif-medium', ios: 'System', default: 'sans-serif' });
+
 function AttendanceScreen() {
   const { session } = useAuth();
   const token = session?.token || '';
@@ -48,6 +52,15 @@ function AttendanceScreen() {
     const firstName = profile?.firstName || '';
     const lastName = profile?.lastName || '';
     return [firstName, lastName].filter(Boolean).join(' ') || profile?.email || 'Employee';
+  }, [profile]);
+
+  const profileImage = profile?.profileImage || profile?.profilePhoto || null;
+  const employeeInitials = useMemo(() => {
+    const first = (profile?.firstName || '').charAt(0);
+    const last = (profile?.lastName || '').charAt(0);
+    const combined = `${first}${last}`.trim();
+    if (combined) return combined.toUpperCase();
+    return String(profile?.email || 'U').charAt(0).toUpperCase();
   }, [profile]);
 
   const loadAttendance = useCallback(
@@ -95,11 +108,15 @@ function AttendanceScreen() {
       const year = referenceDate.getFullYear();
       const response = await getApiWithToken<any>(`/holidays?year=${year}`, token);
       if (response?.success) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
         const allHolidays = (response.data || [])
           .filter((holiday: any) => {
             if (!holiday?.date) return false;
             const holidayDate = new Date(holiday.date);
-            return !Number.isNaN(holidayDate.getTime());
+            if (Number.isNaN(holidayDate.getTime())) return false;
+            holidayDate.setHours(0, 0, 0, 0);
+            return holidayDate >= today;
           })
           .sort((a: any, b: any) => {
             const aTime = new Date(a.date).getTime() || 0;
@@ -155,8 +172,20 @@ function AttendanceScreen() {
     >
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
-          <Text style={styles.headerLabel}>My Attendance Calendar</Text>
-          <Text style={styles.headerName}>{employeeName}</Text>
+          <View style={styles.headerTopRow}>
+            <View style={styles.headerTextCol}>
+              <Text style={styles.headerLabel}>My Attendance Calendar</Text>
+              <Text style={styles.headerName} numberOfLines={1}>{employeeName}</Text>
+            </View>
+            <View style={styles.profileBadge}>
+              {profileImage ? (
+                <Image source={{ uri: profileImage }} style={styles.profileImage} />
+              ) : (
+                <Text style={styles.profileInitials}>{employeeInitials}</Text>
+              )}
+            </View>
+          </View>
+
           <View style={styles.monthControls}>
             <Pressable style={styles.navButton} onPress={() => changeMonth(-1)}>
               <MaterialCommunityIcons name="chevron-left" size={20} color="#1f2937" />
@@ -211,38 +240,69 @@ const styles = StyleSheet.create({
   },
   headerCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 18,
+    borderRadius: 18,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     shadowColor: '#0f172a',
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 5,
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  headerTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  profileBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: '#dbe4f0',
+    backgroundColor: '#eef4ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  profileImage: {
+    width: '100%',
+    height: '100%',
+  },
+  profileInitials: {
+    fontSize: 14,
+    color: '#2563eb',
+    fontFamily: FONT_MEDIUM,
   },
   headerLabel: {
     fontSize: 12,
-    color: '#e2e8f0',
+    color: '#64748b',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 1.2,
+    fontFamily: FONT_MEDIUM,
   },
   headerName: {
-    marginTop: 6,
-    fontSize: 22,
-    fontWeight: '700',
+    marginTop: 4,
+    fontSize: 30 / 1.5,
     color: '#0f172a',
+    fontFamily: FONT_MEDIUM,
   },
   monthControls: {
-    marginTop: 16,
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   navButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 11,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     alignItems: 'center',
@@ -251,8 +311,8 @@ const styles = StyleSheet.create({
   },
   monthLabel: {
     fontSize: 16,
-    fontWeight: '700',
     color: '#0f172a',
+    fontFamily: FONT_MEDIUM,
   },
   loadingWrapper: {
     marginTop: 32,

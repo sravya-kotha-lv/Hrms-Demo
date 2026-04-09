@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,10 +9,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useNavigation } from '@react-navigation/native';
 import { getApiWithToken, postApiWithToken, putApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -43,8 +43,24 @@ const buildWeekDates = (weekStart: Date) => {
   return dates;
 };
 
+const weekRangeLabel = (weekDates: Date[]) => {
+  if (!weekDates.length) return '';
+  const start = weekDates[0];
+  const end = weekDates[6];
+  const startMonth = start.toLocaleString('en-US', { month: 'short' });
+  const endMonth = end.toLocaleString('en-US', { month: 'short' });
+  return `${start.getDate()} ${startMonth} - ${end.getDate()} ${endMonth}`;
+};
+
+const weekdayLabel = (value: Date) => value.toLocaleString('en-US', { weekday: 'short' }).toUpperCase();
+const dayMonthLabel = (value: Date) =>
+  `${value.getDate()} ${value.toLocaleString('en-US', { month: 'short' })}`;
+
+const FONT_REGULAR = Platform.select({ android: 'sans-serif', ios: 'System', default: 'sans-serif' });
+const FONT_MEDIUM = Platform.select({ android: 'sans-serif-medium', ios: 'System', default: 'sans-serif' });
+const FONT_BOLD = Platform.select({ android: 'sans-serif', ios: 'System', default: 'sans-serif' });
+
 function TimesheetsScreen() {
-  const navigation = useNavigation<any>();
   const { session } = useAuth();
   const token = session?.token || '';
   const safeAreaInsets = useSafeAreaInsets();
@@ -57,8 +73,16 @@ function TimesheetsScreen() {
 
   const weekStartKey = useMemo(() => toDateInput(weekStart), [weekStart]);
   const weekDates = useMemo(() => buildWeekDates(weekStart), [weekStart]);
+  const totalHours = useMemo(
+    () => entries.reduce((sum, row) => sum + (Number(row.hours) || 0), 0),
+    [entries]
+  );
+  const hasAnyEntry = useMemo(
+    () => entries.some((row) => (Number(row.hours) || 0) > 0 || (row.notes || '').trim().length > 0),
+    [entries]
+  );
 
-  const loadTimesheet = async () => {
+  const loadTimesheet = useCallback(async () => {
     setLoading(true);
     const res = await getApiWithToken<any>(`/timesheets/weekly/my?weekStart=${weekStartKey}`, token);
     setLoading(false);
@@ -88,11 +112,11 @@ function TimesheetsScreen() {
         weekDates.map((d) => ({ date: toDateInput(d), hours: 0, notes: '' }))
       );
     }
-  };
+  }, [token, weekDates, weekStartKey]);
 
   useEffect(() => {
     if (token) loadTimesheet();
-  }, [token, weekStartKey]);
+  }, [token, loadTimesheet]);
 
   const updateEntry = (index: number, patch: Partial<Entry>) => {
     setEntries((prev) =>
@@ -146,31 +170,88 @@ function TimesheetsScreen() {
           { paddingTop: Math.max(safeAreaInsets.top, 16) },
         ]}
       >
-        <View style={styles.header}>
-         
-          <Text style={styles.headerTitle}>Weekly Timesheet</Text>
-          
+        <View style={styles.topCard}>
+          <View style={styles.topCardHeader}>
+            <View>
+              <Text style={styles.kicker} allowFontScaling={false}>WEEKLY TIMESHEET</Text>
+              <Text style={styles.bigTitle} allowFontScaling={false}>Log your week cleanly</Text>
+              <Text style={styles.rangeText} allowFontScaling={false}>{weekRangeLabel(weekDates)}</Text>
+            </View>
+            <View style={styles.iconBadge}>
+              <MaterialCommunityIcons name="calendar-clock-outline" size={26} color="#3a6bdb" />
+            </View>
+          </View>
+
+          <View style={styles.weekSwitchRow}>
+            <Pressable
+              style={styles.switchBtn}
+              onPress={() => {
+                const prev = new Date(weekStart);
+                prev.setDate(prev.getDate() - 7);
+                setWeekStart(getWeekStart(prev));
+              }}
+            >
+              <Text style={styles.switchBtnText} allowFontScaling={false}>{'<'}</Text>
+            </Pressable>
+            <View style={styles.weekCenter}>
+              <Text style={styles.weekLabel} allowFontScaling={false}>WEEK STARTING</Text>
+              <Text style={styles.weekValue} allowFontScaling={false}>{weekStartKey}</Text>
+            </View>
+            <Pressable
+              style={styles.switchBtn}
+              onPress={() => {
+                const next = new Date(weekStart);
+                next.setDate(next.getDate() + 7);
+                setWeekStart(getWeekStart(next));
+              }}
+            >
+              <Text style={styles.switchBtnText} allowFontScaling={false}>{'>'}</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel} allowFontScaling={false}>Total Hours</Text>
+              <Text style={styles.summaryValue} allowFontScaling={false}>{totalHours.toFixed(1)}h</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel} allowFontScaling={false}>Status</Text>
+              <Text style={styles.summaryValue} allowFontScaling={false}>{hasAnyEntry ? 'In Progress' : 'New Week'}</Text>
+            </View>
+          </View>
         </View>
 
-        <View style={styles.card}>
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          <Text style={styles.helperText}>Week starting {weekStartKey}</Text>
+        <View style={styles.entriesCard}>
+          <Text style={styles.entriesTitle} allowFontScaling={false}>Daily Entries</Text>
+          <Text style={styles.entriesSubtitle} allowFontScaling={false}>Fill hours and a short work summary for each day.</Text>
+          {error ? <Text style={styles.errorText} allowFontScaling={false}>{error}</Text> : null}
 
           {loading ? (
-            <ActivityIndicator />
+            <ActivityIndicator color="#2563eb" style={styles.loadingIndicator} />
           ) : (
             entries.map((entry, idx) => (
-              <View key={entry.date} style={styles.entryRow}>
-                <Text style={styles.entryDate}>{entry.date}</Text>
-                <TextInput
-                  style={styles.hoursInput}
-                  keyboardType="decimal-pad"
-                  value={String(entry.hours)}
-                  onChangeText={(value) => updateEntry(idx, { hours: Number(value) || 0 })}
-                />
+              <View key={entry.date} style={styles.dayCard}>
+                <View style={styles.dayRowTop}>
+                  <View>
+                    <Text style={styles.dayName} allowFontScaling={false}>{weekdayLabel(weekDates[idx])}</Text>
+                    <Text style={styles.dayDate} allowFontScaling={false}>{dayMonthLabel(weekDates[idx])}</Text>
+                  </View>
+                  <View style={styles.hoursWrap}>
+                    <Text style={styles.hoursLabel} allowFontScaling={false}>Hours</Text>
+                    <TextInput
+                      style={styles.hoursInput}
+                      keyboardType="decimal-pad"
+                      allowFontScaling={false}
+                      value={String(entry.hours)}
+                      onChangeText={(value) => updateEntry(idx, { hours: Number(value) || 0 })}
+                    />
+                  </View>
+                </View>
                 <TextInput
                   style={styles.notesInput}
-                  placeholder="Notes"
+                  placeholder="What did you work on today?"
+                  placeholderTextColor="#94a3b8"
+                  allowFontScaling={false}
                   value={entry.notes || ''}
                   onChangeText={(value) => updateEntry(idx, { notes: value })}
                 />
@@ -179,11 +260,19 @@ function TimesheetsScreen() {
           )}
 
           <View style={styles.actionRow}>
-            <Pressable style={styles.secondaryButton} onPress={() => saveTimesheet(false)} disabled={saving}>
-              {saving ? <ActivityIndicator /> : <Text style={styles.secondaryText}>Save Draft</Text>}
+            <Pressable
+              style={[styles.secondaryButton, saving ? styles.disabledButton : null]}
+              onPress={() => saveTimesheet(false)}
+              disabled={saving}
+            >
+              {saving ? <ActivityIndicator /> : <Text style={styles.secondaryText} allowFontScaling={false}>Save Draft</Text>}
             </Pressable>
-            <Pressable style={styles.primaryButton} onPress={() => saveTimesheet(true)} disabled={saving}>
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Submit</Text>}
+            <Pressable
+              style={[styles.primaryButton, saving ? styles.disabledButton : null]}
+              onPress={() => saveTimesheet(true)}
+              disabled={saving}
+            >
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText} allowFontScaling={false}>Submit</Text>}
             </Pressable>
           </View>
         </View>
@@ -194,74 +283,156 @@ function TimesheetsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scrollContent: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 120, gap: 14 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+  scrollContent: { flexGrow: 1, paddingHorizontal: 14, paddingBottom: 102, gap: 10 },
+  topCard: {
     backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#dde3ee',
+    gap: 14,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  topCardHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  kicker: { fontSize: 10.5, letterSpacing: 1.8, color: '#8d98aa', fontFamily: FONT_MEDIUM },
+  bigTitle: { marginTop: 6, fontSize: 19, color: '#0f172a', lineHeight: 23, fontFamily: FONT_BOLD, fontWeight: '700' },
+  rangeText: { marginTop: 4, fontSize: 13.5, color: '#6f7d91', fontFamily: FONT_REGULAR, fontWeight: '400' },
+  iconBadge: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    backgroundColor: '#eef4ff',
+    borderWidth: 1,
+    borderColor: '#d7e4fd',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
+  weekSwitchRow: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#dde3ee',
+    borderRadius: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#f7f9fc',
+  },
+  switchBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dde3ee',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switchBtnText: { fontSize: 17, lineHeight: 20, color: '#334155', fontFamily: FONT_BOLD, fontWeight: '700' },
+  weekCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  weekLabel: { fontSize: 12, letterSpacing: 1.7, color: '#a0a9b8', fontFamily: FONT_MEDIUM },
+  weekValue: { fontSize: 15.5, color: '#0f172a', marginTop: 2, fontFamily: FONT_BOLD, fontWeight: '700' },
+  summaryRow: { flexDirection: 'row', gap: 12 },
+  summaryCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#dde3ee',
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: '#f8faff',
+    minHeight: 96,
+    justifyContent: 'center',
+  },
+  summaryLabel: { fontSize: 13, color: '#5f6f84', fontFamily: FONT_REGULAR },
+  summaryValue: { marginTop: 6, fontSize: 16, color: '#0f172a', lineHeight: 21, fontFamily: FONT_BOLD, fontWeight: '700' },
+  entriesCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderWidth: 1,
+    borderColor: '#dde3ee',
+    gap: 10,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  entriesTitle: { fontSize: 17, color: '#0f172a', fontFamily: FONT_BOLD, fontWeight: '700' },
+  entriesSubtitle: { fontSize: 13.5, color: '#6e7e92', marginBottom: 2, lineHeight: 19, fontFamily: FONT_REGULAR },
+  errorText: { fontSize: 12, color: '#dc2626', fontFamily: FONT_REGULAR },
+  dayCard: {
+    borderWidth: 1,
+    borderColor: '#dde3ee',
+    borderRadius: 18,
+    padding: 12,
+    gap: 10,
+    backgroundColor: '#ffffff',
+  },
+  dayRowTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     gap: 10,
   },
-  helperText: { fontSize: 12, color: '#64748b' },
-  errorText: { fontSize: 12, color: '#dc2626' },
-  entryRow: {
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 10,
-    gap: 8,
-  },
-  entryDate: { fontSize: 12, fontWeight: '700', color: '#0f172a' },
+  dayName: { fontSize: 11.5, color: '#9aa5b7', letterSpacing: 1.8, fontFamily: FONT_MEDIUM },
+  dayDate: { fontSize: 15, color: '#0f172a', lineHeight: 20, fontFamily: FONT_BOLD, fontWeight: '700' },
+  hoursWrap: { alignItems: 'flex-end', gap: 5 },
+  hoursLabel: { fontSize: 11.5, color: '#6a7689', fontFamily: FONT_REGULAR },
   hoursInput: {
-    height: 36,
-    borderRadius: 8,
+    height: 48,
+    minWidth: 104,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    paddingHorizontal: 8,
-    fontSize: 12,
+    borderColor: '#dde3ee',
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: '#0f172a',
+    textAlign: 'center',
+    backgroundColor: '#ffffff',
+    fontFamily: FONT_BOLD,
+    fontWeight: '700',
   },
   notesInput: {
-    height: 36,
-    borderRadius: 8,
+    height: 44,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    paddingHorizontal: 8,
-    fontSize: 12,
+    borderColor: '#dde3ee',
+    paddingHorizontal: 14,
+    fontSize: 13.5,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+    fontFamily: FONT_REGULAR,
   },
   actionRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
   secondaryButton: {
     flex: 1,
-    height: 40,
-    borderRadius: 10,
+    height: 52,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#dde3ee',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f5f7fb',
   },
-  secondaryText: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
+  secondaryText: { fontSize: 13.5, color: '#0f172a', fontFamily: FONT_MEDIUM },
   primaryButton: {
     flex: 1,
-    height: 40,
-    borderRadius: 10,
+    height: 52,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563eb',
+    backgroundColor: '#2f66dd',
   },
-  primaryText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  primaryText: { fontSize: 13.5, color: '#fff', fontFamily: FONT_MEDIUM },
+  disabledButton: { opacity: 0.65 },
+  loadingIndicator: { marginVertical: 24 },
 });
 
 export default TimesheetsScreen;

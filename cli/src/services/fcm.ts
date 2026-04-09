@@ -35,18 +35,31 @@ export const getFcmToken = async (): Promise<string | null> => {
 };
 
 const registerDeviceToken = async (token: string, authToken: string) => {
-  const response = await postApiWithToken<{ token: string }>(
-    '/notifications/device-token/register',
-    {
-      token,
-      platform: Platform.OS,
-    },
-    authToken
-  );
+  let lastError: string | null = null;
 
-  if (!response?.success) {
-    throw new Error(response?.message || 'Unable to save FCM token');
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await postApiWithToken<{ token: string }>(
+      '/notifications/device-token/register',
+      {
+        token,
+        platform: Platform.OS,
+      },
+      authToken
+    );
+
+    if (response?.success) {
+      return;
+    }
+
+    lastError = response?.message || 'Unable to save FCM token';
+    console.log(`FCM token register failed (attempt ${attempt}/3):`, lastError);
+
+    if (attempt < 3) {
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
   }
+
+  throw new Error(lastError || 'Unable to save FCM token');
 };
 
 const getNotificationText = (remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
@@ -68,8 +81,12 @@ export const setupFirebaseMessaging = async (authToken: string) => {
   const token = await getFcmToken();
   console.log('FCM token:', token);
   if (token) {
-    await registerDeviceToken(token, authToken);
-    console.log('FCM token registered with backend');
+    try {
+      await registerDeviceToken(token, authToken);
+      console.log('FCM token registered with backend');
+    } catch (error) {
+      console.log('FCM token registration failed:', error);
+    }
   }
 
   const unsubscribeForeground = messaging().onMessage(async remoteMessage => {

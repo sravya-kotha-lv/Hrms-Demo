@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -62,6 +62,9 @@ const requestCameraPermission = async () => {
   if (Platform.OS !== 'android') return true;
   return requestAndroidPermission(PermissionsAndroid.PERMISSIONS.CAMERA);
 };
+
+const FONT_REGULAR = Platform.select({ android: 'sans-serif', ios: 'System', default: 'sans-serif' });
+const FONT_MEDIUM = Platform.select({ android: 'sans-serif-medium', ios: 'System', default: 'sans-serif' });
 
 function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -149,7 +152,7 @@ function ProfileScreen() {
     setAddressProofUpload(null);
   };
 
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     const res = await getApiWithToken('/employees/me', token);
@@ -160,11 +163,11 @@ function ProfileScreen() {
     }
     setProfile(res.data || null);
     seedForm(res.data || null);
-  };
+  }, [token]);
 
   useEffect(() => {
     loadProfile();
-  }, [token]);
+  }, [loadProfile]);
 
   const employmentRows = useMemo(
     () => [
@@ -348,6 +351,12 @@ function ProfileScreen() {
         ) : (
           <>
             <View style={styles.headerCard}>
+              <LinearGradient
+                colors={['#1d4ed8', '#2563eb', '#4f46e5']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.headerAccent}
+              />
               <View style={styles.headerContent}>
                 <View style={styles.photoWrap}>
                   {profileImageUrl ? (
@@ -359,14 +368,20 @@ function ProfileScreen() {
                   )}
                 </View>
                 <View style={styles.headerText}>
-                  <Text style={styles.headerName}>{displayName}</Text>
-                  <Text style={styles.headerSubtitle}>{profile?.userId?.email || ''}</Text>
+                  <Text style={styles.headerName} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                  <View style={styles.headerEmailRow}>
+                    <MaterialCommunityIcons name="email-outline" size={14} color="#64748b" />
+                    <Text style={styles.headerSubtitle} numberOfLines={1}>
+                      {profile?.userId?.email || ''}
+                    </Text>
+                  </View>
+                  <Pressable style={styles.editButton} onPress={() => setEditVisible(true)}>
+                    <MaterialCommunityIcons name="pencil-outline" size={14} color="#2563eb" />
+                    <Text style={styles.editButtonText}>Edit Profile</Text>
+                  </Pressable>
                 </View>
-              </View>
-              <View style={styles.headerActions}>
-                <Pressable style={styles.editButton} onPress={() => setEditVisible(true)}>
-                  <Text style={styles.editButtonText}>Edit Profile</Text>
-                </Pressable>
               </View>
             </View>
 
@@ -433,75 +448,116 @@ function ProfileScreen() {
                 </Text>
               </View>
 
-              <TextInput
-                style={styles.input}
-                placeholder="Phone number"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Date of Birth (YYYY-MM-DD)"
-                value={dob}
-                onChangeText={setDob}
-              />
-
-              <View style={styles.pickerRow}>
-                <Pressable style={styles.selectField} onPress={() => openSelection('gender')}>
-                  <Text style={[styles.selectFieldText, !gender && styles.selectPlaceholder]}>
-                    {gender || 'Select Gender'}
-                  </Text>
-                  <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-                </Pressable>
-                <Pressable
-                  style={[styles.selectField, { marginLeft: 12 }]}
-                  onPress={() => openSelection('bloodGroup')}
-                >
-                  <Text style={[styles.selectFieldText, !bloodGroup && styles.selectPlaceholder]}>
-                    {bloodGroup || 'Blood Group (optional)'}
-                  </Text>
-                  <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-                </Pressable>
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Phone Number</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter phone number"
+                  placeholderTextColor="#94a3b8"
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                />
               </View>
 
-              <TextInput
-                style={styles.input}
-                placeholder="Address Line 1"
-                value={line1}
-                onChangeText={setLine1}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Address Line 2"
-                value={line2}
-                onChangeText={setLine2}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="City"
-                value={city}
-                onChangeText={setCity}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="State"
-                value={stateValue}
-                onChangeText={setStateValue}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Country"
-                value={country}
-                onChangeText={setCountry}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="ZIP / PIN"
-                value={zip}
-                onChangeText={setZip}
-                keyboardType="number-pad"
-              />
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Date of Birth</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#94a3b8"
+                  value={dob}
+                  onChangeText={setDob}
+                />
+              </View>
+
+              <View style={styles.pickerRow}>
+                <View style={styles.pickerField}>
+                  <Text style={styles.fieldLabel}>Gender</Text>
+                  <Pressable style={styles.selectField} onPress={() => openSelection('gender')}>
+                    <Text style={[styles.selectFieldText, !gender && styles.selectPlaceholder]}>
+                      {gender || 'Select gender'}
+                    </Text>
+                    <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+                  </Pressable>
+                </View>
+                <View style={[styles.pickerField, styles.pickerFieldGap]}>
+                  <Text style={styles.fieldLabel}>Blood Group</Text>
+                  <Pressable onPress={() => openSelection('bloodGroup')} style={styles.selectField}>
+                    <Text style={[styles.selectFieldText, !bloodGroup && styles.selectPlaceholder]}>
+                      {bloodGroup || 'Optional'}
+                    </Text>
+                    <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Address Line 1</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter address line 1"
+                  placeholderTextColor="#94a3b8"
+                  value={line1}
+                  onChangeText={setLine1}
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Address Line 2</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter address line 2"
+                  placeholderTextColor="#94a3b8"
+                  value={line2}
+                  onChangeText={setLine2}
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>City</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter city"
+                  placeholderTextColor="#94a3b8"
+                  value={city}
+                  onChangeText={setCity}
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>State</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter state"
+                  placeholderTextColor="#94a3b8"
+                  value={stateValue}
+                  onChangeText={setStateValue}
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Country</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter country"
+                  placeholderTextColor="#94a3b8"
+                  value={country}
+                  onChangeText={setCountry}
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>ZIP / PIN</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter ZIP / PIN"
+                  placeholderTextColor="#94a3b8"
+                  value={zip}
+                  onChangeText={setZip}
+                  keyboardType="number-pad"
+                />
+              </View>
               <Pressable style={styles.fileButton} onPress={pickAddressProof}>
                 <Text style={styles.fileButtonText}>
                   {addressProofUpload?.fileName || 'Choose Address Proof'}
@@ -509,35 +565,46 @@ function ProfileScreen() {
               </Pressable>
               <Text style={styles.fileHelperText}>PDF, JPG, PNG, WEBP up to 5MB</Text>
 
-              <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Emergency Contact</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Name"
-                value={emergencyName}
-                onChangeText={setEmergencyName}
-              />
-              <View style={styles.pickerRow}>
-                <Pressable
-                  style={styles.selectField}
-                  onPress={() => openSelection('emergencyRelation')}
-                >
-                  <Text
-                    style={[
-                      styles.selectFieldText,
-                      !emergencyRelation && styles.selectPlaceholder,
-                    ]}
-                  >
-                    {emergencyRelation || 'Relationship'}
-                  </Text>
-                  <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-                </Pressable>
+              <Text style={[styles.sectionTitle, styles.sectionTitleSpacing]}>Emergency Contact</Text>
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Contact Name</Text>
                 <TextInput
-                  style={[styles.input, { flex: 1, marginLeft: 12 }]}
-                  placeholder="Phone"
-                  value={emergencyPhone}
-                  onChangeText={setEmergencyPhone}
-                  keyboardType="phone-pad"
+                  style={styles.input}
+                  placeholder="Enter contact name"
+                  placeholderTextColor="#94a3b8"
+                  value={emergencyName}
+                  onChangeText={setEmergencyName}
                 />
+              </View>
+              <View style={styles.pickerRow}>
+                <View style={styles.pickerField}>
+                  <Text style={styles.fieldLabel}>Relationship</Text>
+                  <Pressable
+                    style={styles.selectField}
+                    onPress={() => openSelection('emergencyRelation')}
+                  >
+                    <Text
+                      style={[
+                        styles.selectFieldText,
+                        !emergencyRelation && styles.selectPlaceholder,
+                      ]}
+                    >
+                      {emergencyRelation || 'Select'}
+                    </Text>
+                    <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+                  </Pressable>
+                </View>
+                <View style={[styles.pickerField, styles.pickerFieldGap]}>
+                  <Text style={styles.fieldLabel}>Contact Phone</Text>
+                  <TextInput
+                    style={[styles.input, styles.inputNoMargin]}
+                    placeholder="Enter phone"
+                    placeholderTextColor="#94a3b8"
+                    value={emergencyPhone}
+                    onChangeText={setEmergencyPhone}
+                    keyboardType="phone-pad"
+                  />
+                </View>
               </View>
 
               <Pressable style={styles.primaryButton} onPress={handleSave} disabled={saving}>
@@ -601,21 +668,45 @@ const styles = StyleSheet.create({
   },
   headerCard: {
     backgroundColor: '#fff',
-    padding: 16,
+    padding: 14,
     borderRadius: 18,
-    gap: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#dbe2ee',
     shadowColor: '#0f172a',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
     elevation: 3,
   },
-  headerContent: { flexDirection: 'row', alignItems: 'center' },
+  headerAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 84,
+    borderTopRightRadius: 26,
+    borderBottomRightRadius: 26,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 4,
+    paddingRight: 6,
+  },
   photoWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     overflow: 'hidden',
-    marginRight: 12,
+    marginRight: 14,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    backgroundColor: '#ffffff',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   photo: { width: '100%', height: '100%' },
   placeholder: {
@@ -625,20 +716,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   placeholderText: { fontSize: 24, color: '#64748b' },
-  headerText: { flex: 1, minWidth: 0 },
-  headerName: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
-  headerSubtitle: { fontSize: 13, color: '#475569' },
-  headerActions: {
-    alignItems: 'flex-end',
+  headerText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+    paddingRight: 6,
   },
+  headerName: { fontSize: 17, fontWeight: '700', color: '#1e293b' },
+  headerEmailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerSubtitle: { flex: 1, fontSize: 12, color: '#64748b' },
   editButton: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 14,
     borderRadius: 10,
-    alignSelf: 'flex-end',
+    borderWidth: 1.5,
+    borderColor: '#2563eb',
+    backgroundColor: '#f8fbff',
   },
-  editButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  editButtonText: { color: '#2563eb', fontWeight: '700', fontSize: 13 },
   detailCard: {
     backgroundColor: '#fff',
     borderRadius: 18,
@@ -695,6 +800,7 @@ const styles = StyleSheet.create({
   },
   section: { marginTop: 12 },
   sectionTitle: { fontSize: 14, fontWeight: '600', color: '#475569', marginBottom: 6 },
+  sectionTitleSpacing: { marginTop: 24 },
   profilePicRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   profilePicWrapper: {
     width: 64,
@@ -725,6 +831,15 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   uploadButtonText: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
+  fieldGroup: {
+    marginBottom: 10,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    color: '#334155',
+    marginBottom: 6,
+    fontFamily: FONT_MEDIUM,
+  },
   input: {
     height: 46,
     borderWidth: 1,
@@ -732,9 +847,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     backgroundColor: '#fff',
-    marginBottom: 10,
+    marginBottom: 0,
+    color: '#0f172a',
+    fontSize: 14,
+    fontFamily: FONT_REGULAR,
+  },
+  inputNoMargin: {
+    marginBottom: 0,
   },
   pickerRow: { flexDirection: 'row', marginBottom: 10 },
+  pickerField: {
+    flex: 1,
+  },
+  pickerFieldGap: {
+    marginLeft: 12,
+  },
   selectField: {
     flex: 1,
     minHeight: 46,
@@ -751,6 +878,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#0f172a',
+    fontFamily: FONT_REGULAR,
   },
   selectPlaceholder: {
     color: '#94a3b8',
