@@ -23,6 +23,8 @@ module.exports = (err, req, res, next) => {
       : Object.keys(keyValue);
     const duplicateMessage = String(err.message || "").toLowerCase();
 
+    console.log(duplicateFields,"-------");
+    
     if (duplicateFields.includes("email")) {
       return "Email already exists";
     }
