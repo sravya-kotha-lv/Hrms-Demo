@@ -7,15 +7,18 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { getApiWithToken, postApiWithTokenAndAuth } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
 
 function RoleSwitchScreen() {
   const navigation = useNavigation<any>();
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const { session, updateToken, updateProfile, updatePermissions } = useAuth();
   const token = session?.token || '';
   const roles = session?.loginData?.roles || session?.profile?.roles || [];
@@ -23,6 +26,7 @@ function RoleSwitchScreen() {
   const safeAreaInsets = useSafeAreaInsets();
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState('');
+  useResetScrollOnFocus(scrollViewRef);
 
   const handleSwitch = async (roleId: string) => {
     if (!roleId) return;
@@ -61,6 +65,7 @@ function RoleSwitchScreen() {
       style={styles.container}
     >
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingTop: Math.max(safeAreaInsets.top, 16) },

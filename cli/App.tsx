@@ -5,7 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BlurView } from '@react-native-community/blur';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { Animated, Image, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, StatusBar, StyleSheet, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
 });
 
 function AppNavigator() {
-  const { session, logout, setSessionExpiredMessage } = useAuth();
+  const { session, logout, setSessionExpiredMessage, authReady } = useAuth();
 
   useEffect(() => {
     const handler = () => {
@@ -442,6 +442,14 @@ function AppNavigator() {
     };
   }, [session?.token]);
 
+  if (!authReady) {
+    return (
+      <View style={appStyles.bootSplash}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -470,6 +478,15 @@ function AppNavigator() {
     </NavigationContainer>
   );
 }
+
+const appStyles = StyleSheet.create({
+  bootSplash: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff6ff',
+  },
+});
 
 function App() {
   return (

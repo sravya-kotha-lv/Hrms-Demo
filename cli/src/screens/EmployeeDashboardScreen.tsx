@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -20,6 +21,7 @@ import { launchCamera } from 'react-native-image-picker';
 import Geolocation from 'react-native-geolocation-service';
 import AttendanceTab from '../components/AttendanceTab';
 import { AttendanceDay } from '../types/attendance';
+import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
 
 const pressedStyle = {
   transform: [{ scale: 0.96 }],
@@ -35,6 +37,16 @@ type CheckInPolicy = {
 };
 
 const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const HEADER_TITLE_FONT = Platform.select({
+  android: 'sans-serif-medium',
+  ios: 'System',
+  default: 'sans-serif',
+});
+const HEADER_META_FONT = Platform.select({
+  android: 'sans-serif-medium',
+  ios: 'System',
+  default: 'sans-serif',
+});
 
 const toDateInput = (value: Date) => {
   const year = value.getFullYear();
@@ -61,6 +73,73 @@ const formatDateLong = (value: string | Date) =>
 const formatTime = (value: string | Date) =>
   new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
+const getOrganizationName = (...sources: any[]) => {
+  for (const source of sources) {
+    const candidates = [
+      source?.organization?.name,
+      source?.activeOrganization?.name,
+      source?.organizationId?.name,
+      source?.activeOrganizationId?.name,
+      source?.organizationName,
+      source?.activeOrganizationName,
+      source?.organizationId?.displayName,
+      source?.organizationId?.legalName,
+      source?.activeOrganizationId?.displayName,
+      source?.activeOrganizationId?.legalName,
+      source?.organization?.displayName,
+      source?.organization?.legalName,
+      source?.activeOrganization?.displayName,
+      source?.activeOrganization?.legalName,
+      source?.organizationDisplayName,
+      source?.organizationLegalName,
+      source?.company?.name,
+      source?.org?.name,
+      source?.tenant?.name,
+      source?.companyDisplayName,
+      source?.companyLegalName,
+      source?.companyName,
+      source?.company?.displayName,
+      source?.company?.legalName,
+      source?.orgDisplayName,
+      source?.orgLegalName,
+      source?.orgName,
+      source?.org?.displayName,
+      source?.org?.legalName,
+      source?.tenant?.displayName,
+      source?.tenant?.legalName,
+    ];
+
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+  }
+
+  return 'Organization';
+};
+
+const getOrganizationId = (...sources: any[]) => {
+  for (const source of sources) {
+    const value =
+      source?.organization?._id ||
+      source?.activeOrganization?._id ||
+      source?.organizationId?._id ||
+      source?.activeOrganizationId?._id ||
+      source?.organizationId ||
+      source?.activeOrganizationId ||
+      source?.companyId ||
+      source?.orgId ||
+      source?.tenantId;
+
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return '';
+};
+
 const today = new Date();
 const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 const currentYear = today.getFullYear();
@@ -68,6 +147,7 @@ const currentYear = today.getFullYear();
 function EmployeeDashboardScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const {
     session,
     logout,
@@ -102,6 +182,7 @@ function EmployeeDashboardScreen() {
   const [matrixDays, setMatrixDays] = useState<Record<number, AttendanceDay>>({});
   const [daysInMonth, setDaysInMonth] = useState<number>(31);
   const [myProfile, setMyProfile] = useState<any>(profile || null);
+  const [organizationProfile, setOrganizationProfile] = useState<any>(null);
   const [checkInPolicy, setCheckInPolicy] = useState<CheckInPolicy>({
     attendanceIpEnabled: false,
     attendanceSelfieRequired: false,
@@ -114,6 +195,7 @@ function EmployeeDashboardScreen() {
   const [showLoginToast, setShowLoginToast] = useState(false);
 
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
+  useResetScrollOnFocus(scrollViewRef);
   
   const loadDashboard = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -121,6 +203,7 @@ function EmployeeDashboardScreen() {
     try {
       const todayIso = toDateInput(new Date());
       const weekStartIso = toDateInput(weekStart);
+      const organizationId = getOrganizationId(profile, session?.loginData, myProfile);
 
       const [
         weeklyRes,
@@ -134,6 +217,7 @@ function EmployeeDashboardScreen() {
         weekOffRes,
         matrixRes,
         profileRes,
+        organizationRes,
         eventsRes,
         checkInPolicyRes,
       ] = await Promise.all([
@@ -148,6 +232,7 @@ function EmployeeDashboardScreen() {
         getApiWithToken<any>('/week-offs', token),
         getApiWithToken<any>(`/timesheets/attendance/matrix/my?month=${currentMonth}`, token),
         getApiWithToken<any>('/employees/me', token),
+        organizationId ? getApiWithToken<any>(`/organizations/${organizationId}`, token) : Promise.resolve(null),
         getApiWithToken<any>('/employees/upcoming-events?days=7', token),
         getApiWithToken<any>('/timesheets/checkin-policy', token),
       ]);
@@ -206,7 +291,17 @@ function EmployeeDashboardScreen() {
       setDaysInMonth(31);
     }
 
-    setMyProfile(profileRes?.success ? profileRes.data || null : null);
+    const nextProfile = profileRes?.success ? profileRes.data || null : null;
+    setMyProfile(nextProfile);
+    let nextOrganizationProfile = organizationRes?.success ? organizationRes.data || null : null;
+    if (!nextOrganizationProfile) {
+      const nextOrganizationId = getOrganizationId(nextProfile);
+      if (nextOrganizationId) {
+        const fallbackOrganizationRes = await getApiWithToken<any>(`/organizations/${nextOrganizationId}`, token);
+        nextOrganizationProfile = fallbackOrganizationRes?.success ? fallbackOrganizationRes.data || null : null;
+      }
+    }
+    setOrganizationProfile(nextOrganizationProfile);
 
     if (checkInPolicyRes?.success && checkInPolicyRes?.data) {
       const nextPolicy = {
@@ -464,15 +559,20 @@ function EmployeeDashboardScreen() {
   };
 
   const employeeName = [myProfile?.firstName, myProfile?.lastName].filter(Boolean).join(' ');
-  const organizationName = useMemo(() => {
-    return (
-      myProfile?.organization?.name ||
-      myProfile?.activeOrganization?.name ||
-      session?.loginData?.organization?.name ||
-      session?.loginData?.activeOrganization?.name ||
-      'Organization'
-    );
-  }, [myProfile, session?.loginData]);
+  const organizationName = useMemo(
+    () =>
+      getOrganizationName(
+        organizationProfile,
+        myProfile?.organizationId,
+        myProfile?.activeOrganizationId,
+        myProfile,
+        session?.loginData?.organizationId,
+        session?.loginData?.activeOrganizationId,
+        session?.loginData,
+        profile
+      ),
+    [organizationProfile, myProfile, session?.loginData, profile]
+  );
   const profileInitials =
     (myProfile?.firstName?.[0] || '') + (myProfile?.lastName?.[0] || '');
   const avatarLabel =
@@ -508,6 +608,7 @@ function EmployeeDashboardScreen() {
     >
       <View style={styles.main}>
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={[
             styles.scrollContent,
             { paddingTop: Math.max(safeAreaInsets.top, 16) },
@@ -516,12 +617,28 @@ function EmployeeDashboardScreen() {
           <View style={styles.shell}>
             <View style={styles.topBar}>
               <View style={styles.topBarLeft}>
-                <Text style={styles.topBarTitle}>Dashboard</Text>
+                <Text
+                  style={styles.topBarTitle}
+                  numberOfLines={1}
+                  ellipsizeMode="clip"
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.82}
+                >
+                  Dashboard
+                </Text>
               </View>
               <View style={styles.topBarCenter}>
-                <Text style={styles.topBarOrg} numberOfLines={1}>
-                  {organizationName}
-                </Text>
+                <View style={styles.topBarOrg}>
+                  <Text
+                    style={styles.topBarOrgText}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.72}
+                  >
+                    {organizationName}
+                  </Text>
+                </View>
               </View>
               <View style={styles.topBarRight}>
                 <Pressable
@@ -658,9 +775,16 @@ function EmployeeDashboardScreen() {
                       <View style={styles.statCard}>
                         <Text style={styles.statLabel}>Pending Requests</Text>
                         <Text style={[styles.statValue, styles.statValueAmber]}>{pendingLeaves + pendingTimesheets}</Text>
-                        <Text style={styles.cardSubText}>
-                          Leaves: {pendingLeaves} • Timesheet: {pendingTimesheets}
-                        </Text>
+                        <View style={styles.pendingRequestMeta}>
+                          <View style={styles.pendingRequestMetaItem}>
+                            <Text style={styles.pendingRequestMetaLabel}>Leaves : </Text>
+                            <Text style={styles.pendingRequestMetaValue}>{pendingLeaves}</Text>
+                          </View>
+                          <View style={styles.pendingRequestMetaItem}>
+                            <Text style={styles.pendingRequestMetaLabel}>Timesheets : </Text>
+                            <Text style={styles.pendingRequestMetaValue}>{pendingTimesheets}</Text>
+                          </View>
+                        </View>
                       </View>
                       <View style={styles.statCard}>
                         <Text style={styles.statLabel}>On Leave Today</Text>
@@ -953,8 +1077,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    paddingHorizontal: 14,
+    gap: 8,
+    paddingHorizontal: 10,
     paddingVertical: 12,
     borderRadius: 16,
     backgroundColor: '#ffffff',
@@ -969,40 +1093,56 @@ const styles = StyleSheet.create({
   topBarLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    flex: 1,
+    width: 88,
+    flexShrink: 0,
   },
   topBarCenter: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
+    paddingHorizontal: 4,
   },
   topBarOrg: {
-    maxWidth: 220,
-    paddingHorizontal: 12,
+    width: '100%',
+    maxWidth: 224,
+    minHeight: 34,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 999,
+    borderRadius: 16,
     backgroundColor: '#f1f5f9',
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    fontSize: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarOrgText: {
+    fontSize: 10,
+    lineHeight: 12,
     fontWeight: '600',
-    color: '#475569',
+    fontFamily: HEADER_META_FONT,
+    color: '#526071',
+    textAlign: 'center',
+    includeFontPadding: false,
   },
   topBarTitle: {
-    flexShrink: 1,
-    fontSize: 16,
+    fontSize: 17,
+    lineHeight: 22,
+    fontFamily: HEADER_TITLE_FONT,
     fontWeight: '700',
+    letterSpacing: 0.2,
+    includeFontPadding: false,
     color: '#0f172a',
   },
   topBarRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 4,
+    flexShrink: 0,
   },
   iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ffffff',
@@ -1012,10 +1152,10 @@ const styles = StyleSheet.create({
   avatar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-    height: 36,
-    borderRadius: 18,
+    gap: 3,
+    paddingHorizontal: 4,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -1026,9 +1166,9 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   avatarImage: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
   },
   avatarChevron: {
     marginLeft: 2,
@@ -1300,6 +1440,29 @@ const styles = StyleSheet.create({
   },
   statValueRed: {
     color: '#d94b4b',
+  },
+  pendingRequestMeta: {
+    marginTop: 8,
+    gap: 6,
+  },
+  pendingRequestMetaItem: {
+    minHeight: 30,
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 2,
+  },
+  pendingRequestMetaLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  pendingRequestMetaValue: {
+    fontSize: 12,
+    color: '#0f172a',
+    fontWeight: '700',
   },
   noticeCard: {
     marginTop: 12,

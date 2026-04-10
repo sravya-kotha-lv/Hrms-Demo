@@ -1,6 +1,11 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  clearStoredSession,
+  loadStoredSession,
+  storeSession,
+} from '../utils/sessionStorage';
 
-type SessionPayload = {
+export type SessionPayload = {
   token: string;
   loginData: any;
   profile: any | null;
@@ -23,26 +28,84 @@ type AuthContextValue = {
   logoutSuccessMessage: string | null;
   setLogoutSuccessMessage: (message: string | null) => void;
   clearLogoutSuccessMessage: () => void;
+  authReady: boolean;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [session, setSession] = useState<SessionPayload | null>(null);
+  const [session, setSessionState] = useState<SessionPayload | null>(null);
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
   const [loginSuccessMessage, setLoginSuccessMessage] = useState<string | null>(null);
   const [logoutSuccessMessage, setLogoutSuccessMessage] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const hydrateSession = async () => {
+      const storedSession = await loadStoredSession();
+
+      if (!isMounted) {
+        return;
+      }
+
+      setSessionState(storedSession);
+      setAuthReady(true);
+    };
+
+    void hydrateSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const setSession = useCallback((payload: SessionPayload | null) => {
+    setSessionState(payload);
+
+    if (payload) {
+      void storeSession(payload);
+      return;
+    }
+
+    void clearStoredSession();
+  }, []);
 
   const updateProfile = (profile: any | null) => {
-    setSession((current) => (current ? { ...current, profile } : current));
+    setSessionState((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const nextSession = { ...current, profile };
+      void storeSession(nextSession);
+      return nextSession;
+    });
   };
 
   const updatePermissions = (permissions: string[]) => {
-    setSession((current) => (current ? { ...current, permissions } : current));
+    setSessionState((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const nextSession = { ...current, permissions };
+      void storeSession(nextSession);
+      return nextSession;
+    });
   };
 
   const updateToken = (token: string) => {
-    setSession((current) => (current ? { ...current, token } : current));
+    setSessionState((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const nextSession = { ...current, token };
+      void storeSession(nextSession);
+      return nextSession;
+    });
   };
 
   const logout = () => setSession(null);
@@ -68,8 +131,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       logoutSuccessMessage,
       setLogoutSuccessMessage,
       clearLogoutSuccessMessage,
+      authReady,
     }),
-    [session, sessionExpiredMessage, loginSuccessMessage, logoutSuccessMessage]
+    [session, setSession, sessionExpiredMessage, loginSuccessMessage, logoutSuccessMessage, authReady]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

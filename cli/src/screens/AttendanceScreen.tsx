@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRef } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -17,6 +18,7 @@ import AttendanceTab from '../components/AttendanceTab';
 import { AttendanceDay } from '../types/attendance';
 import { getApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
 
 const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -35,6 +37,7 @@ const FONT_MEDIUM = Platform.select({ android: 'sans-serif-medium', ios: 'System
 
 function AttendanceScreen() {
   const { session } = useAuth();
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const token = session?.token || '';
   const profile = session?.profile || session?.loginData || null;
   const insets = useSafeAreaInsets();
@@ -47,6 +50,7 @@ function AttendanceScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [holidayList, setHolidayList] = useState<any[]>([]);
   const [holidaysLoading, setHolidaysLoading] = useState(false);
+  useResetScrollOnFocus(scrollViewRef);
 
   const employeeName = useMemo(() => {
     const firstName = profile?.firstName || '';
@@ -170,7 +174,7 @@ function AttendanceScreen() {
       colors={['#f4f6fb', '#eef2ff']}
       style={[styles.root, { paddingTop: insets.top }]}
     >
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
           <View style={styles.headerTopRow}>
             <View style={styles.headerTextCol}>

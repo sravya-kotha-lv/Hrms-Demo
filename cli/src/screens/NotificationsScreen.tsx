@@ -7,15 +7,18 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { getApiWithToken, patchApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
 
 function NotificationsScreen() {
   const navigation = useNavigation<any>();
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const { session } = useAuth();
   const token = session?.token || '';
   const safeAreaInsets = useSafeAreaInsets();
@@ -52,6 +55,8 @@ function NotificationsScreen() {
     if (token) loadNotifications();
   }, [token]);
 
+  useResetScrollOnFocus(scrollViewRef);
+
   return (
     <LinearGradient
       colors={['#f3f5f9', '#f3f5f9', '#eef1f6']}
@@ -60,6 +65,7 @@ function NotificationsScreen() {
       style={styles.container}
     >
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingTop: Math.max(safeAreaInsets.top, 16) },
