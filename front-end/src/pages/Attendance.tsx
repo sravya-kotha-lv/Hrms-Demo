@@ -26,7 +26,7 @@ import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
 import { formatDateKeyInOrgCalendar, formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, CalendarDays } from "lucide-react";
 
 type DayCell = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
@@ -180,6 +180,21 @@ const currentMonth = () => {
   return `${y}-${m}`;
 };
 
+const monthOptions = [
+  { value: "01", label: "January" },
+  { value: "02", label: "February" },
+  { value: "03", label: "March" },
+  { value: "04", label: "April" },
+  { value: "05", label: "May" },
+  { value: "06", label: "June" },
+  { value: "07", label: "July" },
+  { value: "08", label: "August" },
+  { value: "09", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" }
+];
+
 const emptyCell: DayCell = {
   status: "absent",
   checkInAt: null,
@@ -302,6 +317,15 @@ const Attendance = () => {
   const [selectedAttendanceSnapshot, setSelectedAttendanceSnapshot] = useState<AttendanceSnapshot>(null);
   const [selectedLeaveDetail, setSelectedLeaveDetail] = useState<ApprovedLeaveDetail>(null);
   const [selectedAttendanceRequestDetail, setSelectedAttendanceRequestDetail] = useState<AttendanceRequestDetail>(null);
+  const [selectedYear, selectedMonth] = month.split("-");
+  const yearOptions = useMemo(() => {
+    const currentYearValue = new Date().getFullYear();
+    return Array.from({ length: 7 }, (_, index) => String(currentYearValue - 3 + index));
+  }, []);
+
+  const updateMonthFilter = (nextYear: string, nextMonth: string) => {
+    setMonth(`${nextYear}-${nextMonth}`);
+  };
 
   const fetchMatrix = useCallback(async () => {
     if (!canView) {
@@ -719,6 +743,51 @@ const Attendance = () => {
   const summaryColumnCount = canViewSelfieData ? 8 : 7;
   const loadingRowCount = 6;
 
+  const renderMonthSelector = (tone: "soft" | "bright" = "soft") => {
+    const wrapperClassName =
+      tone === "bright"
+        ? "flex w-full sm:w-auto items-center gap-2 rounded-2xl border border-slate-200/80 bg-gradient-to-r from-white via-slate-50 to-sky-50 px-3 py-2 shadow-sm"
+        : "flex w-full sm:w-auto items-center gap-2 rounded-2xl border border-slate-200 bg-gradient-to-r from-white via-white to-slate-50 px-3 py-2 shadow-sm";
+    const selectClassName =
+      tone === "bright"
+        ? "border-0 bg-white/80 shadow-none focus:ring-0"
+        : "border-0 bg-white shadow-none focus:ring-0";
+
+    return (
+      <div className={wrapperClassName}>
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
+          <CalendarDays className="h-4 w-4" />
+        </div>
+        <div className="flex min-w-0 items-center gap-2">
+          <Select value={selectedMonth} onValueChange={(value) => updateMonthFilter(selectedYear, value)}>
+            <SelectTrigger className={`w-[138px] ${selectClassName}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {monthOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={selectedYear} onValueChange={(value) => updateMonthFilter(value, selectedMonth)}>
+            <SelectTrigger className={`w-[92px] ${selectClassName}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {yearOptions.map((year) => (
+                <SelectItem key={year} value={year}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <MainLayout
       title="Attendance"
@@ -750,12 +819,7 @@ const Attendance = () => {
                     </h3>
                   </div>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <Input
-                      type="month"
-                      value={month}
-                      onChange={(e) => setMonth(e.target.value)}
-                      className="w-full sm:w-44 bg-white/80"
-                    />
+                    {renderMonthSelector("soft")}
                     <Button variant="outline" onClick={fetchMatrix}>
                       Refresh
                     </Button>
@@ -929,12 +993,7 @@ const Attendance = () => {
                     )}
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3 w-full xl:w-auto xl:ml-auto">
-                    <Input
-                      type="month"
-                      value={month}
-                      onChange={(e) => setMonth(e.target.value)}
-                      className="w-full sm:w-44 bg-white/90"
-                    />
+                    {renderMonthSelector("bright")}
                     <Input
                       placeholder="Search employee..."
                       value={search}

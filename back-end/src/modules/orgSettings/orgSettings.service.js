@@ -34,20 +34,31 @@ exports.get = async (req) => {
   const org = await Organization.findById(req.user.organizationId).select("timezone");
   const organizationTimeZone = isValidTimeZone(org?.timezone) ? org.timezone : "Asia/Kolkata";
 
-  let settings = await OrgSettings.findOne({
-    organizationId: req.user.organizationId
-  });
+  let settings = await OrgSettings.findOneAndUpdate(
+    { organizationId: req.user.organizationId },
+    {
+      $setOnInsert: {
+        organizationId: req.user.organizationId,
+        ...DEFAULTS,
+        timezone: organizationTimeZone
+      }
+    },
+    {
+      new: true,
+      upsert: true
+    }
+  );
 
   if (!settings) {
-    settings = await OrgSettings.create({
+    settings = await OrgSettings.findOne({
       organizationId: req.user.organizationId,
-      ...DEFAULTS,
-      timezone: organizationTimeZone
     });
-  } else if (!isValidTimeZone(settings.timezone)) {
+  }
+
+  if (!isValidTimeZone(settings.timezone)) {
     settings.timezone = organizationTimeZone;
     await settings.save();
-  }
+  } 
 
   if (
     settings.maxActiveLoginsPerUser === undefined

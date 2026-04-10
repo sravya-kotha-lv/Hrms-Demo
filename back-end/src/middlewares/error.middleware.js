@@ -21,6 +21,7 @@ module.exports = (err, req, res, next) => {
     const duplicateFields = Object.keys(keyPattern).length
       ? Object.keys(keyPattern)
       : Object.keys(keyValue);
+    const duplicateMessage = String(err.message || "").toLowerCase();
 
     if (duplicateFields.includes("email")) {
       return "Email already exists";
@@ -32,6 +33,9 @@ module.exports = (err, req, res, next) => {
       return "User is already assigned to this organization";
     }
     if (duplicateFields.includes("organizationId")) {
+      if (duplicateMessage.includes("org_settings")) {
+        return "Organization settings already exist";
+      }
       return "A duplicate organization mapping already exists";
     }
 
