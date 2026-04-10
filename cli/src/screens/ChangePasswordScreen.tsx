@@ -8,17 +8,20 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { postApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
 
 type Step = 'send' | 'verify' | 'update';
 
 function ChangePasswordScreen() {
   const navigation = useNavigation<any>();
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const { session } = useAuth();
   const token = session?.token || '';
   const safeAreaInsets = useSafeAreaInsets();
@@ -28,6 +31,7 @@ function ChangePasswordScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  useResetScrollOnFocus(scrollViewRef);
 
   const handleSendOtp = async () => {
     setSubmitting(true);
@@ -83,6 +87,7 @@ function ChangePasswordScreen() {
       style={styles.container}
     >
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingTop: Math.max(safeAreaInsets.top, 16) },

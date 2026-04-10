@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRef } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -14,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { getApiWithToken, postApiWithToken, putApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
 
 type Entry = { date: string; hours: number; notes?: string };
 
@@ -62,6 +64,7 @@ const FONT_BOLD = Platform.select({ android: 'sans-serif', ios: 'System', defaul
 
 function TimesheetsScreen() {
   const { session } = useAuth();
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const token = session?.token || '';
   const safeAreaInsets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
@@ -70,6 +73,7 @@ function TimesheetsScreen() {
   const [weekStart, setWeekStart] = useState(getWeekStart(new Date()));
   const [timesheetId, setTimesheetId] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  useResetScrollOnFocus(scrollViewRef);
 
   const weekStartKey = useMemo(() => toDateInput(weekStart), [weekStart]);
   const weekDates = useMemo(() => buildWeekDates(weekStart), [weekStart]);
@@ -165,6 +169,7 @@ function TimesheetsScreen() {
       style={styles.container}
     >
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingTop: Math.max(safeAreaInsets.top, 16) },

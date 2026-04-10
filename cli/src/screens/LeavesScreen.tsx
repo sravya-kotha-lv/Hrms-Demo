@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRef } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -18,6 +19,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getApiWithToken, postApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { AttendanceDay } from '../types/attendance';
+import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
 
 const isPresentLikeStatus = (status?: string | null) =>
   status === 'present' || status === 'half_day_present' || status === 'full_day_present';
@@ -44,6 +46,7 @@ const FONT_MEDIUM = Platform.select({ android: 'sans-serif-medium', ios: 'System
 
 function LeavesScreen() {
   const navigation = useNavigation<any>();
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const { session } = useAuth();
   const token = session?.token || '';
   const safeAreaInsets = useSafeAreaInsets();
@@ -78,6 +81,7 @@ function LeavesScreen() {
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [leaveTypeMenuOpen, setLeaveTypeMenuOpen] = useState(false);
   const [leaveBalances, setLeaveBalances] = useState<any[]>([]);
+  useResetScrollOnFocus(scrollViewRef);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [activeDateField, setActiveDateField] = useState<'from' | 'to' | null>(null);
   const [miniCalendarField, setMiniCalendarField] = useState<'from' | 'to' | null>(null);
@@ -483,13 +487,18 @@ function LeavesScreen() {
       end={{ x: 1, y: 1 }}
       style={styles.container}
     >
-      
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: Math.max(safeAreaInsets.top, 16) },
-        ]}
-      >
+      <View style={styles.screenContent}>
+        {filterOpen ? (
+          <Pressable style={styles.filterBackdrop} onPress={() => setFilterOpen(false)} />
+        ) : null}
+
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: Math.max(safeAreaInsets.top, 16) },
+          ]}
+        >
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Text style={styles.statTitle}>Pending Requests</Text>
@@ -748,7 +757,8 @@ function LeavesScreen() {
             </View>
           ) : null}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
       
       <Modal visible={detailsVisible} transparent animationType="fade">
         <Pressable style={styles.detailsBackdrop} onPress={closeDetails}>
@@ -1212,6 +1222,12 @@ function LeavesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  screenContent: { flex: 1, position: 'relative' },
+  filterBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    zIndex: 25,
+  },
   scrollContent: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 120, gap: 16 },
   card: {
     backgroundColor: '#ffffff',
@@ -1264,7 +1280,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    justifyContent: 'space-between',
   },
   searchWrap: {
     flexDirection: 'row',
@@ -1289,6 +1304,8 @@ const styles = StyleSheet.create({
   },
   filterWrap: {
     flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
     position: 'relative',
     zIndex: 30,
   },
@@ -1302,7 +1319,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 42,
     backgroundColor: '#ffffff',
-    minWidth: 120,
+    minWidth: 0,
   },
   filterText: {
     fontSize: 12,
@@ -1349,7 +1366,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     height: 42,
-    paddingHorizontal: 12,
+    width: 88,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    flexShrink: 0,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -1402,7 +1422,7 @@ const styles = StyleSheet.create({
   toggleTextActive: { fontSize: 11, fontWeight: '700', color: '#1d4ed8' },
   applyButton: {
     height: 42,
-    width: 140,
+    width: 124,
     borderRadius: 12,
     backgroundColor: '#2563eb',
     alignItems: 'center',

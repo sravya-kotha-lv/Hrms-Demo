@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRef } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -18,6 +19,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { getApiWithToken, putApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
 
 type UploadPayload = {
   fileName: string;
@@ -68,6 +70,7 @@ const FONT_MEDIUM = Platform.select({ android: 'sans-serif-medium', ios: 'System
 
 function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const { session, updateProfile } = useAuth();
   const token = session?.token || '';
 
@@ -76,6 +79,7 @@ function ProfileScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [error, setError] = useState('');
   const [editVisible, setEditVisible] = useState(false);
+  useResetScrollOnFocus(scrollViewRef);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -337,6 +341,7 @@ function ProfileScreen() {
   return (
     <LinearGradient colors={['#f3f5f9', '#f3f5f9', '#eef1f6']} style={styles.container}>
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingTop: Math.max(insets.top, 16) },
@@ -390,6 +395,7 @@ function ProfileScreen() {
               {employmentRows.map((row) => (
                 <View key={row.label} style={styles.detailRow}>
                   <Text style={styles.detailLabel}>{row.label}</Text>
+                  <Text style={styles.detailColon}>:</Text>
                   <Text style={styles.detailValue}>{row.value || '-'}</Text>
                 </View>
               ))}
@@ -400,6 +406,7 @@ function ProfileScreen() {
               {personalRows.map((row) => (
                 <View key={row.label} style={styles.detailRow}>
                   <Text style={styles.detailLabel}>{row.label}</Text>
+                  <Text style={styles.detailColon}>:</Text>
                   <Text style={styles.detailValue}>{row.value || '-'}</Text>
                 </View>
               ))}
@@ -760,14 +767,14 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 14, fontWeight: '700', color: '#0f172a', marginBottom: 8 },
   detailRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  detailLabel: { fontSize: 12, color: '#475569', flex: 1 },
-  detailValue: { fontSize: 12, color: '#0f172a', fontWeight: '600', textAlign: 'right', flex: 1 },
+  detailLabel: { width: 110, fontSize: 12, color: '#475569' },
+  detailColon: { width: 12, textAlign: 'center', fontSize: 12, color: '#475569' },
+  detailValue: { flex: 1, fontSize: 12, color: '#0f172a', fontWeight: '600', textAlign: 'left' },
   helperText: { marginTop: 8, fontSize: 12, color: '#475569' },
   errorText: { marginTop: 12, color: '#dc2626', textAlign: 'center' },
   modalBackdrop: {
