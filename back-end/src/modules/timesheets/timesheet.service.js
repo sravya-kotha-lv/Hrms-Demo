@@ -1811,17 +1811,25 @@ exports.checkIn = async (req) => {
       throw new Error("Already checked in for this shift");
     }
 
-    normalizeAttendanceDocumentDateFields(openAttendance, organizationTimeZone);
-    openAttendance.missedCheckout = true;
-    openAttendance.missedCheckoutMarkedAt = now;
-    openAttendance.missedCheckoutResolvedRequestId = null;
-    await openAttendance.save();
+    await Attendance.updateOne(
+      { _id: openAttendance._id },
+      {
+        $set: {
+          missedCheckout: true,
+          missedCheckoutMarkedAt: now,
+          missedCheckoutResolvedRequestId: null
+        }
+      }
+    );
   }
 
-  const attendanceFilter = {
+  const attendanceBaseFilter = {
     organizationId: req.user.organizationId,
-    employeeId: employee._id,
-    dateKey: effectiveAttendanceDateKey
+    employeeId: employee._id
+  };
+  const attendanceFilter = {
+    ...attendanceBaseFilter,
+    ...buildAttendanceDateMatch(effectiveAttendanceDateKey, organizationTimeZone)
   };
   const insertPayload = {
     organizationId: req.user.organizationId,
@@ -1850,14 +1858,18 @@ exports.checkIn = async (req) => {
     missedCheckoutMarkedAt: null,
     missedCheckoutResolvedRequestId: null
   };
-  const upsertResult = await Attendance.updateOne(
-    attendanceFilter,
-    { $setOnInsert: insertPayload },
-    { upsert: true }
-  );
 
-  if (Number(upsertResult?.upsertedCount || 0) > 0) {
-    const createdAttendance = await Attendance.findOne(attendanceFilter);
+  const existing = await Attendance.findOne(attendanceFilter).sort({ date: -1, checkInAt: -1 });
+  if (!existing) {
+    let createdAttendance;
+    try {
+      createdAttendance = await Attendance.create(insertPayload);
+    } catch (error) {
+      if (error?.code === 11000) {
+        throwHttpError(409, "Already checked in for this shift");
+      }
+      throw error;
+    }
     await audit({
       req,
       module: "timesheets",
@@ -1866,11 +1878,6 @@ exports.checkIn = async (req) => {
       after: createdAttendance?.toObject?.() || null
     });
     return createdAttendance;
-  }
-
-  const existing = await Attendance.findOne(attendanceFilter);
-  if (!existing) {
-    throwHttpError(500, "Failed to create attendance");
   }
 
   if (existing?.checkInAt) {
