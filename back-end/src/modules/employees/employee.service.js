@@ -537,10 +537,32 @@ async function generateEmployeeCode(organizationId, session) {
     : await OrgSettings.findOne({ organizationId }, "employeeIdPrefix").lean();
   const envPrefix = (process.env.EMPLOYEE_ID_PREFIX || process.env.EMPLOYEE_CODE_PREFIX || "LV").trim();
   const prefix = ((orgSettings?.employeeIdPrefix || envPrefix || "LV").trim() || "LV").toUpperCase();
-  let sequence = await Employee.countDocuments(
-    { organizationId, isDeleted: false },
-    { session }
-  );
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const codePattern = new RegExp(`^${escapedPrefix}-(\\d+)$`, "i");
+  const employeeCodeAggregate = Employee.aggregate([
+    {
+      $match: {
+        organizationId: typeof organizationId === "string" ? new mongoose.Types.ObjectId(organizationId) : organizationId,
+        employeeCode: { $regex: `^${escapedPrefix}-`, $options: "i" }
+      }
+    },
+    {
+      $project: {
+        employeeCode: 1
+      }
+    }
+  ]);
+  if (session) {
+    employeeCodeAggregate.session(session);
+  }
+  const existingEmployees = await employeeCodeAggregate;
+
+  let sequence = existingEmployees.reduce((max, row) => {
+    const match = codePattern.exec(String(row?.employeeCode || ""));
+    if (!match) return max;
+    const current = Number(match[1]);
+    return Number.isFinite(current) ? Math.max(max, current) : max;
+  }, 0);
 
   while (true) {
     sequence += 1;

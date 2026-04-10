@@ -1664,6 +1664,14 @@ const hasPayrollSnapshotForMonth = async (req, month) => {
 
 const CHECK_IN_EARLY_WINDOW_MINUTES = 120;
 
+const formatTimeLabel = (dateValue, timeZone) =>
+  new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  }).format(dateValue);
+
 exports.checkIn = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const now = new Date();
@@ -1777,7 +1785,10 @@ exports.checkIn = async (req) => {
   );
 
   if (now < earliestCheckInAt) {
-    throwHttpError(403, "Check-in is allowed only within 2 hours before shift start");
+    throwHttpError(
+      403,
+      `Check-in for ${effectiveShift.name || "your shift"} is allowed only from ${formatTimeLabel(earliestCheckInAt, organizationTimeZone)} to ${formatTimeLabel(effectiveScheduledStartAt, organizationTimeZone)}.`
+    );
   }
 
   const graceMinutes = Number(effectiveShift.graceMinutes || 0);

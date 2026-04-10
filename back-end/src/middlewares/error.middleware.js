@@ -15,11 +15,38 @@ module.exports = (err, req, res, next) => {
     500;
   let message = err.message || "Internal Server Error";
 
+  const resolveDuplicateKeyMessage = () => {
+    const keyPattern = err.keyPattern || {};
+    const keyValue = err.keyValue || {};
+    const duplicateFields = Object.keys(keyPattern).length
+      ? Object.keys(keyPattern)
+      : Object.keys(keyValue);
+    const duplicateMessage = String(err.message || "").toLowerCase();
+
+    if (duplicateFields.includes("email")) {
+      return "Email already exists";
+    }
+    if (duplicateFields.includes("employeeCode")) {
+      return "Employee code already exists";
+    }
+    if (duplicateFields.includes("userId") && duplicateFields.includes("organizationId")) {
+      return "User is already assigned to this organization";
+    }
+    if (duplicateFields.includes("organizationId")) {
+      if (duplicateMessage.includes("org_settings")) {
+        return "Organization settings already exist";
+      }
+      return "A duplicate organization mapping already exists";
+    }
+
+    const field = duplicateFields[0];
+    return field ? `${field} already exists` : "Duplicate record already exists";
+  };
+
   // 🔒 Mongo duplicate key error
   if (err.code === 11000) {
     statusCode = 409; // Conflict
-    const field = Object.keys(err.keyValue || {})[0];
-    message = `${field} already exists`;
+    message = resolveDuplicateKeyMessage();
   }
 
   // 🧾 Validation errors
