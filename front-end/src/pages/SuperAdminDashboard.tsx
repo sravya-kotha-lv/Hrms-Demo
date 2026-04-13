@@ -19,6 +19,8 @@ import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
+type OrgLifecycleAction = "soft_delete" | "restore" | "hard_delete";
+
 const SuperAdminDashboard = () => {
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
@@ -30,6 +32,10 @@ const SuperAdminDashboard = () => {
 
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [showCreateUser, setShowCreateUser] = useState(false);
+  const [showLifecycleDialog, setShowLifecycleDialog] = useState(false);
+  const [lifecycleAction, setLifecycleAction] = useState<OrgLifecycleAction>("soft_delete");
+  const [confirmationCode, setConfirmationCode] = useState("");
+  const [lifecycleLoading, setLifecycleLoading] = useState(false);
 
   const [createOrgForm, setCreateOrgForm] = useState({
     name: "",
@@ -161,6 +167,41 @@ const SuperAdminDashboard = () => {
     }
   };
 
+  const handleLifecycleAction = async () => {
+    if (!selectedOrg || !selectedOrgDetails) {
+      toast.error("Select an organization first");
+      return;
+    }
+    if (!confirmationCode.trim()) {
+      toast.error("Enter organization code for confirmation");
+      return;
+    }
+
+    setLifecycleLoading(true);
+    const res = await postApiWithToken(`/organizations/${selectedOrg}/lifecycle`, {
+      action: lifecycleAction,
+      confirmationCode: confirmationCode.trim()
+    });
+    setLifecycleLoading(false);
+
+    if (!res?.success) {
+      toast.error(res?.message || "Organization lifecycle action failed");
+      return;
+    }
+
+    if (lifecycleAction === "hard_delete") {
+      toast.success("Organization hard deleted");
+      setSelectedOrg("");
+    } else if (lifecycleAction === "restore") {
+      toast.success("Organization restored");
+    } else {
+      toast.success("Organization marked as deleted");
+    }
+    setShowLifecycleDialog(false);
+    setConfirmationCode("");
+    await fetchOrganizations();
+  };
+
   useEffect(() => {
     fetchOrganizations();
   }, []);
@@ -191,7 +232,20 @@ const SuperAdminDashboard = () => {
                 }`}
                 onClick={() => switchOrganization(org._id)}
               >
-                <div className="font-medium">{org.name}</div>
+                <div className="font-medium flex items-center justify-between gap-2">
+                  <span>{org.name}</span>
+                  <span
+                    className={`text-xs px-2 py-1 rounded border ${
+                      org.isSoftDeleted
+                        ? "bg-red-100 text-red-700 border-red-200"
+                        : org.status === "inactive"
+                          ? "bg-amber-100 text-amber-700 border-amber-200"
+                          : "bg-emerald-100 text-emerald-700 border-emerald-200"
+                    }`}
+                  >
+                    {org.isSoftDeleted ? "Deleted" : org.status === "inactive" ? "Inactive" : "Active"}
+                  </span>
+                </div>
                 <div className="text-sm text-muted-foreground">
                   {org.code} • {org.timezone}
                 </div>
@@ -223,6 +277,17 @@ const SuperAdminDashboard = () => {
               disabled={!selectedOrg}
             >
               View Employees
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setLifecycleAction(selectedOrgDetails?.isSoftDeleted ? "restore" : "soft_delete");
+                setConfirmationCode("");
+                setShowLifecycleDialog(true);
+              }}
+              disabled={!selectedOrg}
+            >
+              Manage Delete / Restore
             </Button>
           </div>
         </div>
@@ -393,6 +458,60 @@ const SuperAdminDashboard = () => {
               </SelectContent>
             </Select>
             <Button onClick={handleCreateUser} className="w-full">Create User</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLifecycleDialog} onOpenChange={setShowLifecycleDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Organization Lifecycle Action</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <div className="font-medium">{selectedOrgDetails?.name || "-"}</div>
+              <div className="text-muted-foreground">
+                Code: {selectedOrgDetails?.code || "-"}
+              </div>
+              <div className="text-muted-foreground">
+                Soft Delete only marks the organization as deleted so it can be restored later. Hard Delete permanently removes the organization, org settings, employees, leaves, attendance, payroll tenant data, and every organization-scoped record across the database.
+              </div>
+            </div>
+
+            <Select
+              value={lifecycleAction}
+              onValueChange={(value) => setLifecycleAction(value as OrgLifecycleAction)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select action" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="soft_delete">Soft Delete (Mark as Deleted)</SelectItem>
+                <SelectItem value="restore">Restore</SelectItem>
+                <SelectItem value="hard_delete">Hard Delete (Permanent)</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Input
+              placeholder={`Type org code (${selectedOrgDetails?.code || ""}) to confirm`}
+              value={confirmationCode}
+              onChange={(e) => setConfirmationCode(e.target.value)}
+            />
+
+            <Button
+              className="w-full"
+              variant={lifecycleAction === "hard_delete" ? "destructive" : "default"}
+              onClick={handleLifecycleAction}
+              disabled={lifecycleLoading || !selectedOrg}
+            >
+              {lifecycleLoading
+                ? "Processing..."
+                : lifecycleAction === "hard_delete"
+                  ? "Confirm Hard Delete"
+                  : lifecycleAction === "restore"
+                    ? "Confirm Restore"
+                    : "Confirm Soft Delete"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

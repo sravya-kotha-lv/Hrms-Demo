@@ -7,7 +7,8 @@ const asyncHandler = require("../../middlewares/asyncHandler");
 const controller = require("./organization.controller");
 const {
   createOrganizationSchema,
-  updateOrganizationSchema
+  updateOrganizationSchema,
+  organizationLifecycleSchema
 } = require("./organization.validation");
 
 /**
@@ -61,6 +62,18 @@ router.delete(
   auth,
   authorize("ORG_MANAGE"),
   asyncHandler(controller.deleteById)
+);
+
+/**
+ * ORGANIZATION LIFECYCLE ACTION
+ * SuperAdmin only (validated in service)
+ */
+router.post(
+  "/:id/lifecycle",
+  auth,
+  authorize("ORG_MANAGE"),
+  validate(organizationLifecycleSchema),
+  asyncHandler(controller.lifecycleAction)
 );
 
 module.exports = router;

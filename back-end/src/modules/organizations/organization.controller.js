@@ -135,3 +135,33 @@ exports.deleteById = async (req, res) => {
     );
   }
 };
+
+/**
+ * ORGANIZATION LIFECYCLE ACTION
+ */
+exports.lifecycleAction = async (req, res) => {
+  try {
+    const result = await organizationService.applyOrganizationLifecycleAction({
+      organizationId: req.params.id,
+      action: req.body.action,
+      confirmationCode: req.body.confirmationCode,
+      actorUserId: req.user.userId
+    });
+
+    return res.status(200).json(
+      buildSuccessResponse({
+        code: 200,
+        message: "Organization lifecycle action completed",
+        data: result
+      })
+    );
+  } catch (err) {
+    return res.status(err.code || 500).json(
+      buildFailureResponse({
+        code: err.code || 500,
+        message: err.message || "Organization lifecycle action failed",
+        error: err.error || null
+      })
+    );
+  }
+};

@@ -17,3 +17,8 @@ exports.updateOrganizationSchema = Joi.object({
   currency: Joi.string().optional(),
   status: Joi.string().valid("active", "inactive").optional()
 });
+
+exports.organizationLifecycleSchema = Joi.object({
+  action: Joi.string().valid("soft_delete", "restore", "hard_delete").required(),
+  confirmationCode: Joi.string().trim().required()
+});
