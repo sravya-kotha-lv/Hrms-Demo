@@ -75,24 +75,24 @@ function TabBarBackground() {
         borderTopRightRadius: 32,
         borderBottomLeftRadius: 0,
         borderBottomRightRadius: 0,
-        borderWidth: 1,
-        borderBottomWidth: 0,
-        borderColor: '#5b7cfa',
         backgroundColor: 'rgba(255,255,255,0.08)',
-        shadowColor: '#3b82f6',
-        shadowOpacity: 0.32,
-        shadowRadius: 24,
-        shadowOffset: { width: 0, height: 0 },
-        elevation: 18,
+        shadowColor: '#c6d4ea',
+        shadowOpacity: 0.22,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: -6 },
+        elevation: 14,
       }}
     >
+      <View style={styles.tabBarShadowPlate} />
       <BlurView
         style={StyleSheet.absoluteFillObject}
         blurType="light"
         blurAmount={18}
         reducedTransparencyFallbackColor="rgba(255,255,255,0.86)"
       />
-      <LinearGradient colors={TAB_BAR_BACKGROUND} style={{ flex: 1 }} />
+      <LinearGradient colors={TAB_BAR_BACKGROUND} style={styles.tabBarSurface}>
+        <View style={styles.tabBarGloss} pointerEvents="none" />
+      </LinearGradient>
     </View>
   );
 }
@@ -261,13 +261,15 @@ function TabIcon({ focused, icon, activeIcon }: TabIconProps) {
     >
       {focused ? (
         <Animated.View style={{ transform: [{ scale: activeScale }] }}>
-          <LinearGradient colors={TAB_BAR_ACTIVE_GRADIENT} style={styles.activeIconBubble}>
-            <MaterialCommunityIcons
-              name={(activeIcon || icon) as any}
-              size={22}
-              color={TAB_BAR_ACTIVE_ICON}
-            />
-          </LinearGradient>
+          <View style={styles.activeIconBubble}>
+            <LinearGradient colors={TAB_BAR_ACTIVE_GRADIENT} style={styles.activeIconBubbleInner}>
+              <MaterialCommunityIcons
+                name={(activeIcon || icon) as any}
+                size={22}
+                color={TAB_BAR_ACTIVE_ICON}
+              />
+            </LinearGradient>
+          </View>
         </Animated.View>
       ) : (
         <Animated.View
@@ -277,11 +279,13 @@ function TabIcon({ focused, icon, activeIcon }: TabIconProps) {
           }}
         >
           <View style={styles.inactiveIconBubble}>
-            <MaterialCommunityIcons
-              name={icon as any}
-              size={24}
-              color={TAB_BAR_INACTIVE_ICON}
-            />
+            <LinearGradient colors={['rgba(255,255,255,0.92)', 'rgba(248,250,252,0.96)']} style={styles.inactiveIconBubbleInner}>
+              <MaterialCommunityIcons
+                name={icon as any}
+                size={24}
+                color={TAB_BAR_INACTIVE_ICON}
+              />
+            </LinearGradient>
           </View>
         </Animated.View>
       )}
@@ -313,17 +317,26 @@ function ProfileTabIcon({
     <View style={styles.profileTabWrapper}>
       <Animated.View style={{ transform: [{ scale: profileScale }] }}>
         <View style={[styles.profileBubble, focused && styles.profileBubbleActive]}>
-          {image ? (
-            <Image
-              source={{ uri: image }}
-              style={[
-                styles.profileAvatar,
-                focused && styles.profileAvatarActive,
-              ]}
-            />
-          ) : (
-            <Text style={[styles.profileInitials, focused && styles.profileInitialsActive]}>{initials}</Text>
-          )}
+          <LinearGradient
+            colors={
+              focused
+                ? ['rgba(219,234,254,0.96)', 'rgba(239,246,255,0.98)']
+                : ['rgba(255,255,255,0.92)', 'rgba(248,250,252,0.96)']
+            }
+            style={styles.profileBubbleInner}
+          >
+            {image ? (
+              <Image
+                source={{ uri: image }}
+                style={[
+                  styles.profileAvatar,
+                  focused && styles.profileAvatarActive,
+                ]}
+              />
+            ) : (
+              <Text style={[styles.profileInitials, focused && styles.profileInitialsActive]}>{initials}</Text>
+            )}
+          </LinearGradient>
         </View>
       </Animated.View>
     </View>
@@ -331,6 +344,29 @@ function ProfileTabIcon({
 }
 
 const styles = StyleSheet.create({
+  tabBarShadowPlate: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  tabBarSurface: {
+    flex: 1,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: 'hidden',
+  },
+  tabBarGloss: {
+    position: 'absolute',
+    top: 0,
+    left: 20,
+    right: 20,
+    height: 10,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    opacity: 0.7,
+  },
   tabIconWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -342,25 +378,36 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
+    shadowColor: '#60a5fa',
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  activeIconBubbleInner: {
+    flex: 1,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.34)',
-    shadowColor: '#60a5fa',
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   inactiveIconBubble: {
     width: 48,
     height: 48,
     borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    shadowColor: '#d6deeb',
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
+  },
+  inactiveIconBubbleInner: {
+    flex: 1,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
   },
   profileTabWrapper: {
     alignItems: 'center',
@@ -373,22 +420,27 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.16)',
     overflow: 'hidden',
+    shadowColor: '#d6deeb',
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
   },
   profileBubbleActive: {
     backgroundColor: 'rgba(219,234,254,0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.40)',
     shadowColor: '#60a5fa',
     shadowOpacity: 0.24,
-    shadowRadius: 12,
+    shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 8,
+  },
+  profileBubbleInner: {
+    flex: 1,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   profileAvatar: {
     width: 38,

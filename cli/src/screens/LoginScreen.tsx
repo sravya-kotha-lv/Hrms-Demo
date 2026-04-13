@@ -165,12 +165,15 @@ function LoginScreen() {
           )}
 
           <View style={[styles.cardWrap, isWide && styles.cardWrapWide]}>
-            <LinearGradient
-              colors={['#ffffff', '#fefeff', '#fcfdff']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.card}
-            >
+            <View style={styles.cardShell}>
+              <View style={styles.cardShadowPlate} />
+              <LinearGradient
+                colors={['#ffffff', '#fefeff', '#fcfdff']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.card}
+              >
+                <View style={styles.cardTopGloss} pointerEvents="none" />
               <Text style={styles.cardEyebrow}>WELCOME BACK</Text>
 
               <Text style={styles.cardTitle}>Sign in to Upanaya HRMS</Text>
@@ -183,27 +186,31 @@ function LoginScreen() {
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
               <View style={styles.form}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Work email"
-                  placeholderTextColor="#9aa4b2"
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                />
+                <View style={styles.inputShell}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Work email"
+                    placeholderTextColor="#9aa4b2"
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                </View>
 
                 <View style={styles.passwordWrap}>
-                <TextInput
-                  style={[styles.input, styles.passwordInput]}
-                  placeholder="Password"
-                  placeholderTextColor="#9aa4b2"
-                  selectionColor="#000000"
-                  cursorColor="#000000"
-                  secureTextEntry={!showPassword}
-                  value={password}
-                  onChangeText={setPassword}
-                />
+                <View style={styles.inputShell}>
+                  <TextInput
+                    style={[styles.input, styles.passwordInput]}
+                    placeholder="Password"
+                    placeholderTextColor="#9aa4b2"
+                    selectionColor="#000000"
+                    cursorColor="#000000"
+                    secureTextEntry={!showPassword}
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                </View>
                   <Pressable
                     onPress={() => setShowPassword((current) => !current)}
                     style={styles.eyeButton}
@@ -230,43 +237,61 @@ function LoginScreen() {
                   onPress={handleLogin}
                   disabled={submitting}
                 >
-                  <View style={styles.buttonContent}>
-                    {submitting ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <MaterialCommunityIcons name="login" size={16} color="#fff" />
-                    )}
-                    <Text style={styles.primaryButtonText}>
-                      {submitting ? 'Signing in...' : 'Login'}
-                    </Text>
-                  </View>
+                  <LinearGradient
+                    colors={['#5a7bea', '#456bde', '#3559cc']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={styles.primaryButtonInner}
+                  >
+                    <View style={styles.buttonContent}>
+                      {submitting ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <MaterialCommunityIcons name="login" size={16} color="#fff" />
+                      )}
+                      <Text style={styles.primaryButtonText}>
+                        {submitting ? 'Signing in...' : 'Login'}
+                      </Text>
+                    </View>
+                  </LinearGradient>
                 </Pressable>
 
                 <Pressable style={styles.secondaryButton} disabled>
-                  <View style={styles.buttonContent}>
-                    <MaterialCommunityIcons name="camera-outline" size={16} color="#1e293b" />
-                    <Text style={styles.secondaryButtonText}>Login with Selfie</Text>
+                  <View style={styles.secondaryButtonInner}>
+                    <View style={styles.buttonContent}>
+                      <MaterialCommunityIcons name="camera-outline" size={16} color="#1e293b" />
+                      <Text style={styles.secondaryButtonText}>Login with Selfie</Text>
+                    </View>
                   </View>
                 </Pressable>
               </View>
 
-              <View style={styles.miniCards}>
-                <View style={styles.miniCard}>
-                  <MaterialCommunityIcons name="account-group-outline" size={18} color="#2563eb" />
-                  <Text style={styles.miniCardTitle}>Employees</Text>
-                </View>
+              <View style={styles.miniCardsWrap}>
+                <View style={styles.miniCards}>
+                  <View style={styles.miniCard}>
+                    <LinearGradient colors={['#ffffff', '#fefeff', '#f8fafc']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.miniCardInner}>
+                      <MaterialCommunityIcons name="account-group-outline" size={18} color="#2563eb" />
+                      <Text style={styles.miniCardTitle}>Employees</Text>
+                    </LinearGradient>
+                  </View>
 
-                <View style={styles.miniCard}>
-                  <MaterialCommunityIcons name="calendar-check-outline" size={18} color="#2563eb" />
-                  <Text style={styles.miniCardTitle}>Attendance</Text>
-                </View>
+                  <View style={styles.miniCard}>
+                    <LinearGradient colors={['#ffffff', '#fefeff', '#f8fafc']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.miniCardInner}>
+                      <MaterialCommunityIcons name="calendar-check-outline" size={18} color="#2563eb" />
+                      <Text style={styles.miniCardTitle}>Attendance</Text>
+                    </LinearGradient>
+                  </View>
 
-                <View style={styles.miniCard}>
-                  <MaterialCommunityIcons name="shield-check-outline" size={18} color="#2563eb" />
-                  <Text style={styles.miniCardTitle}>Secure</Text>
+                  <View style={styles.miniCard}>
+                    <LinearGradient colors={['#ffffff', '#fefeff', '#f8fafc']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.miniCardInner}>
+                      <MaterialCommunityIcons name="shield-check-outline" size={18} color="#2563eb" />
+                      <Text style={styles.miniCardTitle}>Secure</Text>
+                    </LinearGradient>
+                  </View>
                 </View>
               </View>
-            </LinearGradient>
+              </LinearGradient>
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -337,10 +362,46 @@ const styles = StyleSheet.create({
   cardWrapWide: {
     width: 420,
   },
+  cardShell: {
+    position: 'relative',
+  },
+  cardShadowPlate: {
+    position: 'absolute',
+    top: 16,
+    left: 10,
+    right: 10,
+    bottom: -10,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    shadowColor: '#163a91',
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.28,
+    shadowRadius: 28,
+    elevation: 14,
+  },
   card: {
+    position: 'relative',
+    overflow: 'hidden',
     borderRadius: 22,
     padding: 20,
-    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.92)',
+    shadowColor: '#0f2c7f',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  cardTopGloss: {
+    position: 'absolute',
+    top: 0,
+    left: 18,
+    right: 18,
+    height: 18,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    opacity: 0.55,
   },
   cardEyebrow: {
     color: '#2563eb',
@@ -379,13 +440,29 @@ const styles = StyleSheet.create({
     color: '#dc2626',
     fontSize: 12,
   },
+  inputShell: {
+    borderRadius: 15,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#dbe4f0',
+    shadowColor: '#ffffff',
+    shadowOffset: { width: -3, height: -3 },
+    shadowOpacity: 0.95,
+    shadowRadius: 5,
+    elevation: 1,
+  },
   input: {
     height: 44,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    paddingHorizontal: 12,
+    borderColor: '#edf2f7',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 14,
     color: '#0f172a',
+    shadowColor: '#b9c6d8',
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
   },
   passwordWrap: {
     position: 'relative',
@@ -398,10 +475,19 @@ const styles = StyleSheet.create({
   eyeButton: {
     position: 'absolute',
     right: 12,
-    height: 44,
-    width: 32,
+    height: 30,
+    width: 30,
+    borderRadius: 15,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#c2cfdf',
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 1,
   },
   forgot: {
     textAlign: 'right',
@@ -413,10 +499,20 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: '#456bde',
-    borderRadius: 12,
-    height: 44,
+    borderRadius: 14,
+    shadowColor: '#2a4da8',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  primaryButtonInner: {
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   primaryButtonText: {
     color: '#fff',
@@ -426,13 +522,27 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   secondaryButton: {
-    borderRadius: 12,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#cbd5f5',
     backgroundColor: '#f8fafc',
+    shadowColor: '#ffffff',
+    shadowOffset: { width: -3, height: -3 },
+    shadowOpacity: 0.95,
+    shadowRadius: 5,
+    elevation: 1,
+  },
+  secondaryButtonInner: {
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#edf2f7',
+    shadowColor: '#c8d2e1',
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.24,
+    shadowRadius: 6,
   },
   secondaryButtonText: {
     fontWeight: '600',
@@ -444,16 +554,27 @@ const styles = StyleSheet.create({
   },
   miniCards: {
     flexDirection: 'row',
-    marginTop: 20,
     gap: 8,
+  },
+  miniCardsWrap: {
+    marginTop: 20,
+    paddingHorizontal: 2,
   },
   miniCard: {
     flex: 1,
-    alignItems: 'center',
-    padding: 10,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    shadowColor: '#c8d2e1',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
+    elevation: 3,
+  },
+  miniCardInner: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
   },
   miniCardTitle: {
     fontSize: 11,

@@ -355,7 +355,12 @@ function ProfileScreen() {
           </View>
         ) : (
           <>
-            <View style={styles.headerCard}>
+            <LinearGradient
+              colors={['#ffffff', '#f7f9fd']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.headerCard}
+            >
               <LinearGradient
                 colors={['#1d4ed8', '#2563eb', '#4f46e5']}
                 start={{ x: 0, y: 0 }}
@@ -383,34 +388,36 @@ function ProfileScreen() {
                     </Text>
                   </View>
                   <Pressable style={styles.editButton} onPress={() => setEditVisible(true)}>
-                    <MaterialCommunityIcons name="pencil-outline" size={14} color="#2563eb" />
-                    <Text style={styles.editButtonText}>Edit Profile</Text>
+                    <LinearGradient colors={['#f8fbff', '#eef4ff']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.editButtonInner}>
+                      <MaterialCommunityIcons name="pencil-outline" size={14} color="#2563eb" />
+                      <Text style={styles.editButtonText}>Edit Profile</Text>
+                    </LinearGradient>
                   </Pressable>
                 </View>
               </View>
-            </View>
+            </LinearGradient>
 
-            <View style={[styles.detailCard, styles.cardSpacing]}>
+            <LinearGradient colors={['#ffffff', '#f8fafc']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.detailCard, styles.cardSpacing]}>
               <Text style={styles.cardTitle}>Employment Details</Text>
               {employmentRows.map((row) => (
-                <View key={row.label} style={styles.detailRow}>
+                <LinearGradient key={row.label} colors={['#ffffff', '#f9fbfe']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.detailRow}>
                   <Text style={styles.detailLabel}>{row.label}</Text>
                   <Text style={styles.detailColon}>:</Text>
                   <Text style={styles.detailValue}>{row.value || '-'}</Text>
-                </View>
+                </LinearGradient>
               ))}
-            </View>
+            </LinearGradient>
 
-            <View style={[styles.detailCard, styles.cardSpacing]}>
+            <LinearGradient colors={['#ffffff', '#f8fafc']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.detailCard, styles.cardSpacing]}>
               <Text style={styles.cardTitle}>Personal Details</Text>
               {personalRows.map((row) => (
-                <View key={row.label} style={styles.detailRow}>
+                <LinearGradient key={row.label} colors={['#ffffff', '#f9fbfe']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.detailRow}>
                   <Text style={styles.detailLabel}>{row.label}</Text>
                   <Text style={styles.detailColon}>:</Text>
                   <Text style={styles.detailValue}>{row.value || '-'}</Text>
-                </View>
+                </LinearGradient>
               ))}
-            </View>
+            </LinearGradient>
           </>
         )}
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -418,7 +425,7 @@ function ProfileScreen() {
 
       <Modal visible={editVisible} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <LinearGradient colors={['#ffffff', '#f7f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.modalCard}>
             <ScrollView contentContainerStyle={styles.modalContent}>
               <Text style={styles.modalTitle}>Edit Profile</Text>
               <Pressable style={styles.closeBadge} onPress={() => setEditVisible(false)}>
@@ -443,10 +450,14 @@ function ProfileScreen() {
                   </View>
                   <View style={styles.profilePicActions}>
                     <Pressable style={styles.uploadButton} onPress={() => pickImage('camera')}>
-                      <Text style={styles.uploadButtonText}>Camera</Text>
+                      <LinearGradient colors={['#f8fafc', '#eef2f8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.uploadButtonInner}>
+                        <Text style={styles.uploadButtonText}>Camera</Text>
+                      </LinearGradient>
                     </Pressable>
                     <Pressable style={styles.uploadButton} onPress={() => pickImage('library')}>
-                      <Text style={styles.uploadButtonText}>Gallery</Text>
+                      <LinearGradient colors={['#f8fafc', '#eef2f8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.uploadButtonInner}>
+                        <Text style={styles.uploadButtonText}>Gallery</Text>
+                      </LinearGradient>
                     </Pressable>
                   </View>
                 </View>
@@ -566,9 +577,11 @@ function ProfileScreen() {
                 />
               </View>
               <Pressable style={styles.fileButton} onPress={pickAddressProof}>
-                <Text style={styles.fileButtonText}>
-                  {addressProofUpload?.fileName || 'Choose Address Proof'}
-                </Text>
+                <LinearGradient colors={['#ffffff', '#f6f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fileButtonInner}>
+                  <Text style={styles.fileButtonText}>
+                    {addressProofUpload?.fileName || 'Choose Address Proof'}
+                  </Text>
+                </LinearGradient>
               </Pressable>
               <Text style={styles.fileHelperText}>PDF, JPG, PNG, WEBP up to 5MB</Text>
 
@@ -615,14 +628,16 @@ function ProfileScreen() {
               </View>
 
               <Pressable style={styles.primaryButton} onPress={handleSave} disabled={saving}>
-                {saving ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Save Profile</Text>
-                )}
+                <LinearGradient colors={['#2563eb', '#2563eb', '#1d4ed8']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.primaryButtonInner}>
+                  {saving ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Save Profile</Text>
+                  )}
+                </LinearGradient>
               </Pressable>
             </ScrollView>
-          </View>
+          </LinearGradient>
         </View>
       </Modal>
 
@@ -674,16 +689,14 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   headerCard: {
-    backgroundColor: '#fff',
     padding: 14,
     borderRadius: 18,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#dbe2ee',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 3,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 4, height: 8 },
+    elevation: 5,
   },
   headerAccent: {
     position: 'absolute',
@@ -738,28 +751,37 @@ const styles = StyleSheet.create({
   headerSubtitle: { flex: 1, fontSize: 12, color: '#64748b' },
   editButton: {
     marginTop: 2,
+    alignSelf: 'flex-start',
+    minHeight: 36,
+    borderRadius: 10,
+    backgroundColor: '#f8fbff',
+    shadowColor: '#c9d5e8',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
+  },
+  editButtonInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'flex-start',
     gap: 6,
     minHeight: 36,
     paddingHorizontal: 14,
     borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#2563eb',
-    backgroundColor: '#f8fbff',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.8)',
   },
   editButtonText: { color: '#2563eb', fontWeight: '700', fontSize: 13 },
   detailCard: {
-    backgroundColor: '#fff',
     borderRadius: 18,
     padding: 16,
     marginTop: 12,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.05,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.18,
     shadowRadius: 12,
-    elevation: 3,
+    shadowOffset: { width: 4, height: 7 },
+    elevation: 4,
   },
   cardSpacing: {
     marginTop: 16,
@@ -768,9 +790,15 @@ const styles = StyleSheet.create({
   detailRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    marginBottom: 8,
+    shadowColor: '#d6deeb',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 2, height: 3 },
+    elevation: 1,
   },
   detailLabel: { width: 110, fontSize: 12, color: '#475569' },
   detailColon: { width: 12, textAlign: 'center', fontSize: 12, color: '#475569' },
@@ -784,10 +812,14 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     maxHeight: '90%',
-    backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 16,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 8,
   },
   modalContent: {
     paddingHorizontal: 16,
@@ -804,6 +836,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f5f9',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#d4ddec',
+    shadowOpacity: 0.16,
+    shadowRadius: 5,
+    shadowOffset: { width: 2, height: 3 },
+    elevation: 1,
   },
   section: { marginTop: 12 },
   sectionTitle: { fontSize: 14, fontWeight: '600', color: '#475569', marginBottom: 6 },
@@ -813,12 +850,16 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     marginRight: 12,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    shadowOffset: { width: -2, height: -2 },
+    elevation: 1,
   },
   profilePicImage: {
     width: '100%',
@@ -827,15 +868,22 @@ const styles = StyleSheet.create({
   },
   profilePicActions: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
   uploadButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     backgroundColor: '#f8fafc',
     flex: 1,
-    alignItems: 'center',
     marginLeft: 4,
+    shadowColor: '#c9d5e8',
+    shadowOpacity: 0.16,
+    shadowRadius: 7,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
+  },
+  uploadButtonInner: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   uploadButtonText: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
   fieldGroup: {
@@ -849,8 +897,6 @@ const styles = StyleSheet.create({
   },
   input: {
     height: 46,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     borderRadius: 12,
     paddingHorizontal: 12,
     backgroundColor: '#fff',
@@ -858,6 +904,11 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontSize: 14,
     fontFamily: FONT_REGULAR,
+    shadowColor: '#d6deeb',
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    shadowOffset: { width: 2, height: 3 },
+    elevation: 1,
   },
   inputNoMargin: {
     marginBottom: 0,
@@ -872,14 +923,17 @@ const styles = StyleSheet.create({
   selectField: {
     flex: 1,
     minHeight: 46,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     borderRadius: 12,
     backgroundColor: '#fff',
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    shadowColor: '#d6deeb',
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    shadowOffset: { width: 2, height: 3 },
+    elevation: 1,
   },
   selectFieldText: {
     flex: 1,
@@ -891,23 +945,41 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
   },
   fileButton: {
-    borderWidth: 1,
-    borderColor: '#d7dbe3',
     borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
     backgroundColor: '#fff',
     marginBottom: 6,
+    shadowColor: '#d6deeb',
+    shadowOpacity: 0.14,
+    shadowRadius: 7,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
+  },
+  fileButtonInner: {
+    minHeight: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   fileButtonText: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
   fileHelperText: { fontSize: 11, color: '#64748b', marginBottom: 16 },
   primaryButton: {
     backgroundColor: '#2563eb',
     borderRadius: 14,
+    marginTop: 12,
+    shadowColor: '#2a4da8',
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  primaryButtonInner: {
+    minHeight: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    marginTop: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   primaryButtonText: { color: '#fff', fontWeight: '700' },
   selectionBackdrop: {
