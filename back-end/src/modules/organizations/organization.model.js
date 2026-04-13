@@ -28,6 +28,19 @@ const organizationSchema = new mongoose.Schema(
       enum: ["active", "inactive"],
       default: "active"
     },
+    isSoftDeleted: {
+      type: Boolean,
+      default: false
+    },
+    softDeletedAt: {
+      type: Date,
+      default: null
+    },
+    softDeletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "users",
+      default: null
+    },
 
     leaveCycleStartMonth: {
       type: Number,

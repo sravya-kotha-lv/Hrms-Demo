@@ -67,7 +67,22 @@ const userSchema = new mongoose.Schema(
 
     passwordChangedAt: Date,
 
-    lastLoginAt: Date
+    lastLoginAt: Date,
+    softDeleteMeta: {
+      organizationId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "organizations",
+        default: null
+      },
+      originalEmail: {
+        type: String,
+        default: null
+      },
+      deletedAt: {
+        type: Date,
+        default: null
+      }
+    }
   },
   { timestamps: true }
 );

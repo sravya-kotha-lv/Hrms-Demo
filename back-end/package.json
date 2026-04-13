@@ -14,6 +14,8 @@
     "jobs:worker": "node src/jobs/worker.js",
     "migrate:weekoffs:rotational": "node src/script/migrate.weekoffs.rotational.js",
     "cleanup:attendance:dedupe": "node src/script/cleanup.attendance.dedupe.js",
+    "org:hard-delete": "node src/script/hardDelete.organization.js",
+    "org:cleanup-residuals": "node src/script/cleanup.organization.residuals.js",
     "migrate:payroll:up": "node src/script/payroll.migrate.js up",
     "migrate:payroll:down": "node src/script/payroll.migrate.js down",
     "migrate:payroll:status": "node src/script/payroll.migrate.js status",
