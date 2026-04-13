@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  GestureResponderEvent,
   Image,
   Modal,
   Platform,
@@ -44,6 +44,39 @@ const SESSION_OPTIONS = [
 const FONT_REGULAR = Platform.select({ android: 'sans-serif', ios: 'System', default: 'sans-serif' });
 const FONT_MEDIUM = Platform.select({ android: 'sans-serif-medium', ios: 'System', default: 'sans-serif' });
 
+const normalizeLeaveStatus = (value?: string | null) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+
+const getLeaveStatus = (leave: any) => {
+  const candidates = [
+    leave?.status,
+    leave?.approvalStatus,
+    leave?.statusLabel,
+    leave?.approval?.status,
+    leave?.approval?.state,
+    leave?.latestApproval?.status,
+    leave?.latestAction?.status,
+    leave?.leaveStatus,
+    leave?.currentStatus,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeLeaveStatus(candidate);
+    if (
+      normalized === 'pending' ||
+      normalized === 'approved' ||
+      normalized === 'rejected'
+    ) {
+      return normalized;
+    }
+  }
+
+  return 'pending';
+};
+
 function LeavesScreen() {
   const navigation = useNavigation<any>();
   const scrollViewRef = useRef<ScrollView | null>(null);
@@ -58,6 +91,7 @@ function LeavesScreen() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [filterMenuPosition, setFilterMenuPosition] = useState({ top: 112, left: 16, width: 140 });
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>(
     'all'
   );
@@ -227,10 +261,10 @@ function LeavesScreen() {
     loadData();
   };
 
-  const pendingCount = leaves.filter((l) => l.status === 'pending').length;
-  const approvedCount = leaves.filter((l) => l.status === 'approved').length;
-  const rejectedCount = leaves.filter((l) => l.status === 'rejected').length;
-  const onLeaveToday = leaves.filter((l) => l.status === 'approved').length;
+  const pendingCount = leaves.filter((l) => getLeaveStatus(l) === 'pending').length;
+  const approvedCount = leaves.filter((l) => getLeaveStatus(l) === 'approved').length;
+  const rejectedCount = leaves.filter((l) => getLeaveStatus(l) === 'rejected').length;
+  const onLeaveToday = leaves.filter((l) => getLeaveStatus(l) === 'approved').length;
   const selectedLeaveType =
     leaveTypes.find((type) => String(type?._id || '') === String(leaveTypeId || '')) || null;
 
@@ -254,7 +288,7 @@ function LeavesScreen() {
     const byStatus =
       statusFilter === 'all'
         ? leaves
-        : leaves.filter((l) => l.status === statusFilter);
+        : leaves.filter((l) => getLeaveStatus(l) === statusFilter);
     if (!searchQuery.trim()) return byStatus;
     const query = searchQuery.trim().toLowerCase();
     return byStatus.filter((leave) => {
@@ -480,6 +514,19 @@ function LeavesScreen() {
     }
   };
 
+  const openStatusFilter = (event: GestureResponderEvent) => {
+    const { pageX, pageY, locationX, locationY } = event.nativeEvent;
+    const buttonLeft = pageX - locationX;
+    const buttonTop = pageY - locationY;
+
+    setFilterMenuPosition((prev) => ({
+      top: buttonTop + 40 + 6,
+      left: buttonLeft,
+      width: Math.max(prev.width, 140),
+    }));
+    setFilterOpen(true);
+  };
+
   return (
     <LinearGradient
       colors={['#f3f5f9', '#f3f5f9', '#eef1f6']}
@@ -488,10 +535,6 @@ function LeavesScreen() {
       style={styles.container}
     >
       <View style={styles.screenContent}>
-        {filterOpen ? (
-          <Pressable style={styles.filterBackdrop} onPress={() => setFilterOpen(false)} />
-        ) : null}
-
         <ScrollView
           ref={scrollViewRef}
           contentContainerStyle={[
@@ -500,30 +543,30 @@ function LeavesScreen() {
           ]}
         >
         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
+          <LinearGradient colors={['#ffffff', '#f7f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.statCard}>
             <Text style={styles.statTitle}>Pending Requests</Text>
             <Text style={[styles.statValue, styles.statOrange]}>{pendingCount}</Text>
             <Text style={styles.statSubtitle}>requires action</Text>
-          </View>
-          <View style={styles.statCard}>
+          </LinearGradient>
+          <LinearGradient colors={['#ffffff', '#f7f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.statCard}>
             <Text style={styles.statTitle}>Approved</Text>
             <Text style={[styles.statValue, styles.statGreen]}>{approvedCount}</Text>
             <Text style={styles.statSubtitle}>total</Text>
-          </View>
-          <View style={styles.statCard}>
+          </LinearGradient>
+          <LinearGradient colors={['#ffffff', '#f7f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.statCard}>
             <Text style={styles.statTitle}>Rejected</Text>
             <Text style={[styles.statValue, styles.statRed]}>{rejectedCount}</Text>
             <Text style={styles.statSubtitle}>total</Text>
-          </View>
-          <View style={styles.statCard}>
+          </LinearGradient>
+          <LinearGradient colors={['#ffffff', '#f7f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.statCard}>
             <Text style={styles.statTitle}>On Leave Today</Text>
             <Text style={[styles.statValue, styles.statBlue]}>{onLeaveToday}</Text>
             <Text style={styles.statSubtitle}>employees</Text>
-          </View>
+          </LinearGradient>
         </View>
 
         <View style={styles.toolbar}>
-          <View style={styles.searchWrap}>
+          <LinearGradient colors={['#ffffff', '#f8fafd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.searchWrap}>
             <MaterialCommunityIcons name="magnify" size={18} color="#94a3b8" />
             <TextInput
               style={styles.searchInput}
@@ -532,68 +575,56 @@ function LeavesScreen() {
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
-          </View>
+          </LinearGradient>
           <View style={styles.toolbarRow}>
             <View style={styles.filterWrap}>
-              <Pressable
-                style={styles.filterButton}
-                onPress={() => setFilterOpen((v) => !v)}
+              <View
+                collapsable={false}
+                onLayout={(event) => {
+                  const { width } = event.nativeEvent.layout;
+                  setFilterMenuPosition((prev) => ({
+                    ...prev,
+                    width: Math.max(width, 140),
+                  }));
+                }}
               >
-                <Text
-                  style={styles.filterText}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                  allowFontScaling={false}
+                <Pressable
+                  style={styles.filterButton}
+                  onPress={openStatusFilter}
                 >
-                  {statusLabel}
-                </Text>
-                <MaterialCommunityIcons name="chevron-down" size={16} color="#64748b" />
-              </Pressable>
-              {filterOpen && (
-                <View style={styles.filterMenu}>
-                  {(['all', 'pending', 'approved', 'rejected'] as const).map((key) => (
-                    <Pressable
-                      key={key}
-                      style={[
-                        styles.filterItem,
-                        statusFilter === key && styles.filterItemActive,
-                      ]}
-                      onPress={() => {
-                        setStatusFilter(key);
-                        setFilterOpen(false);
-                      }}
+                  <View style={styles.filterButtonInner}>
+                    <Text
+                      style={styles.filterText}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                      allowFontScaling={false}
                     >
-                      <Text
-                        style={[
-                          styles.filterItemText,
-                          statusFilter === key && styles.filterItemTextActive,
-                        ]}
-                        allowFontScaling={false}
-                      >
-                        {key === 'all'
-                          ? 'All Status'
-                          : key.charAt(0).toUpperCase() + key.slice(1)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
+                      {statusLabel}
+                    </Text>
+                    <MaterialCommunityIcons name="chevron-down" size={16} color="#64748b" />
+                  </View>
+                </Pressable>
+              </View>
             </View>
             <Pressable style={styles.refreshButton} onPress={loadData}>
-              <MaterialCommunityIcons name="refresh" size={16} color="#0f172a" />
-              <Text style={styles.refreshText}>Refresh</Text>
+              <LinearGradient colors={['#ffffff', '#f4f7fb']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.refreshButtonInner}>
+                <MaterialCommunityIcons name="refresh" size={16} color="#0f172a" />
+                <Text style={styles.refreshText}>Refresh</Text>
+              </LinearGradient>
             </Pressable>
             <Pressable style={styles.applyButton} onPress={() => setApplyOpen(true)}>
-              {submitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.primaryButtonText}>Apply Leave</Text>
-              )}
+              <LinearGradient colors={['#2563eb', '#2563eb', '#1d4ed8']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.applyButtonInner}>
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Apply Leave</Text>
+                )}
+              </LinearGradient>
             </Pressable>
           </View>
         </View>
 
-        <View style={styles.tableCard}>
+        <LinearGradient colors={['#ffffff', '#f7f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.tableCard}>
           <View style={styles.tableIntro}>
             <Text style={styles.tableTitle}>Leave Requests</Text>
             <Text style={styles.tableHint}>Swipe left or right to view all columns.</Text>
@@ -645,7 +676,7 @@ function LeavesScreen() {
                       const to = formatTableDate(leave?.toDate);
                       const days = leave?.totalDays || '-';
                       const durationLabel = leave?.duration === 'half_day' ? 'Half Day' : 'Full Day';
-                      const status = leave?.status || 'pending';
+                      const status = getLeaveStatus(leave);
                       const approvalLabel = leave?.approvalStatus || leave?.approvedBy?.name || 'Single-step';
                       const employeeInitial = (employee.trim()[0] || 'U').toUpperCase();
                       const employeeProfileImage =
@@ -756,7 +787,7 @@ function LeavesScreen() {
               <Text style={styles.tableFooterText}>You have reached the end</Text>
             </View>
           ) : null}
-        </View>
+        </LinearGradient>
         </ScrollView>
       </View>
       
@@ -813,7 +844,7 @@ function LeavesScreen() {
 
       <Modal visible={applyOpen} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <LinearGradient colors={['#f8fafc', '#f7f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Apply Leave</Text>
               <Pressable style={styles.modalClose} onPress={() => setApplyOpen(false)}>
@@ -825,7 +856,7 @@ function LeavesScreen() {
               contentContainerStyle={styles.modalContent}
               showsVerticalScrollIndicator={false}
             >
-                <View style={[styles.calendarCard, styles.attendanceLikeCard]}>
+                <LinearGradient colors={['#e8ecff', '#eef2ff']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.calendarCard, styles.attendanceLikeCard]}>
                   <View style={styles.calendarHeaderRowTop}>
                     <Text style={styles.cardTitle}>Leave Calendar</Text>
                     <View style={styles.calendarNavRow}>
@@ -900,9 +931,9 @@ function LeavesScreen() {
                       <Text style={styles.legendText}>Holiday</Text>
                     </View>
                   </View>
-                </View>
+                </LinearGradient>
 
-              <View style={styles.requestCard}>
+              <LinearGradient colors={['#ffffff', '#f9fbfe']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.requestCard}>
                 <Text style={styles.cardTitle}>Leave Request</Text>
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
                 <View style={styles.leaveBalancePanel}>
@@ -1129,16 +1160,60 @@ function LeavesScreen() {
                 </View>
 
                 <Pressable style={styles.applyPrimary} onPress={applyLeave} disabled={submitting}>
-                  {submitting ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.applyPrimaryText}>Apply Leave</Text>
-                  )}
+                  <LinearGradient colors={['#2563eb', '#2563eb', '#1d4ed8']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.applyPrimaryInner}>
+                    {submitting ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.applyPrimaryText}>Apply Leave</Text>
+                    )}
+                  </LinearGradient>
                 </Pressable>
-              </View>
+              </LinearGradient>
             </ScrollView>
-          </View>
+          </LinearGradient>
         </View>
+      </Modal>
+
+      <Modal visible={filterOpen} transparent animationType="fade" onRequestClose={() => setFilterOpen(false)}>
+        <Pressable style={styles.statusModalBackdrop} onPress={() => setFilterOpen(false)}>
+          <Pressable
+            style={[
+              styles.statusModalCard,
+              {
+                top: filterMenuPosition.top,
+                left: filterMenuPosition.left,
+                width: filterMenuPosition.width,
+              },
+            ]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            {(['all', 'pending', 'approved', 'rejected'] as const).map((key) => (
+              <Pressable
+                key={key}
+                style={[
+                  styles.filterItem,
+                  statusFilter === key && styles.filterItemActive,
+                ]}
+                onPress={() => {
+                  setStatusFilter(key);
+                  setFilterOpen(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.filterItemText,
+                    statusFilter === key && styles.filterItemTextActive,
+                  ]}
+                  allowFontScaling={false}
+                >
+                  {key === 'all'
+                    ? 'All Status'
+                    : key.charAt(0).toUpperCase() + key.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal visible={miniCalendarField !== null} transparent animationType="fade">
@@ -1223,11 +1298,6 @@ function LeavesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   screenContent: { flex: 1, position: 'relative' },
-  filterBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
-    zIndex: 25,
-  },
   scrollContent: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 120, gap: 16 },
   card: {
     backgroundColor: '#ffffff',
@@ -1244,17 +1314,14 @@ const styles = StyleSheet.create({
   },
   statCard: {
     width: '48%',
-    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     gap: 6,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 4, height: 7 },
+    elevation: 3,
   },
   statTitle: {
     fontSize: 12,
@@ -1275,6 +1342,8 @@ const styles = StyleSheet.create({
   statBlue: { color: '#2563eb' },
   toolbar: {
     gap: 10,
+    zIndex: 40,
+    elevation: 12,
   },
   toolbarRow: {
     flexDirection: 'row',
@@ -1285,17 +1354,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 42,
-    backgroundColor: '#ffffff',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
+    shadowColor: '#c9d5e8',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
   },
   searchInput: {
     flex: 1,
@@ -1307,23 +1373,33 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
     position: 'relative',
-    zIndex: 30,
+    zIndex: 50,
+    elevation: 14,
   },
   filterButton: {
+    borderRadius: 10,
+    height: 40,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e6edf7',
+    shadowColor: '#9fb0c9',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  filterButtonInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    height: 42,
-    backgroundColor: '#ffffff',
+    height: 40,
     minWidth: 0,
   },
   filterText: {
     fontSize: 12,
-    color: '#0f172a',
+    color: '#334155',
     fontWeight: '600',
     lineHeight: 16,
     includeFontPadding: false,
@@ -1336,44 +1412,74 @@ const styles = StyleSheet.create({
     minWidth: 140,
     backgroundColor: '#ffffff',
     borderRadius: 12,
+    zIndex: 60,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 3, height: 6 },
+    elevation: 16,
+  },
+  statusModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  statusModalCard: {
+    position: 'absolute',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    zIndex: 20,
-    elevation: 4,
+    borderColor: '#edf2fb',
+    shadowColor: '#8fa2bf',
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
+    overflow: 'hidden',
   },
   filterItem: {
+    marginHorizontal: 8,
+    marginVertical: 2,
     paddingHorizontal: 12,
-    minHeight: 40,
+    minHeight: 38,
     justifyContent: 'center',
+    borderRadius: 10,
   },
   filterItemActive: {
-    backgroundColor: '#e0edff',
+    backgroundColor: '#e8f1ff',
   },
   filterItemText: {
     fontSize: 12,
     color: '#0f172a',
     lineHeight: 16,
     includeFontPadding: false,
-    fontFamily: FONT_REGULAR,
+    fontFamily: FONT_MEDIUM,
   },
   filterItemTextActive: {
-    color: '#1d4ed8',
+    color: '#2563eb',
     fontWeight: '700',
     fontFamily: FONT_MEDIUM,
   },
   refreshButton: {
+    height: 42,
+    width: 88,
+    flexShrink: 0,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    shadowColor: '#c9d5e8',
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
+  },
+  refreshButtonInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    height: 42,
-    width: 88,
     justifyContent: 'center',
     paddingHorizontal: 10,
-    flexShrink: 0,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    height: 42,
   },
   refreshText: {
     fontSize: 12,
@@ -1425,23 +1531,32 @@ const styles = StyleSheet.create({
     width: 124,
     borderRadius: 12,
     backgroundColor: '#2563eb',
-    alignItems: 'center',
-    justifyContent: 'center',
     shadowColor: '#1d4ed8',
     shadowOpacity: 0.2,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
+  applyButtonInner: {
+    flex: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
   primaryButtonText: { color: '#fff', fontWeight: '700' },
   tableCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 18,
     padding: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     gap: 8,
     overflow: 'hidden',
+    zIndex: 1,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 4, height: 8 },
+    elevation: 4,
   },
   tableIntro: {
     gap: 4,
@@ -1632,9 +1747,13 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxWidth: 520,
-    backgroundColor: '#f8fafc',
     borderRadius: 18,
     padding: 16,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1654,8 +1773,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    shadowColor: '#d4ddec',
+    shadowOpacity: 0.16,
+    shadowRadius: 5,
+    shadowOffset: { width: 2, height: 3 },
+    elevation: 1,
   },
   modalContent: {
     gap: 12,
@@ -1670,19 +1792,20 @@ const styles = StyleSheet.create({
   },
   attendanceLikeCard: {
     backgroundColor: '#f7f8ff',
-    borderWidth: 0,
-    shadowColor: '#0f172a',
+    shadowColor: '#c6d1e4',
     shadowOpacity: 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
   },
   requestCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     gap: 10,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 4, height: 7 },
+    elevation: 4,
   },
   cardTitle: {
     fontSize: 14,
@@ -1703,11 +1826,14 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#dbeafe',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ffffff',
+    shadowColor: '#d4ddec',
+    shadowOpacity: 0.16,
+    shadowRadius: 5,
+    shadowOffset: { width: 2, height: 3 },
+    elevation: 1,
   },
   calendarTitle: {
     fontSize: 13,
@@ -2022,13 +2148,11 @@ const styles = StyleSheet.create({
   },
   leaveBalancePanel: {
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
     backgroundColor: '#ffffff',
     padding: 14,
     marginTop: 12,
     marginBottom: 6,
-    shadowColor: '#0f172a',
+    shadowColor: '#c6d1e4',
     shadowOpacity: 0.05,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -2081,8 +2205,14 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 12,
     backgroundColor: '#2563eb',
+  },
+  applyPrimaryInner: {
+    flex: 1,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   applyPrimaryText: {
     color: '#fff',

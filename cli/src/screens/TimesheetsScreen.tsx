@@ -175,7 +175,12 @@ function TimesheetsScreen() {
           { paddingTop: Math.max(safeAreaInsets.top, 16) },
         ]}
       >
-        <View style={styles.topCard}>
+        <LinearGradient
+          colors={['#ffffff', '#f7f9fd']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.topCard}
+        >
           <View style={styles.topCardHeader}>
             <View>
               <Text style={styles.kicker} allowFontScaling={false}>WEEKLY TIMESHEET</Text>
@@ -187,7 +192,12 @@ function TimesheetsScreen() {
             </View>
           </View>
 
-          <View style={styles.weekSwitchRow}>
+          <LinearGradient
+            colors={['#f7f9fc', '#f1f5fb']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.weekSwitchRow}
+          >
             <Pressable
               style={styles.switchBtn}
               onPress={() => {
@@ -212,21 +222,26 @@ function TimesheetsScreen() {
             >
               <Text style={styles.switchBtnText} allowFontScaling={false}>{'>'}</Text>
             </Pressable>
-          </View>
+          </LinearGradient>
 
           <View style={styles.summaryRow}>
-            <View style={styles.summaryCard}>
+            <LinearGradient colors={['#f8faff', '#f4f7fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summaryCard}>
               <Text style={styles.summaryLabel} allowFontScaling={false}>Total Hours</Text>
               <Text style={styles.summaryValue} allowFontScaling={false}>{totalHours.toFixed(1)}h</Text>
-            </View>
-            <View style={styles.summaryCard}>
+            </LinearGradient>
+            <LinearGradient colors={['#f8faff', '#f4f7fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summaryCard}>
               <Text style={styles.summaryLabel} allowFontScaling={false}>Status</Text>
               <Text style={styles.summaryValue} allowFontScaling={false}>{hasAnyEntry ? 'In Progress' : 'New Week'}</Text>
-            </View>
+            </LinearGradient>
           </View>
-        </View>
+        </LinearGradient>
 
-        <View style={styles.entriesCard}>
+        <LinearGradient
+          colors={['#ffffff', '#f7f9fd']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.entriesCard}
+        >
           <Text style={styles.entriesTitle} allowFontScaling={false}>Daily Entries</Text>
           <Text style={styles.entriesSubtitle} allowFontScaling={false}>Fill hours and a short work summary for each day.</Text>
           {error ? <Text style={styles.errorText} allowFontScaling={false}>{error}</Text> : null}
@@ -235,7 +250,7 @@ function TimesheetsScreen() {
             <ActivityIndicator color="#2563eb" style={styles.loadingIndicator} />
           ) : (
             entries.map((entry, idx) => (
-              <View key={entry.date} style={styles.dayCard}>
+              <LinearGradient key={entry.date} colors={['#ffffff', '#fbfcfe']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.dayCard}>
                 <View style={styles.dayRowTop}>
                   <View>
                     <Text style={styles.dayName} allowFontScaling={false}>{weekdayLabel(weekDates[idx])}</Text>
@@ -260,7 +275,7 @@ function TimesheetsScreen() {
                   value={entry.notes || ''}
                   onChangeText={(value) => updateEntry(idx, { notes: value })}
                 />
-              </View>
+              </LinearGradient>
             ))
           )}
 
@@ -270,17 +285,21 @@ function TimesheetsScreen() {
               onPress={() => saveTimesheet(false)}
               disabled={saving}
             >
-              {saving ? <ActivityIndicator /> : <Text style={styles.secondaryText} allowFontScaling={false}>Save Draft</Text>}
+              <LinearGradient colors={['#f5f7fb', '#edf2f8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.secondaryButtonInner}>
+                {saving ? <ActivityIndicator /> : <Text style={styles.secondaryText} allowFontScaling={false}>Save Draft</Text>}
+              </LinearGradient>
             </Pressable>
             <Pressable
               style={[styles.primaryButton, saving ? styles.disabledButton : null]}
               onPress={() => saveTimesheet(true)}
               disabled={saving}
             >
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText} allowFontScaling={false}>Submit</Text>}
+              <LinearGradient colors={['#5a7bea', '#456bde', '#3559cc']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.primaryButtonInner}>
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText} allowFontScaling={false}>Submit</Text>}
+              </LinearGradient>
             </Pressable>
           </View>
-        </View>
+        </LinearGradient>
       </ScrollView>
     </LinearGradient>
   );
@@ -290,17 +309,14 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { flexGrow: 1, paddingHorizontal: 14, paddingBottom: 102, gap: 10 },
   topCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 20,
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#dde3ee',
     gap: 14,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 4, height: 8 },
+    elevation: 5,
   },
   topCardHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   kicker: { fontSize: 10.5, letterSpacing: 1.8, color: '#8d98aa', fontFamily: FONT_MEDIUM },
@@ -317,15 +333,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   weekSwitchRow: {
-    borderWidth: 1,
-    borderColor: '#dde3ee',
     borderRadius: 18,
     paddingVertical: 10,
     paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#f7f9fc',
+    shadowColor: '#d0d9e8',
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
   },
   switchBtn: {
     width: 46,
@@ -344,41 +362,42 @@ const styles = StyleSheet.create({
   summaryRow: { flexDirection: 'row', gap: 12 },
   summaryCard: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#dde3ee',
     borderRadius: 18,
     padding: 14,
-    backgroundColor: '#f8faff',
     minHeight: 96,
     justifyContent: 'center',
+    shadowColor: '#d0d9e8',
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
   },
   summaryLabel: { fontSize: 13, color: '#5f6f84', fontFamily: FONT_REGULAR },
   summaryValue: { marginTop: 6, fontSize: 16, color: '#0f172a', lineHeight: 21, fontFamily: FONT_BOLD, fontWeight: '700' },
   entriesCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingTop: 16,
     paddingBottom: 12,
-    borderWidth: 1,
-    borderColor: '#dde3ee',
     gap: 10,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 4, height: 8 },
+    elevation: 4,
   },
   entriesTitle: { fontSize: 17, color: '#0f172a', fontFamily: FONT_BOLD, fontWeight: '700' },
   entriesSubtitle: { fontSize: 13.5, color: '#6e7e92', marginBottom: 2, lineHeight: 19, fontFamily: FONT_REGULAR },
   errorText: { fontSize: 12, color: '#dc2626', fontFamily: FONT_REGULAR },
   dayCard: {
-    borderWidth: 1,
-    borderColor: '#dde3ee',
     borderRadius: 18,
     padding: 12,
     gap: 10,
-    backgroundColor: '#ffffff',
+    shadowColor: '#d3dceb',
+    shadowOpacity: 0.14,
+    shadowRadius: 7,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
   },
   dayRowTop: {
     flexDirection: 'row',
@@ -420,20 +439,38 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 52,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#dde3ee',
+    backgroundColor: '#f5f7fb',
+    shadowColor: '#c9d5e8',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
+  },
+  secondaryButtonInner: {
+    flex: 1,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f5f7fb',
   },
   secondaryText: { fontSize: 13.5, color: '#0f172a', fontFamily: FONT_MEDIUM },
   primaryButton: {
     flex: 1,
     height: 52,
     borderRadius: 14,
+    backgroundColor: '#2f66dd',
+    shadowColor: '#2a4da8',
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  primaryButtonInner: {
+    flex: 1,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2f66dd',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   primaryText: { fontSize: 13.5, color: '#fff', fontFamily: FONT_MEDIUM },
   disabledButton: { opacity: 0.65 },

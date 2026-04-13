@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { AttendanceDay } from '../types/attendance';
 
@@ -170,15 +171,27 @@ const AttendanceTab = ({
   };
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={['#ffffff', '#f4f7ff']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.container}
+    >
 
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Attendance</Text>
 
         <Pressable style={styles.refreshButton} onPress={onRefresh}>
-          <MaterialCommunityIcons name="refresh" size={14} color="#000000" />
-          <Text style={styles.refreshText}>Refresh</Text>
+          <LinearGradient
+            colors={['#5a7bea', '#456bde', '#3559cc']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.refreshButtonInner}
+          >
+            <MaterialCommunityIcons name="refresh" size={14} color="#ffffff" />
+            <Text style={styles.refreshText}>Refresh</Text>
+          </LinearGradient>
         </Pressable>
       </View>
 
@@ -210,9 +223,7 @@ const AttendanceTab = ({
               ]}
               onPress={() => handleSelectDay(day)}
             >
-              <Text
-                style={[styles.dayText, day === selectedDay && styles.dayTextSelected]}
-              >
+              <Text style={[styles.dayText, day === selectedDay && styles.dayTextSelected]}>
                 {day}
               </Text>
             </Pressable>
@@ -324,8 +335,11 @@ const AttendanceTab = ({
             if (!displayName) return null;
 
             return (
-              <View
+              <LinearGradient
                 key={holiday?._id || `${holiday?.name || 'holiday'}-${holiday?.date || ''}`}
+                colors={['#ffffff', '#f6f9ff']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
                 style={styles.holidayRow}
               >
                 <View style={styles.holidayBadge}>
@@ -335,12 +349,12 @@ const AttendanceTab = ({
                   <Text style={styles.holidayName}>{displayName}</Text>
                   <Text style={styles.holidayMeta}>{formatHolidayDate(holiday?.date)}</Text>
                 </View>
-              </View>
+              </LinearGradient>
             );
           })
         )}
       </View>
-    </View>
+    </LinearGradient>
   );
 };
 
@@ -348,11 +362,13 @@ const styles = StyleSheet.create({
 
   container: {
     marginTop: 16,
-    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    shadowColor: '#c2cee3',
+    shadowOffset: { width: 5, height: 10 },
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
+    elevation: 6,
   },
 
   header: {
@@ -374,20 +390,29 @@ const styles = StyleSheet.create({
   },
 
   refreshButton: {
+    borderRadius: 12,
+    backgroundColor: '#456bde',
+    shadowColor: '#2a4da8',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+
+  refreshButtonInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    borderColor: 'rgba(255,255,255,0.2)',
   },
 
   refreshText: {
     fontSize: 12,
-    color: '#01040c',
+    color: '#ffffff',
     fontWeight: '600',
   },
 
@@ -395,7 +420,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 14,
-    backgroundColor: '#ffffff',
+    paddingHorizontal: 4,
   },
 
   weekText: {
@@ -411,13 +436,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginTop: 10,
     justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
+    paddingHorizontal: 2,
   },
 
   emptyCell: {
     width: '13%',
     height: 48,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
   },
 
   dayCell: {
@@ -427,9 +452,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    shadowColor: '#d4ddec',
+    shadowOffset: { width: 2, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+    elevation: 2,
   },
 
   dayText: {
@@ -438,9 +465,11 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   dayCellSelected: {
-    borderWidth: 2,
-    borderColor: '#2563eb',
-    backgroundColor: '#dbeafe',
+    shadowColor: '#2a4da8',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    elevation: 5,
   },
   dayTextSelected: {
     color: '#0f172a',
@@ -450,21 +479,21 @@ const styles = StyleSheet.create({
   /* LIGHT COLORS */
 
   calendarPresent: {
-    backgroundColor: '#9ee6b7',
+    backgroundColor: '#a8eabf',
   },
-calendarHoliday: {
-  backgroundColor: '#efd980', // light yellow for holidays
-},
+  calendarHoliday: {
+    backgroundColor: '#f3dfa1',
+  },
   calendarLeave: {
-    backgroundColor: '#37e273',
+    backgroundColor: '#8fe8ad',
   },
 
   calendarWeekOff: {
-    backgroundColor: '#a2c3eb',
+    backgroundColor: '#b8cfef',
   },
 
   calendarAbsent: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: '#f8dede',
   },
 
   calendarNeutral: {
@@ -496,14 +525,12 @@ calendarHoliday: {
     width: '100%',
     maxWidth: 360,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     backgroundColor: '#ffffff',
     padding: 14,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.12,
+    shadowColor: '#97a8c5',
+    shadowOpacity: 0.26,
     shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 6, height: 10 },
     elevation: 10,
     gap: 10,
   },
@@ -522,17 +549,13 @@ calendarHoliday: {
     gap: 10,
     borderRadius: 14,
     padding: 10,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    backgroundColor: '#f6f9ff',
   },
   detailDateBadge: {
     width: 46,
     height: 46,
     borderRadius: 12,
     backgroundColor: '#dbeafe',
-    borderWidth: 1,
-    borderColor: '#93c5fd',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -564,11 +587,9 @@ calendarHoliday: {
     width: 32,
     height: 32,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#eef4ff',
   },
   detailBody: {
     gap: 10,
@@ -599,11 +620,14 @@ calendarHoliday: {
   },
   detailRowCard: {
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fbfcff',
     paddingHorizontal: 10,
     paddingVertical: 8,
+    shadowColor: '#d3dceb',
+    shadowOffset: { width: 2, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    elevation: 1,
   },
   detailKey: {
     fontSize: 12,
@@ -667,7 +691,7 @@ calendarHoliday: {
   holidaysSection: {
     marginTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: '#dbe4f2',
     paddingTop: 14,
     gap: 10,
   },
@@ -691,9 +715,11 @@ calendarHoliday: {
     gap: 10,
     padding: 10,
     borderRadius: 12,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    shadowColor: '#c6d3e9',
+    shadowOffset: { width: 4, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 3,
   },
   holidayBadge: {
     width: 34,
@@ -701,9 +727,7 @@ calendarHoliday: {
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#eff6ff',
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
+    backgroundColor: '#eef4ff',
   },
   holidayInfo: {
     flex: 1,

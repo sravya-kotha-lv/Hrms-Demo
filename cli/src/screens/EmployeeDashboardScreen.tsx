@@ -715,34 +715,58 @@ function EmployeeDashboardScreen() {
                         <Pressable
                           style={({ pressed }) => [
                             styles.primaryAction,
+                            isCheckedIn && styles.primaryActionInactive,
                             pressed && styles.surfacePressed,
                             isCheckedIn && styles.primaryDisabled,
                           ]}
                           onPress={handleCheckIn}
                           disabled={checkinLoading || isCheckedIn}
                         >
-                          {checkinLoading ? (
-                            <ActivityIndicator color="#fff" />
-                          ) : (
-                            <MaterialCommunityIcons name="login" size={16} color="#fff" />
-                          )}
-                          <Text style={styles.primaryActionText}>Check In</Text>
+                          <LinearGradient
+                            colors={isCheckedIn ? ['#ffffff', '#f7f9fd'] : ['#5a7bea', '#456bde', '#3559cc']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 1 }}
+                            style={styles.primaryActionInner}
+                          >
+                            {checkinLoading ? (
+                              <ActivityIndicator color={isCheckedIn ? '#94a3b8' : '#fff'} />
+                            ) : (
+                              <MaterialCommunityIcons
+                                name="login"
+                                size={16}
+                                color={isCheckedIn ? '#94a3b8' : '#fff'}
+                              />
+                            )}
+                            <Text style={[styles.primaryActionText, isCheckedIn && styles.primaryActionTextInactive]}>Check In</Text>
+                          </LinearGradient>
                         </Pressable>
                         <Pressable
                           style={({ pressed }) => [
                             styles.secondaryAction,
+                            isCheckedIn && styles.secondaryActionActive,
                             pressed && styles.surfacePressed,
                             !isCheckedIn && styles.secondaryDisabled,
                           ]}
                           onPress={handleCheckOut}
                           disabled={checkoutLoading || !isCheckedIn}
                         >
-                          {checkoutLoading ? (
-                            <ActivityIndicator />
-                          ) : (
-                            <MaterialCommunityIcons name="logout" size={16} color="#0f172a" />
-                          )}
-                          <Text style={styles.secondaryActionText}>Check Out</Text>
+                          <LinearGradient
+                            colors={isCheckedIn ? ['#5a7bea', '#456bde', '#3559cc'] : ['#ffffff', '#f7f9fd']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 1 }}
+                            style={styles.secondaryActionInner}
+                          >
+                            {checkoutLoading ? (
+                              <ActivityIndicator color={isCheckedIn ? '#fff' : '#64748b'} />
+                            ) : (
+                              <MaterialCommunityIcons
+                                name="logout"
+                                size={16}
+                                color={isCheckedIn ? '#fff' : '#0f172a'}
+                              />
+                            )}
+                            <Text style={[styles.secondaryActionText, isCheckedIn && styles.secondaryActionTextActive]}>Check Out</Text>
+                          </LinearGradient>
                         </Pressable>
                       </View>
                       <View style={styles.actionRow}>
@@ -750,13 +774,27 @@ function EmployeeDashboardScreen() {
                           style={({ pressed }) => [styles.secondaryAction, pressed && styles.surfacePressed]}
                           onPress={() => navigation.navigate('Leaves', { openApplyModal: true })}
                         >
-                          <Text style={styles.secondaryActionText}>Apply Leave</Text>
+                          <LinearGradient
+                            colors={['#ffffff', '#f7f9fd']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 1 }}
+                            style={styles.secondaryActionInner}
+                          >
+                            <Text style={styles.secondaryActionText}>Apply Leave</Text>
+                          </LinearGradient>
                         </Pressable>
                         <Pressable
                           style={({ pressed }) => [styles.secondaryAction, pressed && styles.surfacePressed]}
                           onPress={() => navigation.navigate('Timesheets')}
                         >
-                          <Text style={styles.secondaryActionText}>Timesheet</Text>
+                          <LinearGradient
+                            colors={['#ffffff', '#f7f9fd']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 1 }}
+                            style={styles.secondaryActionInner}
+                          >
+                            <Text style={styles.secondaryActionText}>Timesheet</Text>
+                          </LinearGradient>
                         </Pressable>
                       </View>
                     </View>
@@ -1082,13 +1120,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 16,
     backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    shadowOffset: { width: 4, height: 8 },
+    elevation: 4,
   },
   topBarLeft: {
     flexDirection: 'row',
@@ -1110,10 +1146,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 16,
     backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    shadowOffset: { width: -2, height: -2 },
+    elevation: 1,
   },
   topBarOrgText: {
     fontSize: 10,
@@ -1146,8 +1185,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    shadowColor: '#d4ddec',
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+    shadowOffset: { width: 2, height: 3 },
+    elevation: 1,
   },
   avatar: {
     flexDirection: 'row',
@@ -1157,8 +1199,11 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    shadowColor: '#d4ddec',
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+    shadowOffset: { width: 2, height: 3 },
+    elevation: 1,
   },
   avatarText: {
     fontSize: 12,
@@ -1260,8 +1305,11 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     gap: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 4, height: 7 },
+    elevation: 3,
   },
   loadingText: {
     color: '#64748b',
@@ -1274,8 +1322,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fef3c7',
     borderRadius: 12,
     padding: 12,
-    borderWidth: 1,
-    borderColor: '#fcd34d',
+    shadowColor: '#dcc27d',
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
   },
   warningText: {
     flex: 1,
@@ -1286,13 +1337,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 20,
     padding: 18,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 4, height: 8 },
+    elevation: 4,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -1320,6 +1369,11 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 999,
     backgroundColor: '#fee2e2',
+    shadowColor: '#f0c4c4',
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 1, height: 2 },
+    elevation: 1,
   },
   pillLateText: {
     fontSize: 11,
@@ -1348,13 +1402,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 42,
     borderRadius: 12,
-    backgroundColor: '#3b66d9',
-    borderWidth: 1,
-    borderColor: '#335cc9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
+    backgroundColor: '#456bde',
     shadowColor: '#2f58c7',
     shadowOpacity: 0.26,
     shadowRadius: 10,
@@ -1362,37 +1410,74 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   primaryDisabled: {
-    opacity: 0.6,
+    opacity: 1,
+  },
+  primaryActionInactive: {
+    backgroundColor: '#f3f6fb',
+    shadowColor: '#d6deeb',
+    shadowOpacity: 0.16,
+    shadowRadius: 7,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
+  },
+  primaryActionInner: {
+    flex: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   primaryActionText: {
     color: '#fff',
     fontWeight: '700',
     fontSize: 12,
   },
+  primaryActionTextInactive: {
+    color: '#94a3b8',
+  },
   secondaryAction: {
     flex: 1,
     height: 42,
     borderRadius: 12,
     backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    shadowColor: '#d4ddec',
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 2,
+  },
+  secondaryActionActive: {
+    backgroundColor: '#456bde',
+    shadowColor: '#2f58c7',
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 5,
+  },
+  secondaryDisabled: {
+    opacity: 0.5,
+  },
+  secondaryActionInner: {
+    flex: 1,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 6,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  secondaryDisabled: {
-    opacity: 0.5,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
   },
   secondaryActionText: {
     color: '#0f172a',
     fontWeight: '600',
     fontSize: 12,
+  },
+  secondaryActionTextActive: {
+    color: '#fff',
+    fontWeight: '700',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -1407,13 +1492,11 @@ const styles = StyleSheet.create({
     minHeight: 116,
     width: '48%',
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    shadowColor: '#c6d1e4',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 4, height: 8 },
+    elevation: 3,
   },
   surfacePressed: {
     ...pressedStyle,
@@ -1468,9 +1551,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 14,
     backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     padding: 12,
+    shadowColor: '#d4ddec',
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 1,
   },
   noticeTitle: {
     fontSize: 12,
@@ -1516,9 +1602,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     padding: 12,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     backgroundColor: '#f8fafc',
+    shadowColor: '#d4ddec',
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    shadowOffset: { width: 2, height: 4 },
+    elevation: 1,
   },
   eventName: {
     fontSize: 12,

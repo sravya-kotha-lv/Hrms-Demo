@@ -175,7 +175,12 @@ function AttendanceScreen() {
       style={[styles.root, { paddingTop: insets.top }]}
     >
       <ScrollView ref={scrollViewRef} contentContainerStyle={styles.content}>
-        <View style={styles.headerCard}>
+        <LinearGradient
+          colors={['#ffffff', '#f3f7ff']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.headerCard}
+        >
           <View style={styles.headerTopRow}>
             <View style={styles.headerTextCol}>
               <Text style={styles.headerLabel}>My Attendance Calendar</Text>
@@ -192,14 +197,28 @@ function AttendanceScreen() {
 
           <View style={styles.monthControls}>
             <Pressable style={styles.navButton} onPress={() => changeMonth(-1)}>
-              <MaterialCommunityIcons name="chevron-left" size={20} color="#1f2937" />
+              <LinearGradient
+                colors={['#ffffff', '#eef4ff']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.navButtonInner}
+              >
+                <MaterialCommunityIcons name="chevron-left" size={20} color="#1f2937" />
+              </LinearGradient>
             </Pressable>
             <Text style={styles.monthLabel}>{monthLabel}</Text>
             <Pressable style={styles.navButton} onPress={() => changeMonth(1)}>
-              <MaterialCommunityIcons name="chevron-right" size={20} color="#1f2937" />
+              <LinearGradient
+                colors={['#ffffff', '#eef4ff']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.navButtonInner}
+              >
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#1f2937" />
+              </LinearGradient>
             </Pressable>
           </View>
-        </View>
+        </LinearGradient>
 
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
@@ -243,16 +262,13 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   headerCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 18,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
+    shadowColor: '#bcc9de',
+    shadowOpacity: 0.26,
+    shadowRadius: 16,
+    shadowOffset: { width: 5, height: 10 },
+    elevation: 6,
   },
   headerTopRow: {
     flexDirection: 'row',
@@ -268,12 +284,15 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 23,
-    borderWidth: 1,
-    borderColor: '#dbe4f0',
-    backgroundColor: '#eef4ff',
+    backgroundColor: '#edf3ff',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    shadowColor: '#ffffff',
+    shadowOffset: { width: -2, height: -2 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    elevation: 1,
   },
   profileImage: {
     width: '100%',
@@ -307,11 +326,20 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 11,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    backgroundColor: '#eaf1ff',
+    shadowColor: '#cad6ea',
+    shadowOffset: { width: 2, height: 4 },
+    shadowOpacity: 0.24,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  navButtonInner: {
+    flex: 1,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.72)',
   },
   monthLabel: {
     fontSize: 16,
