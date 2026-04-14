@@ -56,15 +56,16 @@ exports.updateShift = async (req) => {
 };
 
 exports.removeShift = async (req) => {
-  const shift = await Shift.findOneAndUpdate(
-    {
-      _id: req.params.id,
-      organizationId: req.user.organizationId
-    },
-    { status: "inactive" },
-    { new: true }
-  );
+  const shift = await Shift.findOne({
+    _id: req.params.id,
+    organizationId: req.user.organizationId
+  });
   if (!shift) throw new Error("Shift not found");
+  if (shift.status === "inactive") {
+    return shift;
+  }
+  shift.status = "inactive";
+  await shift.save();
   return shift;
 };
 
@@ -77,4 +78,3 @@ exports.getMyShift = async (req) => {
   if (!employee) throw new Error("Employee not found");
   return employee.shiftId || null;
 };
-

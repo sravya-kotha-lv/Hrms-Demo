@@ -1034,6 +1034,11 @@ const resolveWorkedMinutesForMatrixStatus = (attendanceRow, now = new Date()) =>
   return Math.max(0, Math.round((shiftEndAt.getTime() - checkInAt.getTime()) / 60000));
 };
 
+const resolveOvertimeMinutes = (totalMinutes, minWorkHoursPerDay = 8) => {
+  const requiredMinutes = Math.max(0, Math.round(Number(minWorkHoursPerDay || 0) * 60));
+  return Math.max(0, Math.round(Number(totalMinutes || 0) - requiredMinutes));
+};
+
 const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8, now = new Date() }) => {
   const isOpenSession = Boolean(attendanceRow?.checkInAt && !attendanceRow?.checkOutAt);
   const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : null;
@@ -1050,6 +1055,29 @@ const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, min
   if (workedMinutes >= fullDayMinutes) return "full_day_present";
   if (workedMinutes >= halfDayMinutes) return "half_day_present";
   return "absent";
+};
+
+const isNoOpAttendanceOverride = ({
+  existingAttendance,
+  targetStatus,
+  minHalfDayHours = 4,
+  minWorkHoursPerDay = 8
+}) => {
+  if (targetStatus === "absent") {
+    if (!existingAttendance) return true;
+    return !existingAttendance.checkInAt && !existingAttendance.checkOutAt;
+  }
+
+  if (targetStatus === "present") {
+    if (!existingAttendance) return false;
+    const currentStatus = resolveAttendanceMatrixStatus(existingAttendance, {
+      minHalfDayHours,
+      minWorkHoursPerDay
+    });
+    return currentStatus === "present" || currentStatus === "full_day_present";
+  }
+
+  return false;
 };
 
 const isThresholdQualifiedAttendance = (status) =>
@@ -2282,6 +2310,10 @@ exports.getAttendanceMatrix = async (req) => {
       minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
       minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
     });
+    const overtimeMinutes = resolveOvertimeMinutes(
+      Number(row.totalMinutes || 0),
+      Number(orgSettings?.minWorkHoursPerDay ?? 8)
+    );
     attendanceMap.set(key, {
       status,
       checkInAt: row.checkInAt || null,
@@ -2303,7 +2335,7 @@ exports.getAttendanceMatrix = async (req) => {
       lateByMinutes: Number(row.lateByMinutes || 0),
       earlyLoginByMinutes: Number(row.earlyLoginByMinutes || 0),
       earlyCheckoutByMinutes: Number(row.earlyCheckoutByMinutes || 0),
-      overtimeMinutes: Number(row.overtimeMinutes || 0)
+      overtimeMinutes
     });
 
     if (isActiveOvernightSession(row, organizationTimeZone)) {
@@ -2536,6 +2568,10 @@ exports.getMyAttendanceMatrix = async (req) => {
       minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
       minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
     });
+    const overtimeMinutes = resolveOvertimeMinutes(
+      Number(row.totalMinutes || 0),
+      Number(orgSettings?.minWorkHoursPerDay ?? 8)
+    );
     days[day] = {
       ...days[day],
       status,
@@ -2558,7 +2594,7 @@ exports.getMyAttendanceMatrix = async (req) => {
       lateByMinutes: Number(row.lateByMinutes || 0),
       earlyLoginByMinutes: Number(row.earlyLoginByMinutes || 0),
       earlyCheckoutByMinutes: Number(row.earlyCheckoutByMinutes || 0),
-      overtimeMinutes: Number(row.overtimeMinutes || 0)
+      overtimeMinutes
     };
 
     if (isActiveOvernightSession(row, organizationTimeZone)) {
@@ -3224,6 +3260,27 @@ exports.overrideAttendance = async (req) => {
   await assertManageAccessForEmployee(req, employee._id);
   await validateAttendanceEditWindow(req.user.organizationId, date, organizationTimeZone);
   const status = req.body.status;
+  const existingAttendance = await Attendance.findOne({
+    organizationId: req.user.organizationId,
+    employeeId: employee._id,
+    ...buildAttendanceDateMatch(dateKey, organizationTimeZone)
+  });
+  const orgSettings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
+    .select("minHalfDayHours minWorkHoursPerDay");
+
+  if (isNoOpAttendanceOverride({
+    existingAttendance,
+    targetStatus: status,
+    minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
+    minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
+  })) {
+    throw {
+      code: 400,
+      statusCode: 400,
+      message: `Attendance is already marked as ${status}`
+    };
+  }
+
   const { shift, scheduledStartAt, scheduledEndAt } = await resolveShiftSchedule(
     req.user.organizationId,
     employee._id,
@@ -3291,9 +3348,7 @@ exports.overrideAttendance = async (req) => {
     },
     {
       $set: {
-        ...update,
-        date,
-        dateKey
+        ...update
       },
       $setOnInsert: {
         organizationId: req.user.organizationId,
@@ -3443,9 +3498,7 @@ exports.bulkOverrideAttendance = async (req) => {
       },
       {
         $set: {
-          ...update,
-          date,
-          dateKey
+          ...update
         },
         $setOnInsert: {
           organizationId: req.user.organizationId,
@@ -3995,5 +4048,7 @@ exports.recallWeekly = async (req) => {
 exports.__private__ = {
   getAttendanceRowDayKey,
   getAttendanceRowNormalizedDate,
-  mergeAttendanceRowsByEmployeeDay
+  mergeAttendanceRowsByEmployeeDay,
+  isNoOpAttendanceOverride,
+  resolveOvertimeMinutes
 };

@@ -65,15 +65,17 @@ exports.updateLeaveType = async (id, payload) => {
  * Explicitly sets status to 'inactive'
  */
 exports.deleteLeaveType = async (id) => {
-  const leaveType = await LeaveType.findByIdAndUpdate(
-    id,
-    { status: "inactive" },
-    { new: true }
-  );
+  const leaveType = await LeaveType.findById(id);
 
   if (!leaveType) {
     throw { code: 404, message: "Leave type not found" };
   }
 
-  return true;
+  if (leaveType.status === "inactive") {
+    return leaveType;
+  }
+
+  leaveType.status = "inactive";
+  await leaveType.save();
+  return leaveType;
 };

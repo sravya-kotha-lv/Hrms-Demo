@@ -62,7 +62,7 @@ const Departments = () => {
   /* ================= FETCH ================= */
 
   const fetchDepartments = async () => {
-    const response = await getApiWithToken("/departments", null, {
+    const response = await getApiWithToken("/departments?includeInactive=true", null, {
       requiredPermissions: ["DEPT_VIEW"]
     });
     if (response?.skipped) {
@@ -84,7 +84,13 @@ const Departments = () => {
   /* ================= DELETE ================= */
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this department?")) return;
+    const currentDepartment = departments.find((department) => department._id === id);
+    if (currentDepartment?.status === "inactive") {
+      toast.info("Department is already inactive");
+      return;
+    }
+
+    if (!window.confirm("Mark this department as inactive?")) return;
     if (!canDelete) {
       toast.error("You do not have permission to delete");
       return;
@@ -93,7 +99,7 @@ const Departments = () => {
     const res = await deleteApiWithToken(`/departments/${id}`);
 
     if (res?.code === 200) {
-      toast.success("Department deleted");
+      toast.success("Department marked as inactive");
       fetchDepartments();
     } else {
       toast.error(res?.message || "Delete failed");
@@ -177,7 +183,11 @@ const Departments = () => {
           </PermissionGate>
           <PermissionGate permissions={["DEPT_DELETE"]}>
             <Trash2
-              className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
+              className={`w-4 h-4 ${
+                dept.status === "inactive"
+                  ? "text-red-300 cursor-not-allowed"
+                  : "text-red-600 cursor-pointer hover:scale-110"
+              }`}
               onClick={() => handleDelete(dept._id!)}
             />
           </PermissionGate>

@@ -313,6 +313,7 @@ const EmployeeDashboard = () => {
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [leaveBalanceDialogOpen, setLeaveBalanceDialogOpen] = useState(false);
   const [onlineDialogOpen, setOnlineDialogOpen] = useState(false);
   const [pendingDialogOpen, setPendingDialogOpen] = useState(false);
   const [weeklyDialogOpen, setWeeklyDialogOpen] = useState(false);
@@ -816,13 +817,19 @@ const EmployeeDashboard = () => {
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-5">
-        <motion.div className={balanceCardClassName} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+        <motion.button
+          type="button"
+          onClick={() => setLeaveBalanceDialogOpen(true)}
+          className={`${balanceCardClassName} text-left`}
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <ClipboardCheck className="w-4 h-4" /> Leave Balance
           </div>
           <div className="text-2xl font-semibold">{totalLeaveRemaining.toFixed(1)}</div>
-          <p className="text-sm text-muted-foreground mt-1">Total remaining</p>
-        </motion.div>
+          <p className="text-sm text-muted-foreground mt-1">Total remaining • click to view</p>
+        </motion.button>
 
         <motion.button
           type="button"
@@ -1091,6 +1098,33 @@ const EmployeeDashboard = () => {
         </TabsContent>
       </Tabs>
 
+      <Dialog open={leaveBalanceDialogOpen} onOpenChange={setLeaveBalanceDialogOpen}>
+        <DialogContent className="sm:max-w-md max-h-[85vh] overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="px-6 pt-8">
+            <DialogTitle>Leave Balances</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 space-y-3 overflow-y-auto px-6 pb-6 pt-2 pr-4 text-sm custom-scroll">
+            <div className="rounded-lg bg-muted/40 p-3">
+              Total remaining: <span className="font-semibold">{totalLeaveRemaining.toFixed(1)}</span>
+            </div>
+            {leaveBalances.length === 0 && (
+              <p className="text-sm text-muted-foreground">No balances found</p>
+            )}
+            {leaveBalances.map((b) => (
+              <div key={b.leaveTypeId} className={`rounded-lg border p-3 ${softInsetClassName}`}>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{b.leaveType}</span>
+                  <span>{Number(b.remaining || 0).toFixed(1)}/{Number(b.total || 0).toFixed(1)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Used: {Number(b.used || 0).toFixed(1)} | Pending: {Number(b.pending || 0).toFixed(1)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={onlineDialogOpen} onOpenChange={setOnlineDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1145,11 +1179,11 @@ const EmployeeDashboard = () => {
       </Dialog>
 
       <Dialog open={weeklyDialogOpen} onOpenChange={setWeeklyDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md max-h-[85vh] overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="px-6 pt-8">
             <DialogTitle>Weekly Hours Progress</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 text-sm">
+          <div className="min-h-0 space-y-2 overflow-y-auto px-6 pb-6 pt-2 pr-4 text-sm custom-scroll">
             <div className="p-2 rounded-lg bg-muted/40">
               Completed till today (including today):{" "}
               <span className="font-semibold">{weeklyProgress.completedIncludingToday.toFixed(1)}h</span>

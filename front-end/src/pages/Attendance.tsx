@@ -220,6 +220,19 @@ const emptyCell: DayCell = {
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
+const formatMinutesAsDuration = (minutes?: number | null) => {
+  const totalMinutes = Math.max(0, Number(minutes || 0));
+  if (!totalMinutes) return "0m";
+  const hours = Math.floor(totalMinutes / 60);
+  const remainderMinutes = totalMinutes % 60;
+  if (hours === 0) return `${remainderMinutes}m`;
+  if (remainderMinutes === 0) return `${hours}h`;
+  return `${hours}h ${remainderMinutes}m`;
+};
+
+const isAbsentLikeAttendance = (attendance?: { checkInAt?: string | Date | null; checkOutAt?: string | Date | null } | null) =>
+  !attendance?.checkInAt && !attendance?.checkOutAt;
+
 const addDaysToDateKey = (dateKey: string, dayDelta: number) => {
   const [year, month, day] = dateKey.split("-").map(Number);
   const shifted = new Date(Date.UTC(year, month - 1, day + dayDelta, 12, 0, 0));
@@ -412,6 +425,15 @@ const Attendance = () => {
     if (!selectedEmployee || !selectedDay) return null;
     return selectedEmployee.days?.[selectedDay] || null;
   }, [selectedDay, selectedEmployee]);
+  const isNoOpOverride = useMemo(() => {
+    if (selectedStatus === "absent") {
+      return isAbsentLikeAttendance(selectedAttendanceSnapshot || selectedCell);
+    }
+    if (selectedStatus === "present") {
+      return selectedCell?.displayStatus === "Present";
+    }
+    return false;
+  }, [selectedAttendanceSnapshot, selectedCell, selectedStatus]);
   const activityTimeline = useMemo(
     () => buildActivityTimeline(history, selectedAttendanceSnapshot, selectedCell),
     [history, selectedAttendanceSnapshot, selectedCell]
@@ -483,6 +505,10 @@ const Attendance = () => {
 
   const saveOverride = async () => {
     if (!selectedEmployee || !selectedDay) return;
+    if (isNoOpOverride) {
+      toast.info(`Attendance is already marked as ${selectedStatus}`);
+      return;
+    }
     const date = `${month}-${String(selectedDay).padStart(2, "0")}`;
     const employeeId = toEmployeeIdString(selectedEmployee.employeeId);
 
@@ -562,7 +588,7 @@ const Attendance = () => {
     if ((cell.lateByMinutes || 0) > 0) parts.push(`Late by: ${cell.lateByMinutes} min`);
     if ((cell.earlyLoginByMinutes || 0) > 0) parts.push(`Early login by: ${cell.earlyLoginByMinutes} min`);
     if ((cell.earlyCheckoutByMinutes || 0) > 0) parts.push(`Early checkout by: ${cell.earlyCheckoutByMinutes} min`);
-    if ((cell.overtimeMinutes || 0) > 0) parts.push(`Overtime: ${cell.overtimeMinutes} min`);
+    if ((cell.overtimeMinutes || 0) > 0) parts.push(`Overtime: ${formatMinutesAsDuration(cell.overtimeMinutes)}`);
     if (cell.isOnLeave) {
       const sessionLabel = cell.leaveHalfDaySession === "second_half" ? "Second Half" : "First Half";
       const leaveLabel = cell.leaveDuration === "half_day"
@@ -1465,6 +1491,11 @@ const Attendance = () => {
                       Check-out: {formatDateTimeInOrgTimeZone(selectedCell.checkOutAt)}
                     </p>
                   ) : null}
+                  {((selectedCell.totalMinutes || 0) > 0 || selectedCell.workedDuration) ? (
+                    <p className="text-xs text-muted-foreground">
+                      Total Hours: {selectedCell.workedDuration || `${(Number(selectedCell.totalMinutes || 0) / 60).toFixed(1)}h`}
+                    </p>
+                  ) : null}
                   {(selectedCell.lateByMinutes || 0) > 0 ? (
                     <p className="text-xs text-muted-foreground">Late by: {selectedCell.lateByMinutes} min</p>
                   ) : null}
@@ -1475,7 +1506,7 @@ const Attendance = () => {
                     <p className="text-xs text-muted-foreground">Early checkout by: {selectedCell.earlyCheckoutByMinutes} min</p>
                   ) : null}
                   {(selectedCell.overtimeMinutes || 0) > 0 ? (
-                    <p className="text-xs text-muted-foreground">Overtime: {selectedCell.overtimeMinutes} min</p>
+                    <p className="text-xs text-muted-foreground">Overtime: {formatMinutesAsDuration(selectedCell.overtimeMinutes)}</p>
                   ) : null}
                   {selectedCell.overriddenBy ? (
                     <p className="text-xs text-muted-foreground">
@@ -1506,7 +1537,7 @@ const Attendance = () => {
               Cancel
             </Button>
             {canEdit && (
-              <Button onClick={saveOverride} disabled={saving}>
+              <Button onClick={saveOverride} disabled={saving || isNoOpOverride}>
                 {saving ? "Saving..." : "Save"}
               </Button>
             )}

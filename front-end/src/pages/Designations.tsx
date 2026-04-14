@@ -72,7 +72,7 @@ const Designations = () => {
   /* ================= FETCH ================= */
 
   const fetchDesignations = async () => {
-    const res = await getApiWithToken("/designations", null, {
+    const res = await getApiWithToken("/designations?includeInactive=true", null, {
       requiredPermissions: ["DESIG_VIEW"]
     });
     if (res?.skipped) {
@@ -107,7 +107,13 @@ const Designations = () => {
   /* ================= DELETE ================= */
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this designation?")) return;
+    const currentDesignation = designations.find((designation) => designation._id === id);
+    if (currentDesignation?.status === "inactive") {
+      toast.info("Designation is already inactive");
+      return;
+    }
+
+    if (!window.confirm("Mark this designation as inactive?")) return;
     if (!canDelete) {
       toast.error("You do not have permission to delete");
       return;
@@ -115,7 +121,7 @@ const Designations = () => {
 
     const res = await deleteApiWithToken(`/designations/${id}`);
     if (res?.success) {
-      toast.success("Designation deleted");
+      toast.success("Designation marked as inactive");
       fetchDesignations();
     } else {
       toast.error(res?.message || "Delete failed");
@@ -204,7 +210,11 @@ const Designations = () => {
           </PermissionGate>
           <PermissionGate permissions={["DESIG_DELETE"]}>
             <Trash2
-              className="w-4 h-4 cursor-pointer text-red-500 hover:text-red-700"
+              className={`w-4 h-4 ${
+                des.status === "inactive"
+                  ? "text-red-300 cursor-not-allowed"
+                  : "cursor-pointer text-red-500 hover:text-red-700"
+              }`}
               onClick={() => handleDelete(des._id)}
             />
           </PermissionGate>

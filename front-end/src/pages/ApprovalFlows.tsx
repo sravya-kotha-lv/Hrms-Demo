@@ -203,10 +203,16 @@ const ApprovalFlows = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this approval flow?")) return;
+    const currentFlow = flows.find((flow) => flow._id === id);
+    if (currentFlow && !currentFlow.isActive) {
+      toast.info("Approval flow is already inactive");
+      return;
+    }
+
+    if (!window.confirm("Mark this approval flow as inactive?")) return;
     const res = await deleteApiWithToken(`/approval-flows/${id}`);
     if (res?.success || res?.code === 200) {
-      toast.success("Approval flow deleted");
+      toast.success("Approval flow marked as inactive");
       fetchFlows();
     } else {
       toast.error(res?.message || "Delete failed");
@@ -386,7 +392,11 @@ const ApprovalFlows = () => {
           </PermissionGate>
           <PermissionGate permissions={["APPROVAL_FLOW_MANAGE"]}>
             <Trash2
-              className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
+              className={`w-4 h-4 ${
+                row.isActive
+                  ? "text-red-600 cursor-pointer hover:scale-110"
+                  : "text-red-300 cursor-not-allowed"
+              }`}
               onClick={() => handleDelete(row._id!)}
             />
           </PermissionGate>

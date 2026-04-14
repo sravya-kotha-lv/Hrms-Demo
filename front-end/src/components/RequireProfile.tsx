@@ -23,13 +23,23 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
         return;
       }
 
-      let isManager = false;
-      try {
-        const roles = profile?.roles || [];
-        isManager = roles.some((r: any) => r?.slug === "manager");
-      } catch {
-        isManager = false;
-      }
+      const roleSlugs = (profile?.roles || [])
+        .map((role: any) => String(role?.slug || "").trim().toLowerCase())
+        .filter(Boolean);
+
+      const isAdminByRoleSlug = roleSlugs.some((slug) =>
+        [
+          "org-admin",
+          "admin",
+          "hr",
+          "hr-admin",
+          "manager",
+          "approver",
+          "finance-viewer",
+          "auditor",
+          "payroll-processor"
+        ].includes(slug)
+      );
 
       const isAdminByRole = hasAnyPermission([
         "EMP_VIEW",
@@ -40,6 +50,11 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
         "ORG_VIEW"
       ]);
 
+      if (isAdminByRoleSlug || isAdminByRole) {
+        setLoading(false);
+        return;
+      }
+
       try {
         const res = await getApiWithToken("/employees/me");
         if (res?.success && res?.data) {
@@ -49,12 +64,12 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
               return;
             }
           }
-        } else if ((!isAdminByRole || isManager) && location.pathname !== "/complete-profile") {
+        } else if (location.pathname !== "/complete-profile") {
           navigate("/complete-profile", { replace: true });
           return;
         }
       } catch {
-        if ((!isAdminByRole || isManager) && location.pathname !== "/complete-profile") {
+        if (location.pathname !== "/complete-profile") {
           navigate("/complete-profile", { replace: true });
           return;
         }
