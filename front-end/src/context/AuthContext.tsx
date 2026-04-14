@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, ReactNode } from "react";
 import { getApiWithToken } from "@/services/apiWrapper";
 import {
+  getIsSuperAdmin,
+  getToken,
   getPermissions,
   getUserProfile,
   setPermissions as setPermissionsLocal,
   setUserProfile as setUserProfileLocal,
+  setIsSuperAdmin,
 } from "@/utils/auth";
 import { ApiResponseEnvelope } from "@/services/apiWrapper";
 import { AuthContext, AuthProfile } from "@/context/auth-context";
@@ -12,7 +15,7 @@ import { AuthContext, AuthProfile } from "@/context/auth-context";
 const readIsSuperAdmin = (profile: AuthProfile | null) => {
   if (profile?.activeRole?.slug === "superadmin") return true;
   if (profile?.roles?.some((r) => r?.slug === "superadmin")) return true;
-  return localStorage.getItem("isSuperAdmin") === "true";
+  return getIsSuperAdmin();
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -25,14 +28,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (nextProfile) {
       setUserProfileLocal(nextProfile);
     } else {
-      localStorage.removeItem("userProfile");
+      sessionStorage.removeItem("userProfile");
     }
     setProfileState(nextProfile);
 
     if (nextProfile?.activeRole?.slug === "superadmin") {
-      localStorage.setItem("isSuperAdmin", "true");
+      setIsSuperAdmin(true);
     } else {
-      localStorage.removeItem("isSuperAdmin");
+      setIsSuperAdmin(false);
     }
   };
 
@@ -77,7 +80,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    const token = sessionStorage.getItem("token");
+    const token = getToken();
     if (token) {
       loadProfile();
       loadPermissions();

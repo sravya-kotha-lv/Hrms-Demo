@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
 import { getApiWithToken, postApiWithoutToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
+import { getIsSuperAdmin, getToken, setAdminRoleId, setAdminUserId, setIsSuperAdmin, setToken } from "@/utils/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ShieldCheck, Clock3, Users2, CalendarCheck2, Sparkles, Camera } from "lucide-react";
@@ -142,6 +143,12 @@ const Login = () => {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const activeToken = getToken();
+    if (!activeToken) return;
+    navigate(getIsSuperAdmin() ? "/superadmin" : "/", { replace: true });
+  }, [navigate]);
+
   const completeLogin = async (response: any) => {
     if (response.code !== 200) {
       toast.warning(response.message || "Login failed");
@@ -150,6 +157,11 @@ const Login = () => {
 
     const { roles, activeRole } = response.data;
     const resolvedActiveRole = activeRole || roles?.[0] || null;
+    const authToken = response?.data?.token;
+
+    if (authToken) {
+      setToken(authToken);
+    }
 
     setProfile({
       ...response.data,
@@ -184,12 +196,15 @@ const Login = () => {
     }
     toast.success("Logged in successfully!");
 
+    setIsSuperAdmin(isSuperAdmin);
+
     if (isSuperAdmin) {
-      localStorage.setItem("isSuperAdmin", "true");
-      localStorage.setItem("adminUserId", response.data.userId);
-      localStorage.setItem("adminRoleId", response.data.roles[0]._id);
+      setAdminUserId(response.data.userId || null);
+      setAdminRoleId(response.data.roles?.[0]?._id || null);
       navigate("/dashboard", { replace: true });
     } else {
+      setAdminUserId(null);
+      setAdminRoleId(null);
       navigate("/", { replace: true });
     }
   };
