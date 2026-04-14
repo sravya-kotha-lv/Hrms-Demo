@@ -314,6 +314,8 @@ const Attendance = () => {
   const tableViewportRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
   const resetPaginationRef = useRef(false);
+  const progressiveRenderTimersRef = useRef<number[]>([]);
+  const progressiveRenderRunRef = useRef(0);
 
   const [open, setOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
@@ -340,8 +342,41 @@ const Attendance = () => {
     setMonth(`${nextYear}-${nextMonth}`);
   };
 
+  const cancelProgressiveRender = useCallback(() => {
+    progressiveRenderRunRef.current += 1;
+    progressiveRenderTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    progressiveRenderTimersRef.current = [];
+  }, []);
+
+  const renderRowsProgressively = useCallback((incomingRows: EmployeeRow[], appendToExisting: boolean) => {
+    cancelProgressiveRender();
+    const runId = progressiveRenderRunRef.current;
+
+    if (!appendToExisting) {
+      setRows([]);
+    }
+
+    if (incomingRows.length === 0) {
+      return;
+    }
+
+    incomingRows.forEach((row, index) => {
+      const timerId = window.setTimeout(() => {
+        if (progressiveRenderRunRef.current !== runId) return;
+        setRows((prev) => {
+          if (appendToExisting) {
+            return mergeAttendancePages(prev, [row]);
+          }
+          return [...prev, row];
+        });
+      }, index * 24);
+      progressiveRenderTimersRef.current.push(timerId);
+    });
+  }, [cancelProgressiveRender]);
+
   const fetchMatrix = useCallback(async () => {
     if (!canView) {
+      cancelProgressiveRender();
       setRows([]);
       return;
     }
@@ -381,7 +416,7 @@ const Attendance = () => {
         return;
       }
 
-      setRows((prev) => (canViewAll && currentPage > 1 ? mergeAttendancePages(prev, nextRows) : nextRows));
+      renderRowsProgressively(nextRows, Boolean(canViewAll && currentPage > 1));
       setDaysInMonth(res.data?.daysInMonth || 31);
       setPagination(res.data?.pagination || null);
       setLockAttendanceMeta(res.data?.lockAttendance || null);
@@ -396,9 +431,10 @@ const Attendance = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [canView, currentPage, canViewAll, month, pageSize, searchTerm, sortBy, sortOrder]);
+  }, [canView, currentPage, canViewAll, month, pageSize, searchTerm, sortBy, sortOrder, cancelProgressiveRender, renderRowsProgressively]);
 
   useEffect(() => {
+    cancelProgressiveRender();
     resetPaginationRef.current = true;
     loadingMoreRef.current = false;
     if (tableViewportRef.current) {
@@ -406,7 +442,7 @@ const Attendance = () => {
     }
     setCurrentPage(1);
     setRows([]);
-  }, [month, pageSize, searchTerm, sortBy, sortOrder]);
+  }, [month, pageSize, searchTerm, sortBy, sortOrder, cancelProgressiveRender]);
 
   useEffect(() => {
     if (resetPaginationRef.current && currentPage !== 1) {
@@ -417,6 +453,30 @@ const Attendance = () => {
     }
     fetchMatrix();
   }, [currentPage, fetchMatrix]);
+
+  const refreshMatrixLatest = useCallback(async () => {
+    cancelProgressiveRender();
+    loadingMoreRef.current = false;
+    resetPaginationRef.current = true;
+    if (tableViewportRef.current) {
+      tableViewportRef.current.scrollTop = 0;
+    }
+    setRows([]);
+    setPagination(null);
+
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+      return;
+    }
+
+    resetPaginationRef.current = false;
+    await fetchMatrix();
+  }, [currentPage, fetchMatrix, cancelProgressiveRender]);
+
+  useEffect(() => () => {
+    cancelProgressiveRender();
+  }, [cancelProgressiveRender]);
+
   const filteredRows = useMemo(() => rows || [], [rows]);
   const visibleRows = filteredRows;
 
@@ -697,7 +757,7 @@ const Attendance = () => {
         return;
       }
       toast.success(`Payroll attendance snapshot generated for ${month}.`);
-      await fetchMatrix();
+      await refreshMatrixLatest();
     } finally {
       setLockingAttendance(false);
     }
@@ -751,7 +811,7 @@ const Attendance = () => {
       }
       toast.success(`Attendance updated for ${res.data?.updatedCount || 0} employees`);
       setSelectedEmployeeIds([]);
-      fetchMatrix();
+      await refreshMatrixLatest();
     } finally {
       setBulkSaving(false);
     }
@@ -1006,48 +1066,52 @@ const Attendance = () => {
           ) : (
             <>
               <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-sky-50 p-4 sm:p-5 mb-4 shadow-sm">
-                <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
-                  <div className="w-full xl:w-auto">
-                    {canEdit && (
-                      <Button
-                        variant="outline"
-                        className="bg-white/90"
-                        onClick={() => setShowBulkControls((prev) => !prev)}
-                      >
-                        {showBulkControls ? "Hide Bulk Update" : "Show Bulk Update"}
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3 w-full xl:w-auto xl:ml-auto">
-                    {renderMonthSelector("bright")}
-                    <Input
-                      placeholder="Search employee..."
-                      value={search}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setSearch(value);
-                        setSearchTerm(value);
-                      }}
-                      className="w-full sm:w-72 bg-white/90"
-                    />
-                    <Button variant="outline" className="bg-white/90" onClick={fetchMatrix}>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                    <div className="w-full lg:w-auto">
+                      {canEdit && (
+                        <Button
+                          variant="outline"
+                          className="h-12 w-full bg-white/90 sm:w-auto"
+                          onClick={() => setShowBulkControls((prev) => !prev)}
+                        >
+                          {showBulkControls ? "Hide Bulk Update" : "Show Bulk Update"}
+                        </Button>
+                      )}
+                    </div>
+                    <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(320px,auto)_minmax(240px,1fr)_auto_auto_auto] xl:items-center">
+                      <div className="min-w-0">
+                        {renderMonthSelector("bright")}
+                      </div>
+                      <Input
+                        placeholder="Search employee..."
+                        value={search}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setSearch(value);
+                          setSearchTerm(value);
+                        }}
+                        className="h-12 w-full bg-white/90"
+                      />
+                    <Button variant="outline" className="h-12 bg-white/90" onClick={refreshMatrixLatest}>
                       Refresh
                     </Button>
-                    {canEdit && (
-                      <Button
-                        className="bg-slate-900 text-white hover:bg-slate-800"
-                        onClick={runLockAttendance}
-                        disabled={!lockAttendanceMeta?.enabled || lockingAttendance}
-                        title={lockAttendanceMeta?.reason || undefined}
-                      >
-                        {lockingAttendance
-                          ? "Locking..."
-                          : `Lock Attendance${lockAttendanceMeta?.pendingCheckoutCount ? ` (${lockAttendanceMeta.pendingCheckoutCount})` : ""}`}
+                      {canEdit && (
+                        <Button
+                          className="h-12 bg-slate-900 text-white hover:bg-slate-800"
+                          onClick={runLockAttendance}
+                          disabled={!lockAttendanceMeta?.enabled || lockingAttendance}
+                          title={lockAttendanceMeta?.reason || undefined}
+                        >
+                          {lockingAttendance
+                            ? "Locking..."
+                            : `Lock Attendance${lockAttendanceMeta?.pendingCheckoutCount ? ` (${lockAttendanceMeta.pendingCheckoutCount})` : ""}`}
+                        </Button>
+                      )}
+                      <Button variant="outline" className="h-12 bg-white/90" onClick={downloadCsv}>
+                        Export CSV
                       </Button>
-                    )}
-                    <Button variant="outline" className="bg-white/90" onClick={downloadCsv}>
-                      Export CSV
-                    </Button>
+                    </div>
                   </div>
                 </div>
                 {canEdit && lockAttendanceMeta && (
@@ -1065,8 +1129,7 @@ const Attendance = () => {
                     }`}
                   >
                     {showBulkControls && (
-                      <div className="flex flex-wrap items-end justify-start gap-2 sm:gap-3">
-                      <>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(240px,auto)_minmax(180px,220px)_minmax(160px,180px)_auto] xl:items-end">
                         <Button variant="outline" className="bg-white/90" onClick={toggleSelectAllFiltered}>
                           Select/Unselect Filtered ({selectedEmployeeIds.length})
                         </Button>
@@ -1074,10 +1137,10 @@ const Attendance = () => {
                           type="date"
                           value={bulkDate}
                           onChange={(e) => setBulkDate(e.target.value)}
-                          className="w-full sm:w-48 bg-white/90"
+                          className="h-12 w-full bg-white/90"
                         />
                         <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as "present" | "absent")}>
-                          <SelectTrigger className="w-full sm:w-40 bg-white/90">
+                          <SelectTrigger className="h-12 w-full bg-white/90">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1085,10 +1148,9 @@ const Attendance = () => {
                             <SelectItem value="absent">Absent</SelectItem>
                           </SelectContent>
                         </Select>
-                        <Button onClick={runBulkUpdate} disabled={bulkSaving}>
+                        <Button className="h-12" onClick={runBulkUpdate} disabled={bulkSaving}>
                           {bulkSaving ? "Updating..." : "Bulk Update"}
                         </Button>
-                      </>
                       </div>
                     )}
                   </div>
