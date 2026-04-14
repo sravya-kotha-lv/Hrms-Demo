@@ -50,13 +50,15 @@ exports.remove = async (req, res) => {
 };
 
 exports.list = async (req, res) => {
-  const key = buildRequestCacheKey(req);
-  const data = await withCache({
-    namespace: DEPT_NAMESPACE,
-    key,
-    ttlSeconds: Number(process.env.CACHE_TTL_DEPARTMENTS || 300),
-    producer: () => departmentService.list(req)
-  });
+  const includeInactive = String(req.query.includeInactive || "").toLowerCase() === "true";
+  const data = includeInactive
+    ? await departmentService.list(req)
+    : await withCache({
+        namespace: DEPT_NAMESPACE,
+        key: buildRequestCacheKey(req, { version: "v2" }),
+        ttlSeconds: Number(process.env.CACHE_TTL_DEPARTMENTS || 300),
+        producer: () => departmentService.list(req)
+      });
   res.json(
     buildSuccessResponse({
       message: "Departments fetched successfully",

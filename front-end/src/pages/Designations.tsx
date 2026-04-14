@@ -107,6 +107,12 @@ const Designations = () => {
   /* ================= DELETE ================= */
 
   const handleDelete = async (id: string) => {
+    const currentDesignation = designations.find((designation) => designation._id === id);
+    if (currentDesignation?.status === "inactive") {
+      toast.info("Designation is already inactive");
+      return;
+    }
+
     if (!window.confirm("Mark this designation as inactive?")) return;
     if (!canDelete) {
       toast.error("You do not have permission to delete");
@@ -204,7 +210,11 @@ const Designations = () => {
           </PermissionGate>
           <PermissionGate permissions={["DESIG_DELETE"]}>
             <Trash2
-              className="w-4 h-4 cursor-pointer text-red-500 hover:text-red-700"
+              className={`w-4 h-4 ${
+                des.status === "inactive"
+                  ? "text-red-300 cursor-not-allowed"
+                  : "cursor-pointer text-red-500 hover:text-red-700"
+              }`}
               onClick={() => handleDelete(des._id)}
             />
           </PermissionGate>

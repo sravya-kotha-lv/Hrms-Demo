@@ -187,10 +187,17 @@ exports.updateFlow = async (req) => {
 };
 
 exports.removeFlow = async (req) => {
-  const flow = await ApprovalFlow.findOneAndDelete({
+  const flow = await ApprovalFlow.findOne({
     _id: req.params.id,
     organizationId: req.user.organizationId
   });
   if (!flow) throw new Error("Approval flow not found");
+
+  if (!flow.isActive) {
+    return flow;
+  }
+
+  flow.isActive = false;
+  await flow.save();
   return flow;
 };

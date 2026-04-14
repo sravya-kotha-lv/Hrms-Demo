@@ -78,6 +78,12 @@ const Shifts = () => {
   };
 
   const remove = async (id: string) => {
+    const currentShift = rows.find((row) => row._id === id);
+    if (currentShift?.status === "inactive") {
+      toast.info("Shift is already inactive");
+      return;
+    }
+
     if (!window.confirm("Deactivate this shift?")) return;
     const res = await deleteApiWithToken(`/shifts/${id}`);
     if (res?.success) {
@@ -125,7 +131,14 @@ const Shifts = () => {
             />
           </PermissionGate>
           <PermissionGate permissions={["SHIFT_MANAGE"]}>
-            <Trash2 className="w-4 h-4 text-red-600 cursor-pointer" onClick={() => remove(r._id!)} />
+            <Trash2
+              className={`w-4 h-4 ${
+                r.status === "inactive"
+                  ? "text-red-300 cursor-not-allowed"
+                  : "text-red-600 cursor-pointer"
+              }`}
+              onClick={() => remove(r._id!)}
+            />
           </PermissionGate>
         </div>
       )

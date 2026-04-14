@@ -2,6 +2,7 @@ const Department = require("./department.model");
 const Employee = require("../employees/employee.model");
 const OrganizationService = require("../organizations/organization.service");
 const { audit } = require("../auditLogs/auditLogs.service");
+const mongoose = require("mongoose");
 
 exports.create = async (req) => {
   try {
@@ -49,9 +50,15 @@ exports.create = async (req) => {
 };
 
 exports.update = async (req) => {
+  const departmentId = mongoose.Types.ObjectId.isValid(req.params.id)
+    ? new mongoose.Types.ObjectId(req.params.id)
+    : req.params.id;
+  const organizationId = mongoose.Types.ObjectId.isValid(req.user.organizationId)
+    ? new mongoose.Types.ObjectId(req.user.organizationId)
+    : req.user.organizationId;
   const filter = {
-    _id: req.params.id,
-    organizationId: req.user.organizationId
+    _id: departmentId,
+    organizationId
   };
   const before = await Department.collection.findOne(filter);
 
@@ -92,6 +99,13 @@ exports.remove = async (req) => {
     throw { code: 404, message: "Department not found" };
   }
 
+  if (department.status === "inactive") {
+    return {
+      alreadyInactive: true,
+      department: department.toObject()
+    };
+  }
+
   const before = department.toObject();
 
   department.status = "inactive";
@@ -105,6 +119,11 @@ exports.remove = async (req) => {
     before,
     after: department.toObject()
   });
+
+  return {
+    alreadyInactive: false,
+    department: department.toObject()
+  };
 };
 
 exports.list = async (req) => {
@@ -112,8 +131,11 @@ exports.list = async (req) => {
   const requestedOrgId = req.query.organizationId;
   const organizationId = isSuperAdmin && requestedOrgId ? requestedOrgId : req.user.organizationId;
   const includeInactive = String(req.query.includeInactive || "").toLowerCase() === "true";
+  const organizationObjectId = mongoose.Types.ObjectId.isValid(organizationId)
+    ? new mongoose.Types.ObjectId(organizationId)
+    : organizationId;
   const match = {
-    organizationId
+    organizationId: organizationObjectId
   };
 
   if (!includeInactive) {

@@ -79,14 +79,19 @@ const LeaveTypes = () => {
   }, []);
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this leave type?")) return;
+    const currentLeaveType = leaveTypes.find((leaveType) => leaveType._id === id);
+    if (currentLeaveType?.status === "inactive") {
+      toast.info("Leave type is already inactive");
+      return;
+    }
+    if (!window.confirm("Mark this leave type as inactive?")) return;
     if (!canManage) {
       toast.error("You do not have permission to delete");
       return;
     }
     const res = await deleteApiWithToken(`/leave-types/${id}`);
     if (res?.success) {
-      toast.success("Leave type deleted");
+      toast.success("Leave type marked as inactive");
       fetchLeaveTypes();
     } else {
       toast.error(res?.message || "Delete failed");
@@ -177,7 +182,11 @@ const LeaveTypes = () => {
           </PermissionGate>
           <PermissionGate permissions={["LEAVE_TYPE_MANAGE"]}>
             <Trash2
-              className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
+              className={`w-4 h-4 ${
+                lt.status === "inactive"
+                  ? "text-red-300 cursor-not-allowed"
+                  : "text-red-600 cursor-pointer hover:scale-110"
+              }`}
               onClick={() => handleDelete(lt._id!)}
             />
           </PermissionGate>
