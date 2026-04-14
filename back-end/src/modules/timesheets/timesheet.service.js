@@ -1052,6 +1052,29 @@ const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, min
   return "absent";
 };
 
+const isNoOpAttendanceOverride = ({
+  existingAttendance,
+  targetStatus,
+  minHalfDayHours = 4,
+  minWorkHoursPerDay = 8
+}) => {
+  if (targetStatus === "absent") {
+    if (!existingAttendance) return true;
+    return !existingAttendance.checkInAt && !existingAttendance.checkOutAt;
+  }
+
+  if (targetStatus === "present") {
+    if (!existingAttendance) return false;
+    const currentStatus = resolveAttendanceMatrixStatus(existingAttendance, {
+      minHalfDayHours,
+      minWorkHoursPerDay
+    });
+    return currentStatus === "present" || currentStatus === "full_day_present";
+  }
+
+  return false;
+};
+
 const isThresholdQualifiedAttendance = (status) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
@@ -3224,6 +3247,27 @@ exports.overrideAttendance = async (req) => {
   await assertManageAccessForEmployee(req, employee._id);
   await validateAttendanceEditWindow(req.user.organizationId, date, organizationTimeZone);
   const status = req.body.status;
+  const existingAttendance = await Attendance.findOne({
+    organizationId: req.user.organizationId,
+    employeeId: employee._id,
+    ...buildAttendanceDateMatch(dateKey, organizationTimeZone)
+  });
+  const orgSettings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
+    .select("minHalfDayHours minWorkHoursPerDay");
+
+  if (isNoOpAttendanceOverride({
+    existingAttendance,
+    targetStatus: status,
+    minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
+    minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
+  })) {
+    throw {
+      code: 400,
+      statusCode: 400,
+      message: `Attendance is already marked as ${status}`
+    };
+  }
+
   const { shift, scheduledStartAt, scheduledEndAt } = await resolveShiftSchedule(
     req.user.organizationId,
     employee._id,
@@ -3991,5 +4035,6 @@ exports.recallWeekly = async (req) => {
 exports.__private__ = {
   getAttendanceRowDayKey,
   getAttendanceRowNormalizedDate,
-  mergeAttendanceRowsByEmployeeDay
+  mergeAttendanceRowsByEmployeeDay,
+  isNoOpAttendanceOverride
 };

@@ -220,6 +220,9 @@ const emptyCell: DayCell = {
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
 
+const isAbsentLikeAttendance = (attendance?: { checkInAt?: string | Date | null; checkOutAt?: string | Date | null } | null) =>
+  !attendance?.checkInAt && !attendance?.checkOutAt;
+
 const addDaysToDateKey = (dateKey: string, dayDelta: number) => {
   const [year, month, day] = dateKey.split("-").map(Number);
   const shifted = new Date(Date.UTC(year, month - 1, day + dayDelta, 12, 0, 0));
@@ -412,6 +415,15 @@ const Attendance = () => {
     if (!selectedEmployee || !selectedDay) return null;
     return selectedEmployee.days?.[selectedDay] || null;
   }, [selectedDay, selectedEmployee]);
+  const isNoOpOverride = useMemo(() => {
+    if (selectedStatus === "absent") {
+      return isAbsentLikeAttendance(selectedAttendanceSnapshot || selectedCell);
+    }
+    if (selectedStatus === "present") {
+      return selectedCell?.displayStatus === "Present";
+    }
+    return false;
+  }, [selectedAttendanceSnapshot, selectedCell, selectedStatus]);
   const activityTimeline = useMemo(
     () => buildActivityTimeline(history, selectedAttendanceSnapshot, selectedCell),
     [history, selectedAttendanceSnapshot, selectedCell]
@@ -483,6 +495,10 @@ const Attendance = () => {
 
   const saveOverride = async () => {
     if (!selectedEmployee || !selectedDay) return;
+    if (isNoOpOverride) {
+      toast.info(`Attendance is already marked as ${selectedStatus}`);
+      return;
+    }
     const date = `${month}-${String(selectedDay).padStart(2, "0")}`;
     const employeeId = toEmployeeIdString(selectedEmployee.employeeId);
 
@@ -1506,7 +1522,7 @@ const Attendance = () => {
               Cancel
             </Button>
             {canEdit && (
-              <Button onClick={saveOverride} disabled={saving}>
+              <Button onClick={saveOverride} disabled={saving || isNoOpOverride}>
                 {saving ? "Saving..." : "Save"}
               </Button>
             )}
