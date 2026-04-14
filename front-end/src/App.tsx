@@ -9,6 +9,7 @@ import RoleBasedHome from "./components/RoleBasedHome";
 import RequireProfile from "./components/RequireProfile";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { RouteSkeleton } from "@/components/ui/loaders";
+import { getIsSuperAdmin, getToken } from "@/utils/auth";
 
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const SuperAdminDashboard = React.lazy(() => import("./pages/SuperAdminDashboard"));
@@ -55,6 +56,15 @@ const Projects = React.lazy(() => import("./pages/Projects"));
 const Hiring = React.lazy(() => import("./pages/Hiring"));
 
 const queryClient = new QueryClient();
+
+const PublicOnlyRoute = ({ children }: { children: JSX.Element }) => {
+  const token = getToken();
+  if (token) {
+    return <Navigate to={getIsSuperAdmin() ? "/superadmin" : "/"} replace />;
+  }
+  return children;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -64,8 +74,22 @@ const App = () => (
         <React.Suspense fallback={<RouteSkeleton />}>
         <Routes>
           <Route path="/" element={<RoleBasedHome />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route
+            path="/login"
+            element={
+              <PublicOnlyRoute>
+                <Login />
+              </PublicOnlyRoute>
+            }
+          />
+          <Route
+            path="/forgot-password"
+            element={
+              <PublicOnlyRoute>
+                <ForgotPassword />
+              </PublicOnlyRoute>
+            }
+          />
           <Route element={<MainLayout><Outlet /></MainLayout>}>
             <Route
               path="/complete-profile"
