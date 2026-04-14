@@ -3291,9 +3291,7 @@ exports.overrideAttendance = async (req) => {
     },
     {
       $set: {
-        ...update,
-        date,
-        dateKey
+        ...update
       },
       $setOnInsert: {
         organizationId: req.user.organizationId,
@@ -3443,9 +3441,7 @@ exports.bulkOverrideAttendance = async (req) => {
       },
       {
         $set: {
-          ...update,
-          date,
-          dateKey
+          ...update
         },
         $setOnInsert: {
           organizationId: req.user.organizationId,
