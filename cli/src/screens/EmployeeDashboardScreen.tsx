@@ -158,6 +158,20 @@ function EmployeeDashboardScreen() {
   const token = session?.token || '';
   const profile = session?.profile || session?.loginData || null;
   const permissions = session?.permissions || [];
+  const hasAnyPermission = (...codes: string[]) => codes.some((code) => permissions.includes(code));
+  const canCheckIn = permissions.includes('TIMESHEET_CHECKIN_SELF');
+  const canCheckOut = permissions.includes('TIMESHEET_CHECKOUT_SELF');
+  const canApplyLeave = permissions.includes('LEAVE_APPLY');
+  const canViewTimesheets = hasAnyPermission('TIMESHEET_VIEW_SELF', 'TIMESHEET_VIEW_ALL');
+  const canViewAttendance = hasAnyPermission('ATTENDANCE_VIEW_SELF', 'TIMESHEET_VIEW_SELF');
+  const canViewLeaveBalances = hasAnyPermission('LEAVE_VIEW_SELF', 'LEAVE_VIEW_ALL', 'LEAVE_APPLY');
+  const canViewHolidays = hasAnyPermission('HOLIDAY_VIEW', 'LEAVE_VIEW_SELF', 'LEAVE_APPLY');
+  const canViewWeekOffs = permissions.includes('WEEK_OFF_VIEW');
+  const canViewNotifications = permissions.includes('NOTIFICATION_VIEW_SELF');
+  const canViewOnlineTeam = permissions.includes('TIMESHEET_VIEW_ONLINE');
+  const canViewOnLeaveTeam = permissions.includes('TIMESHEET_VIEW_ALL');
+  const canViewUpcomingEvents = hasAnyPermission('EMP_SELF_VIEW', 'EMP_VIEW');
+  const canViewPlanning = canViewLeaveBalances || canViewHolidays || canViewWeekOffs;
   const safeAreaInsets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'planning'>('overview');
   const [loading, setLoading] = useState(true);
@@ -221,20 +235,22 @@ function EmployeeDashboardScreen() {
         eventsRes,
         checkInPolicyRes,
       ] = await Promise.all([
-        getApiWithToken<any>(`/timesheets/weekly/my?weekStart=${weekStartIso}`, token),
-        getApiWithToken<any>(`/timesheets/attendance/my?date=${todayIso}`, token),
-        getApiWithToken<any>('/leaves/my', token),
-        getApiWithToken<any>('/leave-balances/my', token),
-        getApiWithToken<any>('/timesheets/online', token),
-        getApiWithToken<any>('/timesheets/on-leave', token),
-        getApiWithToken<any>('/notifications/my?limit=6', token),
-        getApiWithToken<any>(`/holidays?year=${currentYear}`, token),
-        getApiWithToken<any>('/week-offs', token),
-        getApiWithToken<any>(`/timesheets/attendance/matrix/my?month=${currentMonth}`, token),
+        canViewTimesheets ? getApiWithToken<any>(`/timesheets/weekly/my?weekStart=${weekStartIso}`, token) : Promise.resolve(null),
+        canViewTimesheets || canCheckIn || canCheckOut
+          ? getApiWithToken<any>(`/timesheets/attendance/my?date=${todayIso}`, token)
+          : Promise.resolve(null),
+        canViewLeaveBalances ? getApiWithToken<any>('/leaves/my', token) : Promise.resolve(null),
+        canViewLeaveBalances ? getApiWithToken<any>('/leave-balances/my', token) : Promise.resolve(null),
+        canViewOnlineTeam ? getApiWithToken<any>('/timesheets/online', token) : Promise.resolve(null),
+        canViewOnLeaveTeam ? getApiWithToken<any>('/timesheets/on-leave', token) : Promise.resolve(null),
+        canViewNotifications ? getApiWithToken<any>('/notifications/my?limit=6', token) : Promise.resolve(null),
+        canViewHolidays ? getApiWithToken<any>(`/holidays?year=${currentYear}`, token) : Promise.resolve(null),
+        canViewWeekOffs ? getApiWithToken<any>('/week-offs', token) : Promise.resolve(null),
+        canViewAttendance ? getApiWithToken<any>(`/timesheets/attendance/matrix/my?month=${currentMonth}`, token) : Promise.resolve(null),
         getApiWithToken<any>('/employees/me', token),
         organizationId ? getApiWithToken<any>(`/organizations/${organizationId}`, token) : Promise.resolve(null),
-        getApiWithToken<any>('/employees/upcoming-events?days=7', token),
-        getApiWithToken<any>('/timesheets/checkin-policy', token),
+        canViewUpcomingEvents ? getApiWithToken<any>('/employees/upcoming-events?days=7', token) : Promise.resolve(null),
+        canCheckIn ? getApiWithToken<any>('/timesheets/checkin-policy', token) : Promise.resolve(null),
       ]);
 
     if (weeklyRes?.success && weeklyRes?.data) {
@@ -328,13 +344,42 @@ function EmployeeDashboardScreen() {
   };
 
   useEffect(() => {
-    if (!token) return undefined;
-    loadDashboard();
-    const timer = setInterval(() => {
-      loadDashboard(true);
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [weekStart, token]);
+    const unsubscribeFocus = navigation.addListener?.('focus', () => {
+      setProfileMenuOpen(false);
+    });
+    const unsubscribeBlur = navigation.addListener?.('blur', () => {
+      setProfileMenuOpen(false);
+    });
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    if (token) {
+      loadDashboard();
+      timer = setInterval(() => {
+        loadDashboard(true);
+      }, 30000);
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+      unsubscribeFocus?.();
+      unsubscribeBlur?.();
+    };
+  }, [
+    navigation,
+    weekStart,
+    token,
+    canCheckIn,
+    canCheckOut,
+    canViewTimesheets,
+    canViewAttendance,
+    canViewLeaveBalances,
+    canViewHolidays,
+    canViewWeekOffs,
+    canViewNotifications,
+    canViewOnlineTeam,
+    canViewOnLeaveTeam,
+    canViewUpcomingEvents,
+  ]);
 
   const pendingLeaves = useMemo(
     () => (myLeaves || []).filter((l: any) => l?.status === 'pending').length,
@@ -514,6 +559,9 @@ function EmployeeDashboardScreen() {
   };
 
   const handleCheckIn = async () => {
+    if (!canCheckIn) {
+      return;
+    }
     const payload: Record<string, unknown> = {};
     if (checkInPolicy.attendanceGeoFenceEnabled) {
       const ok = await requestLocationPermission();
@@ -550,6 +598,9 @@ function EmployeeDashboardScreen() {
   };
 
   const handleCheckOut = async () => {
+    if (!canCheckOut) {
+      return;
+    }
     setCheckoutLoading(true);
     const res = await postApiWithToken('/timesheets/check-out', {}, token);
     setCheckoutLoading(false);
@@ -584,8 +635,26 @@ function EmployeeDashboardScreen() {
       | 'overview'
       | 'attendance'
       | 'planning';
+    if (nextTab === 'attendance' && !canViewAttendance) {
+      setActiveTab(canViewPlanning ? 'planning' : 'overview');
+      return;
+    }
+    if (nextTab === 'planning' && !canViewPlanning) {
+      setActiveTab(canViewAttendance ? 'attendance' : 'overview');
+      return;
+    }
     setActiveTab(nextTab);
-  }, [route?.params?.initialTab]);
+  }, [route?.params?.initialTab, canViewAttendance, canViewPlanning]);
+
+  useEffect(() => {
+    if (activeTab === 'attendance' && !canViewAttendance) {
+      setActiveTab(canViewPlanning ? 'planning' : 'overview');
+      return;
+    }
+    if (activeTab === 'planning' && !canViewPlanning) {
+      setActiveTab(canViewAttendance ? 'attendance' : 'overview');
+    }
+  }, [activeTab, canViewAttendance, canViewPlanning]);
 
   useEffect(() => {
     if (!loginSuccessMessage) return;
@@ -641,24 +710,26 @@ function EmployeeDashboardScreen() {
                 </View>
               </View>
               <View style={styles.topBarRight}>
-                <Pressable
-                  style={({ pressed }) => [styles.iconButton, pressed && styles.surfacePressed]}
-                  onPress={() => {
-                    setProfileMenuOpen(false);
-                    const parentNavigation = navigation.getParent?.();
-                    if (parentNavigation?.push) {
-                      parentNavigation.push('Notifications');
-                      return;
-                    }
-                    if (navigation.push) {
-                      navigation.push('Notifications');
-                      return;
-                    }
-                    navigation.navigate('Notifications');
-                  }}
-                >
-                  <MaterialCommunityIcons name="bell-outline" size={18} color="#0f172a" />
-                </Pressable>
+                {canViewNotifications && (
+                  <Pressable
+                    style={({ pressed }) => [styles.iconButton, pressed && styles.surfacePressed]}
+                    onPress={() => {
+                      setProfileMenuOpen(false);
+                      const parentNavigation = navigation.getParent?.();
+                      if (parentNavigation?.push) {
+                        parentNavigation.push('Notifications');
+                        return;
+                      }
+                      if (navigation.push) {
+                        navigation.push('Notifications');
+                        return;
+                      }
+                      navigation.navigate('Notifications');
+                    }}
+                  >
+                    <MaterialCommunityIcons name="bell-outline" size={18} color="#0f172a" />
+                  </Pressable>
+                )}
                 <Pressable
                   style={({ pressed }) => [styles.avatar, pressed && styles.surfacePressed]}
                   onPress={() => setProfileMenuOpen((current) => !current)}
@@ -711,129 +782,153 @@ function EmployeeDashboardScreen() {
                       <Text style={styles.cardSubText}>
                         Shift: {shiftNameText} ({shiftTimeText})
                       </Text>
-                      <View style={styles.actionRow}>
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.primaryAction,
-                            isCheckedIn && styles.primaryActionInactive,
-                            pressed && styles.surfacePressed,
-                            isCheckedIn && styles.primaryDisabled,
-                          ]}
-                          onPress={handleCheckIn}
-                          disabled={checkinLoading || isCheckedIn}
-                        >
-                          <LinearGradient
-                            colors={isCheckedIn ? ['#ffffff', '#f7f9fd'] : ['#5a7bea', '#456bde', '#3559cc']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 0, y: 1 }}
-                            style={styles.primaryActionInner}
-                          >
-                            {checkinLoading ? (
-                              <ActivityIndicator color={isCheckedIn ? '#94a3b8' : '#fff'} />
-                            ) : (
-                              <MaterialCommunityIcons
-                                name="login"
-                                size={16}
-                                color={isCheckedIn ? '#94a3b8' : '#fff'}
-                              />
-                            )}
-                            <Text style={[styles.primaryActionText, isCheckedIn && styles.primaryActionTextInactive]}>Check In</Text>
-                          </LinearGradient>
-                        </Pressable>
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.secondaryAction,
-                            isCheckedIn && styles.secondaryActionActive,
-                            pressed && styles.surfacePressed,
-                            !isCheckedIn && styles.secondaryDisabled,
-                          ]}
-                          onPress={handleCheckOut}
-                          disabled={checkoutLoading || !isCheckedIn}
-                        >
-                          <LinearGradient
-                            colors={isCheckedIn ? ['#5a7bea', '#456bde', '#3559cc'] : ['#ffffff', '#f7f9fd']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 0, y: 1 }}
-                            style={styles.secondaryActionInner}
-                          >
-                            {checkoutLoading ? (
-                              <ActivityIndicator color={isCheckedIn ? '#fff' : '#64748b'} />
-                            ) : (
-                              <MaterialCommunityIcons
-                                name="logout"
-                                size={16}
-                                color={isCheckedIn ? '#fff' : '#0f172a'}
-                              />
-                            )}
-                            <Text style={[styles.secondaryActionText, isCheckedIn && styles.secondaryActionTextActive]}>Check Out</Text>
-                          </LinearGradient>
-                        </Pressable>
-                      </View>
-                      <View style={styles.actionRow}>
-                        <Pressable
-                          style={({ pressed }) => [styles.secondaryAction, pressed && styles.surfacePressed]}
-                          onPress={() => navigation.navigate('Leaves', { openApplyModal: true })}
-                        >
-                          <LinearGradient
-                            colors={['#ffffff', '#f7f9fd']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 0, y: 1 }}
-                            style={styles.secondaryActionInner}
-                          >
-                            <Text style={styles.secondaryActionText}>Apply Leave</Text>
-                          </LinearGradient>
-                        </Pressable>
-                        <Pressable
-                          style={({ pressed }) => [styles.secondaryAction, pressed && styles.surfacePressed]}
-                          onPress={() => navigation.navigate('Timesheets')}
-                        >
-                          <LinearGradient
-                            colors={['#ffffff', '#f7f9fd']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 0, y: 1 }}
-                            style={styles.secondaryActionInner}
-                          >
-                            <Text style={styles.secondaryActionText}>Timesheet</Text>
-                          </LinearGradient>
-                        </Pressable>
-                      </View>
+                      {(canCheckIn || canCheckOut) && (
+                        <View style={styles.actionRow}>
+                          {canCheckIn && (
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.primaryAction,
+                                isCheckedIn && styles.primaryActionInactive,
+                                pressed && styles.surfacePressed,
+                                isCheckedIn && styles.primaryDisabled,
+                              ]}
+                              onPress={handleCheckIn}
+                              disabled={checkinLoading || isCheckedIn}
+                            >
+                              <LinearGradient
+                                colors={isCheckedIn ? ['#ffffff', '#f7f9fd'] : ['#5a7bea', '#456bde', '#3559cc']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 0, y: 1 }}
+                                style={styles.primaryActionInner}
+                              >
+                                {checkinLoading ? (
+                                  <ActivityIndicator color={isCheckedIn ? '#94a3b8' : '#fff'} />
+                                ) : (
+                                  <MaterialCommunityIcons
+                                    name="login"
+                                    size={16}
+                                    color={isCheckedIn ? '#94a3b8' : '#fff'}
+                                  />
+                                )}
+                                <Text style={[styles.primaryActionText, isCheckedIn && styles.primaryActionTextInactive]}>Check In</Text>
+                              </LinearGradient>
+                            </Pressable>
+                          )}
+                          {canCheckOut && (
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.secondaryAction,
+                                isCheckedIn && styles.secondaryActionActive,
+                                pressed && styles.surfacePressed,
+                                !isCheckedIn && styles.secondaryDisabled,
+                              ]}
+                              onPress={handleCheckOut}
+                              disabled={checkoutLoading || !isCheckedIn}
+                            >
+                              <LinearGradient
+                                colors={isCheckedIn ? ['#5a7bea', '#456bde', '#3559cc'] : ['#ffffff', '#f7f9fd']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 0, y: 1 }}
+                                style={styles.secondaryActionInner}
+                              >
+                                {checkoutLoading ? (
+                                  <ActivityIndicator color={isCheckedIn ? '#fff' : '#64748b'} />
+                                ) : (
+                                  <MaterialCommunityIcons
+                                    name="logout"
+                                    size={16}
+                                    color={isCheckedIn ? '#fff' : '#0f172a'}
+                                  />
+                                )}
+                                <Text style={[styles.secondaryActionText, isCheckedIn && styles.secondaryActionTextActive]}>Check Out</Text>
+                              </LinearGradient>
+                            </Pressable>
+                          )}
+                        </View>
+                      )}
+                      {(canApplyLeave || canViewTimesheets) && (
+                        <View style={styles.actionRow}>
+                          {canApplyLeave && (
+                            <Pressable
+                              style={({ pressed }) => [styles.secondaryAction, pressed && styles.surfacePressed]}
+                              onPress={() => navigation.navigate('Leaves', { openApplyModal: true })}
+                            >
+                              <LinearGradient
+                                colors={['#ffffff', '#f7f9fd']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 0, y: 1 }}
+                                style={styles.secondaryActionInner}
+                              >
+                                <Text style={styles.secondaryActionText}>Apply Leave</Text>
+                              </LinearGradient>
+                            </Pressable>
+                          )}
+                          {canViewTimesheets && (
+                            <Pressable
+                              style={({ pressed }) => [styles.secondaryAction, pressed && styles.surfacePressed]}
+                              onPress={() => navigation.navigate('Timesheets')}
+                            >
+                              <LinearGradient
+                                colors={['#ffffff', '#f7f9fd']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 0, y: 1 }}
+                                style={styles.secondaryActionInner}
+                              >
+                                <Text style={styles.secondaryActionText}>Timesheet</Text>
+                              </LinearGradient>
+                            </Pressable>
+                          )}
+                        </View>
+                      )}
                     </View>
 
                     <View style={styles.statsGrid}>
-                      <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>Leave Balance</Text>
-                        <Text style={[styles.statValue, styles.statValueBlue]}>{totalLeaveRemaining.toFixed(1)}</Text>
-                        <Text style={styles.cardSubText}>Total remaining</Text>
-                      </View>
-                      <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>Team</Text>
-                        <Text style={[styles.statValue, styles.statValueGreen]}>{onlineList.length}</Text>
-                        <Text style={styles.cardSubText}>Online now</Text>
-                      </View>
-                      <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>Pending Requests</Text>
-                        <Text style={[styles.statValue, styles.statValueAmber]}>{pendingLeaves + pendingTimesheets}</Text>
-                        <View style={styles.pendingRequestMeta}>
-                          <View style={styles.pendingRequestMetaItem}>
-                            <Text style={styles.pendingRequestMetaLabel}>Leaves : </Text>
-                            <Text style={styles.pendingRequestMetaValue}>{pendingLeaves}</Text>
-                          </View>
-                          <View style={styles.pendingRequestMetaItem}>
-                            <Text style={styles.pendingRequestMetaLabel}>Timesheets : </Text>
-                            <Text style={styles.pendingRequestMetaValue}>{pendingTimesheets}</Text>
+                      {canViewLeaveBalances && (
+                        <View style={styles.statCard}>
+                          <Text style={styles.statLabel}>Leave Balance</Text>
+                          <Text style={[styles.statValue, styles.statValueBlue]}>{totalLeaveRemaining.toFixed(1)}</Text>
+                          <Text style={styles.cardSubText}>Total remaining</Text>
+                        </View>
+                      )}
+                      {canViewOnlineTeam && (
+                        <View style={styles.statCard}>
+                          <Text style={styles.statLabel}>Team</Text>
+                          <Text style={[styles.statValue, styles.statValueGreen]}>{onlineList.length}</Text>
+                          <Text style={styles.cardSubText}>Online now</Text>
+                        </View>
+                      )}
+                      {(canViewLeaveBalances || canViewTimesheets) && (
+                        <View style={styles.statCard}>
+                          <Text style={styles.statLabel}>Pending Requests</Text>
+                          <Text style={[styles.statValue, styles.statValueAmber]}>{pendingLeaves + pendingTimesheets}</Text>
+                          <View style={styles.pendingRequestMeta}>
+                            {canViewLeaveBalances && (
+                              <View style={styles.pendingRequestMetaItem}>
+                                <Text style={styles.pendingRequestMetaLabel}>Leaves : </Text>
+                                <Text style={styles.pendingRequestMetaValue}>{pendingLeaves}</Text>
+                              </View>
+                            )}
+                            {canViewTimesheets && (
+                              <View style={styles.pendingRequestMetaItem}>
+                                <Text style={styles.pendingRequestMetaLabel}>Timesheets : </Text>
+                                <Text style={styles.pendingRequestMetaValue}>{pendingTimesheets}</Text>
+                              </View>
+                            )}
                           </View>
                         </View>
-                      </View>
-                      <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>On Leave Today</Text>
-                        <Text style={[styles.statValue, styles.statValueRed]}>{onLeaveList.length}</Text>
-                        <Text style={styles.cardSubText}>Employees</Text>
-                      </View>
+                      )}
+                      {canViewOnLeaveTeam && (
+                        <View style={styles.statCard}>
+                          <Text style={styles.statLabel}>On Leave Today</Text>
+                          <Text style={[styles.statValue, styles.statValueRed]}>{onLeaveList.length}</Text>
+                          <Text style={styles.cardSubText}>Employees</Text>
+                        </View>
+                      )}
                     </View>
                   </>
                 )}
 
-                {activeTab === 'overview' && (
+                {activeTab === 'overview' && canViewUpcomingEvents && (
                   <>
                     <View style={styles.card}>
                       <View style={styles.cardHeader}>
@@ -868,7 +963,7 @@ function EmployeeDashboardScreen() {
                   </>
                 )}
 
-                {activeTab === 'attendance' && (
+                {activeTab === 'attendance' && canViewAttendance && (
                   <AttendanceTab
                     matrixDays={matrixDays}
                     daysInMonth={daysInMonth}
@@ -880,53 +975,65 @@ function EmployeeDashboardScreen() {
                   />
                 )}
                 
-                {activeTab === 'planning' && (
+                {activeTab === 'planning' && canViewPlanning && (
                   <>
-                    <View style={styles.card}>
-                      <Text style={styles.cardTitle}>Leave Balances</Text>
-                      {leaveBalances.length === 0 && (
-                        <Text style={styles.cardSubText}>No balances found</Text>
-                      )}
-                      {leaveBalances.map((b: any) => (
-                        <View key={b?.leaveTypeId || Math.random()} style={styles.noticeCard}>
-                          <View style={styles.leaveRow}>
-                            <Text style={styles.noticeTitle}>{b?.leaveType || ''}</Text>
-                            <Text style={styles.noticeText}>
-                              {Number(b?.remaining || 0).toFixed(1)}/{Number(b?.total || 0).toFixed(1)}
+                    {canViewLeaveBalances && (
+                      <View style={styles.card}>
+                        <Text style={styles.cardTitle}>Leave Balances</Text>
+                        {leaveBalances.length === 0 && (
+                          <Text style={styles.cardSubText}>No balances found</Text>
+                        )}
+                        {leaveBalances.map((b: any) => (
+                          <View key={b?.leaveTypeId || Math.random()} style={styles.noticeCard}>
+                            <View style={styles.leaveRow}>
+                              <Text style={styles.noticeTitle}>{b?.leaveType || ''}</Text>
+                              <Text style={styles.noticeText}>
+                                {Number(b?.remaining || 0).toFixed(1)}/{Number(b?.total || 0).toFixed(1)}
+                              </Text>
+                            </View>
+                            <Text style={styles.cardSubText}>
+                              Used: {Number(b?.used || 0).toFixed(1)} | Pending:{' '}
+                              {Number(b?.pending || 0).toFixed(1)}
                             </Text>
                           </View>
-                          <Text style={styles.cardSubText}>
-                            Used: {Number(b?.used || 0).toFixed(1)} | Pending:{' '}
-                            {Number(b?.pending || 0).toFixed(1)}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
+                        ))}
+                      </View>
+                    )}
 
-                    <View style={styles.card}>
-                      <Text style={styles.cardTitle}>Upcoming Holidays</Text>
-                      {upcomingHolidays.length === 0 && (
-                        <Text style={styles.cardSubText}>No upcoming holidays</Text>
-                      )}
-                      {upcomingHolidays.map((h: any) => (
-                        <View key={h?._id || Math.random()} style={styles.eventRow}>
-                          <Text style={styles.eventName}>{h?.name || ''}</Text>
-                          <Text style={styles.eventMeta}>{h?.date ? formatDate(h.date) : ''}</Text>
-                        </View>
-                      ))}
-                      <Text style={styles.sectionTitle}>Week Off Days</Text>
-                      <View style={styles.weekOffRow}>
-                        {weekOffDays.length === 0 ? (
-                          <Text style={styles.cardSubText}>Not configured</Text>
-                        ) : (
-                          weekOffDays.map((d) => (
-                            <View key={d} style={styles.weekOffPill}>
-                              <Text style={styles.weekOffText}>{dayNames[d]}</Text>
+                    {(canViewHolidays || canViewWeekOffs) && (
+                      <View style={styles.card}>
+                        {canViewHolidays && (
+                          <>
+                            <Text style={styles.cardTitle}>Upcoming Holidays</Text>
+                            {upcomingHolidays.length === 0 && (
+                              <Text style={styles.cardSubText}>No upcoming holidays</Text>
+                            )}
+                            {upcomingHolidays.map((h: any) => (
+                              <View key={h?._id || Math.random()} style={styles.eventRow}>
+                                <Text style={styles.eventName}>{h?.name || ''}</Text>
+                                <Text style={styles.eventMeta}>{h?.date ? formatDate(h.date) : ''}</Text>
+                              </View>
+                            ))}
+                          </>
+                        )}
+                        {canViewWeekOffs && (
+                          <>
+                            <Text style={styles.sectionTitle}>Week Off Days</Text>
+                            <View style={styles.weekOffRow}>
+                              {weekOffDays.length === 0 ? (
+                                <Text style={styles.cardSubText}>Not configured</Text>
+                              ) : (
+                                weekOffDays.map((d) => (
+                                  <View key={d} style={styles.weekOffPill}>
+                                    <Text style={styles.weekOffText}>{dayNames[d]}</Text>
+                                  </View>
+                                ))
+                              )}
                             </View>
-                          ))
+                          </>
                         )}
                       </View>
-                    </View>
+                    )}
                   </>
                 )}
 
