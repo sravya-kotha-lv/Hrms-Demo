@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { getApiWithToken } from '../services/api';
 import {
   clearStoredSession,
   loadStoredSession,
@@ -18,6 +19,7 @@ type AuthContextValue = {
   updateProfile: (profile: any | null) => void;
   updatePermissions: (permissions: string[]) => void;
   updateToken: (token: string) => void;
+  refreshPermissions: () => Promise<string[]>;
   logout: () => void;
   sessionExpiredMessage: string | null;
   setSessionExpiredMessage: (message: string | null) => void;
@@ -32,6 +34,25 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const normalizePermissions = (permissions: any): string[] => {
+  if (!Array.isArray(permissions)) {
+    return [];
+  }
+
+  return permissions
+    .map((permission) => {
+      if (typeof permission === 'string') {
+        return permission.trim();
+      }
+      if (permission && typeof permission === 'object') {
+        const code = permission.code || permission.slug || permission.name || '';
+        return typeof code === 'string' ? code.trim() : '';
+      }
+      return '';
+    })
+    .filter(Boolean);
+};
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSessionState] = useState<SessionPayload | null>(null);
@@ -62,10 +83,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const setSession = useCallback((payload: SessionPayload | null) => {
-    setSessionState(payload);
+    const normalizedPayload = payload
+      ? { ...payload, permissions: normalizePermissions(payload.permissions) }
+      : null;
+    setSessionState(normalizedPayload);
 
-    if (payload) {
-      void storeSession(payload);
+    if (normalizedPayload) {
+      void storeSession(normalizedPayload);
       return;
     }
 
@@ -90,7 +114,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return current;
       }
 
-      const nextSession = { ...current, permissions };
+      const nextSession = { ...current, permissions: normalizePermissions(permissions) };
       void storeSession(nextSession);
       return nextSession;
     });
@@ -108,6 +132,36 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
   };
 
+  const refreshPermissions = useCallback(async () => {
+    if (!session?.token) {
+      return [];
+    }
+
+    const response = await getApiWithToken<any>('/users/me/permissions', session.token);
+    const nextPermissions = response?.success ? normalizePermissions(response.data || []) : [];
+
+    setSessionState((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const currentPermissions = normalizePermissions(current.permissions);
+      const hasSamePermissions =
+        currentPermissions.length === nextPermissions.length &&
+        currentPermissions.every((permission, index) => permission === nextPermissions[index]);
+
+      if (hasSamePermissions) {
+        return current;
+      }
+
+      const nextSession = { ...current, permissions: nextPermissions };
+      void storeSession(nextSession);
+      return nextSession;
+    });
+
+    return nextPermissions;
+  }, [session?.token]);
+
   const logout = () => setSession(null);
 
   const clearSessionExpiredMessage = () => setSessionExpiredMessage(null);
@@ -121,6 +175,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       updateProfile,
       updatePermissions,
       updateToken,
+      refreshPermissions,
       logout,
       sessionExpiredMessage,
       setSessionExpiredMessage,
@@ -133,7 +188,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       clearLogoutSuccessMessage,
       authReady,
     }),
-    [session, setSession, sessionExpiredMessage, loginSuccessMessage, logoutSuccessMessage, authReady]
+    [session, setSession, sessionExpiredMessage, loginSuccessMessage, logoutSuccessMessage, authReady, refreshPermissions]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

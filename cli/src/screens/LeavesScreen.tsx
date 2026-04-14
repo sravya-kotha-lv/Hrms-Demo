@@ -82,6 +82,7 @@ function LeavesScreen() {
   const scrollViewRef = useRef<ScrollView | null>(null);
   const { session } = useAuth();
   const token = session?.token || '';
+  const permissions = session?.permissions || [];
   const safeAreaInsets = useSafeAreaInsets();
   const now = new Date();
 
@@ -91,7 +92,11 @@ function LeavesScreen() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [filterMenuPosition, setFilterMenuPosition] = useState({ top: 112, left: 16, width: 140 });
+  const [filterMenuPosition, setFilterMenuPosition] = useState({
+    top: 112,
+    left: 16,
+    width: 140,
+  });
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>(
     'all'
   );
@@ -121,6 +126,7 @@ function LeavesScreen() {
   const [miniCalendarField, setMiniCalendarField] = useState<'from' | 'to' | null>(null);
   const [selectedLeave, setSelectedLeave] = useState<any | null>(null);
   const [detailsVisible, setDetailsVisible] = useState(false);
+  const canApplyLeave = permissions.includes('LEAVE_APPLY');
 
   const loadData = async () => {
     setLoading(true);
@@ -197,11 +203,13 @@ function LeavesScreen() {
       const state = navigation.getState();
       const currentRoute = state.routes?.[state.index];
       const shouldOpenModal = currentRoute?.params?.openApplyModal;
-      if (shouldOpenModal) {
+      if (shouldOpenModal && canApplyLeave) {
         setApplyOpen(true);
         navigation.setParams({ openApplyModal: undefined });
+        return;
       }
-    }, [navigation])
+      if (shouldOpenModal) navigation.setParams({ openApplyModal: undefined });
+    }, [canApplyLeave, navigation])
   );
 
   useEffect(() => {
@@ -227,6 +235,10 @@ function LeavesScreen() {
   }, [duration, fromDate, fromDateInput, activeDateField]);
 
   const applyLeave = async () => {
+    if (!canApplyLeave) {
+      setError('You do not have permission to apply leave.');
+      return;
+    }
     const effectiveToDate = duration === 'half_day' ? fromDate : toDate;
 
     if (!leaveTypeId || !fromDate || !effectiveToDate || !reason) {
@@ -520,6 +532,7 @@ function LeavesScreen() {
     const buttonTop = pageY - locationY;
 
     setFilterMenuPosition((prev) => ({
+      ...prev,
       top: buttonTop + 40 + 6,
       left: buttonLeft,
       width: Math.max(prev.width, 140),
@@ -592,7 +605,7 @@ function LeavesScreen() {
                   style={styles.filterButton}
                   onPress={openStatusFilter}
                 >
-                  <View style={styles.filterButtonInner}>
+                  <View style={styles.filterButtonInner} pointerEvents="none">
                     <Text
                       style={styles.filterText}
                       numberOfLines={1}
@@ -612,15 +625,17 @@ function LeavesScreen() {
                 <Text style={styles.refreshText}>Refresh</Text>
               </LinearGradient>
             </Pressable>
-            <Pressable style={styles.applyButton} onPress={() => setApplyOpen(true)}>
-              <LinearGradient colors={['#2563eb', '#2563eb', '#1d4ed8']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.applyButtonInner}>
-                {submitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Apply Leave</Text>
-                )}
-              </LinearGradient>
-            </Pressable>
+            {canApplyLeave && (
+              <Pressable style={styles.applyButton} onPress={() => setApplyOpen(true)}>
+                <LinearGradient colors={['#2563eb', '#2563eb', '#1d4ed8']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.applyButtonInner}>
+                  {submitting ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Apply Leave</Text>
+                  )}
+                </LinearGradient>
+              </Pressable>
+            )}
           </View>
         </View>
 
@@ -842,7 +857,7 @@ function LeavesScreen() {
         </Pressable>
       </Modal>
 
-      <Modal visible={applyOpen} transparent animationType="fade">
+      <Modal visible={canApplyLeave && applyOpen} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <LinearGradient colors={['#f8fafc', '#f7f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.modalCard}>
             <View style={styles.modalHeader}>

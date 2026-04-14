@@ -105,14 +105,37 @@ type TabIconProps = {
 
 function EmployeeTabs() {
   const insets = useSafeAreaInsets();
-  const { session } = useAuth();
+  const { session, refreshPermissions } = useAuth();
   const profile = session?.profile || session?.loginData || null;
+  const permissions = session?.permissions || [];
   const profileImage = profile?.profileImage || profile?.profilePhoto || null;
   const initials =
     ((profile?.firstName?.[0] || '') + (profile?.lastName?.[0] || '') ||
       profile?.email?.[0] ||
       'U')
       .toUpperCase();
+  const hasAnyPermission = (...codes: string[]) => codes.some((code) => permissions.includes(code));
+  const canViewAttendanceTab = hasAnyPermission('ATTENDANCE_VIEW_SELF', 'TIMESHEET_VIEW_SELF');
+  const canViewLeavesTab = hasAnyPermission('LEAVE_VIEW_SELF', 'LEAVE_VIEW_ALL', 'LEAVE_APPLY');
+  const canViewTimesheetsTab = hasAnyPermission(
+    'TIMESHEET_VIEW_SELF',
+    'TIMESHEET_VIEW_ALL',
+    'TIMESHEET_CHECKIN_SELF',
+    'TIMESHEET_CHECKOUT_SELF'
+  );
+
+  useEffect(() => {
+    if (!session?.token) {
+      return undefined;
+    }
+
+    refreshPermissions();
+    const timer = setInterval(() => {
+      refreshPermissions();
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, [session?.token, refreshPermissions]);
 
   return (
     <LinearGradient colors={['#dbeafe', '#eef2ff', '#e0f2fe']} style={{ flex: 1 }}>
@@ -153,32 +176,36 @@ function EmployeeTabs() {
           },
         }}
       >
-        <Tabs.Screen
-          name="Attendance"
-          component={AttendanceScreen}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <TabIcon
-                focused={focused}
-                icon="clipboard-check-outline"
-                activeIcon="clipboard-check"
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="Leaves"
-          component={LeavesScreen}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <TabIcon
-                focused={focused}
-                icon="calendar-remove-outline"
-                activeIcon="calendar-remove"
-              />
-            ),
-          }}
-        />
+        {canViewAttendanceTab ? (
+          <Tabs.Screen
+            name="Attendance"
+            component={AttendanceScreen}
+            options={{
+              tabBarIcon: ({ focused }) => (
+                <TabIcon
+                  focused={focused}
+                  icon="clipboard-check-outline"
+                  activeIcon="clipboard-check"
+                />
+              ),
+            }}
+          />
+        ) : null}
+        {canViewLeavesTab ? (
+          <Tabs.Screen
+            name="Leaves"
+            component={LeavesScreen}
+            options={{
+              tabBarIcon: ({ focused }) => (
+                <TabIcon
+                  focused={focused}
+                  icon="calendar-remove-outline"
+                  activeIcon="calendar-remove"
+                />
+              ),
+            }}
+          />
+        ) : null}
         <Tabs.Screen
           name="Dashboard"
           component={EmployeeDashboardScreen}
@@ -193,19 +220,21 @@ function EmployeeTabs() {
             ),
           }}
         />
-        <Tabs.Screen
-          name="Timesheets"
-          component={TimesheetsScreen}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <TabIcon
-                focused={focused}
-                icon="clipboard-text-outline"
-                activeIcon="clipboard-text"
-              />
-            ),
-          }}
-        />
+        {canViewTimesheetsTab ? (
+          <Tabs.Screen
+            name="Timesheets"
+            component={TimesheetsScreen}
+            options={{
+              tabBarIcon: ({ focused }) => (
+                <TabIcon
+                  focused={focused}
+                  icon="clipboard-text-outline"
+                  activeIcon="clipboard-text"
+                />
+              ),
+            }}
+          />
+        ) : null}
         <Tabs.Screen
           name="Profile"
           component={ProfileScreen}
