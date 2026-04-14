@@ -49,26 +49,33 @@ exports.create = async (req) => {
 };
 
 exports.update = async (req) => {
-  const department = await Department.findOne({
+  const filter = {
     _id: req.params.id,
     organizationId: req.user.organizationId
-  });
+  };
+  const before = await Department.collection.findOne(filter);
 
-  if (!department) {
+  if (!before) {
     throw { code: 404, message: "Department not found" };
   }
 
-  const before = department.toObject();
-  Object.assign(department, req.body);
-  await department.save();
+  const updateDoc = { ...req.body };
+  if (updateDoc.status === "active") {
+    updateDoc.isDeleted = false;
+    updateDoc.deletedAt = null;
+    updateDoc.deletedBy = null;
+  }
+
+  await Department.updateOne(filter, { $set: updateDoc });
+  const department = await Department.collection.findOne(filter);
 
   await audit({
     req,
     module: "departments",
     action: "UPDATE",
-    entityId: department._id,
+    entityId: before._id,
     before,
-    after: department.toObject()
+    after: department
   });
 
   return department;
@@ -77,7 +84,8 @@ exports.update = async (req) => {
 exports.remove = async (req) => {
   const department = await Department.findOne({
     _id: req.params.id,
-    organizationId: req.user.organizationId
+    organizationId: req.user.organizationId,
+    isDeleted: false
   });
 
   if (!department) {
@@ -86,26 +94,49 @@ exports.remove = async (req) => {
 
   const before = department.toObject();
 
-  department.isDeleted = true;
-  department.deletedAt = new Date();
-  department.deletedBy = req.user?.userId || req.user?._id;
+  department.status = "inactive";
   await department.save();
 
-  // await audit({
-  //   req,
-  //   module: "departments",
-  //   action: "DELETE",
-  //   entityId: department._id,
-  //   before,
-  //   after: department.toObject()
-  // });
+  await audit({
+    req,
+    module: "departments",
+    action: "DELETE",
+    entityId: department._id,
+    before,
+    after: department.toObject()
+  });
 };
 
 exports.list = async (req) => {
   const isSuperAdmin = await OrganizationService.isUserSuperAdmin(req.user.userId);
   const requestedOrgId = req.query.organizationId;
+  const organizationId = isSuperAdmin && requestedOrgId ? requestedOrgId : req.user.organizationId;
+  const includeInactive = String(req.query.includeInactive || "").toLowerCase() === "true";
+  const match = {
+    organizationId
+  };
 
-  return Department.find({
-    organizationId: isSuperAdmin && requestedOrgId ? requestedOrgId : req.user.organizationId
-  }).sort({ name: 1 });
+  if (!includeInactive) {
+    match.isDeleted = false;
+    match.status = "active";
+  }
+
+  const departments = await Department.aggregate([
+    { $match: match },
+    {
+      $addFields: {
+        status: {
+          $cond: [{ $eq: ["$isDeleted", true] }, "inactive", "$status"]
+        }
+      }
+    },
+    {
+      $sort: {
+        status: 1,
+        name: 1
+      }
+    }
+  ]);
+
+  return departments;
 };

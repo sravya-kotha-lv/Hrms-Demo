@@ -72,7 +72,7 @@ const Designations = () => {
   /* ================= FETCH ================= */
 
   const fetchDesignations = async () => {
-    const res = await getApiWithToken("/designations", null, {
+    const res = await getApiWithToken("/designations?includeInactive=true", null, {
       requiredPermissions: ["DESIG_VIEW"]
     });
     if (res?.skipped) {
@@ -107,7 +107,7 @@ const Designations = () => {
   /* ================= DELETE ================= */
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this designation?")) return;
+    if (!window.confirm("Mark this designation as inactive?")) return;
     if (!canDelete) {
       toast.error("You do not have permission to delete");
       return;
@@ -115,7 +115,7 @@ const Designations = () => {
 
     const res = await deleteApiWithToken(`/designations/${id}`);
     if (res?.success) {
-      toast.success("Designation deleted");
+      toast.success("Designation marked as inactive");
       fetchDesignations();
     } else {
       toast.error(res?.message || "Delete failed");

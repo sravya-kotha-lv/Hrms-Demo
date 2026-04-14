@@ -62,7 +62,7 @@ const Departments = () => {
   /* ================= FETCH ================= */
 
   const fetchDepartments = async () => {
-    const response = await getApiWithToken("/departments", null, {
+    const response = await getApiWithToken("/departments?includeInactive=true", null, {
       requiredPermissions: ["DEPT_VIEW"]
     });
     if (response?.skipped) {
@@ -84,7 +84,7 @@ const Departments = () => {
   /* ================= DELETE ================= */
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this department?")) return;
+    if (!window.confirm("Mark this department as inactive?")) return;
     if (!canDelete) {
       toast.error("You do not have permission to delete");
       return;
@@ -93,7 +93,7 @@ const Departments = () => {
     const res = await deleteApiWithToken(`/departments/${id}`);
 
     if (res?.code === 200) {
-      toast.success("Department deleted");
+      toast.success("Department marked as inactive");
       fetchDepartments();
     } else {
       toast.error(res?.message || "Delete failed");
