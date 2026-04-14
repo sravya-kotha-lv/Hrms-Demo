@@ -74,3 +74,10 @@ test("no-op override is detected when present is saved for an already present da
     false
   );
 });
+
+test("overtime is only counted after exceeding configured daily hours", () => {
+  assert.equal(__private__.resolveOvertimeMinutes(480, 8), 0);
+  assert.equal(__private__.resolveOvertimeMinutes(500, 8), 20);
+  assert.equal(__private__.resolveOvertimeMinutes(450, 8), 0);
+  assert.equal(__private__.resolveOvertimeMinutes(540, 9), 0);
+});

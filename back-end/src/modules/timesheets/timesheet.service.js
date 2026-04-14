@@ -1034,6 +1034,11 @@ const resolveWorkedMinutesForMatrixStatus = (attendanceRow, now = new Date()) =>
   return Math.max(0, Math.round((shiftEndAt.getTime() - checkInAt.getTime()) / 60000));
 };
 
+const resolveOvertimeMinutes = (totalMinutes, minWorkHoursPerDay = 8) => {
+  const requiredMinutes = Math.max(0, Math.round(Number(minWorkHoursPerDay || 0) * 60));
+  return Math.max(0, Math.round(Number(totalMinutes || 0) - requiredMinutes));
+};
+
 const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8, now = new Date() }) => {
   const isOpenSession = Boolean(attendanceRow?.checkInAt && !attendanceRow?.checkOutAt);
   const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : null;
@@ -2305,6 +2310,10 @@ exports.getAttendanceMatrix = async (req) => {
       minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
       minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
     });
+    const overtimeMinutes = resolveOvertimeMinutes(
+      Number(row.totalMinutes || 0),
+      Number(orgSettings?.minWorkHoursPerDay ?? 8)
+    );
     attendanceMap.set(key, {
       status,
       checkInAt: row.checkInAt || null,
@@ -2326,7 +2335,7 @@ exports.getAttendanceMatrix = async (req) => {
       lateByMinutes: Number(row.lateByMinutes || 0),
       earlyLoginByMinutes: Number(row.earlyLoginByMinutes || 0),
       earlyCheckoutByMinutes: Number(row.earlyCheckoutByMinutes || 0),
-      overtimeMinutes: Number(row.overtimeMinutes || 0)
+      overtimeMinutes
     });
 
     if (isActiveOvernightSession(row, organizationTimeZone)) {
@@ -2559,6 +2568,10 @@ exports.getMyAttendanceMatrix = async (req) => {
       minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
       minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
     });
+    const overtimeMinutes = resolveOvertimeMinutes(
+      Number(row.totalMinutes || 0),
+      Number(orgSettings?.minWorkHoursPerDay ?? 8)
+    );
     days[day] = {
       ...days[day],
       status,
@@ -2581,7 +2594,7 @@ exports.getMyAttendanceMatrix = async (req) => {
       lateByMinutes: Number(row.lateByMinutes || 0),
       earlyLoginByMinutes: Number(row.earlyLoginByMinutes || 0),
       earlyCheckoutByMinutes: Number(row.earlyCheckoutByMinutes || 0),
-      overtimeMinutes: Number(row.overtimeMinutes || 0)
+      overtimeMinutes
     };
 
     if (isActiveOvernightSession(row, organizationTimeZone)) {
@@ -4036,5 +4049,6 @@ exports.__private__ = {
   getAttendanceRowDayKey,
   getAttendanceRowNormalizedDate,
   mergeAttendanceRowsByEmployeeDay,
-  isNoOpAttendanceOverride
+  isNoOpAttendanceOverride,
+  resolveOvertimeMinutes
 };
