@@ -61,6 +61,21 @@ const EMPLOYEE_DEFAULT_CODES = [
   ...(ACCESS_GROUPS.find((group) => group.label === "Employee (Self)")?.codes || [])
 ];
 
+const MANAGER_DEFAULT_CODES = [
+  ...EMPLOYEE_DEFAULT_CODES,
+  "EMP_VIEW",
+  "ATTENDANCE_VIEW_ALL",
+  "ATTENDANCE_MANAGE",
+  ...(ACCESS_GROUPS.find((group) => group.label === "Manager (Approve)")?.codes || [])
+];
+
+const normalizeRoleSlug = (value: string | null | undefined) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-")
+    .replace(/-+/g, "-");
+
 const Permissions = () => {
   const { hasAnyPermission } = useAuth();
   const [roles, setRoles] = useState<RoleRow[]>([]);
@@ -249,6 +264,70 @@ const Permissions = () => {
     toast.success("Default permissions added to Employee (pending save)");
   };
 
+  const handleGrantDefaultPermissionsToAllRoles = () => {
+    if (!hasAnyPermission(["ROLE_UPDATE"])) {
+      toast.error("You do not have permission to update roles");
+      return;
+    }
+
+    const viewPermIds = permissions
+      .filter((permission) => /_VIEW(_|$)/.test(permission.code))
+      .map((permission) => permission._id);
+    const employeeDefaultPermIds = permissions
+      .filter((permission) => EMPLOYEE_DEFAULT_CODES.includes(permission.code))
+      .map((permission) => permission._id);
+    const managerDefaultPermIds = permissions
+      .filter((permission) => MANAGER_DEFAULT_CODES.includes(permission.code))
+      .map((permission) => permission._id);
+    const allPermissionIds = permissions.map((permission) => permission._id);
+
+    const nextRolePermsMap = { ...rolePerms };
+    const updatedRoleIds = new Set<string>();
+    let appliedCount = 0;
+    let skippedCount = 0;
+
+    roles.forEach((role) => {
+      if (role.isSystemRole) {
+        skippedCount += 1;
+        return;
+      }
+
+      const normalizedSlug = normalizeRoleSlug(role.slug);
+      const current = nextRolePermsMap[role._id] || [];
+      let defaultsToApply: string[] = [];
+
+      if (normalizedSlug === "employee") {
+        defaultsToApply = employeeDefaultPermIds;
+      } else if (normalizedSlug === "manager") {
+        defaultsToApply = Array.from(new Set([...managerDefaultPermIds, ...viewPermIds]));
+      } else if (["hr", "org-admin"].includes(normalizedSlug)) {
+        defaultsToApply = allPermissionIds;
+      } else {
+        skippedCount += 1;
+        return;
+      }
+
+      if (defaultsToApply.length === 0) return;
+
+      nextRolePermsMap[role._id] = Array.from(new Set([...current, ...defaultsToApply]));
+      updatedRoleIds.add(role._id);
+      appliedCount += 1;
+    });
+
+    if (appliedCount === 0) {
+      toast.message("No editable roles matched the default permission rules");
+      return;
+    }
+
+    setRolePerms(nextRolePermsMap);
+    setDirtyRoleIds((prev) => new Set([...prev, ...updatedRoleIds]));
+    toast.success(
+      skippedCount > 0
+        ? `Default permissions applied to ${appliedCount} roles (${skippedCount} skipped, pending save)`
+        : `Default permissions applied to all matched roles (pending save)`
+    );
+  };
+
   const orderedPermissions = useMemo(() => {
     const byCode = new Map(permissions.map((p) => [p.code, p]));
     const selected = new Set<string>();
@@ -430,6 +509,9 @@ const Permissions = () => {
 
           <div className="flex justify-between gap-2 mb-4">
             <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handleGrantDefaultPermissionsToAllRoles} disabled={!canUpdate}>
+                Grant Default Permissions to All Roles
+              </Button>
               <Button variant="outline" onClick={handleGrantDefaultPermissionsToEmployee} disabled={!canUpdate}>
                 Grant Default Permissions to Employee
               </Button>
