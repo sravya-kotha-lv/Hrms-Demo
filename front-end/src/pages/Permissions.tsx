@@ -51,6 +51,16 @@ const ACCESS_GROUPS: { label: string; codes: string[] }[] = [
   }
 ];
 
+const EMPLOYEE_DEFAULT_CODES = [
+  "EMP_SELF_VIEW",
+  "ATTENDANCE_VIEW_SELF",
+  "HOLIDAY_VIEW",
+  "SHIFT_VIEW",
+  "WEEK_OFF_VIEW",
+  "NOTIFICATION_VIEW_SELF",
+  ...(ACCESS_GROUPS.find((group) => group.label === "Employee (Self)")?.codes || [])
+];
+
 const Permissions = () => {
   const { hasAnyPermission } = useAuth();
   const [roles, setRoles] = useState<RoleRow[]>([]);
@@ -206,6 +216,37 @@ const Permissions = () => {
     const merged = Array.from(new Set([...current, ...viewPermIds]));
     updateRolePerms(managerRole._id, merged);
     toast.success("View permissions added to Manager (pending save)");
+  };
+
+  const handleGrantDefaultPermissionsToEmployee = () => {
+    if (!hasAnyPermission(["ROLE_UPDATE"])) {
+      toast.error("You do not have permission to update roles");
+      return;
+    }
+
+    const employeeRole = roles.find((r) => r.slug === "employee");
+    if (!employeeRole) {
+      toast.error("Employee role not found");
+      return;
+    }
+    if (employeeRole.isSystemRole) {
+      toast.warning("System roles cannot be edited");
+      return;
+    }
+
+    const defaultPermIds = permissions
+      .filter((permission) => EMPLOYEE_DEFAULT_CODES.includes(permission.code))
+      .map((permission) => permission._id);
+
+    if (defaultPermIds.length === 0) {
+      toast.message("No default employee permissions found");
+      return;
+    }
+
+    const current = rolePerms[employeeRole._id] || [];
+    const merged = Array.from(new Set([...current, ...defaultPermIds]));
+    updateRolePerms(employeeRole._id, merged);
+    toast.success("Default permissions added to Employee (pending save)");
   };
 
   const orderedPermissions = useMemo(() => {
@@ -388,9 +429,14 @@ const Permissions = () => {
         <div className="flex flex-col h-[calc(100vh-120px)] overflow-hidden">
 
           <div className="flex justify-between gap-2 mb-4">
-            <Button variant="outline" onClick={handleGrantAllViewToManager} disabled={!canUpdate}>
-              Grant all View to Manager
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handleGrantDefaultPermissionsToEmployee} disabled={!canUpdate}>
+                Grant Default Permissions to Employee
+              </Button>
+              <Button variant="outline" onClick={handleGrantAllViewToManager} disabled={!canUpdate}>
+                Grant all View to Manager
+              </Button>
+            </div>
             <Button onClick={handleSaveChanges} disabled={savingRoleIds.size > 0 || !canUpdate}>
               Save Changes
             </Button>
