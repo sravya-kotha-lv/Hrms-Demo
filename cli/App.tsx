@@ -108,6 +108,7 @@ function EmployeeTabs() {
   const { session, refreshPermissions } = useAuth();
   const profile = session?.profile || session?.loginData || null;
   const permissions = session?.permissions || [];
+  const permissionSignature = permissions.join('|');
   const profileImage = profile?.profileImage || profile?.profilePhoto || null;
   const initials =
     ((profile?.firstName?.[0] || '') + (profile?.lastName?.[0] || '') ||
@@ -140,6 +141,7 @@ function EmployeeTabs() {
   return (
     <LinearGradient colors={['#dbeafe', '#eef2ff', '#e0f2fe']} style={{ flex: 1 }}>
       <Tabs.Navigator
+        key={`tabs:${session?.token || 'guest'}:${permissionSignature}`}
         initialRouteName="Dashboard"
         backBehavior="history"
         detachInactiveScreens={false}
@@ -532,8 +534,15 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <NavigationContainer key={session?.token ? `session:${session.token}` : 'session:guest'}>
+      <Stack.Navigator
+        key={
+          session?.token
+            ? `stack:${session.token}:${(session.permissions || []).join('|')}`
+            : 'stack:guest'
+        }
+        screenOptions={{ headerShown: false }}
+      >
         {session ? (
           <>
             <Stack.Screen name="EmployeeTabs" component={EmployeeTabs} />

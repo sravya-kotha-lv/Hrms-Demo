@@ -154,6 +154,7 @@ function EmployeeDashboardScreen() {
     loginSuccessMessage,
     clearLoginSuccessMessage,
     setLogoutSuccessMessage,
+    refreshPermissions,
   } = useAuth();
   const token = session?.token || '';
   const profile = session?.profile || session?.loginData || null;
@@ -168,6 +169,8 @@ function EmployeeDashboardScreen() {
   const canViewHolidays = hasAnyPermission('HOLIDAY_VIEW', 'LEAVE_VIEW_SELF', 'LEAVE_APPLY');
   const canViewWeekOffs = permissions.includes('WEEK_OFF_VIEW');
   const canViewNotifications = permissions.includes('NOTIFICATION_VIEW_SELF');
+  const canManageNotifications = permissions.includes('NOTIFICATION_MANAGE_SELF');
+  const canOpenNotifications = canViewNotifications && canManageNotifications;
   const canViewOnlineTeam = permissions.includes('TIMESHEET_VIEW_ONLINE');
   const canViewOnLeaveTeam = permissions.includes('TIMESHEET_VIEW_ALL');
   const canViewUpcomingEvents = hasAnyPermission('EMP_SELF_VIEW', 'EMP_VIEW');
@@ -207,9 +210,31 @@ function EmployeeDashboardScreen() {
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [showLoginToast, setShowLoginToast] = useState(false);
+  const [permissionsReady, setPermissionsReady] = useState(false);
 
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
   useResetScrollOnFocus(scrollViewRef);
+
+  useEffect(() => {
+    let active = true;
+    if (!token) {
+      setPermissionsReady(false);
+      return undefined;
+    }
+
+    setPermissionsReady(false);
+    refreshPermissions()
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setPermissionsReady(true);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [token, refreshPermissions]);
   
   const loadDashboard = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -243,7 +268,7 @@ function EmployeeDashboardScreen() {
         canViewLeaveBalances ? getApiWithToken<any>('/leave-balances/my', token) : Promise.resolve(null),
         canViewOnlineTeam ? getApiWithToken<any>('/timesheets/online', token) : Promise.resolve(null),
         canViewOnLeaveTeam ? getApiWithToken<any>('/timesheets/on-leave', token) : Promise.resolve(null),
-        canViewNotifications ? getApiWithToken<any>('/notifications/my?limit=6', token) : Promise.resolve(null),
+        canOpenNotifications ? getApiWithToken<any>('/notifications/my?limit=6', token) : Promise.resolve(null),
         canViewHolidays ? getApiWithToken<any>(`/holidays?year=${currentYear}`, token) : Promise.resolve(null),
         canViewWeekOffs ? getApiWithToken<any>('/week-offs', token) : Promise.resolve(null),
         canViewAttendance ? getApiWithToken<any>(`/timesheets/attendance/matrix/my?month=${currentMonth}`, token) : Promise.resolve(null),
@@ -375,7 +400,7 @@ function EmployeeDashboardScreen() {
     canViewLeaveBalances,
     canViewHolidays,
     canViewWeekOffs,
-    canViewNotifications,
+    canOpenNotifications,
     canViewOnlineTeam,
     canViewOnLeaveTeam,
     canViewUpcomingEvents,
@@ -710,7 +735,7 @@ function EmployeeDashboardScreen() {
                 </View>
               </View>
               <View style={styles.topBarRight}>
-                {canViewNotifications && (
+                {permissionsReady && canOpenNotifications && (
                   <Pressable
                     style={({ pressed }) => [styles.iconButton, pressed && styles.surfacePressed]}
                     onPress={() => {

@@ -40,8 +40,10 @@ const normalizePermissions = (permissions: any): string[] => {
     return [];
   }
 
-  return permissions
-    .map((permission) => {
+  return Array.from(
+    new Set(
+      permissions
+        .map((permission) => {
       if (typeof permission === 'string') {
         return permission.trim();
       }
@@ -50,8 +52,10 @@ const normalizePermissions = (permissions: any): string[] => {
         return typeof code === 'string' ? code.trim() : '';
       }
       return '';
-    })
-    .filter(Boolean);
+        })
+        .filter(Boolean)
+    )
+  ).sort((left, right) => left.localeCompare(right));
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -162,7 +166,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return nextPermissions;
   }, [session?.token]);
 
-  const logout = () => setSession(null);
+  const logout = useCallback(() => {
+    setSession(null);
+  }, [setSession]);
 
   const clearSessionExpiredMessage = () => setSessionExpiredMessage(null);
   const clearLoginSuccessMessage = () => setLoginSuccessMessage(null);
@@ -188,7 +194,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       clearLogoutSuccessMessage,
       authReady,
     }),
-    [session, setSession, sessionExpiredMessage, loginSuccessMessage, logoutSuccessMessage, authReady, refreshPermissions]
+    [
+      session,
+      setSession,
+      sessionExpiredMessage,
+      loginSuccessMessage,
+      logoutSuccessMessage,
+      authReady,
+      refreshPermissions,
+      logout,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

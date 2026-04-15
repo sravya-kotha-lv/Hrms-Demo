@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -11,7 +11,7 @@ import { useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getApiWithToken, patchApiWithToken } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
@@ -19,15 +19,19 @@ import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
 function NotificationsScreen() {
   const navigation = useNavigation<any>();
   const scrollViewRef = useRef<ScrollView | null>(null);
-  const { session } = useAuth();
+  const { session, refreshPermissions } = useAuth();
   const token = session?.token || '';
+  const permissions = session?.permissions || [];
+  const canViewNotifications = permissions.includes('NOTIFICATION_VIEW_SELF');
+  const canManageNotifications = permissions.includes('NOTIFICATION_MANAGE_SELF');
   const safeAreaInsets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [error, setError] = useState('');
+  const [permissionsReady, setPermissionsReady] = useState(false);
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     setLoading(true);
     const res = await getApiWithToken<any>('/notifications/my?limit=20', token);
     setLoading(false);
@@ -37,14 +41,20 @@ function NotificationsScreen() {
       return;
     }
     setNotifications(res?.data?.items || []);
-  };
+  }, [token]);
 
   const markAllRead = async () => {
+    if (!canManageNotifications) {
+      return;
+    }
     await patchApiWithToken<any>('/notifications/read-all', {}, token);
     loadNotifications();
   };
 
   const markOneRead = async (id: string) => {
+    if (!canManageNotifications) {
+      return;
+    }
     await patchApiWithToken<any>(`/notifications/${id}/read`, {}, token);
     setNotifications((prev) =>
       prev.map((n) => (n._id === id ? { ...n, isRead: true } : n))
@@ -52,8 +62,29 @@ function NotificationsScreen() {
   };
 
   useEffect(() => {
-    if (token) loadNotifications();
-  }, [token]);
+    if (token && canViewNotifications) loadNotifications();
+    if (!canViewNotifications) {
+      setLoading(false);
+      setNotifications([]);
+    }
+  }, [token, canViewNotifications, loadNotifications]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setPermissionsReady(false);
+      refreshPermissions()
+        .catch(() => undefined)
+        .finally(() => {
+          if (active) {
+            setPermissionsReady(true);
+          }
+        });
+      return () => {
+        active = false;
+      };
+    }, [refreshPermissions])
+  );
 
   useResetScrollOnFocus(scrollViewRef);
 
@@ -76,13 +107,24 @@ function NotificationsScreen() {
             <MaterialCommunityIcons name="chevron-left" size={22} color="#0f172a" />
           </Pressable>
           <Text style={styles.headerTitle}>Notifications</Text>
-          <Pressable onPress={markAllRead} style={styles.headerButton}>
-            <MaterialCommunityIcons name="check-all" size={18} color="#0f172a" />
-          </Pressable>
+          {permissionsReady && canManageNotifications ? (
+            <Pressable onPress={markAllRead} style={styles.headerButton}>
+              <MaterialCommunityIcons name="check-all" size={18} color="#0f172a" />
+            </Pressable>
+          ) : (
+            <View style={styles.headerButton} />
+          )}
         </View>
 
         <View style={styles.card}>
-          {loading ? (
+          {!permissionsReady ? (
+            <View style={styles.center}>
+              <ActivityIndicator />
+              <Text style={styles.helperText}>Checking permissions...</Text>
+            </View>
+          ) : !canViewNotifications ? (
+            <Text style={styles.helperText}>You do not have permission to view notifications.</Text>
+          ) : loading ? (
             <View style={styles.center}>
               <ActivityIndicator />
               <Text style={styles.helperText}>Loading...</Text>
@@ -97,7 +139,8 @@ function NotificationsScreen() {
                   <Pressable
                     key={item._id}
                     style={[styles.noticeCard, item.isRead ? null : styles.noticeUnread]}
-                    onPress={() => markOneRead(item._id)}
+                    onPress={permissionsReady && canManageNotifications ? () => markOneRead(item._id) : undefined}
+                    disabled={!permissionsReady || !canManageNotifications}
                   >
                     <Text style={styles.noticeTitle}>{item.title}</Text>
                     <Text style={styles.noticeText}>{item.message}</Text>

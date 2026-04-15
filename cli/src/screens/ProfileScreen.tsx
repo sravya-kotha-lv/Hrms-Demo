@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -71,14 +72,19 @@ const FONT_MEDIUM = Platform.select({ android: 'sans-serif-medium', ios: 'System
 function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView | null>(null);
-  const { session, updateProfile } = useAuth();
+  const { session, updateProfile, refreshPermissions } = useAuth();
   const token = session?.token || '';
+  const permissions = useMemo(() => session?.permissions || [], [session?.permissions]);
+  const canViewDepartment = permissions.includes('DEPT_VIEW');
+  const canViewDesignation = permissions.includes('DESIG_VIEW');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<any>(null);
   const [error, setError] = useState('');
   const [editVisible, setEditVisible] = useState(false);
+  const [permissionsReady, setPermissionsReady] = useState(false);
+  const [resolvedCanEditProfile, setResolvedCanEditProfile] = useState(false);
   useResetScrollOnFocus(scrollViewRef);
 
   const [firstName, setFirstName] = useState('');
@@ -99,6 +105,9 @@ function ProfileScreen() {
   const [profileImage, setProfileImage] = useState<UploadPayload | null>(null);
   const [addressProofUpload, setAddressProofUpload] = useState<UploadPayload | null>(null);
   const [selectionField, setSelectionField] = useState<SelectionFieldKey | null>(null);
+  const permissionSignature = permissions.join('|');
+  const canRenderEditProfile =
+    permissionsReady && resolvedCanEditProfile && permissions.includes('EMP_SELF_EDIT');
 
   const openSelection = (field: SelectionFieldKey) => setSelectionField(field);
   const closeSelection = () => setSelectionField(null);
@@ -173,24 +182,64 @@ function ProfileScreen() {
     loadProfile();
   }, [loadProfile]);
 
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setPermissionsReady(false);
+      setResolvedCanEditProfile(false);
+      refreshPermissions()
+        .then((nextPermissions) => {
+          if (active) {
+            setResolvedCanEditProfile(nextPermissions.includes('EMP_SELF_EDIT'));
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (active) {
+            setPermissionsReady(true);
+          }
+        });
+      return () => {
+        active = false;
+      };
+    }, [refreshPermissions])
+  );
+
+  useEffect(() => {
+    if ((!permissionsReady || !resolvedCanEditProfile) && editVisible) {
+      setEditVisible(false);
+    }
+  }, [editVisible, permissionsReady, resolvedCanEditProfile]);
+
+  useEffect(() => {
+    if (!permissions.includes('EMP_SELF_EDIT')) {
+      setResolvedCanEditProfile(false);
+    }
+  }, [permissions]);
+
   const employmentRows = useMemo(
-    () => [
-      { label: 'Employee Code', value: profile?.employeeCode },
-      { label: 'Department', value: profile?.departmentId?.name },
-      { label: 'Designation', value: profile?.designationId?.name },
-      { label: 'Employment Type', value: profile?.employmentType },
-      {
-        label: 'Date Of Joining',
-        value: profile?.dateOfJoining ? String(profile.dateOfJoining).slice(0, 10) : '',
-      },
-      {
-        label: 'Reporting Manager',
-        value: profile?.managerId
-          ? `${profile.managerId.firstName || ''} ${profile.managerId.lastName || ''}`.trim()
-          : '',
-      },
-    ],
-    [profile]
+    () =>
+      [
+        { label: 'Employee Code', value: profile?.employeeCode },
+        canViewDepartment
+          ? { label: 'Department', value: profile?.departmentId?.name }
+          : null,
+        canViewDesignation
+          ? { label: 'Designation', value: profile?.designationId?.name }
+          : null,
+        { label: 'Employment Type', value: profile?.employmentType },
+        {
+          label: 'Date Of Joining',
+          value: profile?.dateOfJoining ? String(profile.dateOfJoining).slice(0, 10) : '',
+        },
+        {
+          label: 'Reporting Manager',
+          value: profile?.managerId
+            ? `${profile.managerId.firstName || ''} ${profile.managerId.lastName || ''}`.trim()
+            : '',
+        },
+      ].filter(Boolean) as Array<{ label: string; value: string }>,
+    [profile, canViewDepartment, canViewDesignation]
   );
 
   const addressLabel = useMemo(() => {
@@ -287,6 +336,12 @@ function ProfileScreen() {
   };
 
   const handleSave = async () => {
+    if (!canRenderEditProfile) {
+      setError('You do not have permission to edit your profile.');
+      setEditVisible(false);
+      return;
+    }
+
     if (!phone || !dob || !gender || !line1 || !city || !stateValue || !country || !zip) {
       setError('Please fill the required fields.');
       return;
@@ -330,6 +385,7 @@ function ProfileScreen() {
       setError(res?.message || 'Unable to save profile.');
       return;
     }
+
     setEditVisible(false);
     await loadProfile();
     updateProfile(res.data || profile);
@@ -339,7 +395,11 @@ function ProfileScreen() {
   const displayName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Employee';
 
   return (
-    <LinearGradient colors={['#f3f5f9', '#f3f5f9', '#eef1f6']} style={styles.container}>
+    <LinearGradient
+      key={`profile:${permissionSignature}`}
+      colors={['#f3f5f9', '#f3f5f9', '#eef1f6']}
+      style={styles.container}
+    >
       <ScrollView
         ref={scrollViewRef}
         contentContainerStyle={[
@@ -387,12 +447,14 @@ function ProfileScreen() {
                       {profile?.userId?.email || ''}
                     </Text>
                   </View>
-                  <Pressable style={styles.editButton} onPress={() => setEditVisible(true)}>
-                    <LinearGradient colors={['#f8fbff', '#eef4ff']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.editButtonInner}>
-                      <MaterialCommunityIcons name="pencil-outline" size={14} color="#2563eb" />
-                      <Text style={styles.editButtonText}>Edit Profile</Text>
-                    </LinearGradient>
-                  </Pressable>
+                  {canRenderEditProfile ? (
+                    <Pressable style={styles.editButton} onPress={() => setEditVisible(true)}>
+                      <LinearGradient colors={['#f8fbff', '#eef4ff']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.editButtonInner}>
+                        <MaterialCommunityIcons name="pencil-outline" size={14} color="#2563eb" />
+                        <Text style={styles.editButtonText}>Edit Profile</Text>
+                      </LinearGradient>
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
             </LinearGradient>
@@ -423,7 +485,7 @@ function ProfileScreen() {
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </ScrollView>
 
-      <Modal visible={editVisible} transparent animationType="slide">
+      <Modal visible={canRenderEditProfile && editVisible} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
           <LinearGradient colors={['#ffffff', '#f7f9fd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.modalCard}>
             <ScrollView contentContainerStyle={styles.modalContent}>
