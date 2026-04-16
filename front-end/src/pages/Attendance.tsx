@@ -668,6 +668,7 @@ const Attendance = () => {
       future: "bg-slate-100 text-slate-500 border-slate-200",
       leave: "bg-violet-100 text-violet-700 border-violet-300",
       absent_leave: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300",
+      present_leave: "bg-teal-100 text-teal-700 border-teal-300",
       pending_checkout: "bg-orange-100 text-orange-700 border-orange-300",
       present: "bg-emerald-100 text-emerald-700 border-emerald-300",
       half_day: "bg-lime-100 text-lime-700 border-lime-300",
@@ -1183,6 +1184,10 @@ const Attendance = () => {
                     <div className="flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1">
                       <span className="inline-block h-2.5 w-2.5 rounded bg-violet-500" />
                       Approved Leave
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-teal-200 bg-teal-50 px-3 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded bg-teal-500" />
+                      Present + Leave
                     </div>
                     <div className="flex items-center gap-2 rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1">
                       <span className="inline-block h-2.5 w-2.5 rounded bg-fuchsia-500" />

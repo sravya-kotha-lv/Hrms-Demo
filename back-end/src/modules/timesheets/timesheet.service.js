@@ -1110,12 +1110,20 @@ const resolveAttendanceDisplayStatus = ({
   // When sandwich rule turns a holiday/week off into a deducted leave day,
   // the calendar should reflect the leave outcome rather than the base day type.
   if (isOnLeave && leaveDuration === "full_day" && leaveType) return "Leave";
-  if (isOnLeave && leaveDuration === "half_day" && leaveType) return "Absent + Leave";
   if (isHoliday) return "Holiday";
   if (isWeekOff) return "Week Off";
   if (isFuture) return "Future";
   if (attendanceStatus === "pending_checkout" && snapshotGenerated) return "Absent";
   if (attendanceStatus === "pending_checkout") return "Pending Checkout";
+  if (
+    isOnLeave
+    && leaveDuration === "half_day"
+    && leaveType
+    && ["half_day_present", "full_day_present", "present"].includes(attendanceStatus)
+  ) {
+    return "Present + Leave";
+  }
+  if (isOnLeave && leaveDuration === "half_day" && leaveType) return "Absent + Leave";
   if (attendanceStatus === "full_day_present" || attendanceStatus === "present") return "Present";
   if (attendanceStatus === "half_day_present") return "Half Day";
   if (leaveType && leaveDuration !== "half_day") return "Leave";
@@ -1149,6 +1157,9 @@ const resolveAttendanceUiMeta = ({ displayStatus, leaveType }) => {
   }
   if (displayStatus === "Absent + Leave") {
     return { label: `Absent + ${leaveType || "Leave"}`, shortLabel: "AL", tone: "absent_leave" };
+  }
+  if (displayStatus === "Present + Leave") {
+    return { label: `Present + ${leaveType || "Leave"}`, shortLabel: "PL", tone: "present_leave" };
   }
   if (displayStatus === "Pending Checkout") {
     return { label: "Pending Checkout", shortLabel: "PC", tone: "pending_checkout" };
@@ -1237,6 +1248,11 @@ const buildAttendanceSummary = (days, daysInMonth) => {
     }
     if (cell.displayStatus === "Present") {
       summary.presentDays += 1;
+      continue;
+    }
+    if (cell.displayStatus === "Present + Leave") {
+      summary.presentDays += 0.5;
+      summary.onLeaveDays += 0.5;
       continue;
     }
     if (cell.displayStatus === "Absent + Leave") {
