@@ -659,8 +659,12 @@ const ViewEmployee = () => {
                   <p>{formatDate(employee.probationEndDate)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Notice End Date</p>
-                  <p>{formatDate(employee.noticeEndDate)}</p>
+                  <p className="text-muted-foreground">Confirmed Date</p>
+                  <p>{formatDate(employee.confirmedDate || employee.probationCompletedAt)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Last Working Day</p>
+                  <p>{formatDate(employee.lastWorkingDay || employee.noticeEndDate)}</p>
                 </div>
                 </div>
               </div>

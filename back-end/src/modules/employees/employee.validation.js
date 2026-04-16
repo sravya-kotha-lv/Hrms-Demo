@@ -148,6 +148,8 @@ exports.updateEmployeeSchema = Joi.object({
   employmentType: employmentType.optional(),
   status: status.optional(),
   employmentLifecycleStatus: employmentLifecycleStatus.optional(),
+  lastWorkingDay: Joi.date().optional().allow(null, ""),
+  confirmedDate: Joi.date().optional().allow(null, ""),
   managerId: objectId.optional(),
   leaveApprovalFlowId: objectId.optional().allow(null, ""),
   attendanceApprovalFlowId: objectId.optional().allow(null, ""),
@@ -185,7 +187,9 @@ exports.lifecycleActionSchema = Joi.object({
   action: Joi.string()
     .valid("confirm", "terminate_with_notice", "terminate_without_notice")
     .required(),
-  reason: Joi.string().trim().max(300).optional().allow("")
+  reason: Joi.string().trim().max(300).optional().allow(""),
+  lastWorkingDay: Joi.date().optional().allow(null, ""),
+  confirmedDate: Joi.date().optional().allow(null, "")
 });
 
 exports.listEmployeesQuerySchema = Joi.object({
