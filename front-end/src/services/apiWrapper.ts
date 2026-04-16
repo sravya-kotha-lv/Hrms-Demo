@@ -184,6 +184,7 @@ export const postApiWithToken = async (
     const headers = getHeaders(_headers);
 
     const response = await api.post(apiUrl, params, { headers });
+    clearGetCaches();
     return response.data;
   } catch (error) {
     return normalizeApiError(error);

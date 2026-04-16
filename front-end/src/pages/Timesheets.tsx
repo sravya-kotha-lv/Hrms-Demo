@@ -456,6 +456,8 @@ const Timesheets = () => {
   const teamLoadingMoreRef = useRef(false);
   const currentEmployeeId = toIdString(profile?.employeeId);
   const currentRoleSlug = profile?.activeRole?.slug || "";
+  const isEmployeeRole = normalizeRoleKey(currentRoleSlug) === "employee";
+  const showEmployeeOnlyPanels = isEmployeeRole;
   const canCheckIn = hasPermission("TIMESHEET_CHECKIN_SELF");
   const canCheckOut = hasPermission("TIMESHEET_CHECKOUT_SELF");
   const canSubmit = hasPermission("TIMESHEET_SUBMIT_SELF");
@@ -719,14 +721,21 @@ const Timesheets = () => {
   useEffect(() => {
     loadAttendanceToday();
     loadWeekly();
-    loadOnline();
-    loadOnLeave();
     loadWeekOffs();
     loadOrgSettings();
     loadMyLeavesForWeek();
     loadMyAttendanceRequests();
-    loadPendingAttendanceRequests();
     loadCheckInPolicy();
+
+    if (showEmployeeOnlyPanels) {
+      loadOnline();
+      loadOnLeave();
+      loadPendingAttendanceRequests();
+    } else {
+      setOnlineList([]);
+      setOnLeaveList([]);
+      setPendingAttendanceRequests([]);
+    }
   }, [
     loadAttendanceToday,
     loadWeekly,
@@ -737,7 +746,8 @@ const Timesheets = () => {
     loadMyLeavesForWeek,
     loadMyAttendanceRequests,
     loadPendingAttendanceRequests,
-    loadCheckInPolicy
+    loadCheckInPolicy,
+    showEmployeeOnlyPanels
   ]);
 
   const hasMoreTeamTimesheets = teamCurrentPage < teamTotalPages;
@@ -1236,7 +1246,7 @@ const Timesheets = () => {
         </Table>
       </motion.div>
 
-      {canAction && (
+      {showEmployeeOnlyPanels && canAction && (
         <motion.div
           className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
           initial={{ opacity: 0, y: 20 }}
@@ -1300,7 +1310,7 @@ const Timesheets = () => {
         </motion.div>
       )}
 
-      {canViewOnline && (
+      {showEmployeeOnlyPanels && canViewOnline && (
         <motion.div
           className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
           initial={{ opacity: 0, y: 20 }}
@@ -1355,7 +1365,7 @@ const Timesheets = () => {
         </motion.div>
       )}
 
-      {canViewAll && (
+      {showEmployeeOnlyPanels && canViewAll && (
         <motion.div
           className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
           initial={{ opacity: 0, y: 20 }}
@@ -1418,189 +1428,191 @@ const Timesheets = () => {
         </motion.div>
       )}
 
-      <motion.div
-        className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border bg-muted/20">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-semibold mr-2">Weekly Timesheet</h3>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => shiftWeek(-1)}
-              aria-label="Previous week"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <div className="text-sm font-medium">
-              {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
+      {isEmployeeRole && (
+        <motion.div
+          className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border bg-muted/20">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-lg font-semibold mr-2">Weekly Timesheet</h3>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => shiftWeek(-1)}
+                aria-label="Previous week"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <div className="text-sm font-medium">
+                {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => shiftWeek(1)}
+                aria-label="Next week"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+              <div className="ml-1 sm:ml-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-sm font-semibold">
+                Worked hours: {weekTotalHours} / {minWeeklyHours}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                ({toDateInput(weekStart)} - {toDateInput(weekDates[6])})
+              </div>
             </div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => shiftWeek(1)}
-              aria-label="Next week"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-            <div className="ml-1 sm:ml-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-sm font-semibold">
-              Worked hours: {weekTotalHours} / {minWeeklyHours}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              ({toDateInput(weekStart)} - {toDateInput(weekDates[6])})
+            <div className="flex items-center gap-3">
+              {timesheet?._id ? getStatusBadge(timesheet.status) : <Badge>Draft</Badge>}
+              <div className="text-xs text-muted-foreground">
+              {timesheet?.status === "submitted" && "Waiting for approval"}
+              {timesheet?.status === "approved" && "Approved"}
+              {timesheet?.status === "rejected" && "Rejected - update and resubmit"}
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {timesheet?._id ? getStatusBadge(timesheet.status) : <Badge>Draft</Badge>}
-            <div className="text-xs text-muted-foreground">
-            {timesheet?.status === "submitted" && "Waiting for approval"}
-            {timesheet?.status === "approved" && "Approved"}
-            {timesheet?.status === "rejected" && "Rejected - update and resubmit"}
+          {weekLoading && (
+            <div className="px-6 py-3 space-y-2">
+              <Skeleton className="h-8 w-56 rounded-md" />
+              <Skeleton className="h-10 w-full rounded-md" />
+              <Skeleton className="h-10 w-full rounded-md" />
+              <Skeleton className="h-10 w-full rounded-md" />
             </div>
-          </div>
-        </div>
-        {weekLoading && (
-          <div className="px-6 py-3 space-y-2">
-            <Skeleton className="h-8 w-56 rounded-md" />
-            <Skeleton className="h-10 w-full rounded-md" />
-            <Skeleton className="h-10 w-full rounded-md" />
-            <Skeleton className="h-10 w-full rounded-md" />
-          </div>
-        )}
-        {!isWeekSynced && !weekLoading && (
-          <div className="px-6 py-2 text-xs text-amber-700 bg-amber-50 border-b border-amber-200">
-            Week changed. Please wait for the correct week data to load before submitting.
-          </div>
-        )}
-        {!isCurrentMonthWeek && (
-          <div className="px-6 py-2 text-xs text-red-700 bg-red-50 border-b border-red-200">
-            You can only submit timesheets for the current month.
-          </div>
-        )}
-        {timesheet?.status === "rejected" && timesheet?.rejectionReason && (
-          <div className="px-6 py-2 text-xs text-red-700 bg-red-50 border-b border-red-200">
-            Rejection reason: {timesheet.rejectionReason}
-          </div>
-        )}
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="table-header">
-                <TableHead className="w-32">Field</TableHead>
-                {weekDates.map((date) => {
-                  const isWeekOff = weekOffDays.includes(date.getDay());
-                  return (
-                    <TableHead key={date.toISOString()} className={isWeekOff ? "opacity-60" : ""}>
-                      <div className="flex flex-col">
-                        <span>
-                          {formatDateInOrgTimeZone(date, {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric"
-                          })}
-                        </span>
-                        {isWeekOff && (
-                          <span className="text-xs text-muted-foreground">Week Off</span>
-                        )}
-                      </div>
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow className="table-row-hover">
-                <TableCell className="font-medium">Hours</TableCell>
-                {weekDates.map((date, index) => {
-                  const isWeekOff = weekOffDays.includes(date.getDay());
-                  const isLeave = myLeaveDates.includes(toDateInput(date));
-                  const rawHours = Number(entries[index]?.hours || 0);
-                  const isInvalid =
-                    rawHours > 0 && rawHours < minHalfDayHours;
-                  return (
-                    <TableCell key={date.toISOString()}>
-                      {isWeekOff ? (
-                        <div className="text-xs text-muted-foreground">
-                          Week Off
-                          <div>Full day: {minWorkHoursPerDay}h</div>
-                        </div>
-                      ) : isLeave ? (
-                        <div className="text-xs text-muted-foreground">
-                          On Leave
-                        </div>
-                      ) : (
-                        <>
-                          <Input
-                            type="number"
-                            min={0}
-                            max={24}
-                            step={0.5}
-                            value={entries[index]?.hours ?? 0}
-                            onChange={(e) => handleEntryChange(index, "hours", e.target.value)}
-                            disabled={timesheetLocked || !canEdit}
-                            className={isInvalid ? "border-red-500" : ""}
-                          />
-                          {isInvalid && (
-                            <div className="text-xs text-red-500 mt-1">
-                              Min half day: {minHalfDayHours}h
-                            </div>
+          )}
+          {!isWeekSynced && !weekLoading && (
+            <div className="px-6 py-2 text-xs text-amber-700 bg-amber-50 border-b border-amber-200">
+              Week changed. Please wait for the correct week data to load before submitting.
+            </div>
+          )}
+          {!isCurrentMonthWeek && (
+            <div className="px-6 py-2 text-xs text-red-700 bg-red-50 border-b border-red-200">
+              You can only submit timesheets for the current month.
+            </div>
+          )}
+          {timesheet?.status === "rejected" && timesheet?.rejectionReason && (
+            <div className="px-6 py-2 text-xs text-red-700 bg-red-50 border-b border-red-200">
+              Rejection reason: {timesheet.rejectionReason}
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="table-header">
+                  <TableHead className="w-32">Field</TableHead>
+                  {weekDates.map((date) => {
+                    const isWeekOff = weekOffDays.includes(date.getDay());
+                    return (
+                      <TableHead key={date.toISOString()} className={isWeekOff ? "opacity-60" : ""}>
+                        <div className="flex flex-col">
+                          <span>
+                            {formatDateInOrgTimeZone(date, {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric"
+                            })}
+                          </span>
+                          {isWeekOff && (
+                            <span className="text-xs text-muted-foreground">Week Off</span>
                           )}
-                        </>
-                      )}
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-              <TableRow className="table-row-hover">
-                <TableCell className="font-medium">Notes</TableCell>
-                {weekDates.map((date, index) => {
-                  const isWeekOff = weekOffDays.includes(date.getDay());
-                  const isLeave = myLeaveDates.includes(toDateInput(date));
-                  return (
-                    <TableCell key={date.toISOString()}>
-                      <Input
-                        value={entries[index]?.notes ?? ""}
-                        onChange={(e) => handleEntryChange(index, "notes", e.target.value)}
-                        placeholder={isWeekOff ? "Week off" : "Work summary"}
-                        disabled={timesheetLocked || isWeekOff || isLeave || !canEdit}
-                      />
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-        <div className="px-6 py-2 text-xs text-muted-foreground">
-          Full day: {minWorkHoursPerDay}h · Half day: {minHalfDayHours}h ·
-          Minimum weekly hours: {minWeeklyHours}h
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-3 px-6 py-4 border-t border-border">
-          {!timesheet?._id && canCreate && (
-            <Button onClick={createDraft} disabled={saving}>
-              Create Draft
-            </Button>
-          )}
-          {timesheet?._id && !timesheetLocked && canEdit && (
-            <Button variant="outline" onClick={saveDraft} disabled={saving}>
-              Save Draft
-            </Button>
-          )}
-          {timesheet?._id && !timesheetLocked && canSubmit && (
-            <Button onClick={submitTimesheet} disabled={saving || !isCurrentMonthWeek}>
-              Submit Timesheet
-            </Button>
-          )}
-          {timesheet?._id && timesheet?.status === "approved" && canRecall && (
-            <Button variant="outline" onClick={recallTimesheet} disabled={saving}>
-              Recall
-            </Button>
-          )}
-        </div>
-      </motion.div>
+                        </div>
+                      </TableHead>
+                    );
+                  })}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow className="table-row-hover">
+                  <TableCell className="font-medium">Hours</TableCell>
+                  {weekDates.map((date, index) => {
+                    const isWeekOff = weekOffDays.includes(date.getDay());
+                    const isLeave = myLeaveDates.includes(toDateInput(date));
+                    const rawHours = Number(entries[index]?.hours || 0);
+                    const isInvalid =
+                      rawHours > 0 && rawHours < minHalfDayHours;
+                    return (
+                      <TableCell key={date.toISOString()}>
+                        {isWeekOff ? (
+                          <div className="text-xs text-muted-foreground">
+                            Week Off
+                            <div>Full day: {minWorkHoursPerDay}h</div>
+                          </div>
+                        ) : isLeave ? (
+                          <div className="text-xs text-muted-foreground">
+                            On Leave
+                          </div>
+                        ) : (
+                          <>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={24}
+                              step={0.5}
+                              value={entries[index]?.hours ?? 0}
+                              onChange={(e) => handleEntryChange(index, "hours", e.target.value)}
+                              disabled={timesheetLocked || !canEdit}
+                              className={isInvalid ? "border-red-500" : ""}
+                            />
+                            {isInvalid && (
+                              <div className="text-xs text-red-500 mt-1">
+                                Min half day: {minHalfDayHours}h
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+                <TableRow className="table-row-hover">
+                  <TableCell className="font-medium">Notes</TableCell>
+                  {weekDates.map((date, index) => {
+                    const isWeekOff = weekOffDays.includes(date.getDay());
+                    const isLeave = myLeaveDates.includes(toDateInput(date));
+                    return (
+                      <TableCell key={date.toISOString()}>
+                        <Input
+                          value={entries[index]?.notes ?? ""}
+                          onChange={(e) => handleEntryChange(index, "notes", e.target.value)}
+                          placeholder={isWeekOff ? "Week off" : "Work summary"}
+                          disabled={timesheetLocked || isWeekOff || isLeave || !canEdit}
+                        />
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+          <div className="px-6 py-2 text-xs text-muted-foreground">
+            Full day: {minWorkHoursPerDay}h · Half day: {minHalfDayHours}h ·
+            Minimum weekly hours: {minWeeklyHours}h
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-3 px-6 py-4 border-t border-border">
+            {!timesheet?._id && canCreate && (
+              <Button onClick={createDraft} disabled={saving}>
+                Create Draft
+              </Button>
+            )}
+            {timesheet?._id && !timesheetLocked && canEdit && (
+              <Button variant="outline" onClick={saveDraft} disabled={saving}>
+                Save Draft
+              </Button>
+            )}
+            {timesheet?._id && !timesheetLocked && canSubmit && (
+              <Button onClick={submitTimesheet} disabled={saving || !isCurrentMonthWeek}>
+                Submit Timesheet
+              </Button>
+            )}
+            {timesheet?._id && timesheet?.status === "approved" && canRecall && (
+              <Button variant="outline" onClick={recallTimesheet} disabled={saving}>
+                Recall
+              </Button>
+            )}
+          </div>
+        </motion.div>
+      )}
 
       {viewMode === "all" && canAction && (
         <motion.div
