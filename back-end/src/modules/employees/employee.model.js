@@ -177,6 +177,10 @@ const employeeSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    confirmedDate: {
+      type: Date,
+      default: null
+    },
     probationCompletionNotifiedAt: {
       type: Date,
       default: null
@@ -190,6 +194,10 @@ const employeeSchema = new mongoose.Schema(
       default: null
     },
     noticeEndDate: {
+      type: Date,
+      default: null
+    },
+    lastWorkingDay: {
       type: Date,
       default: null
     },

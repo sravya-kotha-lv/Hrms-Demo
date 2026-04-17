@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import {
@@ -53,6 +53,8 @@ const Departments = () => {
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<Department>(emptyDept);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | Department["status"]>("all");
   const canView = hasAnyPermission(["DEPT_VIEW"]);
   const canCreate = hasAnyPermission(["DEPT_CREATE"]);
   const canUpdate = hasAnyPermission(["DEPT_UPDATE"]);
@@ -70,7 +72,7 @@ const Departments = () => {
       return;
     }
 
-    if (response?.code === 200) {
+    if (response?.success) {
       setDepartments(response.data || []);
     } else {
       toast.error(response?.message || "Failed to load departments");
@@ -111,7 +113,7 @@ const Departments = () => {
   const handleSubmit = async () => {
     const payload = {
       name: form.name,
-      managerId: form.managerId,
+      managerId: form.managerId?.trim() || "",
       status: form.status,
     };
 
@@ -141,6 +143,24 @@ const Departments = () => {
     }
   };
 
+  const filteredDepartments = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return departments.filter((department) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        department.name?.toLowerCase().includes(normalizedSearch) ||
+        department.code?.toLowerCase().includes(normalizedSearch);
+      const matchesStatus =
+        statusFilter === "all" || department.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [departments, search, statusFilter]);
+
+  const activeCount = departments.filter((department) => department.status === "active").length;
+  const inactiveCount = departments.length - activeCount;
+
   /* ================= DATATABLE COLUMNS ================= */
 
   const columns: Column<Department>[] = [
@@ -148,11 +168,27 @@ const Departments = () => {
       header: "Name",
       accessor: "name",
       sortable: true,
+      render: (dept) => (
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Building2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-medium text-foreground">{dept.name}</p>
+            <p className="text-xs text-muted-foreground">Code: {dept.code || "-"}</p>
+          </div>
+        </div>
+      ),
     },
     {
       header: "Code",
       accessor: "code",
       sortable: true,
+      render: (dept) => (
+        <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs uppercase tracking-wide">
+          {dept.code || "-"}
+        </span>
+      ),
     },
     {
       header: "Status",
@@ -208,32 +244,67 @@ const Departments = () => {
           You do not have permission to view departments.
         </div>
       )}
-      {/* Action Bar */}
       {canView && (
-        <div className="flex justify-end mb-6">
-          <PermissionGate permissions={["DEPT_CREATE"]}>
-            <Button
-              onClick={() => {
-                setIsEdit(false);
-                setForm(emptyDept);
-                setOpen(true);
-              }}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Department
-            </Button>
-          </PermissionGate>
-        </div>
-      )}
+        <>
+          <div className="mb-6 grid gap-4 md:grid-cols-3">
+            <div className="rounded-xl border bg-card p-4 card-shadow">
+              <p className="text-sm text-muted-foreground">Total Departments</p>
+              <p className="mt-2 text-2xl font-semibold">{departments.length}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4 card-shadow">
+              <p className="text-sm text-muted-foreground">Active</p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{activeCount}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4 card-shadow">
+              <p className="text-sm text-muted-foreground">Inactive</p>
+              <p className="mt-2 text-2xl font-semibold text-muted-foreground">{inactiveCount}</p>
+            </div>
+          </div>
 
-      {/* DataTable */}
-      {canView && (
-        <DataTable
-          columns={canAnyAction ? columns : columns.filter((c) => c.header !== "Actions")}
-          data={departments}
-          rowKey="_id"
-          searchKey="name"
-        />
+          <div className="mb-6 flex flex-col gap-3 rounded-xl border bg-card p-4 card-shadow lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-1 flex-col gap-3 sm:flex-row">
+              <Input
+                placeholder="Search by name or code"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="sm:max-w-sm"
+              />
+              <Select
+                value={statusFilter}
+                onValueChange={(value: "all" | Department["status"]) => setStatusFilter(value)}
+              >
+                <SelectTrigger className="sm:w-[180px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <PermissionGate permissions={["DEPT_CREATE"]}>
+              <Button
+                onClick={() => {
+                  setIsEdit(false);
+                  setForm(emptyDept);
+                  setOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Department
+              </Button>
+            </PermissionGate>
+          </div>
+
+          <DataTable
+            columns={canAnyAction ? columns : columns.filter((c) => c.header !== "Actions")}
+            data={filteredDepartments}
+            rowKey="_id"
+            searchKey={undefined}
+          />
+        </>
       )}
 
       {/* Add / Edit Modal */}

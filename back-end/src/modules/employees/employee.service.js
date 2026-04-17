@@ -377,6 +377,14 @@ const addDays = (value, days) => {
   return date;
 };
 
+const normalizeDateOnly = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
 const normalizeNonNegativeNumber = (value, fallback) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
@@ -407,6 +415,7 @@ const buildProbationLifecyclePayload = ({
     noticePeriodDays: noticeDays,
     noticeStartDate: null,
     noticeEndDate: null,
+    lastWorkingDay: null,
     benefitsEligible: false
   };
 };
@@ -436,7 +445,7 @@ const resolveAssignedApprovalFlowId = async ({
   return flow._id;
 };
 
-const applyLifecycleChange = (employee, nextLifecycleStatus) => {
+const applyLifecycleChange = (employee, nextLifecycleStatus, options = {}) => {
   if (!nextLifecycleStatus) return;
 
   const now = new Date();
@@ -444,6 +453,12 @@ const applyLifecycleChange = (employee, nextLifecycleStatus) => {
     employee.noticePeriodDays,
     DEFAULT_NOTICE_DAYS
   );
+  const providedLastWorkingDay = Object.prototype.hasOwnProperty.call(options, "lastWorkingDay")
+    ? normalizeDateOnly(options.lastWorkingDay)
+    : undefined;
+  const providedConfirmedDate = Object.prototype.hasOwnProperty.call(options, "confirmedDate")
+    ? normalizeDateOnly(options.confirmedDate)
+    : undefined;
 
   if (nextLifecycleStatus === "probation") {
     const probationDays = normalizeNonNegativeNumber(
@@ -459,24 +474,34 @@ const applyLifecycleChange = (employee, nextLifecycleStatus) => {
     employee.probationCompletionNotifiedAt = null;
     employee.noticeStartDate = null;
     employee.noticeEndDate = null;
+    employee.lastWorkingDay = null;
     employee.benefitsEligible = false;
     return;
   }
 
   if (nextLifecycleStatus === "confirmed") {
     employee.employmentLifecycleStatus = "confirmed";
-    employee.probationCompletedAt = employee.probationCompletedAt || now;
+    if (Object.prototype.hasOwnProperty.call(options, "confirmedDate")) {
+      employee.probationCompletedAt = providedConfirmedDate;
+      employee.confirmedDate = providedConfirmedDate;
+    } else {
+      employee.probationCompletedAt = employee.probationCompletedAt || now;
+      employee.confirmedDate = employee.confirmedDate || now;
+    }
     employee.noticeStartDate = null;
     employee.noticeEndDate = null;
+    employee.lastWorkingDay = null;
     employee.benefitsEligible = true;
     return;
   }
 
   if (nextLifecycleStatus === "notice") {
+    const resolvedLastWorkingDay = providedLastWorkingDay ?? addDays(now, noticeDays);
     employee.employmentLifecycleStatus = "notice";
     employee.noticePeriodDays = noticeDays;
     employee.noticeStartDate = now;
-    employee.noticeEndDate = addDays(now, noticeDays);
+    employee.noticeEndDate = resolvedLastWorkingDay;
+    employee.lastWorkingDay = resolvedLastWorkingDay;
     employee.benefitsEligible = false;
     return;
   }
@@ -485,6 +510,7 @@ const applyLifecycleChange = (employee, nextLifecycleStatus) => {
     employee.employmentLifecycleStatus = "terminated";
     employee.noticeStartDate = null;
     employee.noticeEndDate = null;
+    employee.lastWorkingDay = providedLastWorkingDay ?? employee.lastWorkingDay ?? null;
     employee.benefitsEligible = false;
   }
 };
@@ -1098,6 +1124,8 @@ exports.updateByHr = async (req) => {
     employmentType,
     status,
     employmentLifecycleStatus,
+    lastWorkingDay,
+    confirmedDate,
     managerId,
     leaveApprovalFlowId,
     attendanceApprovalFlowId,
@@ -1199,7 +1227,20 @@ exports.updateByHr = async (req) => {
   });
 
   if (employmentLifecycleStatus !== undefined) {
-    applyLifecycleChange(employee, employmentLifecycleStatus);
+    applyLifecycleChange(employee, employmentLifecycleStatus, { lastWorkingDay, confirmedDate });
+  } else {
+    if (lastWorkingDay !== undefined) {
+      const normalizedLastWorkingDay = normalizeDateOnly(lastWorkingDay);
+      employee.lastWorkingDay = normalizedLastWorkingDay;
+      if (employee.employmentLifecycleStatus === "notice") {
+        employee.noticeEndDate = normalizedLastWorkingDay;
+      }
+    }
+    if (confirmedDate !== undefined) {
+      const normalizedConfirmedDate = normalizeDateOnly(confirmedDate);
+      employee.confirmedDate = normalizedConfirmedDate;
+      employee.probationCompletedAt = normalizedConfirmedDate;
+    }
   }
 
   if (status === "resigned") {
@@ -1276,7 +1317,7 @@ exports.updateByHr = async (req) => {
 exports.lifecycleAction = async (req) => {
   const { id } = req.params;
   const { organizationId, userId } = req.user;
-  const { action, reason } = req.body;
+  const { action, reason, lastWorkingDay, confirmedDate } = req.body;
 
   const employee = await Employee.findOne({
     _id: id,
@@ -1310,13 +1351,13 @@ exports.lifecycleAction = async (req) => {
   }
 
   if (action === "confirm") {
-    applyLifecycleChange(employee, "confirmed");
+    applyLifecycleChange(employee, "confirmed", { confirmedDate });
     employee.status = "active";
   } else if (action === "terminate_with_notice") {
-    applyLifecycleChange(employee, "notice");
+    applyLifecycleChange(employee, "notice", { lastWorkingDay });
     employee.status = "resigned";
   } else {
-    applyLifecycleChange(employee, "terminated");
+    applyLifecycleChange(employee, "terminated", { lastWorkingDay });
     employee.status = "resigned";
   }
 

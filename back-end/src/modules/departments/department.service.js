@@ -4,12 +4,19 @@ const OrganizationService = require("../organizations/organization.service");
 const { audit } = require("../auditLogs/auditLogs.service");
 const mongoose = require("mongoose");
 
+const normalizeManagerId = (value) => {
+  if (!value || !String(value).trim()) return undefined;
+  return mongoose.Types.ObjectId.isValid(value) ? value : undefined;
+};
+
 exports.create = async (req) => {
   try {
     let { organizationId, managerId } = req.body;
     if (!organizationId) {
       organizationId = req.user.organizationId;
     }
+    managerId = normalizeManagerId(managerId);
+
     if (!managerId) {
       const employee = await Employee.findOne({
         userId: req.user.userId,
@@ -27,11 +34,17 @@ exports.create = async (req) => {
       throw { code: 400, message: "Department code already exists" };
     }
 
-    const department = await Department.create({
+    const departmentPayload = {
       ...req.body,
       organizationId,
       managerId
-    });
+    };
+
+    if (!managerId) {
+      delete departmentPayload.managerId;
+    }
+
+    const department = await Department.create(departmentPayload);
 
     await audit({
       req,
@@ -67,13 +80,28 @@ exports.update = async (req) => {
   }
 
   const updateDoc = { ...req.body };
+  const normalizedManagerId = normalizeManagerId(updateDoc.managerId);
+
+  if (updateDoc.managerId !== undefined) {
+    if (normalizedManagerId) {
+      updateDoc.managerId = normalizedManagerId;
+    } else {
+      delete updateDoc.managerId;
+    }
+  }
+
   if (updateDoc.status === "active") {
     updateDoc.isDeleted = false;
     updateDoc.deletedAt = null;
     updateDoc.deletedBy = null;
   }
 
-  await Department.updateOne(filter, { $set: updateDoc });
+  const updateOperation = { $set: updateDoc };
+  if (req.body.managerId !== undefined && !normalizedManagerId) {
+    updateOperation.$unset = { managerId: "" };
+  }
+
+  await Department.updateOne(filter, updateOperation);
   const department = await Department.collection.findOne(filter);
 
   await audit({
@@ -123,6 +151,29 @@ exports.remove = async (req) => {
   return {
     alreadyInactive: false,
     department: department.toObject()
+  };
+};
+
+exports.getById = async (req) => {
+  const departmentId = mongoose.Types.ObjectId.isValid(req.params.id)
+    ? new mongoose.Types.ObjectId(req.params.id)
+    : req.params.id;
+  const organizationId = mongoose.Types.ObjectId.isValid(req.user.organizationId)
+    ? new mongoose.Types.ObjectId(req.user.organizationId)
+    : req.user.organizationId;
+
+  const department = await Department.collection.findOne({
+    _id: departmentId,
+    organizationId
+  });
+
+  if (!department) {
+    throw { code: 404, message: "Department not found" };
+  }
+
+  return {
+    ...department,
+    status: department.isDeleted ? "inactive" : department.status
   };
 };
 

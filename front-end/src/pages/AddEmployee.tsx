@@ -90,7 +90,9 @@ const emptyForm = {
   roleIds: [] as string[],
   employmentType: "",
   dateOfJoining: "",
+  confirmedDate: "",
   employmentLifecycleStatus: "confirmed",
+  lastWorkingDay: "",
   phone: "",
   dob: "",
   gender: "",
@@ -311,9 +313,19 @@ const AddEmployee = () => {
         dateOfJoining: employee.dateOfJoining
           ? new Date(employee.dateOfJoining).toISOString().slice(0, 10)
           : "",
+        confirmedDate: employee.confirmedDate
+          ? new Date(employee.confirmedDate).toISOString().slice(0, 10)
+          : employee.probationCompletedAt
+            ? new Date(employee.probationCompletedAt).toISOString().slice(0, 10)
+            : "",
         employmentLifecycleStatus:
           employee.employmentLifecycleStatus ||
           (employee.status === "resigned" ? "notice" : "confirmed"),
+        lastWorkingDay: employee.lastWorkingDay
+          ? new Date(employee.lastWorkingDay).toISOString().slice(0, 10)
+          : employee.noticeEndDate
+            ? new Date(employee.noticeEndDate).toISOString().slice(0, 10)
+            : "",
         phone: employee.phone || "",
         dob: employee.dob ? new Date(employee.dob).toISOString().slice(0, 10) : "",
         gender: employee.gender || "",
@@ -581,6 +593,12 @@ const AddEmployee = () => {
     effectiveBasicPercent
   ]);
 
+  const shouldShowLastWorkingDay =
+    isEdit &&
+    (form.employmentLifecycleStatus === "notice" ||
+      form.employmentLifecycleStatus === "terminated");
+  const isConfirmedLifecycle = isEdit && form.employmentLifecycleStatus === "confirmed";
+
   /* ================= SUBMIT ================= */
 
   const getLifecycleAction = (status: string) => {
@@ -622,6 +640,10 @@ const AddEmployee = () => {
       return;
     }
     if (isEdit) {
+      if (shouldShowLastWorkingDay && !form.lastWorkingDay) {
+        toast.error("Last working day is required");
+        return;
+      }
       const emergency = form.emergencyContacts[0];
       const hasEmergencyValue = Boolean(emergency?.name || emergency?.relation || emergency?.phone);
       if (hasEmergencyValue) {
@@ -658,6 +680,8 @@ const AddEmployee = () => {
       ...(isEdit
         ? {
             phone: form.phone.trim(),
+            confirmedDate: form.confirmedDate || null,
+            lastWorkingDay: shouldShowLastWorkingDay ? form.lastWorkingDay : null,
             dob: form.dob || undefined,
             gender: form.gender || undefined,
             bloodGroup: form.bloodGroup || undefined,
@@ -686,7 +710,11 @@ const AddEmployee = () => {
       if (action) {
         const lifecycleRes = await putApiWithToken(
           `/employees/${id}/lifecycle-action`,
-          { action }
+          {
+            action,
+            ...(isConfirmedLifecycle ? { confirmedDate: form.confirmedDate } : {}),
+            ...(shouldShowLastWorkingDay ? { lastWorkingDay: form.lastWorkingDay } : {})
+          }
         );
         if (!lifecycleRes?.success) {
           setLoading(false);
@@ -1428,6 +1456,35 @@ const AddEmployee = () => {
         </div>
 
         {isEdit && (
+          <div>
+            <Label>Confirmed Date</Label>
+            <div className="grid grid-cols-4 gap-2">
+              <div className="col-span-3">
+                <Input
+                  type="date"
+                  value={form.confirmedDate}
+                  disabled={!isConfirmedLifecycle}
+                  onChange={(e) =>
+                    setForm({ ...form, confirmedDate: e.target.value })
+                  }
+                />
+              </div>
+              <div className="col-span-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={!form.confirmedDate}
+                  onClick={() => setForm({ ...form, confirmedDate: "" })}
+                >
+                  Clear Confirmed Date
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isEdit && (
           <div className="md:col-span-2 space-y-3">
             <Label>
               Employment Lifecycle Status <span className="text-red-600">*</span>
@@ -1435,7 +1492,12 @@ const AddEmployee = () => {
             <Select
               value={form.employmentLifecycleStatus}
               onValueChange={(v) =>
-                setForm({ ...form, employmentLifecycleStatus: v })
+                setForm({
+                  ...form,
+                  employmentLifecycleStatus: v,
+                  lastWorkingDay:
+                    v === "notice" || v === "terminated" ? form.lastWorkingDay : ""
+                })
               }
             >
               <SelectTrigger>
@@ -1454,7 +1516,11 @@ const AddEmployee = () => {
                 size="sm"
                 variant={form.employmentLifecycleStatus === "confirmed" ? "default" : "outline"}
                 onClick={() =>
-                  setForm({ ...form, employmentLifecycleStatus: "confirmed" })
+                  setForm({
+                    ...form,
+                    employmentLifecycleStatus: "confirmed",
+                    lastWorkingDay: ""
+                  })
                 }
               >
                 Confirm
@@ -1480,6 +1546,20 @@ const AddEmployee = () => {
                 Terminate without Notice
               </Button>
             </div>
+            {shouldShowLastWorkingDay && (
+              <div>
+                <Label>
+                  Last Working Day <span className="text-red-600">*</span>
+                </Label>
+                <Input
+                  type="date"
+                  value={form.lastWorkingDay}
+                  onChange={(e) =>
+                    setForm({ ...form, lastWorkingDay: e.target.value })
+                  }
+                />
+              </div>
+            )}
           </div>
         )}
 

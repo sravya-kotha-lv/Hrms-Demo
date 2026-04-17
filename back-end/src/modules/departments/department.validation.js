@@ -18,6 +18,6 @@ exports.createDepartmentSchema = Joi.object({
 exports.updateDepartmentSchema = Joi.object({
   name: buildNameSchema(),
   code: buildCodeSchema(),
-  managerId: Joi.string().optional(),
+  managerId: Joi.string().optional().allow(null, ""),
   status: Joi.string().valid("active", "inactive").required()
 });
