@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { TopNavbar } from "./TopNavbar";
 import { cn } from "@/lib/utils";
+import { getOrgTimeZone, subscribeToOrgTimeZone } from "@/utils/timezone";
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -28,6 +29,7 @@ export const MainLayout = ({ children, title, breadcrumb }: MainLayoutProps) => 
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [timeZoneVersion, setTimeZoneVersion] = useState(() => getOrgTimeZone());
   const handleMobileClose = useCallback(() => setMobileSidebarOpen(false), []);
   const handleCollapsedChange = useCallback((collapsed: boolean) => setSidebarCollapsed(collapsed), []);
 
@@ -47,13 +49,15 @@ export const MainLayout = ({ children, title, breadcrumb }: MainLayoutProps) => 
     return () => window.clearTimeout(timer);
   }, [location.pathname]);
 
+  useEffect(() => subscribeToOrgTimeZone(setTimeZoneVersion), []);
+
   if (parentLayout) {
     return <>{children}</>;
   }
 
   return (
     <MainLayoutContext.Provider value={contextValue}>
-      <div className="min-h-screen bg-background flex">
+      <div key={timeZoneVersion} className="min-h-screen bg-background flex">
         <Sidebar
           mobileOpen={mobileSidebarOpen}
           onMobileClose={handleMobileClose}

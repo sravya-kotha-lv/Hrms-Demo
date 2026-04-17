@@ -570,6 +570,8 @@ const EmployeeDashboard = () => {
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
   const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt);
 
+  console.log(attendanceToday?.checkInAt,"---------");
+  
   const checkInTimeText = attendanceToday?.checkInAt
     ? formatTimeInOrgTimeZone(attendanceToday.checkInAt)
     : "-";

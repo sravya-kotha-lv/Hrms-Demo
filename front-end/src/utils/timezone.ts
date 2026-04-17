@@ -1,5 +1,6 @@
 const ORG_TIMEZONE_KEY = "org_timezone";
 const DEFAULT_ORG_TIMEZONE = "Asia/Kolkata";
+const ORG_TIMEZONE_EVENT = "org-timezone-change";
 
 const isValidTimeZone = (timeZone?: string | null) => {
   try {
@@ -13,12 +14,36 @@ const isValidTimeZone = (timeZone?: string | null) => {
 
 export const setOrgTimeZone = (timeZone: string) => {
   if (!isValidTimeZone(timeZone)) return;
+  const previousTimeZone = localStorage.getItem(ORG_TIMEZONE_KEY);
   localStorage.setItem(ORG_TIMEZONE_KEY, timeZone);
+  if (previousTimeZone !== timeZone) {
+    window.dispatchEvent(new CustomEvent(ORG_TIMEZONE_EVENT, { detail: timeZone }));
+  }
 };
 
 export const getOrgTimeZone = () => {
   const storedTimeZone = localStorage.getItem(ORG_TIMEZONE_KEY);
   return isValidTimeZone(storedTimeZone) ? storedTimeZone : DEFAULT_ORG_TIMEZONE;
+};
+
+export const subscribeToOrgTimeZone = (listener: (timeZone: string) => void) => {
+  const handleTimeZoneChange = (event: Event) => {
+    const nextTimeZone = (event as CustomEvent<string>).detail;
+    listener(typeof nextTimeZone === "string" && isValidTimeZone(nextTimeZone) ? nextTimeZone : getOrgTimeZone());
+  };
+
+  const handleStorageChange = (event: StorageEvent) => {
+    if (event.key !== ORG_TIMEZONE_KEY) return;
+    listener(getOrgTimeZone());
+  };
+
+  window.addEventListener(ORG_TIMEZONE_EVENT, handleTimeZoneChange as EventListener);
+  window.addEventListener("storage", handleStorageChange);
+
+  return () => {
+    window.removeEventListener(ORG_TIMEZONE_EVENT, handleTimeZoneChange as EventListener);
+    window.removeEventListener("storage", handleStorageChange);
+  };
 };
 
 const toDate = (value: string | number | Date) =>
