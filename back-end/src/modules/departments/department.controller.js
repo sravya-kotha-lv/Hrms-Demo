@@ -1,5 +1,8 @@
 const departmentService = require("./department.service");
-const { buildSuccessResponse } = require("../../utils/responseBuilder");
+const {
+  buildSuccessResponse,
+  buildFailureResponse
+} = require("../../utils/responseBuilder");
 const {
   withCache,
   buildRequestCacheKey,
@@ -10,23 +13,25 @@ const DEPT_NAMESPACE = "departments";
 
 exports.create = async (req, res) => {
   try {
-  const data = await departmentService.create(req);
-  await invalidateCacheNamespace(DEPT_NAMESPACE);
-  res.status(201).json(
-    buildSuccessResponse({
-      message: "Department created successfully",
-      data
-    })
-  );
-} catch (error) {
-  res.status(500).json(
-    buildSuccessResponse({
-      message: "Error creating department",
-      error: error.message
-    })
-  );
+    const data = await departmentService.create(req);
+    await invalidateCacheNamespace(DEPT_NAMESPACE);
+    res.status(201).json(
+      buildSuccessResponse({
+        code: 201,
+        message: "Department created successfully",
+        data
+      })
+    );
+  } catch (error) {
+    res.status(error?.code || 500).json(
+      buildFailureResponse({
+        code: error?.code || 500,
+        message: error?.message || "Error creating department",
+        error
+      })
+    );
+  }
 };
-}
 
 exports.update = async (req, res) => {
   const data = await departmentService.update(req);
@@ -34,6 +39,16 @@ exports.update = async (req, res) => {
   res.json(
     buildSuccessResponse({
       message: "Department updated successfully",
+      data
+    })
+  );
+};
+
+exports.getById = async (req, res) => {
+  const data = await departmentService.getById(req);
+  res.json(
+    buildSuccessResponse({
+      message: "Department fetched successfully",
       data
     })
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,9 +10,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
+import { toast } from "sonner";
 
 
 const AddDepartment = () => {
@@ -56,27 +57,36 @@ const AddDepartment = () => {
   }, [data]);
 
   // 🔹 Create / Update Mutation
-  const mutation = useMutation({
-  mutationFn: async () => {
-    if (isEdit) {
-      return await putApiWithToken(`/departments/${id}`, formData, null, {
-        requiredPermissions: ["DEPT_UPDATE"]
-      });
-    } else {
-      return await postApiWithToken(`/departments`, formData, null, {
-        requiredPermissions: ["DEPT_CREATE"]
-      });
-    }
-  },
-  onSuccess: () => {
-    navigate("/departments");
-  },
-});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-
-  const handleSubmit = (e: any) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    mutation.mutate();
+    setIsSubmitting(true);
+
+    const payload = {
+      ...formData,
+      managerId: formData.managerId?.trim() || "",
+    };
+
+    const res = isEdit
+      ? await putApiWithToken(`/departments/${id}`, payload, null, {
+          requiredPermissions: ["DEPT_UPDATE"]
+        })
+      : await postApiWithToken(`/departments`, payload, null, {
+          requiredPermissions: ["DEPT_CREATE"]
+        });
+
+    setIsSubmitting(false);
+
+    if (res?.skipped) return;
+
+    if (res?.success) {
+      toast.success(isEdit ? "Department updated" : "Department created");
+      navigate("/departments");
+      return;
+    }
+
+    toast.error(res?.message || "Failed to save department");
   };
 
   return (
@@ -155,7 +165,7 @@ const AddDepartment = () => {
               Cancel
             </Button>
 
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button type="submit" disabled={isSubmitting}>
               {isEdit ? "Update Department" : "Create Department"}
             </Button>
           </div>
