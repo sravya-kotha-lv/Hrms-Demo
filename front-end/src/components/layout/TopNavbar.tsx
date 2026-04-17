@@ -19,6 +19,7 @@ import { getApiWithToken, patchApiWithToken, switchRole } from "@/services/apiWr
 import { clearAuth, setToken, updateActiveRoleInProfile } from "@/utils/auth";
 import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
+import { formatDateTimeInOrgTimeZone } from "@/utils/timezone";
 
 interface TopNavbarProps {
   title?: string;
@@ -127,7 +128,7 @@ export const TopNavbar = ({ title, breadcrumb, onOpenSidebar }: TopNavbarProps) 
   const formatNotificationTime = (value: string) => {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString();
+    return formatDateTimeInOrgTimeZone(d);
   };
 
   return (

@@ -22,6 +22,7 @@ import {
   putApiWithToken
 } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
+import { formatDateTimeInOrgTimeZone } from "@/utils/timezone";
 
 type JobStatus = "draft" | "open" | "on_hold" | "closed";
 type CandidateStage = "applied" | "screening" | "interview" | "offer" | "hired" | "rejected";
@@ -750,7 +751,7 @@ const Hiring = () => {
                           <p className="text-xs text-muted-foreground mt-1">
                             {latestInterview.roundName || "L1"} •{" "}
                             {latestInterview.scheduledAt
-                              ? new Date(latestInterview.scheduledAt).toLocaleString()
+                              ? formatDateTimeInOrgTimeZone(latestInterview.scheduledAt)
                               : "-"}{" "}
                             • {latestInterview.status || "scheduled"}
                           </p>
@@ -1231,7 +1232,7 @@ const Hiring = () => {
                           {interview.roundName || "Round"} • {interview.status || "scheduled"}
                         </p>
                         <p className="text-muted-foreground">
-                          {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleString() : "-"} • {interview.mode || "-"}
+                          {interview.scheduledAt ? formatDateTimeInOrgTimeZone(interview.scheduledAt) : "-"} • {interview.mode || "-"}
                         </p>
                         {interview.feedback ? (
                           <p className="text-muted-foreground mt-1">Feedback: {interview.feedback}</p>
