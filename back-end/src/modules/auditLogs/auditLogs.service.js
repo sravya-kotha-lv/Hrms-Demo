@@ -40,6 +40,6 @@ exports.audit = async ({
     before,
     after,
     ipAddress: req.ip,
-    userAgent: req.headers["user-agent"]
+    userAgent: req.headers?.["user-agent"] || ""
   });
 };

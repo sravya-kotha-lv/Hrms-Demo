@@ -55,3 +55,25 @@ exports.getEmployeeLeaveBalance = async (req, res) => {
     buildSuccessResponse({ data })
   );
 };
+
+exports.adjustEmployeeLeaveBalance = async (req, res) => {
+  const data = await service.adjustEmployeeBalance(req);
+
+  return res.status(200).json(
+    buildSuccessResponse({
+      message: "Leave balance adjusted successfully",
+      data
+    })
+  );
+};
+
+exports.adjustAllEmployeeLeaveBalance = async (req, res) => {
+  const data = await service.adjustAllEmployeeBalances(req);
+
+  return res.status(200).json(
+    buildSuccessResponse({
+      message: "Leave balance adjusted for all employees successfully",
+      data
+    })
+  );
+};
