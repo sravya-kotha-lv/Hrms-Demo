@@ -84,6 +84,7 @@ type LeaveTypeRef = {
   name?: string;
   code?: string;
   status?: string;
+  daysPerYear?: number;
 };
 
 type ApprovalFlowRef = {
@@ -162,7 +163,10 @@ const normalizeLeaveTypes = (payload: unknown, options: { includeInactive?: bool
         _id: id,
         name,
         code: typeof leaveType.code === "string" ? leaveType.code.trim() : "",
-        status: typeof leaveType.status === "string" ? leaveType.status : undefined
+        status: typeof leaveType.status === "string" ? leaveType.status : undefined,
+        daysPerYear: Number.isFinite(Number((leaveType as { daysPerYear?: number }).daysPerYear))
+          ? Number((leaveType as { daysPerYear?: number }).daysPerYear)
+          : undefined
       };
     })
     .filter((leaveType): leaveType is LeaveTypeRef => {
@@ -349,7 +353,6 @@ const Leave = () => {
   const [adjustForm, setAdjustForm] = useState({
     employeeId: "",
     leaveTypeId: "",
-    days: "",
     note: ""
   });
   const canViewAll = hasAnyPermission(["LEAVE_VIEW_ALL"]);
@@ -649,14 +652,14 @@ const Leave = () => {
   };
 
   const submitAdjustment = async () => {
-    if (!adjustForm.employeeId || !adjustForm.leaveTypeId || !adjustForm.days.trim()) {
-      toast.error("Employee, leave type, and adjustment days are required");
+    if (!adjustForm.employeeId || !adjustForm.leaveTypeId) {
+      toast.error("Employee and leave type are required");
       return;
     }
 
-    const days = Number(adjustForm.days);
-    if (!Number.isFinite(days) || days === 0) {
-      toast.error("Adjustment days must be a valid non-zero number");
+    const days = Number(selectedLeaveTypeMeta?.daysPerYear ?? 0);
+    if (!Number.isFinite(days) || days <= 0) {
+      toast.error("Selected leave type does not have a valid configured leave count");
       return;
     }
 
@@ -690,15 +693,14 @@ const Leave = () => {
       if (res?.success) {
         toast.success(
           adjustForm.employeeId === ALL_EMPLOYEES_VALUE
-            ? `Leave balance updated for ${res?.data?.count || "all"} employees`
-            : "Leave balance updated"
+            ? `Configured leave count synced for ${res?.data?.count || "all"} assigned employees`
+            : "Configured leave count synced"
         );
         await fetchEmployeeBalances(adjustForm.employeeId);
         setAdjustOpen(false);
         setAdjustForm({
           employeeId: "",
           leaveTypeId: "",
-          days: "",
           note: ""
         });
       } else {
@@ -730,6 +732,11 @@ const Leave = () => {
   const selectedBalance = useMemo(
     () => availableBalanceOptions.find((balance) => balance.leaveTypeId === adjustForm.leaveTypeId) || null,
     [availableBalanceOptions, adjustForm.leaveTypeId]
+  );
+
+  const selectedLeaveTypeMeta = useMemo(
+    () => allLeaveTypes.find((leaveType) => leaveType._id === adjustForm.leaveTypeId) || null,
+    [allLeaveTypes, adjustForm.leaveTypeId]
   );
 
   const handleLeaveTableScroll = () => {
@@ -936,7 +943,7 @@ const Leave = () => {
               onClick={() => setAdjustOpen(true)}
             >
               <Settings2 className="w-4 h-4" />
-              Adjust Balance
+              Sync Leave Count
             </Button>
           )}
           <PermissionGate permissions={["LEAVE_APPLY"]}>
@@ -1336,7 +1343,6 @@ const Leave = () => {
             setAdjustForm({
               employeeId: "",
               leaveTypeId: "",
-              days: "",
               note: ""
             });
             setEmployeeBalances([]);
@@ -1345,9 +1351,9 @@ const Leave = () => {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Adjust Employee Leave Balance</DialogTitle>
+            <DialogTitle>Sync Leave Type Count</DialogTitle>
             <DialogDescription>
-              Update a specific employee's leave balance by leave type name, or choose All Employees to apply the same adjustment across the organization. Use positive days to add balance and negative days to deduct it.
+              Sync the selected leave type's configured count to one employee or to all assigned employees. This sets the leave total from the leave type configuration instead of adding extra days.
             </DialogDescription>
           </DialogHeader>
 
@@ -1357,7 +1363,7 @@ const Leave = () => {
               <Select
                 value={adjustForm.employeeId}
                 onValueChange={(value) =>
-                  setAdjustForm({ employeeId: value, leaveTypeId: "", days: "", note: "" })
+                  setAdjustForm({ employeeId: value, leaveTypeId: "", note: "" })
                 }
               >
                 <SelectTrigger>
@@ -1401,7 +1407,7 @@ const Leave = () => {
               <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                 <p className="font-medium text-foreground">All Employees</p>
                 <p className="text-muted-foreground mt-1">
-                  This will update the selected leave type for every employee who currently has that leave balance.
+                  This will sync {selectedLeaveTypeMeta?.daysPerYear ?? 0} total days from the selected leave type to every employee who currently has that leave balance assigned.
                 </p>
               </div>
             )}
@@ -1414,21 +1420,20 @@ const Leave = () => {
                 <p className="text-muted-foreground mt-1">
                   Current {selectedBalance.leaveType}: Total {selectedBalance.total ?? 0}, Used {selectedBalance.used ?? 0}, Pending {selectedBalance.pending ?? 0}, Remaining {selectedBalance.remaining ?? 0}
                 </p>
+                <p className="text-muted-foreground mt-1">
+                  After sync, total will be set to {selectedLeaveTypeMeta?.daysPerYear ?? 0} and remaining will be recalculated as total minus used and pending.
+                </p>
               </div>
             )}
 
             <div className="space-y-2">
-              <Label>Adjustment Days</Label>
-              <Input
-                type="number"
-                step="0.5"
-                placeholder="Example: 1.5 or -1"
-                value={adjustForm.days}
-                onChange={(e) => setAdjustForm((prev) => ({ ...prev, days: e.target.value }))}
-              />
-              <p className="text-xs text-muted-foreground">
-                Positive values add leave. Negative values deduct leave.
-              </p>
+              <Label>Leave Count</Label>
+              <div className="rounded-lg border bg-muted/30 px-3 py-3 text-sm">
+                <p className="font-medium text-foreground">{selectedLeaveTypeMeta?.daysPerYear ?? 0} days</p>
+                <p className="mt-1 text-muted-foreground">
+                  This value is fetched automatically from the selected leave type configuration.
+                </p>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1446,7 +1451,7 @@ const Leave = () => {
               Cancel
             </Button>
             <Button onClick={submitAdjustment} disabled={savingAdjustment}>
-              {savingAdjustment ? "Saving..." : "Save Adjustment"}
+              {savingAdjustment ? "Syncing..." : "Sync Leave Count"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -354,15 +354,15 @@ exports.adjustEmployeeBalance = async (req) => {
   }
 
   const before = balance.toObject();
-  const adjustmentDays = roundTwo(Number(days));
-  const nextTotal = roundTwo(Number(balance.total || 0) + adjustmentDays);
-  const nextRemaining = roundTwo(Number(balance.remaining || 0) + adjustmentDays);
+  const configuredTotal = roundTwo(Number(days));
   const usedAndPending = roundTwo(Number(balance.used || 0) + Number(balance.pending || 0));
+  const nextTotal = configuredTotal;
+  const nextRemaining = roundTwo(configuredTotal - usedAndPending);
 
   if (nextTotal < usedAndPending) {
     throw {
       code: 400,
-      message: `Adjusted total cannot be less than used + pending (${usedAndPending})`
+      message: `Configured total cannot be less than used + pending (${usedAndPending})`
     };
   }
 
@@ -402,7 +402,7 @@ exports.adjustEmployeeBalance = async (req) => {
       remaining: balance.remaining,
       cycleStartYear: balance.cycleStartYear
     },
-    adjustmentDays
+    adjustmentDays: configuredTotal
   };
 };
 
@@ -432,7 +432,7 @@ exports.adjustAllEmployeeBalances = async (req) => {
   }).select("_id firstName lastName employeeCode");
   const employeeMap = new Map(employees.map((employee) => [String(employee._id), employee]));
 
-  const adjustmentDays = roundTwo(Number(days));
+  const configuredTotal = roundTwo(Number(days));
   const results = [];
 
   for (const balance of balances) {
@@ -440,14 +440,14 @@ exports.adjustAllEmployeeBalances = async (req) => {
     if (!employee) continue;
 
     const before = balance.toObject();
-    const nextTotal = roundTwo(Number(balance.total || 0) + adjustmentDays);
-    const nextRemaining = roundTwo(Number(balance.remaining || 0) + adjustmentDays);
     const usedAndPending = roundTwo(Number(balance.used || 0) + Number(balance.pending || 0));
+    const nextTotal = configuredTotal;
+    const nextRemaining = roundTwo(configuredTotal - usedAndPending);
 
     if (nextTotal < usedAndPending) {
       throw {
         code: 400,
-        message: `Adjusted total cannot be less than used + pending (${usedAndPending}) for ${employee.employeeCode || employee.firstName || "an employee"}`
+        message: `Configured total cannot be less than used + pending (${usedAndPending}) for ${employee.employeeCode || employee.firstName || "an employee"}`
       };
     }
 
@@ -490,7 +490,7 @@ exports.adjustAllEmployeeBalances = async (req) => {
         remaining: balance.remaining,
         cycleStartYear: balance.cycleStartYear
       },
-      adjustmentDays
+      adjustmentDays: configuredTotal
     });
   }
 
