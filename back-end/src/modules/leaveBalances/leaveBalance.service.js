@@ -3,6 +3,7 @@ const LeaveType = require("../leaveTypes/leaveType.model");
 const Organization = require("../organizations/organization.model");
 const Employee = require("../employees/employee.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
+const { audit } = require("../auditLogs/auditLogs.service");
 
 /**
  * Get leave cycle start year based on org configuration
@@ -17,6 +18,50 @@ const getCycleStartYear = (date, startMonth) => {
  * Round value to 2 decimals
  */
 const roundTwo = (value) => Math.round(value * 100) / 100;
+
+const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const resolveLeaveType = async ({ organizationId, leaveTypeId, leaveTypeName }) => {
+  if (leaveTypeId) {
+    const byId = await LeaveType.findOne({
+      _id: leaveTypeId,
+      organizationId
+    }).select("_id name code");
+    if (byId) return byId;
+  }
+
+  const normalizedName = String(leaveTypeName || "").trim();
+  if (!normalizedName) return null;
+
+  const byExactName = await LeaveType.findOne({
+    organizationId,
+    name: normalizedName
+  }).select("_id name code");
+  if (byExactName) return byExactName;
+
+  const labelMatch = normalizedName.match(/^(.*?)(?:\s*\(([^)]+)\))?$/);
+  const parsedName = labelMatch?.[1]?.trim() || "";
+  const parsedCode = labelMatch?.[2]?.trim() || "";
+
+  if (parsedCode) {
+    const byCode = await LeaveType.findOne({
+      organizationId,
+      code: new RegExp(`^${escapeRegex(parsedCode)}$`, "i")
+    }).select("_id name code");
+    if (byCode) return byCode;
+  }
+
+  if (parsedName) {
+    const byParsedName = await LeaveType.findOne({
+      organizationId,
+      name: new RegExp(`^${escapeRegex(parsedName)}$`, "i")
+    }).select("_id name code");
+    if (byParsedName) return byParsedName;
+  }
+
+  return null;
+};
+
 const getCycleStartDate = (date, startMonth) => {
   const d = new Date(date);
   const year = d.getMonth() + 1 < startMonth ? d.getFullYear() - 1 : d.getFullYear();
@@ -242,6 +287,7 @@ exports.getEmployeeBalance = async (organizationId, id, type = "USER") => {
   }).populate("leaveTypeId", "name code");
 
   return balances.map((b) => ({
+    _id: b._id,
     leaveTypeId: b.leaveTypeId._id,
     leaveType: b.leaveTypeId.name,
     code: b.leaveTypeId.code,
@@ -250,4 +296,211 @@ exports.getEmployeeBalance = async (organizationId, id, type = "USER") => {
     pending: b.pending || 0,
     remaining: b.remaining
   }));
+};
+
+exports.adjustEmployeeBalance = async (req) => {
+  const { organizationId, userId } = req.user;
+  const { employeeId } = req.params;
+  const { balanceId, leaveTypeId, leaveTypeName, days, note } = req.body;
+
+  const employee = await Employee.findOne({
+    _id: employeeId,
+    organizationId
+  }).select("_id firstName lastName employeeCode");
+
+  if (!employee) {
+    throw { code: 404, message: "Employee not found" };
+  }
+
+  let balance = null;
+  let leaveType = null;
+
+  if (balanceId) {
+    balance = await LeaveBalance.findOne({
+      _id: balanceId,
+      organizationId,
+      employeeId: employee._id
+    })
+      .populate("leaveTypeId", "name code")
+      .sort({ cycleStartYear: -1 });
+
+    if (balance?.leaveTypeId) {
+      leaveType = {
+        _id: balance.leaveTypeId._id,
+        name: balance.leaveTypeId.name,
+        code: balance.leaveTypeId.code
+      };
+    }
+  }
+
+  if (!leaveType) {
+    leaveType = await resolveLeaveType({ organizationId, leaveTypeId, leaveTypeName });
+  }
+
+  if (!leaveType) {
+    throw { code: 404, message: "Leave type not found" };
+  }
+
+  if (!balance) {
+    balance = await LeaveBalance.findOne({
+      organizationId,
+      employeeId: employee._id,
+      leaveTypeId: leaveType._id
+    }).sort({ cycleStartYear: -1 });
+  }
+
+  if (!balance) {
+    throw { code: 404, message: "Leave balance not found for the selected employee and leave type" };
+  }
+
+  const before = balance.toObject();
+  const configuredTotal = roundTwo(Number(days));
+  const usedAndPending = roundTwo(Number(balance.used || 0) + Number(balance.pending || 0));
+  const nextTotal = configuredTotal;
+  const nextRemaining = roundTwo(configuredTotal - usedAndPending);
+
+  if (nextTotal < usedAndPending) {
+    throw {
+      code: 400,
+      message: `Configured total cannot be less than used + pending (${usedAndPending})`
+    };
+  }
+
+  if (nextRemaining < 0) {
+    throw { code: 400, message: "Adjusted remaining leave cannot be negative" };
+  }
+
+  balance.total = nextTotal;
+  balance.remaining = nextRemaining;
+  await balance.save();
+
+  await audit({
+    req,
+    module: "leave_balances",
+    action: "UPDATE",
+    entityId: balance._id,
+    before,
+    after: balance.toObject()
+  });
+
+  return {
+    employee: {
+      _id: employee._id,
+      name: `${employee.firstName || ""} ${employee.lastName || ""}`.trim() || employee.employeeCode || "Employee",
+      employeeCode: employee.employeeCode || ""
+    },
+    leaveType: {
+      _id: leaveType._id,
+      name: leaveType.name,
+      code: leaveType.code
+    },
+    balance: {
+      _id: balance._id,
+      total: balance.total,
+      used: balance.used,
+      pending: balance.pending || 0,
+      remaining: balance.remaining,
+      cycleStartYear: balance.cycleStartYear
+    },
+    adjustmentDays: configuredTotal
+  };
+};
+
+exports.adjustAllEmployeeBalances = async (req) => {
+  const { organizationId } = req.user;
+  const { leaveTypeId, leaveTypeName, days, note } = req.body;
+
+  const leaveType = await resolveLeaveType({ organizationId, leaveTypeId, leaveTypeName });
+
+  if (!leaveType) {
+    throw { code: 404, message: "Leave type not found" };
+  }
+
+  const balances = await LeaveBalance.find({
+    organizationId,
+    leaveTypeId: leaveType._id
+  }).sort({ cycleStartYear: -1 });
+
+  if (!balances.length) {
+    throw { code: 404, message: "No leave balances found for the selected leave type" };
+  }
+
+  const employeeIds = [...new Set(balances.map((balance) => String(balance.employeeId)))];
+  const employees = await Employee.find({
+    _id: { $in: employeeIds },
+    organizationId
+  }).select("_id firstName lastName employeeCode");
+  const employeeMap = new Map(employees.map((employee) => [String(employee._id), employee]));
+
+  const configuredTotal = roundTwo(Number(days));
+  const results = [];
+
+  for (const balance of balances) {
+    const employee = employeeMap.get(String(balance.employeeId));
+    if (!employee) continue;
+
+    const before = balance.toObject();
+    const usedAndPending = roundTwo(Number(balance.used || 0) + Number(balance.pending || 0));
+    const nextTotal = configuredTotal;
+    const nextRemaining = roundTwo(configuredTotal - usedAndPending);
+
+    if (nextTotal < usedAndPending) {
+      throw {
+        code: 400,
+        message: `Configured total cannot be less than used + pending (${usedAndPending}) for ${employee.employeeCode || employee.firstName || "an employee"}`
+      };
+    }
+
+    if (nextRemaining < 0) {
+      throw {
+        code: 400,
+        message: `Adjusted remaining leave cannot be negative for ${employee.employeeCode || employee.firstName || "an employee"}`
+      };
+    }
+
+    balance.total = nextTotal;
+    balance.remaining = nextRemaining;
+    await balance.save();
+
+    await audit({
+      req,
+      module: "leave_balances",
+      action: "UPDATE",
+      entityId: balance._id,
+      before,
+      after: balance.toObject()
+    });
+
+    results.push({
+      employee: {
+        _id: employee._id,
+        name: `${employee.firstName || ""} ${employee.lastName || ""}`.trim() || employee.employeeCode || "Employee",
+        employeeCode: employee.employeeCode || ""
+      },
+      leaveType: {
+        _id: leaveType._id,
+        name: leaveType.name,
+        code: leaveType.code
+      },
+      balance: {
+        _id: balance._id,
+        total: balance.total,
+        used: balance.used,
+        pending: balance.pending || 0,
+        remaining: balance.remaining,
+        cycleStartYear: balance.cycleStartYear
+      },
+      adjustmentDays: configuredTotal
+    });
+  }
+
+  return {
+    leaveType: {
+      _id: leaveType._id,
+      name: leaveType.name,
+      code: leaveType.code
+    },
+    count: results.length,
+    items: results
+  };
 };

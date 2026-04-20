@@ -12,7 +12,8 @@ import {
   RefreshCw,
   Palmtree,
   Stethoscope,
-  Briefcase
+  Briefcase,
+  Settings2
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -81,6 +82,9 @@ type ApprovalStep = {
 type LeaveTypeRef = {
   _id?: string;
   name?: string;
+  code?: string;
+  status?: string;
+  daysPerYear?: number;
 };
 
 type ApprovalFlowRef = {
@@ -113,6 +117,65 @@ type LeaveApplyWindow = {
   earliestAllowedDateKey?: string;
   attendanceLockMode?: string;
   attendanceLockAfterDays?: number;
+};
+
+type EmployeeOption = {
+  _id?: string;
+  firstName?: string;
+  lastName?: string;
+  employeeCode?: string;
+};
+
+type LeaveBalanceRow = {
+  _id?: string;
+  leaveTypeId?: string;
+  leaveType?: string;
+  code?: string;
+  total?: number;
+  used?: number;
+  pending?: number;
+  remaining?: number;
+};
+
+const ALL_EMPLOYEES_VALUE = "__all_employees__";
+
+const normalizeLeaveTypes = (payload: unknown, options: { includeInactive?: boolean } = {}): LeaveTypeRef[] => {
+  const includeInactive = Boolean(options.includeInactive);
+  const candidateLists = [
+    payload,
+    (payload as { data?: unknown } | null | undefined)?.data,
+    (payload as { items?: unknown } | null | undefined)?.items,
+    (payload as { leaveTypes?: unknown } | null | undefined)?.leaveTypes
+  ];
+
+  const rawList = candidateLists.find(Array.isArray);
+  if (!Array.isArray(rawList)) return [];
+
+  const seenIds = new Set<string>();
+  return rawList
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const leaveType = item as LeaveTypeRef;
+      const id = typeof leaveType._id === "string" ? leaveType._id : "";
+      const name = typeof leaveType.name === "string" ? leaveType.name.trim() : "";
+      if (!id || !name) return null;
+      return {
+        _id: id,
+        name,
+        code: typeof leaveType.code === "string" ? leaveType.code.trim() : "",
+        status: typeof leaveType.status === "string" ? leaveType.status : undefined,
+        daysPerYear: Number.isFinite(Number((leaveType as { daysPerYear?: number }).daysPerYear))
+          ? Number((leaveType as { daysPerYear?: number }).daysPerYear)
+          : undefined
+      };
+    })
+    .filter((leaveType): leaveType is LeaveTypeRef => {
+      if (!leaveType) return false;
+      if (!includeInactive && leaveType.status === "inactive") return false;
+      if (seenIds.has(leaveType._id!)) return false;
+      seenIds.add(leaveType._id!);
+      return true;
+    });
 };
 
 const getStatusBadge = (status: string) => {
@@ -270,7 +333,14 @@ const Leave = () => {
   const resetPaginationRef = useRef(false);
   const [viewMode, setViewMode] = useState<"all" | "my">("all");
   const [applyOpen, setApplyOpen] = useState(false);
+  const [adjustOpen, setAdjustOpen] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeRef[]>([]);
+  const [allLeaveTypes, setAllLeaveTypes] = useState<LeaveTypeRef[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [employeeBalances, setEmployeeBalances] = useState<LeaveBalanceRow[]>([]);
+  const [loadingBalances, setLoadingBalances] = useState(false);
+  const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [leaveApplyWindow, setLeaveApplyWindow] = useState<LeaveApplyWindow | null>(null);
   const [applyForm, setApplyForm] = useState({
     leaveTypeId: "",
@@ -280,11 +350,18 @@ const Leave = () => {
     halfDaySession: "first_half",
     reason: ""
   });
+  const [adjustForm, setAdjustForm] = useState({
+    employeeId: "",
+    leaveTypeId: "",
+    note: ""
+  });
   const canViewAll = hasAnyPermission(["LEAVE_VIEW_ALL"]);
   const canViewSelf = hasAnyPermission(["LEAVE_VIEW_SELF"]);
   const canViewAny = canViewAll || canViewSelf;
   const canApply = hasAnyPermission(["LEAVE_APPLY"]);
   const canAction = hasAnyPermission(["LEAVE_ACTION"]);
+  const canViewEmployees = hasAnyPermission(["EMP_VIEW"]);
+  const canAdjustBalances = canViewAll && canViewEmployees;
   const currentEmployeeId = toIdString(profile?.employeeId);
   const currentRoleSlug = profile?.activeRole?.slug || "";
   const applyDateError = useMemo(() => {
@@ -426,15 +503,6 @@ const Leave = () => {
   };
 
   const fetchLeaveTypes = async () => {
-    const applyContextRes = await getApiWithToken("/leaves/apply-context", null, {
-      requiredPermissions: ["LEAVE_APPLY"]
-    });
-    if (applyContextRes?.success) {
-      setLeaveTypes(applyContextRes?.data?.leaveTypes || []);
-      setLeaveApplyWindow(applyContextRes?.data?.leaveApplyWindow || null);
-      return;
-    }
-
     let res = await getApiWithToken("/employees/leave-types");
     if (!res?.success) {
       res = await getApiWithToken("/leave-types", null, {
@@ -442,13 +510,112 @@ const Leave = () => {
       });
     }
     if (res?.success) {
-      setLeaveTypes(res?.data || []);
+      const normalizedLeaveTypes = normalizeLeaveTypes(res?.data);
+      if (normalizedLeaveTypes.length > 0) {
+        setLeaveTypes(normalizedLeaveTypes);
+        return;
+      }
+    }
+
+    const leaveTypeListRes = await getApiWithToken("/leave-types", null, {
+      requiredPermissions: ["LEAVE_TYPE_VIEW"]
+    });
+    if (leaveTypeListRes?.success) {
+      setLeaveTypes(normalizeLeaveTypes(leaveTypeListRes?.data));
+      return;
+    }
+
+    const applyContextRes = await getApiWithToken("/leaves/apply-context", null, {
+      requiredPermissions: ["LEAVE_APPLY"]
+    });
+    if (applyContextRes?.success) {
+      setLeaveTypes(normalizeLeaveTypes(applyContextRes?.data?.leaveTypes));
+      setLeaveApplyWindow(applyContextRes?.data?.leaveApplyWindow || null);
     }
   };
+
+  const fetchAllLeaveTypes = useCallback(async () => {
+    const res = await getApiWithToken("/leave-types", null, {
+      requiredPermissions: ["LEAVE_TYPE_VIEW"]
+    });
+    if (res?.success) {
+      const normalizedLeaveTypes = normalizeLeaveTypes(res?.data, { includeInactive: true });
+      if (normalizedLeaveTypes.length > 0) {
+        setAllLeaveTypes(normalizedLeaveTypes);
+        return;
+      }
+    }
+
+    const fallbackRes = await getApiWithToken("/employees/leave-types");
+    if (fallbackRes?.success) {
+      setAllLeaveTypes(normalizeLeaveTypes(fallbackRes?.data, { includeInactive: true }));
+    }
+  }, []);
 
   useEffect(() => {
     fetchLeaveTypes();
   }, []);
+
+  useEffect(() => {
+    if (!canAdjustBalances) return;
+    fetchAllLeaveTypes();
+  }, [canAdjustBalances, fetchAllLeaveTypes]);
+
+  const fetchEmployees = useCallback(async () => {
+    if (!canAdjustBalances) return;
+    setLoadingEmployees(true);
+    try {
+      const res = await getApiWithToken("/employees?limit=500", null, {
+        requiredPermissions: ["EMP_VIEW"]
+      });
+      if (res?.skipped) return;
+      if (res?.success) {
+        const payload = res.data;
+        setEmployees(Array.isArray(payload) ? payload : payload?.items || []);
+      } else {
+        toast.error(res?.message || "Failed to load employees");
+      }
+    } finally {
+      setLoadingEmployees(false);
+    }
+  }, [canAdjustBalances]);
+
+  const fetchEmployeeBalances = useCallback(async (employeeId: string) => {
+    if (!employeeId || employeeId === ALL_EMPLOYEES_VALUE) {
+      setEmployeeBalances([]);
+      return;
+    }
+    setLoadingBalances(true);
+    try {
+      const res = await getApiWithToken(`/leave-balances/employee/${encodeURIComponent(employeeId)}`, null, {
+        requiredPermissions: ["LEAVE_VIEW_ALL"]
+      });
+      if (res?.skipped) return;
+      if (res?.success) {
+        setEmployeeBalances(res.data || []);
+      } else {
+        setEmployeeBalances([]);
+        toast.error(res?.message || "Failed to load leave balances");
+      }
+    } finally {
+      setLoadingBalances(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!adjustOpen || employees.length > 0 || loadingEmployees || !canAdjustBalances) return;
+    fetchEmployees();
+  }, [adjustOpen, employees.length, loadingEmployees, canAdjustBalances, fetchEmployees]);
+
+  useEffect(() => {
+    if (!adjustOpen) return;
+    fetchEmployeeBalances(adjustForm.employeeId);
+  }, [adjustForm.employeeId, adjustOpen, fetchEmployeeBalances]);
+
+  useEffect(() => {
+    if (!adjustOpen || adjustForm.employeeId !== ALL_EMPLOYEES_VALUE || allLeaveTypes.length > 0) return;
+    fetchAllLeaveTypes();
+  }, [adjustForm.employeeId, adjustOpen, allLeaveTypes.length, fetchAllLeaveTypes]);
 
   const submitApply = async () => {
     if (!applyForm.leaveTypeId || !applyForm.fromDate || !applyForm.toDate) {
@@ -484,7 +651,93 @@ const Leave = () => {
     }
   };
 
+  const submitAdjustment = async () => {
+    if (!adjustForm.employeeId || !adjustForm.leaveTypeId) {
+      toast.error("Employee and leave type are required");
+      return;
+    }
+
+    const days = Number(selectedLeaveTypeMeta?.daysPerYear ?? 0);
+    if (!Number.isFinite(days) || days <= 0) {
+      toast.error("Selected leave type does not have a valid configured leave count");
+      return;
+    }
+
+    setSavingAdjustment(true);
+    try {
+      const res = adjustForm.employeeId === ALL_EMPLOYEES_VALUE
+        ? await postApiWithToken(
+            "/leave-balances/adjust-all",
+            {
+              leaveTypeId: adjustForm.leaveTypeId,
+              leaveTypeName: selectedBalance?.leaveType || "",
+              days,
+              note: adjustForm.note.trim()
+            },
+            null,
+            { requiredPermissions: ["LEAVE_VIEW_ALL"] }
+          )
+        : await postApiWithToken(
+            `/leave-balances/employee/${encodeURIComponent(adjustForm.employeeId)}/adjust`,
+            {
+              balanceId: selectedBalance?._id || "",
+              leaveTypeId: adjustForm.leaveTypeId,
+              leaveTypeName: selectedBalance?.leaveType || "",
+              days,
+              note: adjustForm.note.trim()
+            },
+            null,
+            { requiredPermissions: ["LEAVE_VIEW_ALL"] }
+          );
+      if (res?.skipped) return;
+      if (res?.success) {
+        toast.success(
+          adjustForm.employeeId === ALL_EMPLOYEES_VALUE
+            ? `Configured leave count synced for ${res?.data?.count || "all"} assigned employees`
+            : "Configured leave count synced"
+        );
+        await fetchEmployeeBalances(adjustForm.employeeId);
+        setAdjustOpen(false);
+        setAdjustForm({
+          employeeId: "",
+          leaveTypeId: "",
+          note: ""
+        });
+      } else {
+        toast.error(res?.message || "Failed to update leave balance");
+      }
+    } finally {
+      setSavingAdjustment(false);
+    }
+  };
+
   const hasMoreLeaves = currentPage < totalPages;
+
+  const selectedEmployeeOption = useMemo(
+    () => employees.find((employee) => employee._id === adjustForm.employeeId) || null,
+    [employees, adjustForm.employeeId]
+  );
+
+  const availableBalanceOptions = useMemo(() => {
+    if (adjustForm.employeeId === ALL_EMPLOYEES_VALUE) {
+      return allLeaveTypes.map((leaveType) => ({
+        leaveTypeId: leaveType._id,
+        leaveType: leaveType.name,
+        code: leaveType.code || ""
+      }));
+    }
+    return employeeBalances;
+  }, [adjustForm.employeeId, employeeBalances, allLeaveTypes]);
+
+  const selectedBalance = useMemo(
+    () => availableBalanceOptions.find((balance) => balance.leaveTypeId === adjustForm.leaveTypeId) || null,
+    [availableBalanceOptions, adjustForm.leaveTypeId]
+  );
+
+  const selectedLeaveTypeMeta = useMemo(
+    () => allLeaveTypes.find((leaveType) => leaveType._id === adjustForm.leaveTypeId) || null,
+    [allLeaveTypes, adjustForm.leaveTypeId]
+  );
 
   const handleLeaveTableScroll = () => {
     const viewport = tableViewportRef.current;
@@ -683,6 +936,16 @@ const Leave = () => {
             <RefreshCw className={`w-4 h-4 ${loading || refreshing ? "animate-spin" : ""}`} />
             {loading || refreshing ? "Refreshing..." : "Refresh"}
           </Button>
+          {canAdjustBalances && (
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => setAdjustOpen(true)}
+            >
+              <Settings2 className="w-4 h-4" />
+              Sync Leave Count
+            </Button>
+          )}
           <PermissionGate permissions={["LEAVE_APPLY"]}>
             <Button className="gap-2" onClick={() => navigate("/leave/apply")}>
               Apply Leave
@@ -1067,6 +1330,128 @@ const Leave = () => {
             </Button>
             <Button onClick={submitApply} disabled={Boolean(applyDateError)}>
               Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={adjustOpen}
+        onOpenChange={(open) => {
+          setAdjustOpen(open);
+          if (!open) {
+            setAdjustForm({
+              employeeId: "",
+              leaveTypeId: "",
+              note: ""
+            });
+            setEmployeeBalances([]);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sync Leave Type Count</DialogTitle>
+            <DialogDescription>
+              Sync the selected leave type's configured count to one employee or to all assigned employees. This sets the leave total from the leave type configuration instead of adding extra days.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Employee</Label>
+              <Select
+                value={adjustForm.employeeId}
+                onValueChange={(value) =>
+                  setAdjustForm({ employeeId: value, leaveTypeId: "", note: "" })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingEmployees ? "Loading employees..." : "Select employee"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_EMPLOYEES_VALUE}>All Employees</SelectItem>
+                  {employees.map((employee) => {
+                    const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim() || "Employee";
+                    return (
+                      <SelectItem key={employee._id} value={employee._id || ""}>
+                        {fullName}{employee.employeeCode ? ` (${employee.employeeCode})` : ""}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Leave Type</Label>
+              <Select
+                value={adjustForm.leaveTypeId}
+                onValueChange={(value) => setAdjustForm((prev) => ({ ...prev, leaveTypeId: value }))}
+                disabled={!adjustForm.employeeId || (adjustForm.employeeId !== ALL_EMPLOYEES_VALUE && loadingBalances)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={adjustForm.employeeId !== ALL_EMPLOYEES_VALUE && loadingBalances ? "Loading balances..." : "Select leave type"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBalanceOptions.map((balance) => (
+                    <SelectItem key={`${balance.leaveTypeId}-${balance.leaveType}`} value={balance.leaveTypeId || ""}>
+                      {balance.leaveType} {balance.code ? `(${balance.code})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {adjustForm.employeeId === ALL_EMPLOYEES_VALUE && selectedBalance && (
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                <p className="font-medium text-foreground">All Employees</p>
+                <p className="text-muted-foreground mt-1">
+                  This will sync {selectedLeaveTypeMeta?.daysPerYear ?? 0} total days from the selected leave type to every employee who currently has that leave balance assigned.
+                </p>
+              </div>
+            )}
+
+            {selectedEmployeeOption && selectedBalance && adjustForm.employeeId !== ALL_EMPLOYEES_VALUE && (
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                <p className="font-medium text-foreground">
+                  {`${selectedEmployeeOption.firstName || ""} ${selectedEmployeeOption.lastName || ""}`.trim() || "Employee"}
+                </p>
+                <p className="text-muted-foreground mt-1">
+                  Current {selectedBalance.leaveType}: Total {selectedBalance.total ?? 0}, Used {selectedBalance.used ?? 0}, Pending {selectedBalance.pending ?? 0}, Remaining {selectedBalance.remaining ?? 0}
+                </p>
+                <p className="text-muted-foreground mt-1">
+                  After sync, total will be set to {selectedLeaveTypeMeta?.daysPerYear ?? 0} and remaining will be recalculated as total minus used and pending.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Leave Count</Label>
+              <div className="rounded-lg border bg-muted/30 px-3 py-3 text-sm">
+                <p className="font-medium text-foreground">{selectedLeaveTypeMeta?.daysPerYear ?? 0} days</p>
+                <p className="mt-1 text-muted-foreground">
+                  This value is fetched automatically from the selected leave type configuration.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Note</Label>
+              <Textarea
+                placeholder="Optional note for this adjustment"
+                value={adjustForm.note}
+                onChange={(e) => setAdjustForm((prev) => ({ ...prev, note: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdjustOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitAdjustment} disabled={savingAdjustment}>
+              {savingAdjustment ? "Syncing..." : "Sync Leave Count"}
             </Button>
           </DialogFooter>
         </DialogContent>
