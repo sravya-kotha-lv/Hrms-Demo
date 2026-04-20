@@ -598,7 +598,7 @@ const LeaveApply = () => {
 
             {sandwichRuleEnabled && selectedExcludedDays > 0 && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Applying leave beside holidays or week offs can lead to leave deduction on those holidays and week offs under the sandwich rule.
+                Sandwich rule deducts holidays or week offs only when those non-working days fall between two leave-applied working days. If leave exists on only one sibling side, those non-working days are not deducted.
               </div>
             )}
 

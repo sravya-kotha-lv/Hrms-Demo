@@ -111,6 +111,16 @@ type LeaveRecord = {
   rejectionReason?: string;
   approvalFlowId?: ApprovalFlowRef | null;
   approvalSteps?: ApprovalStep[];
+  effectiveDateKeys?: string[];
+  sandwichRuleEnabled?: boolean;
+  sandwichSummary?: {
+    applied?: boolean;
+    deductedDays?: number;
+    deductedDateKeys?: string[];
+    holidayDateKeys?: string[];
+    weekOffDateKeys?: string[];
+    description?: string;
+  } | null;
 };
 
 type LeaveApplyWindow = {
@@ -1174,6 +1184,26 @@ const Leave = () => {
               <p><span className="font-medium">Days:</span> {selectedLeave.totalDays ?? "-"}</p>
               <p><span className="font-medium">Duration:</span> {getLeaveDurationLabel(selectedLeave)}</p>
               <p><span className="font-medium">Status:</span> {selectedLeave.status || "-"}</p>
+              <p>
+                <span className="font-medium">Sandwich Rule:</span>{" "}
+                {selectedLeave.sandwichRuleEnabled ? "Enabled" : "Disabled"}
+              </p>
+              <p>
+                <span className="font-medium">Sandwich Deduction:</span>{" "}
+                {selectedLeave.sandwichSummary?.applied
+                  ? `${selectedLeave.sandwichSummary?.deductedDays || 0} non-working day(s) deducted`
+                  : "No holiday or week off deducted"}
+              </p>
+              {selectedLeave.sandwichSummary?.description && (
+                <p className={`text-xs ${selectedLeave.sandwichSummary?.applied ? "text-amber-700" : "text-muted-foreground"}`}>
+                  {selectedLeave.sandwichSummary.description}
+                </p>
+              )}
+              {selectedLeave.sandwichSummary?.applied && (
+                <p className="text-xs text-muted-foreground">
+                  Deducted dates: {(selectedLeave.sandwichSummary.deductedDateKeys || []).join(", ")}
+                </p>
+              )}
               <p><span className="font-medium">Approval:</span> {getApprovalProgressLabel(selectedLeave)}</p>
               <p><span className="font-medium">Attached Flow:</span> {selectedLeave.approvalFlowId?.name || "No named flow attached"}</p>
               <p><span className="font-medium">Saved Step Count:</span> {Array.isArray(selectedLeave.approvalSteps) ? selectedLeave.approvalSteps.length : 0}</p>
