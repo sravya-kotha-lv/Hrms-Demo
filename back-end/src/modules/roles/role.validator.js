@@ -23,8 +23,7 @@ exports.createRoleSchema = Joi.object({
 
   permissionIds: Joi.array()
     .items(objectId)
-    .min(1)
-    .required(),
+    .optional(),
 
   isSystemRole: Joi.boolean().optional()
 });

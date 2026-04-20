@@ -1138,9 +1138,11 @@ const AddEmployee = () => {
           </Label>
           <Input
             validationType="email"
+            infoText="Enter a valid email address. Spaces are removed and letters are stored in lowercase."
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             placeholder="employee@email.com"
+            required
           />
         </div>
 
@@ -1150,6 +1152,7 @@ const AddEmployee = () => {
           </Label>
           <Input
             validationType="code"
+            infoText="Allowed characters: A-Z, 0-9, underscore and hyphen. Leave empty to auto-generate."
             value={form.employeeCode}
             onChange={(e) =>
               setForm({ ...form, employeeCode: e.target.value.toUpperCase() })
@@ -1168,9 +1171,11 @@ const AddEmployee = () => {
           <Input
             value={form.firstName}
             validationType="name"
+            infoText="Use letters and spaces only."
             onChange={(e) =>
               setForm({ ...form, firstName: e.target.value })
             }
+            required
           />
         </div>
 
@@ -1181,9 +1186,11 @@ const AddEmployee = () => {
           <Input
             value={form.lastName}
             validationType="name"
+            infoText="Use letters and spaces only."
             onChange={(e) =>
               setForm({ ...form, lastName: e.target.value })
             }
+            required
           />
         </div>
 

@@ -2,6 +2,15 @@ const mongoose = require("mongoose");
 const Role = require("./role.model");
 const organizationService = require("../organizations/organization.service");
 const permissionService = require("../permissions/permission.service");
+
+const getDefaultPermissionIds = async (organizationId) => {
+  const employeeRole = await Role.findOne({
+    organizationId,
+    slug: "employee"
+  }).select("permissionIds");
+
+  return employeeRole?.permissionIds || [];
+};
 /**
  * Get roles by roleIds (used by auth/login)
  */
@@ -28,13 +37,17 @@ exports.create = async ({ organizationId, name, slug, permissionIds = [], isSyst
     };
   }
 
-  await permissionService.getByIds(permissionIds, organizationId);
+  const resolvedPermissionIds = permissionIds.length
+    ? permissionIds
+    : await getDefaultPermissionIds(organizationId);
+
+  await permissionService.getByIds(resolvedPermissionIds, organizationId);
 
   return Role.create({
     organizationId,
     name,
     slug,
-    permissionIds,
+    permissionIds: resolvedPermissionIds,
     isSystemRole
   });
 };

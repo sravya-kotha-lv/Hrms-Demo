@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { postApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { DateRange } from "react-day-picker";
+import { useLocation, useNavigate } from "react-router-dom";
 
 type LeaveType = {
   _id: string;
@@ -141,6 +143,8 @@ const getRangeExcludedDays = ({
 const LEAVE_REASON_REGEX = /^(?=.*[A-Za-z])[A-Za-z\s.,'()&/-]+$/;
 
 const LeaveApply = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
@@ -160,6 +164,18 @@ const LeaveApply = () => {
   const [halfDaySession, setHalfDaySession] = useState<HalfDaySession>("first_half");
   const [isMobile, setIsMobile] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(new Date());
+  const backTarget = (location.state as { from?: string } | null)?.from || "/leave";
+
+  const resetForm = () => {
+    setLeaveTypeId("");
+    setReason("");
+    setSelectedRange(undefined);
+    setFromDate("");
+    setToDate("");
+    setDuration("full_day");
+    setHalfDaySession("first_half");
+    setVisibleMonth(new Date());
+  };
 
   const loadContext = async () => {
     try {
@@ -392,12 +408,7 @@ const LeaveApply = () => {
       if (res?.skipped) return;
       if (res?.success) {
         toast.success("Leave applied successfully");
-        setSelectedRange(undefined);
-        setFromDate("");
-        setToDate("");
-        setDuration("full_day");
-        setHalfDaySession("first_half");
-        setReason("");
+        resetForm();
         await loadContext();
       } else {
         toast.error(res?.message || "Failed to apply leave");
@@ -412,6 +423,26 @@ const LeaveApply = () => {
       title="Apply Leave"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Leave", href: "/leave" }, { label: "Apply" }]}
     >
+      <div className="mb-4">
+        <Button
+          variant="outline"
+          className="gap-2"
+          onClick={() => {
+            if ((location.state as { from?: string } | null)?.from) {
+              navigate(backTarget);
+              return;
+            }
+            if (window.history.length > 1) {
+              navigate(-1);
+              return;
+            }
+            navigate("/leave");
+          }}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <Card className="lg:col-span-7 min-w-0">
           <CardHeader>
@@ -598,11 +629,18 @@ const LeaveApply = () => {
 
             {sandwichRuleEnabled && selectedExcludedDays > 0 && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Applying leave beside holidays or week offs can lead to leave deduction on those holidays and week offs under the sandwich rule.
+                Sandwich rule deducts holidays or week offs only when those non-working days fall between two leave-applied working days. If leave exists on only one sibling side, those non-working days are not deducted.
               </div>
             )}
 
-            <div className="flex justify-start sm:justify-end">
+            <div className="flex flex-wrap justify-start gap-3 sm:justify-end">
+              <Button
+                variant="outline"
+                onClick={resetForm}
+                disabled={submitting || loading}
+              >
+                Reset
+              </Button>
               <Button onClick={submit} disabled={submitting || loading || Boolean(dateError) || leaveRestriction.blocked}>
                 {submitting ? "Applying..." : "Apply Leave"}
               </Button>

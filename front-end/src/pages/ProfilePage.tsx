@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
@@ -696,20 +697,20 @@ const ProfilePage = () => {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Profile</DialogTitle>
+        <DialogContent className="max-h-[92vh] overflow-y-auto border-slate-200 bg-white p-0 shadow-2xl sm:max-w-4xl">
+          <DialogHeader className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-6 py-5">
+            <DialogTitle className="text-xl font-semibold text-slate-900">Edit Profile</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="rounded-lg border p-3">
-              <p className="text-sm font-medium mb-2">Profile Picture</p>
-              <div className="flex items-center gap-3">
+          <div className="space-y-6 px-6 py-6">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
+              <Label className="mb-2 block">Profile Picture</Label>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 <img
                   src={profilePreviewUrl || profile?.profileImage || "https://placehold.co/80x80?text=User"}
                   alt="Profile preview"
-                  className="h-16 w-16 rounded-full object-cover border"
+                  className="h-20 w-20 rounded-full border border-slate-200 object-cover shadow-sm"
                 />
-                <div className="space-y-2">
+                <div className="min-w-0 flex-1 space-y-2">
                   <Input
                     key={profilePicInputKey}
                     type="file"
@@ -740,136 +741,197 @@ const ProfilePage = () => {
                 </div>
               </div>
             </div>
-            <Input
-              placeholder="Phone"
-              validationType="phone"
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            />
-            <Input
-              type="date"
-              placeholder="DOB"
-              value={form.dob}
-              onChange={(e) => setForm({ ...form, dob: e.target.value })}
-            />
-            <Select value={form.gender} onValueChange={(value) => setForm({ ...form, gender: value })}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select gender" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Male">Male</SelectItem>
-                <SelectItem value="Female">Female</SelectItem>
-                <SelectItem value="Other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={form.bloodGroup || ""}
-              onValueChange={(value) => setForm({ ...form, bloodGroup: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Blood Group (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                {BLOOD_GROUP_OPTIONS.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder="Address Line 1"
-              value={form.address.line1}
-              onChange={(e) => setForm({ ...form, address: { ...form.address, line1: e.target.value } })}
-            />
-            <Input
-              placeholder="City"
-              value={form.address.city}
-              onChange={(e) => setForm({ ...form, address: { ...form.address, city: sanitizePlaceName(e.target.value) } })}
-            />
-            <Input
-              placeholder="State"
-              value={form.address.state}
-              onChange={(e) => setForm({ ...form, address: { ...form.address, state: sanitizePlaceName(e.target.value) } })}
-            />
-            <Input
-              placeholder="Country"
-              value={form.address.country}
-              onChange={(e) => setForm({ ...form, address: { ...form.address, country: sanitizePlaceName(e.target.value) } })}
-            />
-            <Input
-              placeholder="Zip"
-              value={form.address.zip}
-              inputMode="numeric"
-              onChange={(e) => setForm({
-                ...form,
-                address: { ...form.address, zip: e.target.value.replace(/\D/g, "") }
-              })}
-            />
-            <Input
-              type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.webp"
-              aria-label="Choose address proof file"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                if (!validateFile(file, ADDRESS_PROOF_TYPES, ADDRESS_PROOF_MAX_BYTES, "Address proof")) return;
-                const base64Data = await fileToBase64(file);
-                setForm({
-                  ...form,
-                  addressProofUpload: {
-                    fileName: file.name,
-                    mimeType: file.type,
-                    base64Data
-                  }
-                });
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              Choose address proof file. PDF, JPG, PNG, WEBP up to 5MB
-            </p>
-            {form.addressProofUpload?.fileName && (
-              <p className="text-xs text-muted-foreground">{form.addressProofUpload.fileName}</p>
-            )}
-          <h3 className="mb-4 text-base font-semibold text-slate-900">Emergency Contact</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <Input
-                placeholder="Name"
-                value={form.emergencyContacts[0]?.name || ""}
-                onChange={(e) => setForm({
-                  ...form,
-                  emergencyContacts: [{ ...form.emergencyContacts[0], name: e.target.value }]
-                })}
-              />
-              <Select
-                value={form.emergencyContacts[0]?.relation || ""}
-                onValueChange={(value) => setForm({
-                  ...form,
-                  emergencyContacts: [{ ...form.emergencyContacts[0], relation: value }]
-                })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Relationship" />
-                </SelectTrigger>
-                <SelectContent>
-                  {RELATION_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                placeholder="Mobile Number"
-                value={form.emergencyContacts[0]?.phone || ""}
-                onChange={(e) => setForm({
-                  ...form,
-                  emergencyContacts: [{ ...form.emergencyContacts[0], phone: e.target.value }]
-                })}
-              />
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-slate-900">Personal Details</h3>
+                <p className="text-sm text-slate-500">Keep your profile information accurate and easy to identify.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label className="mb-2 block">Phone Number</Label>
+                  <Input
+                    placeholder="Phone"
+                    validationType="phone"
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label className="mb-2 block">DOB (Date of Birth)</Label>
+                  <Input
+                    type="date"
+                    placeholder="DOB"
+                    value={form.dob}
+                    onChange={(e) => setForm({ ...form, dob: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label className="mb-2 block">Gender</Label>
+                  <Select value={form.gender} onValueChange={(value) => setForm({ ...form, gender: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Male">Male</SelectItem>
+                      <SelectItem value="Female">Female</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="mb-2 block">Blood Group</Label>
+                  <Select
+                    value={form.bloodGroup || ""}
+                    onValueChange={(value) => setForm({ ...form, bloodGroup: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Blood Group (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BLOOD_GROUP_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
-
-            <Button onClick={handleSave} disabled={loading}>Save</Button>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-slate-900">Address Details</h3>
+                <p className="text-sm text-slate-500">Add your current address and supporting proof in one place.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <Label className="mb-2 block">Address Line 1</Label>
+                  <Input
+                    placeholder="Address Line 1"
+                    value={form.address.line1}
+                    onChange={(e) => setForm({ ...form, address: { ...form.address, line1: e.target.value } })}
+                  />
+                </div>
+                <div>
+                  <Label className="mb-2 block">City</Label>
+                  <Input
+                    placeholder="City"
+                    value={form.address.city}
+                    onChange={(e) => setForm({ ...form, address: { ...form.address, city: sanitizePlaceName(e.target.value) } })}
+                  />
+                </div>
+                <div>
+                  <Label className="mb-2 block">State</Label>
+                  <Input
+                    placeholder="State"
+                    value={form.address.state}
+                    onChange={(e) => setForm({ ...form, address: { ...form.address, state: sanitizePlaceName(e.target.value) } })}
+                  />
+                </div>
+                <div>
+                  <Label className="mb-2 block">Country</Label>
+                  <Input
+                    placeholder="Country"
+                    value={form.address.country}
+                    onChange={(e) => setForm({ ...form, address: { ...form.address, country: sanitizePlaceName(e.target.value) } })}
+                  />
+                </div>
+                <div>
+                  <Label className="mb-2 block">Zip Code</Label>
+                  <Input
+                    placeholder="Zip"
+                    value={form.address.zip}
+                    inputMode="numeric"
+                    onChange={(e) => setForm({
+                      ...form,
+                      address: { ...form.address, zip: e.target.value.replace(/\D/g, "") }
+                    })}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label className="mb-2 block">Address Proof</Label>
+                  <Input
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.webp"
+                    aria-label="Choose address proof file"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (!validateFile(file, ADDRESS_PROOF_TYPES, ADDRESS_PROOF_MAX_BYTES, "Address proof")) return;
+                      const base64Data = await fileToBase64(file);
+                      setForm({
+                        ...form,
+                        addressProofUpload: {
+                          fileName: file.name,
+                          mimeType: file.type,
+                          base64Data
+                        }
+                      });
+                    }}
+                  />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Choose address proof file. PDF, JPG, PNG, WEBP up to 5MB
+                  </p>
+                  {form.addressProofUpload?.fileName && (
+                    <p className="mt-1 text-xs text-muted-foreground">{form.addressProofUpload.fileName}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-slate-900">Emergency Contact</h3>
+                <p className="text-sm text-slate-500">Add a trusted person we can reach if needed.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <Label className="mb-2 block">Name</Label>
+                <Input
+                  placeholder="Name"
+                  value={form.emergencyContacts[0]?.name || ""}
+                  onChange={(e) => setForm({
+                    ...form,
+                    emergencyContacts: [{ ...form.emergencyContacts[0], name: e.target.value }]
+                  })}
+                />
+              </div>
+              <div>
+                <Label className="mb-2 block">Relationship</Label>
+                <Select
+                  value={form.emergencyContacts[0]?.relation || ""}
+                  onValueChange={(value) => setForm({
+                    ...form,
+                    emergencyContacts: [{ ...form.emergencyContacts[0], relation: value }]
+                  })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Relationship" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RELATION_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                <Label className="mb-2 block">Mobile Number</Label>
+                <Input
+                  placeholder="Mobile Number"
+                  value={form.emergencyContacts[0]?.phone || ""}
+                  onChange={(e) => setForm({
+                    ...form,
+                    emergencyContacts: [{ ...form.emergencyContacts[0], phone: e.target.value }]
+                  })}
+                />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end border-t border-slate-200 pt-2">
+              <Button className="min-w-32 shadow-sm" onClick={handleSave} disabled={loading}>Save</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

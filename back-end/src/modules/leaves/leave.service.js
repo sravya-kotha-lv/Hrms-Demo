@@ -33,8 +33,14 @@ const {
   startOfDayInTimeZone,
   endOfDayInTimeZone,
   parseMonthRangeInTimeZone,
-  getDayInTimeZone
+  getDayInTimeZone,
+  getWeekdayForDateKey
 } = require("../../utils/timezone");
+const {
+  toDateKeyInOrgTz,
+  getApplicableLeaveDateKeys,
+  analyzeLeaveDateKeys
+} = require("./leavePolicy.util");
 
 const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "manager",
@@ -53,65 +59,11 @@ const parsePositiveInt = (value, fallback) => {
 const isSameDate = (d1, d2) =>
   new Date(d1).setHours(0, 0, 0, 0) === new Date(d2).setHours(0, 0, 0, 0);
 
-const dateKey = (date) => {
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const toDateKeyInOrgTz = (value, timeZone) =>
-  /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))
-    ? String(value)
-    : toDateKeyInTimeZone(value, timeZone);
-
 const applyMonthFilterToQuery = (query, monthValue, timeZone = "UTC") => {
   if (!monthValue || !/^\d{4}-\d{2}$/.test(String(monthValue))) return;
   const monthRange = parseMonthRangeInTimeZone(String(monthValue), timeZone);
   query.fromDate = { $lte: monthRange.end };
   query.toDate = { $gte: monthRange.start };
-};
-
-const getApplicableLeaveDateKeys = ({
-  fromDate,
-  toDate,
-  weekOffDays,
-  holidaySet,
-  sandwichRuleEnabled,
-  timeZone = "Asia/Kolkata"
-}) => {
-  const dayMeta = [];
-  let cursorKey = toDateKeyInOrgTz(fromDate, timeZone);
-  const endKey = toDateKeyInOrgTz(toDate, timeZone);
-
-  while (cursorKey <= endKey) {
-    const isWeekOff = weekOffDays.includes(getDayInTimeZone(startOfDayInTimeZone(cursorKey, timeZone), timeZone));
-    const isHoliday = holidaySet.has(cursorKey);
-    dayMeta.push({
-      key: cursorKey,
-      excluded: isWeekOff || isHoliday
-    });
-    cursorKey = addDaysToDateKey(cursorKey, 1);
-  }
-
-  if (!sandwichRuleEnabled) {
-    return dayMeta.filter((d) => !d.excluded).map((d) => d.key);
-  }
-
-  const firstWorkingIdx = dayMeta.findIndex((d) => !d.excluded);
-  const lastWorkingIdx = dayMeta.length - 1 - [...dayMeta].reverse().findIndex((d) => !d.excluded);
-
-  if (firstWorkingIdx === -1 || lastWorkingIdx === -1) {
-    return [];
-  }
-
-  return dayMeta
-    .filter((d, index) => {
-      if (!d.excluded) return true;
-      return index > firstWorkingIdx && index < lastWorkingIdx;
-    })
-    .map((d) => d.key);
 };
 
 const getStoredOrDerivedLeaveDateKeys = ({
@@ -153,6 +105,112 @@ const getStoredOrDerivedLeaveDateKeys = ({
   }
 
   return workingDateKeys;
+};
+
+const buildSandwichDescription = ({
+  sandwichRuleEnabled,
+  sandwichDeductedDateKeys,
+  sandwichHolidayDateKeys,
+  sandwichWeekOffDateKeys
+}) => {
+  const deductedDays = sandwichDeductedDateKeys.length;
+  if (!deductedDays) {
+    return sandwichRuleEnabled
+      ? "Sandwich rule is enabled, but this leave did not deduct any holidays or week offs."
+      : "Sandwich rule is disabled, so holidays and week offs were not deducted for this leave.";
+  }
+
+  const parts = [];
+  if (sandwichHolidayDateKeys.length) {
+    parts.push(`${sandwichHolidayDateKeys.length} holiday${sandwichHolidayDateKeys.length === 1 ? "" : "s"}`);
+  }
+  if (sandwichWeekOffDateKeys.length) {
+    parts.push(`${sandwichWeekOffDateKeys.length} week off${sandwichWeekOffDateKeys.length === 1 ? "" : "s"}`);
+  }
+  const breakdown = parts.join(" and ");
+
+  if (!sandwichRuleEnabled) {
+    return `This leave includes ${deductedDays} deducted non-working day${deductedDays === 1 ? "" : "s"} (${breakdown}) even though sandwich rule is currently disabled.`;
+  }
+
+  return `Sandwich rule deducted ${deductedDays} non-working day${deductedDays === 1 ? "" : "s"}: ${breakdown}.`;
+};
+
+const enrichLeavesWithSandwichDetails = async ({
+  leaves,
+  organizationId,
+  timeZone = "Asia/Kolkata"
+}) => {
+  if (!Array.isArray(leaves) || !leaves.length) return [];
+
+  const employeeIds = [...new Set(
+    leaves
+      .map((leave) => {
+        const employeeRef = leave?.employeeId;
+        if (!employeeRef) return null;
+        if (typeof employeeRef === "object" && employeeRef !== null) {
+          return String(employeeRef._id || "");
+        }
+        return String(employeeRef);
+      })
+      .filter(Boolean)
+  )];
+
+  const [settings, employees, holidays] = await Promise.all([
+    OrgSettings.findOne({ organizationId }).select("sandwichRuleEnabled"),
+    employeeIds.length
+      ? Employee.find({ organizationId, _id: { $in: employeeIds } }).select("_id shiftId")
+      : [],
+    Holiday.find({ organizationId, status: "active" }).select("_id date")
+  ]);
+
+  const sandwichRuleEnabled = Boolean(settings?.sandwichRuleEnabled);
+  const holidaySet = new Set((holidays || []).map((holiday) => toDateKeyInTimeZone(holiday.date, timeZone)));
+  const { employeeMap: weekOffMap } = await WeekOffService.resolveWeekOffMapForEmployees({
+    organizationId,
+    employees
+  });
+
+  return leaves.map((leave) => {
+    const row = typeof leave?.toObject === "function" ? leave.toObject() : { ...leave };
+    const employeeRef = row?.employeeId;
+    const employeeId =
+      typeof employeeRef === "object" && employeeRef !== null
+        ? String(employeeRef._id || "")
+        : String(employeeRef || "");
+    const weekOffDays = weekOffMap.get(employeeId) || [];
+    const effectiveDateKeys = Array.isArray(row.effectiveDateKeys)
+      ? row.effectiveDateKeys.filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(String(key || "")))
+      : [];
+    const analysis = analyzeLeaveDateKeys({
+      fromDate: row.fromDate,
+      toDate: row.toDate,
+      weekOffDays,
+      holidaySet,
+      effectiveDateKeys,
+      sandwichRuleEnabled,
+      timeZone
+    });
+
+    return {
+      ...row,
+      effectiveDateKeys: analysis.effectiveDateKeys,
+      sandwichRuleEnabled,
+      sandwichSummary: {
+        applied: analysis.sandwichDeductedDateKeys.length > 0,
+        deductedDays: analysis.sandwichDeductedDateKeys.length,
+        deductedDateKeys: analysis.sandwichDeductedDateKeys,
+        holidayDateKeys: analysis.sandwichHolidayDateKeys,
+        weekOffDateKeys: analysis.sandwichWeekOffDateKeys,
+        description: buildSandwichDescription({
+          sandwichRuleEnabled,
+          sandwichDeductedDateKeys: analysis.sandwichDeductedDateKeys,
+          sandwichHolidayDateKeys: analysis.sandwichHolidayDateKeys,
+          sandwichWeekOffDateKeys: analysis.sandwichWeekOffDateKeys
+        })
+      }
+    };
+  });
 };
 
 const sendNotification = async ({ toEmail, toName, subject, message }) => {
@@ -501,7 +559,7 @@ exports.applyLeave = async (req) => {
     validLeaveDateKeys.length === 0
   ) {
     const isHoliday = holidaySet.has(fromDateKey);
-    const isWeekOff = weekOffDays.includes(getDayInTimeZone(startOfDayInTimeZone(fromDateKey, organizationTimeZone), organizationTimeZone));
+    const isWeekOff = weekOffDays.includes(getWeekdayForDateKey(fromDateKey, organizationTimeZone));
 
     if (isHoliday) {
       throw new Error("Selected date is a holiday");
@@ -716,6 +774,21 @@ exports.getApplyContext = async (req) => {
           blocked: false,
           reason: ""
         };
+  const enrichedMyLeaves = await enrichLeavesWithSandwichDetails({
+    leaves: myLeaves.map((l) => ({
+      ...l.toObject(),
+      leaveTypeId: l.leaveTypeId?._id || l.leaveTypeId,
+      leaveType: l.leaveTypeId?.name || "",
+      effectiveDateKeys: getStoredOrDerivedLeaveDateKeys({
+        leave: l,
+        weekOffDays: shiftWeekOffDays,
+        holidaySet,
+        timeZone: organizationTimeZone
+      })
+    })),
+    organizationId: req.user.organizationId,
+    timeZone: organizationTimeZone
+  });
 
   return {
     employeeLifecycleStatus: lifecycleStatus,
@@ -748,23 +821,22 @@ exports.getApplyContext = async (req) => {
       pending: b.pending || 0,
       remaining: b.remaining
     })),
-    myLeaves: (leaveRestriction.blocked ? [] : myLeaves).map((l) => ({
-      _id: l._id,
-      leaveTypeId: l.leaveTypeId?._id || l.leaveTypeId,
-      leaveType: l.leaveTypeId?.name || "",
-      fromDate: l.fromDate,
-      toDate: l.toDate,
-      effectiveDateKeys: getStoredOrDerivedLeaveDateKeys({
-        leave: l,
-        weekOffDays: shiftWeekOffDays,
-        holidaySet,
-        timeZone: organizationTimeZone
-      }),
-      duration: l.duration || "full_day",
-      halfDaySession: l.halfDaySession || null,
-      status: l.status,
-      totalDays: l.totalDays
-    }))
+    myLeaves: leaveRestriction.blocked
+      ? []
+      : enrichedMyLeaves.map((l) => ({
+          _id: l._id,
+          leaveTypeId: l.leaveTypeId,
+          leaveType: l.leaveType,
+          fromDate: l.fromDate,
+          toDate: l.toDate,
+          effectiveDateKeys: l.effectiveDateKeys || [],
+          duration: l.duration || "full_day",
+          halfDaySession: l.halfDaySession || null,
+          status: l.status,
+          totalDays: l.totalDays,
+          sandwichRuleEnabled: l.sandwichRuleEnabled,
+          sandwichSummary: l.sandwichSummary || null
+        }))
   };
 };
 
@@ -837,7 +909,11 @@ exports.getMyLeaves = async (req) => {
   if (!pageRequested) {
     const rows = await baseQuery;
     await Promise.all(rows.map((row) => repairPendingLeaveApprovalState(row)));
-    return rows;
+    return enrichLeavesWithSandwichDetails({
+      leaves: rows,
+      organizationId: req.user.organizationId,
+      timeZone: organizationTimeZone
+    });
   }
 
   const [items, total] = await Promise.all([
@@ -845,6 +921,11 @@ exports.getMyLeaves = async (req) => {
     Leave.countDocuments(query)
   ]);
   await Promise.all(items.map((item) => repairPendingLeaveApprovalState(item)));
+  const enrichedItems = await enrichLeavesWithSandwichDetails({
+    leaves: items,
+    organizationId: req.user.organizationId,
+    timeZone: organizationTimeZone
+  });
   const today = new Date();
   const [pending, approved, rejected, onLeaveToday] = await Promise.all([
     Leave.countDocuments({ ...statsQuery, status: "pending" }),
@@ -859,7 +940,7 @@ exports.getMyLeaves = async (req) => {
   ]);
 
   return {
-    items,
+    items: enrichedItems,
     pagination: {
       page,
       limit,
@@ -906,6 +987,22 @@ exports.getAllLeaves = async (req) => {
         }
       } else {
         query.employeeId = { $in: [] };
+      }
+    } else if (!["hr", "admin", "org-admin", "superadmin"].includes(String(role?.slug || ""))) {
+      const employee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (!employee) {
+        query.employeeId = { $in: [] };
+      } else if (requestedEmployeeId) {
+        if (String(employee._id) !== requestedEmployeeId) {
+          throw new Error("Access denied");
+        }
+        query.employeeId = employee._id;
+      } else {
+        query.employeeId = employee._id;
       }
     }
   }
@@ -968,7 +1065,11 @@ exports.getAllLeaves = async (req) => {
   if (!pageRequested) {
     const rows = await baseQuery;
     await Promise.all(rows.map((row) => repairPendingLeaveApprovalState(row)));
-    return rows;
+    return enrichLeavesWithSandwichDetails({
+      leaves: rows,
+      organizationId: req.user.organizationId,
+      timeZone: organizationTimeZone
+    });
   }
 
   const [items, total] = await Promise.all([
@@ -976,6 +1077,11 @@ exports.getAllLeaves = async (req) => {
     Leave.countDocuments(query)
   ]);
   await Promise.all(items.map((item) => repairPendingLeaveApprovalState(item)));
+  const enrichedItems = await enrichLeavesWithSandwichDetails({
+    leaves: items,
+    organizationId: req.user.organizationId,
+    timeZone: organizationTimeZone
+  });
   const today = new Date();
   const [pending, approved, rejected, onLeaveToday] = await Promise.all([
     Leave.countDocuments({ ...statsQuery, status: "pending" }),
@@ -990,7 +1096,7 @@ exports.getAllLeaves = async (req) => {
   ]);
 
   return {
-    items,
+    items: enrichedItems,
     pagination: {
       page,
       limit,

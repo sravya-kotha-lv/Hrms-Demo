@@ -40,6 +40,7 @@ const {
   getDayInTimeZone,
   getWeekdayForDateKey
 } = require("../../utils/timezone");
+const { analyzeLeaveDateKeys } = require("../leaves/leavePolicy.util");
 
 const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "manager",
@@ -1179,43 +1180,40 @@ const getLeaveDateKeysForDisplay = ({
   weekOffDays,
   timeZone
 }) => {
-  const storedKeys = Array.isArray(leave?.effectiveDateKeys)
-    ? leave.effectiveDateKeys.filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(String(key || "")))
-    : [];
-  if (storedKeys.length) return storedKeys;
-
   const fromDateKey = toDateKeyInTimeZone(leave.fromDate, timeZone);
-  const toDateKey = toDateKeyInTimeZone(leave.toDate, timeZone);
   if (leave.duration === "half_day") return [fromDateKey];
 
-  const dayMeta = [];
-  let cursorKey = fromDateKey;
-  while (cursorKey <= toDateKey) {
-    const isWeekOff = weekOffDays.includes(getWeekdayForDateKey(cursorKey, timeZone));
-    const isHoliday = holidayKeySet.has(cursorKey);
-    dayMeta.push({
-      key: cursorKey,
-      excluded: isWeekOff || isHoliday
-    });
-    cursorKey = addDaysToDateKey(cursorKey, 1);
+  const workingAnalysis = analyzeLeaveDateKeys({
+    fromDate: leave.fromDate,
+    toDate: leave.toDate,
+    weekOffDays,
+    holidaySet: holidayKeySet,
+    effectiveDateKeys: leave?.effectiveDateKeys,
+    sandwichRuleEnabled: false,
+    timeZone
+  });
+  if (Array.isArray(leave?.effectiveDateKeys) && leave.effectiveDateKeys.length) {
+    return workingAnalysis.effectiveDateKeys;
   }
 
-  const workingDateKeys = dayMeta.filter((day) => !day.excluded).map((day) => day.key);
-  const firstWorkingIdx = dayMeta.findIndex((day) => !day.excluded);
-  const lastWorkingIdx = dayMeta.length - 1 - [...dayMeta].reverse().findIndex((day) => !day.excluded);
-  const sandwichDateKeys =
-    firstWorkingIdx === -1 || lastWorkingIdx === -1
-      ? []
-      : dayMeta
-          .filter((day, index) => !day.excluded || (index > firstWorkingIdx && index < lastWorkingIdx))
-          .map((day) => day.key);
+  const sandwichAnalysis = analyzeLeaveDateKeys({
+    fromDate: leave.fromDate,
+    toDate: leave.toDate,
+    weekOffDays,
+    holidaySet: holidayKeySet,
+    sandwichRuleEnabled: true,
+    timeZone
+  });
 
-  const totalDays = Number(leave.totalDays || 0);
-  if (Number.isFinite(totalDays) && totalDays > workingDateKeys.length && sandwichDateKeys.length) {
-    return sandwichDateKeys;
+  if (
+    Number.isFinite(Number(leave?.totalDays || 0))
+    && Number(leave.totalDays || 0) > workingAnalysis.workingDateKeys.length
+    && sandwichAnalysis.sandwichDeductedDateKeys.length
+  ) {
+    return sandwichAnalysis.effectiveDateKeys;
   }
 
-  return workingDateKeys;
+  return workingAnalysis.effectiveDateKeys;
 };
 
 const buildAttendanceSummary = (days, daysInMonth) => {
