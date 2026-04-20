@@ -166,6 +166,17 @@ const LeaveApply = () => {
   const [visibleMonth, setVisibleMonth] = useState(new Date());
   const backTarget = (location.state as { from?: string } | null)?.from || "/leave";
 
+  const resetForm = () => {
+    setLeaveTypeId("");
+    setReason("");
+    setSelectedRange(undefined);
+    setFromDate("");
+    setToDate("");
+    setDuration("full_day");
+    setHalfDaySession("first_half");
+    setVisibleMonth(new Date());
+  };
+
   const loadContext = async () => {
     try {
       setLoading(true);
@@ -397,12 +408,7 @@ const LeaveApply = () => {
       if (res?.skipped) return;
       if (res?.success) {
         toast.success("Leave applied successfully");
-        setSelectedRange(undefined);
-        setFromDate("");
-        setToDate("");
-        setDuration("full_day");
-        setHalfDaySession("first_half");
-        setReason("");
+        resetForm();
         await loadContext();
       } else {
         toast.error(res?.message || "Failed to apply leave");
@@ -627,7 +633,14 @@ const LeaveApply = () => {
               </div>
             )}
 
-            <div className="flex justify-start sm:justify-end">
+            <div className="flex flex-wrap justify-start gap-3 sm:justify-end">
+              <Button
+                variant="outline"
+                onClick={resetForm}
+                disabled={submitting || loading}
+              >
+                Reset
+              </Button>
               <Button onClick={submit} disabled={submitting || loading || Boolean(dateError) || leaveRestriction.blocked}>
                 {submitting ? "Applying..." : "Apply Leave"}
               </Button>
