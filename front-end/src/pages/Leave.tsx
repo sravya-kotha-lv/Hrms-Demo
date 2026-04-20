@@ -373,6 +373,7 @@ const Leave = () => {
   const canAdjustBalances = canViewAll && canViewEmployees;
   const currentEmployeeId = toIdString(profile?.employeeId);
   const currentRoleSlug = profile?.activeRole?.slug || "";
+  const isEmployeeRole = currentRoleSlug === "employee";
   const applyDateError = useMemo(() => {
     if (!applyForm.fromDate || !applyForm.toDate) return "";
     if (applyForm.fromDate > applyForm.toDate) {
@@ -422,12 +423,15 @@ const Leave = () => {
       });
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
 
-      let res = await getApiWithToken(`/leaves?${params.toString()}`, null, {
-        requiredPermissions: ["LEAVE_VIEW_ALL"]
-      });
-      if (res?.skipped) {
-        res = null;
-      } else if (res?.success) {
+      let res = null;
+
+      if (!isEmployeeRole) {
+        res = await getApiWithToken(`/leaves?${params.toString()}`, null, {
+          requiredPermissions: ["LEAVE_VIEW_ALL"]
+        });
+      }
+
+      if (res?.success) {
         const payload = res?.data;
         const nextLeaves = Array.isArray(payload) ? payload : (payload?.items || []);
         const pagination = Array.isArray(payload)
@@ -441,7 +445,7 @@ const Leave = () => {
         return;
       }
 
-      // fallback to my leaves (for employee role)
+      // employee/self view
       res = await getApiWithToken(`/leaves/my?${params.toString()}`, null, {
         requiredPermissions: ["LEAVE_VIEW_SELF"]
       });
@@ -469,7 +473,7 @@ const Leave = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [canViewAny, leavePageSize, searchQuery, statusFilter]);
+  }, [canViewAny, isEmployeeRole, leavePageSize, searchQuery, statusFilter]);
 
   const refreshLeaveList = useCallback(async () => {
     setLeaves([]);

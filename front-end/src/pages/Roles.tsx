@@ -109,11 +109,10 @@ const Roles = () => {
       res = await postApiWithToken("/roles", {
         name: form.name,
         slug: form.slug,
-        permissionIds: form.permissionIds,
       });
     }
 
-    if (res?.code === 200) {
+    if (res?.success || res?.code === 200 || res?.code === 201) {
       toast.success(isEdit ? "Role updated" : "Role created");
       setOpen(false);
       setForm(emptyRole);

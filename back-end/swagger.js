@@ -703,7 +703,7 @@ module.exports = {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["name", "slug", "permissionIds"],
+                required: ["name", "slug"],
                 properties: {
                   name: {
                     type: "string",
@@ -715,6 +715,7 @@ module.exports = {
                   },
                   permissionIds: {
                     type: "array",
+                    description: "Optional. If omitted, the new role inherits the employee role's default permissions.",
                     items: {
                       type: "string",
                       example: "64f1c9e8f9b1a23c8a9d1234"

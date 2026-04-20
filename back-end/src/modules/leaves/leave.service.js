@@ -907,6 +907,22 @@ exports.getAllLeaves = async (req) => {
       } else {
         query.employeeId = { $in: [] };
       }
+    } else if (!["hr", "admin", "org-admin", "superadmin"].includes(String(role?.slug || ""))) {
+      const employee = await Employee.findOne({
+        userId: req.user.userId,
+        organizationId: req.user.organizationId
+      }).select("_id");
+
+      if (!employee) {
+        query.employeeId = { $in: [] };
+      } else if (requestedEmployeeId) {
+        if (String(employee._id) !== requestedEmployeeId) {
+          throw new Error("Access denied");
+        }
+        query.employeeId = employee._id;
+      } else {
+        query.employeeId = employee._id;
+      }
     }
   }
 
