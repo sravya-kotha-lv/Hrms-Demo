@@ -210,6 +210,9 @@ const buildDashboardStats = ({
       && !isWeekOff
       && !isOnLeave
       && !hasAttendance;
+    const countedOnLeave = Boolean(isOnLeave);
+    const countedPresent = !countedOnLeave && hasAttendance;
+    const countedAbsent = !countedOnLeave && !countedPresent;
 
     return {
       employeeId,
@@ -223,6 +226,9 @@ const buildDashboardStats = ({
       overriddenBy: attendance?.overriddenBy || null,
       overriddenAt: attendance?.overriddenAt || null,
       present: hasAttendance,
+      countedPresent,
+      countedOnLeave,
+      countedAbsent,
       pendingCheckout: isPendingCheckout,
       absent: countAsAbsent
     };
@@ -230,18 +236,23 @@ const buildDashboardStats = ({
 
   const kpis = {
     totalEmployees: employees.length,
-    presentToday: todayStatusList.filter((item) => item.present && !item.pendingCheckout).length,
-    absentToday: todayStatusList.filter((item) => item.absent).length,
+    presentToday: todayStatusList.filter((item) => item.countedPresent).length,
+    absentToday: todayStatusList.filter((item) => item.countedAbsent).length,
     checkedInOnly: todayStatusList.filter((item) => item.pendingCheckout).length,
-    lateArrivals: todayStatusList.filter((item) => item.present && item.lateByMinutes > 0).length,
-    onLeaveToday: todayStatusList.filter((item) => item.isOnLeave).length
+    lateArrivals: todayStatusList.filter((item) =>
+      item.countedPresent
+      && !item.holidayName
+      && !item.isWeekOff
+      && item.lateByMinutes > 0
+    ).length,
+    onLeaveToday: todayStatusList.filter((item) => item.countedOnLeave).length
   };
 
   const monthDaySummary = {
-    present: todayStatusList.filter((item) => item.present && !item.pendingCheckout).length,
+    present: todayStatusList.filter((item) => item.countedPresent).length,
     pendingCheckout: todayStatusList.filter((item) => item.pendingCheckout).length,
-    absent: todayStatusList.filter((item) => item.absent).length,
-    onLeave: todayStatusList.filter((item) => item.isOnLeave).length,
+    absent: todayStatusList.filter((item) => item.countedAbsent).length,
+    onLeave: todayStatusList.filter((item) => item.countedOnLeave).length,
     weekOff: todayStatusList.filter((item) => item.isWeekOff).length,
     holiday: todayStatusList.filter((item) => Boolean(item.holidayName)).length,
     overridden: todayStatusList.filter((item) => item.overriddenBy || item.overriddenAt).length
@@ -256,9 +267,9 @@ const buildDashboardStats = ({
     groupedDepartments[dept].employees += 1;
     const status = todayStatusList.find((item) => item.employeeId === String(employee._id));
     if (!status) return;
-    if (status.isOnLeave) groupedDepartments[dept].onLeave += 1;
-    else if (status.present) groupedDepartments[dept].present += 1;
-    else if (status.absent) groupedDepartments[dept].absent += 1;
+    if (status.countedOnLeave) groupedDepartments[dept].onLeave += 1;
+    else if (status.countedPresent) groupedDepartments[dept].present += 1;
+    else groupedDepartments[dept].absent += 1;
   });
 
   const departmentAnalytics = Object.values(groupedDepartments)

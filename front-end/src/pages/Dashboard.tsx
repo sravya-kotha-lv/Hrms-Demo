@@ -569,19 +569,24 @@ const Dashboard = () => {
     if (dashboardStats?.kpis) return dashboardStats.kpis;
     return {
       totalEmployees: employeeList.length,
-      presentToday: todayStatusList.filter((item) => item.present && !item.pendingCheckout).length,
-      absentToday: todayStatusList.filter((item) => item.absent).length,
+      presentToday: todayStatusList.filter((item) => item.countedPresent ?? (!item.isOnLeave && item.present)).length,
+      absentToday: todayStatusList.filter((item) => item.countedAbsent ?? (!item.isOnLeave && !item.present)).length,
       checkedInOnly: todayStatusList.filter((item) => item.pendingCheckout).length,
-      lateArrivals: todayStatusList.filter((item) => item.present && Number(item.lateByMinutes || 0) > 0).length,
-      onLeaveToday: todayStatusList.filter((item) => item.isOnLeave).length
+      lateArrivals: todayStatusList.filter((item) =>
+        (item.countedPresent ?? (!item.isOnLeave && item.present))
+        && !item.holidayName
+        && !item.isWeekOff
+        && Number(item.lateByMinutes || 0) > 0
+      ).length,
+      onLeaveToday: todayStatusList.filter((item) => item.countedOnLeave ?? item.isOnLeave).length
     };
   }, [dashboardStats, employeeList.length, todayStatusList]);
 
   const kpiHelpText = {
     total: "Total active employees only. Resigned and terminated employees are excluded.",
-    present: "Employees who checked in or checked out today.",
+    present: "Employees who checked in today. Missed checkout is included under present.",
     leave: "Employees with approved leave that includes today.",
-    absent: "Employees without attendance today, excluding holiday, week off, and approved leave.",
+    absent: "Employees who are not present today and are not on approved leave.",
     late: "Employees who checked in late based on shift start and grace rules.",
     missed: "Employees who checked in today but have not checked out yet."
   };
@@ -637,7 +642,7 @@ const Dashboard = () => {
           if (!employeeId || !hasAttendanceActivity(row)) return false;
           const status = todayStatusByEmployeeId.get(employeeId);
           if (status) {
-            if (status.holidayName || status.isWeekOff || status.isOnLeave || status.pendingCheckout) return false;
+            if (status.holidayName || status.isWeekOff || (status.countedOnLeave ?? status.isOnLeave)) return false;
             return Boolean(status.present || row.checkInAt || row.checkOutAt);
           }
           if (employeesOnApprovedLeaveToday.has(employeeId)) return false;
@@ -681,12 +686,16 @@ const Dashboard = () => {
 
     const absentRows = uniqueByEmployeeId(
       (todayStatusList || [])
-        .filter((status) => Boolean(status?.absent))
+        .filter((status) => Boolean(status) && (status.countedAbsent ?? (!status.present && !status.isOnLeave)))
         .map((status) => {
           const employeeId = String(status?.employeeId || "");
           return toDisplayRow(getEmployeeRecord(employeeId) as EmployeeRecord, {
             id: employeeId,
-            absentReason: "Absent"
+            absentReason: status?.holidayName
+              ? `Holiday: ${status.holidayName}`
+              : status?.isWeekOff
+                ? "Week Off"
+                : "Absent"
           });
         })
     );
@@ -694,7 +703,7 @@ const Dashboard = () => {
     const lateRows = uniqueByEmployeeId(
       (todayStatusList || [])
         .filter((status) => {
-          if (!status || status.holidayName || status.isWeekOff || status.isOnLeave) return false;
+          if (!status || status.holidayName || status.isWeekOff || (status.countedOnLeave ?? status.isOnLeave)) return false;
           return Boolean(status.present) && Number(status.lateByMinutes || 0) > 0;
         })
         .map((status) => {
@@ -771,7 +780,7 @@ const Dashboard = () => {
             if (!employeeId || !hasAttendanceActivity(row)) return false;
             if (employeesOnApprovedLeaveToday.has(employeeId)) return false;
             const status = todayStatusByEmployeeId.get(employeeId);
-            if (status?.holidayName || status?.isWeekOff || status?.isOnLeave || status?.pendingCheckout) return false;
+            if (status?.holidayName || status?.isWeekOff || (status?.countedOnLeave ?? status?.isOnLeave)) return false;
             return true;
           })
           .map((row) => {
@@ -796,10 +805,10 @@ const Dashboard = () => {
   const monthDaySummary = useMemo(() => {
     if (dashboardStats?.monthDaySummary) return dashboardStats.monthDaySummary;
     return {
-      present: todayStatusList.filter((item) => item.present && !item.pendingCheckout).length,
+      present: todayStatusList.filter((item) => item.countedPresent ?? (!item.isOnLeave && item.present)).length,
       pendingCheckout: todayStatusList.filter((item) => item.pendingCheckout).length,
-      absent: todayStatusList.filter((item) => item.absent).length,
-      onLeave: todayStatusList.filter((item) => item.isOnLeave).length,
+      absent: todayStatusList.filter((item) => item.countedAbsent ?? (!item.isOnLeave && !item.present)).length,
+      onLeave: todayStatusList.filter((item) => item.countedOnLeave ?? item.isOnLeave).length,
       weekOff: todayStatusList.filter((item) => item.isWeekOff).length,
       holiday: todayStatusList.filter((item) => Boolean(item.holidayName)).length,
       overridden: todayStatusList.filter((item) => item.overriddenBy || item.overriddenAt).length
