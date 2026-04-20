@@ -7,6 +7,7 @@ import {
   Clock,
   ClipboardCheck,
   Timer,
+  Eye,
   ChevronLeft,
   ChevronRight,
   ChevronDown
@@ -191,13 +192,6 @@ type AttendanceRequest = {
   currentApprovalStep?: number | null;
 };
 
-type CheckInPolicy = {
-  attendanceIpEnabled: boolean;
-  attendanceSelfieRequired: boolean;
-  attendanceGeoFenceEnabled: boolean;
-  attendanceGeoRadiusMeters: number;
-};
-
 const toPersonLabel = (employee: EmployeeSummary | null | undefined) => {
   if (!employee) return "-";
   const name = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
@@ -320,93 +314,21 @@ const mergeTimesheetPages = (existing: TeamTimesheet[], incoming: TeamTimesheet[
   return Array.from(merged.values());
 };
 
-const captureSelfieFromCamera = async (): Promise<string | null> => {
-  if (!navigator.mediaDevices?.getUserMedia) return null;
-
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-  return new Promise((resolve) => {
-    const overlay = document.createElement("div");
-    overlay.style.position = "fixed";
-    overlay.style.inset = "0";
-    overlay.style.zIndex = "9999";
-    overlay.style.background = "rgba(0,0,0,0.8)";
-    overlay.style.display = "flex";
-    overlay.style.alignItems = "center";
-    overlay.style.justifyContent = "center";
-
-    const card = document.createElement("div");
-    card.style.background = "#fff";
-    card.style.padding = "12px";
-    card.style.borderRadius = "12px";
-    card.style.width = "min(92vw, 420px)";
-    card.style.display = "flex";
-    card.style.flexDirection = "column";
-    card.style.gap = "10px";
-
-    const title = document.createElement("div");
-    title.textContent = "Take Selfie for Check-In";
-    title.style.fontWeight = "600";
-
-    const video = document.createElement("video");
-    video.autoplay = true;
-    video.playsInline = true;
-    video.srcObject = stream;
-    video.style.width = "100%";
-    video.style.borderRadius = "8px";
-
-    const actions = document.createElement("div");
-    actions.style.display = "flex";
-    actions.style.gap = "8px";
-    actions.style.justifyContent = "flex-end";
-
-    const cancel = document.createElement("button");
-    cancel.textContent = "Cancel";
-    cancel.style.padding = "8px 10px";
-
-    const capture = document.createElement("button");
-    capture.textContent = "Capture";
-    capture.style.padding = "8px 10px";
-
-    const cleanup = () => {
-      stream.getTracks().forEach((t) => t.stop());
-      overlay.remove();
-    };
-
-    cancel.onclick = () => {
-      cleanup();
-      resolve(null);
-    };
-
-    capture.onclick = () => {
-      const maxSide = 480;
-      const canvas = document.createElement("canvas");
-      const vw = video.videoWidth || 640;
-      const vh = video.videoHeight || 480;
-      const scale = Math.min(1, maxSide / Math.max(vw, vh));
-      canvas.width = Math.max(1, Math.round(vw * scale));
-      canvas.height = Math.max(1, Math.round(vh * scale));
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        cleanup();
-        resolve(null);
-        return;
-      }
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const image = canvas.toDataURL("image/jpeg", 0.7);
-      cleanup();
-      resolve(image);
-    };
-
-    actions.append(cancel, capture);
-    card.append(title, video, actions);
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
+const mergeAttendanceRequestPages = (existing: AttendanceRequest[], incoming: AttendanceRequest[]) => {
+  const merged = new Map<string, AttendanceRequest>();
+  existing.forEach((item) => {
+    const itemId = getAttendanceRequestId(item);
+    if (itemId) merged.set(itemId, item);
   });
+  incoming.forEach((item) => {
+    const itemId = getAttendanceRequestId(item);
+    if (itemId) merged.set(itemId, item);
+  });
+  return Array.from(merged.values());
 };
 
 const Timesheets = () => {
   const { profile } = useAuth();
-  const [selectedDate] = useState(() => toDateKeyInOrgTimeZone(new Date()));
   const [weekStartDate, setWeekStartDate] = useState(getWeekStart(new Date()));
   const [attendanceToday, setAttendanceToday] = useState<AttendanceTodayRecord | null>(null);
   const [timesheet, setTimesheet] = useState<TeamTimesheet | null>(null);
@@ -419,8 +341,6 @@ const Timesheets = () => {
   const [teamTotalItems, setTeamTotalItems] = useState(0);
   const [teamPageSize] = useState(15);
   const [teamLoadingMore, setTeamLoadingMore] = useState(false);
-  const [onlineList, setOnlineList] = useState<TeamTimesheet[]>([]);
-  const [onLeaveList, setOnLeaveList] = useState<TeamTimesheet[]>([]);
   const [myLeaveDates, setMyLeaveDates] = useState<string[]>([]);
   const [weekOffDays, setWeekOffDays] = useState<number[]>([]);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
@@ -430,10 +350,9 @@ const Timesheets = () => {
   const [actionType, setActionType] = useState<"approve" | "reject">("approve");
   const [selectedTimesheet, setSelectedTimesheet] = useState<TeamTimesheet | null>(null);
   const [comment, setComment] = useState("");
-  const [showOnlineCard, setShowOnlineCard] = useState(true);
-  const [showOnLeaveCard, setShowOnLeaveCard] = useState(true);
   const [showTeamTimesheets, setShowTeamTimesheets] = useState(true);
   const [attendanceRequestOpen, setAttendanceRequestOpen] = useState(false);
+  const [attendanceRequestDetailOpen, setAttendanceRequestDetailOpen] = useState(false);
   const [attendanceRequestLoading, setAttendanceRequestLoading] = useState(false);
   const [attendanceRequestForm, setAttendanceRequestForm] = useState({
     date: toDateKeyInOrgTimeZone(new Date()),
@@ -443,29 +362,25 @@ const Timesheets = () => {
     reason: ""
   });
   const [myAttendanceRequests, setMyAttendanceRequests] = useState<AttendanceRequest[]>([]);
+  const [myAttendanceRequestsPage, setMyAttendanceRequestsPage] = useState(1);
+  const [myAttendanceRequestsTotalPages, setMyAttendanceRequestsTotalPages] = useState(1);
+  const [myAttendanceRequestsTotalItems, setMyAttendanceRequestsTotalItems] = useState(0);
+  const [myAttendanceRequestsLoadingMore, setMyAttendanceRequestsLoadingMore] = useState(false);
   const [pendingAttendanceRequests, setPendingAttendanceRequests] = useState<AttendanceRequest[]>([]);
-  const [checkInPolicy, setCheckInPolicy] = useState<CheckInPolicy>({
-    attendanceIpEnabled: false,
-    attendanceSelfieRequired: false,
-    attendanceGeoFenceEnabled: false,
-    attendanceGeoRadiusMeters: 200
-  });
-  const [checkinLoading, setCheckinLoading] = useState(false);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [selectedAttendanceRequest, setSelectedAttendanceRequest] = useState<AttendanceRequest | null>(null);
   const teamTableViewportRef = useRef<HTMLDivElement | null>(null);
   const teamLoadingMoreRef = useRef(false);
+  const myAttendanceRequestsViewportRef = useRef<HTMLDivElement | null>(null);
+  const myAttendanceRequestsLoadingMoreRef = useRef(false);
   const currentEmployeeId = toIdString(profile?.employeeId);
   const currentRoleSlug = profile?.activeRole?.slug || "";
   const isEmployeeRole = normalizeRoleKey(currentRoleSlug) === "employee";
   const showEmployeeOnlyPanels = isEmployeeRole;
-  const canCheckIn = hasPermission("TIMESHEET_CHECKIN_SELF");
-  const canCheckOut = hasPermission("TIMESHEET_CHECKOUT_SELF");
   const canSubmit = hasPermission("TIMESHEET_SUBMIT_SELF");
   const canEdit = hasPermission("TIMESHEET_EDIT_SELF");
   const canCreate = hasPermission("TIMESHEET_CREATE_SELF");
   const canAction = hasPermission("TIMESHEET_ACTION");
   const canRecall = hasPermission("TIMESHEET_RECALL_SELF");
-  const canViewOnline = hasPermission("TIMESHEET_VIEW_ONLINE");
   const canViewAll = hasPermission("TIMESHEET_VIEW_ALL");
 
   const canCurrentActorActionAttendanceRequest = (request: AttendanceRequest) => {
@@ -558,7 +473,7 @@ const Timesheets = () => {
 
   const loadAttendanceToday = useCallback(async () => {
     const res = await getApiWithToken(
-      `/timesheets/attendance/my?date=${selectedDate}`,
+      `/timesheets/attendance/my?date=${toDateKeyInOrgTimeZone(new Date())}`,
       null,
       { requiredPermissions: ["TIMESHEET_VIEW_SELF", "TIMESHEET_CHECKIN_SELF", "TIMESHEET_CHECKOUT_SELF"] }
     );
@@ -567,7 +482,7 @@ const Timesheets = () => {
       const record = (res.data || [])[0];
       setAttendanceToday(record || null);
     }
-  }, [selectedDate]);
+  }, []);
 
   const loadWeekly = useCallback(async () => {
     setWeekLoading(true);
@@ -603,26 +518,6 @@ const Timesheets = () => {
     }
     setWeekLoading(false);
   }, [loadTeamTimesheets, weekDates, weekStart]);
-
-  const loadOnline = useCallback(async () => {
-    const res = await getApiWithToken("/timesheets/online", null, {
-      requiredPermissions: ["TIMESHEET_VIEW_ONLINE"]
-    });
-    if (res?.skipped) return;
-    if (res?.success) {
-      setOnlineList(res.data || []);
-    }
-  }, []);
-
-  const loadOnLeave = useCallback(async () => {
-    const res = await getApiWithToken("/timesheets/on-leave", null, {
-      requiredPermissions: ["TIMESHEET_VIEW_ALL"]
-    });
-    if (res?.skipped) return;
-    if (res?.success) {
-      setOnLeaveList(res.data || []);
-    }
-  }, []);
 
   const loadMyLeavesForWeek = useCallback(async () => {
     const start = toDateInput(weekStart);
@@ -675,18 +570,34 @@ const Timesheets = () => {
     }
   }, []);
 
-  const loadMyAttendanceRequests = useCallback(async () => {
-    const res = await getApiWithToken("/timesheets/attendance/requests/my", null, {
+  const loadMyAttendanceRequests = useCallback(async (pageToLoad = 1) => {
+    if (pageToLoad > 1) {
+      setMyAttendanceRequestsLoadingMore(true);
+    }
+    const res = await getApiWithToken(`/timesheets/attendance/requests/my?page=${pageToLoad}&limit=20`, null, {
       requiredPermissions: ["TIMESHEET_VIEW_SELF"]
     });
     if (res?.skipped) return;
     if (res?.success) {
-      setMyAttendanceRequests(
-        (res.data || [])
-          .map((request: AttendanceRequest & { id?: string }) => normalizeAttendanceRequestRecord(request))
-          .filter(Boolean) as AttendanceRequest[]
-      );
+      const payload = res.data;
+      const nextItems = (Array.isArray(payload) ? payload : (payload?.items || []))
+        .map((request: AttendanceRequest & { id?: string }) => normalizeAttendanceRequestRecord(request))
+        .filter(Boolean) as AttendanceRequest[];
+      const pagination = Array.isArray(payload)
+        ? { page: 1, totalPages: 1, total: nextItems.length }
+        : payload?.pagination;
+      setMyAttendanceRequests((prev) => (pageToLoad > 1 ? mergeAttendanceRequestPages(prev, nextItems) : nextItems));
+      setMyAttendanceRequestsPage(Number(pagination?.page || pageToLoad));
+      setMyAttendanceRequestsTotalPages(Math.max(1, Number(pagination?.totalPages || 1)));
+      setMyAttendanceRequestsTotalItems(Number(pagination?.total || nextItems.length));
+    } else if (pageToLoad === 1) {
+      setMyAttendanceRequests([]);
+      setMyAttendanceRequestsPage(1);
+      setMyAttendanceRequestsTotalPages(1);
+      setMyAttendanceRequestsTotalItems(0);
     }
+    myAttendanceRequestsLoadingMoreRef.current = false;
+    setMyAttendanceRequestsLoadingMore(false);
   }, []);
 
   const loadPendingAttendanceRequests = useCallback(async () => {
@@ -703,21 +614,6 @@ const Timesheets = () => {
     }
   }, []);
 
-  const loadCheckInPolicy = useCallback(async () => {
-    const res = await getApiWithToken("/timesheets/checkin-policy", null, {
-      requiredPermissions: ["TIMESHEET_CHECKIN_SELF"]
-    });
-    if (res?.skipped) return;
-    if (res?.success && res?.data) {
-      setCheckInPolicy({
-        attendanceIpEnabled: Boolean(res.data.attendanceIpEnabled),
-        attendanceSelfieRequired: Boolean(res.data.attendanceSelfieRequired),
-        attendanceGeoFenceEnabled: Boolean(res.data.attendanceGeoFenceEnabled),
-        attendanceGeoRadiusMeters: Number(res.data.attendanceGeoRadiusMeters || 200)
-      });
-    }
-  }, []);
-
   useEffect(() => {
     loadAttendanceToday();
     loadWeekly();
@@ -725,37 +621,35 @@ const Timesheets = () => {
     loadOrgSettings();
     loadMyLeavesForWeek();
     loadMyAttendanceRequests();
-    loadCheckInPolicy();
 
     if (showEmployeeOnlyPanels) {
-      loadOnline();
-      loadOnLeave();
       loadPendingAttendanceRequests();
     } else {
-      setOnlineList([]);
-      setOnLeaveList([]);
       setPendingAttendanceRequests([]);
     }
   }, [
     loadAttendanceToday,
     loadWeekly,
-    loadOnline,
-    loadOnLeave,
     loadWeekOffs,
     loadOrgSettings,
     loadMyLeavesForWeek,
     loadMyAttendanceRequests,
     loadPendingAttendanceRequests,
-    loadCheckInPolicy,
     showEmployeeOnlyPanels
   ]);
 
   const hasMoreTeamTimesheets = teamCurrentPage < teamTotalPages;
+  const hasMoreMyAttendanceRequests = myAttendanceRequestsPage < myAttendanceRequestsTotalPages;
 
   useEffect(() => {
     if (teamCurrentPage <= 1 || !canViewAll) return;
     loadTeamTimesheets(teamCurrentPage);
   }, [canViewAll, loadTeamTimesheets, teamCurrentPage]);
+
+  useEffect(() => {
+    if (myAttendanceRequestsPage <= 1) return;
+    loadMyAttendanceRequests(myAttendanceRequestsPage);
+  }, [loadMyAttendanceRequests, myAttendanceRequestsPage]);
 
   const handleTeamTimesheetsScroll = () => {
     const viewport = teamTableViewportRef.current;
@@ -770,6 +664,31 @@ const Timesheets = () => {
     setTeamCurrentPage((prev) => {
       if (prev >= teamTotalPages) {
         teamLoadingMoreRef.current = false;
+        return prev;
+      }
+      return prev + 1;
+    });
+  };
+
+  const handleMyAttendanceRequestsScroll = () => {
+    const viewport = myAttendanceRequestsViewportRef.current;
+    if (
+      !viewport
+      || weekLoading
+      || myAttendanceRequestsLoadingMore
+      || myAttendanceRequestsLoadingMoreRef.current
+      || !hasMoreMyAttendanceRequests
+    ) {
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    if (scrollTop <= 0 || scrollHeight <= clientHeight) return;
+    const progress = (scrollTop + clientHeight) / scrollHeight;
+    if (progress < 0.6) return;
+    myAttendanceRequestsLoadingMoreRef.current = true;
+    setMyAttendanceRequestsPage((prev) => {
+      if (prev >= myAttendanceRequestsTotalPages) {
+        myAttendanceRequestsLoadingMoreRef.current = false;
         return prev;
       }
       return prev + 1;
@@ -833,6 +752,11 @@ const Timesheets = () => {
     setAttendanceRequestOpen(true);
   };
 
+  const openAttendanceRequestDetail = (request: AttendanceRequest) => {
+    setSelectedAttendanceRequest(request);
+    setAttendanceRequestDetailOpen(true);
+  };
+
   const actionAttendanceRequest = async (requestRow: AttendanceRequest | string, status: "approved" | "rejected") => {
     const requestId = getAttendanceRequestId(requestRow);
     if (!requestId || requestId === "[object Object]") {
@@ -858,91 +782,11 @@ const Timesheets = () => {
     if (res?.skipped) return;
     if (res?.success) {
       toast.success(`Attendance request ${status}`);
-      loadAttendanceToday();
       loadWeekly();
       loadPendingAttendanceRequests();
       loadMyAttendanceRequests();
     } else {
       toast.error(res?.message || "Failed to action request");
-    }
-  };
-
-  const handleCheckIn = async () => {
-    if (checkinLoading) return;
-    const payload: Record<string, unknown> = {};
-
-    if (checkInPolicy.attendanceGeoFenceEnabled) {
-      if (!navigator.geolocation) {
-        toast.error("Location is not supported on this browser");
-        return;
-      }
-      const geo = await new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          (position) => resolve({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          }),
-          () => resolve(null),
-          { enableHighAccuracy: true, timeout: 10000 }
-        );
-      });
-      if (!geo) {
-        toast.error("Location permission is required for check-in");
-        return;
-      }
-      payload.latitude = geo.latitude;
-      payload.longitude = geo.longitude;
-    }
-
-    if (checkInPolicy.attendanceSelfieRequired) {
-      let selfieImage: string | null = null;
-      try {
-        selfieImage = await captureSelfieFromCamera();
-      } catch {
-        selfieImage = null;
-      }
-      if (!selfieImage) {
-        toast.error("Selfie capture is required for check-in");
-        return;
-      }
-      payload.selfieImage = selfieImage;
-    }
-
-    setCheckinLoading(true);
-    const res = await postApiWithToken(
-      "/timesheets/check-in",
-      payload,
-      null,
-      { requiredPermissions: ["TIMESHEET_CHECKIN_SELF"] }
-    );
-    setCheckinLoading(false);
-    if (res?.skipped) return;
-    if (res?.success) {
-      toast.success("Checked in");
-      loadAttendanceToday();
-      loadOnline();
-    } else {
-      toast.error(res?.message || "Check-in failed");
-    }
-  };
-
-  const handleCheckOut = async () => {
-    if (checkoutLoading) return;
-    setCheckoutLoading(true);
-    const res = await postApiWithToken(
-      "/timesheets/check-out",
-      {},
-      null,
-      { requiredPermissions: ["TIMESHEET_CHECKOUT_SELF"] }
-    );
-    setCheckoutLoading(false);
-    if (res?.skipped) return;
-    if (res?.success) {
-      toast.success("Checked out");
-      loadAttendanceToday();
-      loadOnline();
-    } else {
-      toast.error(res?.message || "Check-out failed");
     }
   };
 
@@ -1105,9 +949,7 @@ const Timesheets = () => {
     }
   };
 
-  const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
-  const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
-  const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt);
+  const isCheckedIn = Boolean(attendanceToday?.checkInAt && !attendanceToday?.checkOutAt);
   const attendanceRequestDefaultDate = isCheckedIn && attendanceToday?.date
     ? toDateKeyInOrgCalendar(attendanceToday.date)
     : shiftDateKey(toDateKeyInOrgTimeZone(new Date()), -1);
@@ -1127,65 +969,7 @@ const Timesheets = () => {
       title="Timesheets"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Timesheets" }]}
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <motion.div className="stat-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <Timer className="w-4 h-4" />
-            Today
-          </div>
-          <div className="text-2xl font-semibold">
-            {isCheckedOut
-              ? "Checked Out"
-              : isCheckedIn
-                ? "Checked In"
-                : "Not Checked In"}
-          </div>
-          <div className="text-sm text-muted-foreground mt-1">
-            {attendanceToday?.checkInAt
-              ? formatTimeInOrgTimeZone(attendanceToday.checkInAt)
-              : "-"}
-          </div>
-          {isCheckedIn && (
-            <div className="text-xs text-orange-700 mt-2">
-              Pending checkout. This session stays excluded from payroll until checkout is completed.
-            </div>
-          )}
-          {isCheckedOut && (
-            <div className="text-xs text-emerald-700 mt-2">
-              Check-in is allowed only once today. You can update the checkout time again if needed.
-            </div>
-          )}
-        </motion.div>
-
-        <motion.div
-          className="stat-card"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <ClipboardCheck className="w-4 h-4" />
-            Week Status
-          </div>
-          <div className="text-2xl font-semibold">
-            {timesheet?.status ? timesheet.status : "Draft"}
-          </div>
-          <div className="text-sm text-muted-foreground mt-1">
-            {toDateInput(weekStart)} - {toDateInput(weekDates[6])}
-          </div>
-          <div className="text-xs text-muted-foreground mt-1">
-            Week Total: {weekTotalHours}h · Min: {minWeeklyHours}h
-          </div>
-        </motion.div>
-      </div>
-
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <Button onClick={handleCheckIn} disabled={!canCheckIn || hasCheckedInToday || checkinLoading}>
-          Check In
-        </Button>
-        <Button variant="outline" onClick={handleCheckOut} disabled={!canCheckOut || !hasCheckedInToday || checkoutLoading}>
-          Check Out
-        </Button>
         <Button
           variant="outline"
           onClick={openAttendanceRequestDialog}
@@ -1197,11 +981,6 @@ const Timesheets = () => {
           Today: {toDateInput(new Date())}
         </div>
       </div>
-      {isCheckedOut && (
-        <div className="mb-6 text-xs text-emerald-700">
-          Check-in is disabled because only one check-in is allowed per day. You can still update checkout time again today.
-        </div>
-      )}
 
       <motion.div
         className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
@@ -1213,37 +992,56 @@ const Timesheets = () => {
           <h3 className="text-lg font-semibold">My Attendance Requests</h3>
           <p className="text-sm text-muted-foreground">Raise request when missed checkout/check-in correction is needed.</p>
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow className="table-header">
-              <TableHead>Date</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Requested Time</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Approval</TableHead>
-              <TableHead>Reason</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {myAttendanceRequests.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-muted-foreground">No attendance requests</TableCell>
+        <div
+          ref={myAttendanceRequestsViewportRef}
+          className="max-h-[420px] overflow-auto"
+          onScroll={handleMyAttendanceRequestsScroll}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow className="table-header">
+                <TableHead>Date</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Requested Time</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Approval</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            )}
-            {myAttendanceRequests.map((r) => (
-              <TableRow key={r._actionId || toIdString(r._id)} className="table-row-hover">
-                <TableCell>{formatDateKeyInOrgCalendar(r.date)}</TableCell>
-                <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
-                <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
-                <TableCell>{getStatusBadge(getAttendanceRequestStatus(r))}</TableCell>
-                <TableCell className="max-w-[260px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
-                  {approvalProgressLabel(r)}
-                </TableCell>
-                <TableCell className="max-w-[260px] truncate" title={r.reason}>{r.reason}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {myAttendanceRequests.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-muted-foreground">No attendance requests</TableCell>
+                </TableRow>
+              )}
+              {myAttendanceRequests.map((r) => (
+                <TableRow key={r._actionId || toIdString(r._id)} className="table-row-hover">
+                  <TableCell>{formatDateKeyInOrgCalendar(r.date)}</TableCell>
+                  <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
+                  <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
+                  <TableCell>{getStatusBadge(getAttendanceRequestStatus(r))}</TableCell>
+                  <TableCell className="max-w-[260px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
+                    {approvalProgressLabel(r)}
+                  </TableCell>
+                  <TableCell className="max-w-[260px] truncate" title={r.reason}>{r.reason}</TableCell>
+                  <TableCell>
+                    <Button size="sm" variant="outline" className="gap-2" onClick={() => openAttendanceRequestDetail(r)}>
+                      <Eye className="h-4 w-4" />
+                      View
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="flex items-center justify-between border-t border-border px-6 py-3 text-xs text-muted-foreground">
+          <span>
+            Showing {myAttendanceRequests.length} of {myAttendanceRequestsTotalItems || myAttendanceRequests.length} attendance requests
+          </span>
+          {myAttendanceRequestsLoadingMore && <span>Loading more...</span>}
+        </div>
       </motion.div>
 
       {showEmployeeOnlyPanels && canAction && (
@@ -1292,6 +1090,10 @@ const Timesheets = () => {
                   <TableCell>
                     {canCurrentActorActionAttendanceRequest(r) ? (
                       <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="gap-2" onClick={() => openAttendanceRequestDetail(r)}>
+                          <Eye className="h-4 w-4" />
+                          View
+                        </Button>
                         <Button size="sm" onClick={() => actionAttendanceRequest(r, "approved")}>
                           Approve
                         </Button>
@@ -1307,124 +1109,6 @@ const Timesheets = () => {
               ))}
             </TableBody>
           </Table>
-        </motion.div>
-      )}
-
-      {showEmployeeOnlyPanels && canViewOnline && (
-        <motion.div
-          className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
-        >
-          <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Online Employees</h3>
-              <p className="text-sm text-muted-foreground">Checked in and currently working</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowOnlineCard((prev) => !prev)}
-              aria-label="Toggle Online Employees"
-            >
-              <ChevronDown className={`w-4 h-4 transition-transform ${showOnlineCard ? "rotate-0" : "-rotate-90"}`} />
-            </Button>
-          </div>
-          {showOnlineCard && (
-            <Table>
-              <TableHeader>
-                <TableRow className="table-header">
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Check In</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {onlineList.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={2} className="text-muted-foreground">
-                      No one is online right now.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {onlineList.map((item) => (
-                  <TableRow key={toIdString(item._id || item.id || item.employeeId)} className="table-row-hover">
-                    <TableCell>
-                      {item.employeeId
-                        ? `${item.employeeId.firstName || ""} ${item.employeeId.lastName || ""}`.trim()
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.checkInAt ? formatTimeInOrgTimeZone(item.checkInAt) : "-"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </motion.div>
-      )}
-
-      {showEmployeeOnlyPanels && canViewAll && (
-        <motion.div
-          className="bg-card rounded-xl card-shadow overflow-hidden mb-8"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">On Leave Today</h3>
-              <p className="text-sm text-muted-foreground">Approved leaves in effect today</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowOnLeaveCard((prev) => !prev)}
-              aria-label="Toggle On Leave"
-            >
-              <ChevronDown className={`w-4 h-4 transition-transform ${showOnLeaveCard ? "rotate-0" : "-rotate-90"}`} />
-            </Button>
-          </div>
-          {showOnLeaveCard && (
-            <Table>
-              <TableHeader>
-                <TableRow className="table-header">
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Leave Type</TableHead>
-                  <TableHead>From</TableHead>
-                  <TableHead>To</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {onLeaveList.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-muted-foreground">
-                      No one is on leave today.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {onLeaveList.map((item) => (
-                  <TableRow key={toIdString(item._id || item.id || item.employeeId)} className="table-row-hover">
-                    <TableCell>
-                      {item.employeeId
-                        ? `${item.employeeId.firstName || ""} ${item.employeeId.lastName || ""}`.trim()
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.leaveTypeId?.name || "-"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.fromDate ? toDateInput(new Date(item.fromDate)) : "-"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.toDate ? toDateInput(new Date(item.toDate)) : "-"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
         </motion.div>
       )}
 
@@ -1834,6 +1518,48 @@ const Timesheets = () => {
             </Button>
             <Button onClick={submitAttendanceRequest} disabled={attendanceRequestLoading}>
               {attendanceRequestLoading ? <InlineLoader label="Submitting..." className="text-white" /> : "Submit Request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={attendanceRequestDetailOpen} onOpenChange={setAttendanceRequestDetailOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Attendance Request Details</DialogTitle>
+          </DialogHeader>
+          {selectedAttendanceRequest && (
+            <div className="space-y-3 text-sm overflow-hidden">
+              <p><span className="font-medium">Date:</span> {formatDateKeyInOrgCalendar(selectedAttendanceRequest.date)}</p>
+              <p><span className="font-medium">Type:</span> {selectedAttendanceRequest.requestType.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())}</p>
+              <p><span className="font-medium">Requested Check-in:</span> {selectedAttendanceRequest.requestedCheckInTime || "-"}</p>
+              <p><span className="font-medium">Requested Check-out:</span> {selectedAttendanceRequest.requestedCheckOutTime || "-"}</p>
+              <p><span className="font-medium">Status:</span> {String(selectedAttendanceRequest.status || "pending").replace(/\b\w/g, (char) => char.toUpperCase())}</p>
+              <div className="space-y-1">
+                <p className="font-medium">Reason:</p>
+                <div className="max-h-48 overflow-y-auto rounded-lg border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap break-all">
+                  {selectedAttendanceRequest.reason || "-"}
+                </div>
+              </div>
+              {selectedAttendanceRequest.rejectionReason && (
+                <div className="space-y-1">
+                  <p className="font-medium">Rejection Reason:</p>
+                  <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap break-all">
+                    {selectedAttendanceRequest.rejectionReason}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAttendanceRequestDetailOpen(false);
+                setSelectedAttendanceRequest(null);
+              }}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

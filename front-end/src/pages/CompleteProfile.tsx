@@ -23,6 +23,7 @@ const RELATION_OPTIONS = [
   { label: "Friend", value: "friend" },
   { label: "Other", value: "other" }
 ];
+const INDIAN_MOBILE_REGEX = /^[6-9]\d{9}$/;
 const sanitizePlaceName = (value: string) => value.replace(/[^A-Za-z .'-]/g, "");
 const isValidPlaceName = (value: string) => /^[A-Za-z]+(?:[A-Za-z .'-]*[A-Za-z])?$/.test(value.trim());
 
@@ -105,6 +106,10 @@ const CompleteProfile = () => {
       toast.error("Phone, DOB and gender are required");
       return;
     }
+    if (!INDIAN_MOBILE_REGEX.test(form.phone.trim())) {
+      toast.error("Phone number must be a valid 10-digit Indian mobile number");
+      return;
+    }
     if (form.aadhaarNumber.trim() && !/^\d{12}$/.test(form.aadhaarNumber.trim())) {
       toast.error("Aadhaar number must be 12 digits");
       return;
@@ -150,8 +155,8 @@ const CompleteProfile = () => {
         toast.error("Emergency contact name should contain only letters (2-50 chars)");
         return;
       }
-      if (!/^\d{10}$/.test(emergency.phone.trim())) {
-        toast.error("Emergency contact mobile number must be 10 digits");
+      if (!INDIAN_MOBILE_REGEX.test(emergency.phone.trim())) {
+        toast.error("Emergency contact mobile number must be a valid 10-digit Indian mobile number");
         return;
       }
     }
@@ -228,7 +233,13 @@ const CompleteProfile = () => {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Phone</label>
-                <Input validationType="phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                <Input
+                  validationType="phone"
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Date of Birth</label>
@@ -501,6 +512,8 @@ const CompleteProfile = () => {
             <Input
               placeholder="Mobile Number"
               validationType="phone"
+              inputMode="numeric"
+              maxLength={10}
               value={form.emergencyContacts[0].phone}
               onChange={(e) =>
                 setForm({

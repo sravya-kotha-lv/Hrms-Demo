@@ -105,6 +105,19 @@ type PersonSummary = {
 type OnlineEmployee = {
   _id?: string;
   employeeId?: PersonSummary | null;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+};
+
+type TeamLeaveEmployee = {
+  _id?: string;
+  employeeId?: PersonSummary | null;
+  leaveTypeId?: {
+    name?: string;
+    code?: string;
+  } | null;
+  fromDate?: string;
+  toDate?: string;
 };
 
 type LeaveBalance = {
@@ -294,7 +307,7 @@ const EmployeeDashboard = () => {
   const [weeklyHours, setWeeklyHours] = useState<number>(0);
   const [weeklyEntries, setWeeklyEntries] = useState<WeeklyEntry[]>([]);
   const [onlineList, setOnlineList] = useState<OnlineEmployee[]>([]);
-  const [onLeaveList, setOnLeaveList] = useState<OnlineEmployee[]>([]);
+  const [onLeaveList, setOnLeaveList] = useState<TeamLeaveEmployee[]>([]);
   const [attendanceToday, setAttendanceToday] = useState<AttendanceTodayRecord | null>(null);
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const [myLeaves, setMyLeaves] = useState<EmployeeLeave[]>([]);
@@ -1128,20 +1141,96 @@ const EmployeeDashboard = () => {
       </Dialog>
 
       <Dialog open={onlineDialogOpen} onOpenChange={setOnlineDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Online Employees</DialogTitle>
+        <DialogContent className="sm:max-w-4xl max-h-[88vh] overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="px-6 pt-8">
+            <DialogTitle>Team Status Today</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 max-h-80 overflow-auto custom-scroll pr-1">
-            {onlineList.length === 0 && (
-              <p className="text-sm text-muted-foreground">No employees are online right now.</p>
-            )}
-            {onlineList.map((item) => (
-              <div key={item._id} className="flex items-center justify-between text-sm p-2 rounded-lg border bg-background">
-                <span>{item.employeeId?.firstName} {item.employeeId?.lastName}</span>
-                <CheckCircle2 className="w-4 h-4 text-green-600" />
+          <div className="grid gap-4 px-6 pt-2 md:grid-cols-2">
+            <div className={`rounded-xl border p-4 ${softInsetClassName}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Present / Online Now</p>
+                  <p className="text-xs text-muted-foreground">Currently checked in team members</p>
+                </div>
+                <Badge variant="outline">{onlineList.length}</Badge>
               </div>
-            ))}
+            </div>
+            <div className={`rounded-xl border p-4 ${softInsetClassName}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">On Leave Today</p>
+                  <p className="text-xs text-muted-foreground">Team members with approved leave today</p>
+                </div>
+                <Badge variant="outline">{onLeaveList.length}</Badge>
+              </div>
+            </div>
+          </div>
+          <div className="min-h-0 grid flex-1 gap-4 overflow-hidden px-6 pb-6 pt-4 md:grid-cols-2">
+            <div className="min-h-0 rounded-xl border bg-background p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="font-semibold">Present / Online</h3>
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              </div>
+              <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1 custom-scroll">
+                {onlineList.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No team members are online right now.</p>
+                )}
+                {onlineList.map((item) => (
+                  <div key={item._id} className={`rounded-lg border p-3 text-sm ${softInsetClassName}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">
+                          {item.employeeId?.firstName} {item.employeeId?.lastName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.employeeId?.employeeCode || "Employee"}
+                        </p>
+                      </div>
+                      <Badge className="status-badge status-active">Present</Badge>
+                    </div>
+                    {item.checkInAt && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Checked in at {formatTimeInOrgTimeZone(item.checkInAt)}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="min-h-0 rounded-xl border bg-background p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="font-semibold">On Leave Today</h3>
+                <CalendarDays className="h-4 w-4 text-amber-600" />
+              </div>
+              <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1 custom-scroll">
+                {onLeaveList.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No team members are on leave today.</p>
+                )}
+                {onLeaveList.map((item) => (
+                  <div key={item._id} className={`rounded-lg border p-3 text-sm ${softInsetClassName}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">
+                          {item.employeeId?.firstName} {item.employeeId?.lastName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.employeeId?.employeeCode || "Employee"}
+                        </p>
+                      </div>
+                      <Badge variant="outline">On Leave</Badge>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Leave type: {item.leaveTypeId?.name || item.leaveTypeId?.code || "Leave"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {item.fromDate ? formatDateInOrgTimeZone(item.fromDate) : "-"}
+                      {" "}to{" "}
+                      {item.toDate ? formatDateInOrgTimeZone(item.toDate) : "-"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

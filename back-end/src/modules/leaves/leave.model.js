@@ -26,6 +26,10 @@ const approvalStepSchema = new mongoose.Schema(
       ref: "employees",
       default: null
     },
+    actionByName: {
+      type: String,
+      default: null
+    },
     actionAt: {
       type: Date,
       default: null
@@ -106,6 +110,10 @@ const leaveSchema = new mongoose.Schema(
     actionBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "employees"
+    },
+    actionByName: {
+      type: String,
+      default: null
     },
 
     actionAt: Date,

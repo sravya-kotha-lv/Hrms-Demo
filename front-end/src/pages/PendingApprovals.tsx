@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,14 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
-import { RefreshCw, Search, Users, ClipboardList, Clock3, Sparkles } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
+import { RefreshCw, Search, Users, ClipboardList, Clock3, Sparkles, Eye } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
@@ -56,6 +63,19 @@ const normalizeAttendanceRequestRecord = (row: any) => {
   };
 };
 
+const mergeAttendanceRequestPages = (existing: any[], incoming: any[]) => {
+  const merged = new Map<string, any>();
+  existing.forEach((item) => {
+    const itemId = getAttendanceRequestId(item);
+    if (itemId) merged.set(itemId, item);
+  });
+  incoming.forEach((item) => {
+    const itemId = getAttendanceRequestId(item);
+    if (itemId) merged.set(itemId, item);
+  });
+  return Array.from(merged.values());
+};
+
 const getStatusBadge = (status: string) => {
   if (status === "approved") return <Badge className="status-badge status-active">Approved</Badge>;
   if (status === "rejected") return <Badge className="status-badge status-rejected">Rejected</Badge>;
@@ -88,25 +108,53 @@ const PendingApprovals = () => {
   const [attendanceRows, setAttendanceRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [requestTypeFilter, setRequestTypeFilter] = useState("all");
   const [requestDateFilter, setRequestDateFilter] = useState(currentMonthKey);
+  const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const tableViewportRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
+  const resetPaginationRef = useRef(false);
 
-  const loadAttendanceApprovals = async () => {
+  const loadAttendanceApprovals = async (pageToLoad = 1) => {
     if (!canAttendanceAction) {
       setAttendanceRows([]);
+      setCurrentPage(1);
+      setTotalPages(1);
+      setTotalItems(0);
       return;
     }
-    const attendanceRes = await getApiWithToken("/timesheets/attendance/requests/pending/my-approvals", null, {
+    if (pageToLoad > 1) {
+      setLoadingMore(true);
+    }
+    const attendanceRes = await getApiWithToken(`/timesheets/attendance/requests/pending/my-approvals?page=${pageToLoad}&limit=20`, null, {
       requiredPermissions: ["ATTENDANCE_MANAGE"]
     });
     if (attendanceRes?.success) {
-      setAttendanceRows(
-        (attendanceRes.data || []).map((row: any) => normalizeAttendanceRequestRecord(row))
-      );
+      const payload = attendanceRes.data;
+      const nextItems = (Array.isArray(payload) ? payload : (payload?.items || []))
+        .map((row: any) => normalizeAttendanceRequestRecord(row));
+      const pagination = Array.isArray(payload)
+        ? { page: 1, totalPages: 1, total: nextItems.length }
+        : payload?.pagination;
+      setAttendanceRows((prev) => (pageToLoad > 1 ? mergeAttendanceRequestPages(prev, nextItems) : nextItems));
+      setCurrentPage(Number(pagination?.page || pageToLoad));
+      setTotalPages(Math.max(1, Number(pagination?.totalPages || 1)));
+      setTotalItems(Number(pagination?.total || nextItems.length));
     } else {
-      setAttendanceRows([]);
+      if (pageToLoad === 1) {
+        setAttendanceRows([]);
+        setCurrentPage(1);
+        setTotalPages(1);
+        setTotalItems(0);
+      }
     }
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
   };
 
   const loadData = async () => {
@@ -120,17 +168,38 @@ const PendingApprovals = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, [canAttendanceAction, canViewAny]);
+    if (resetPaginationRef.current && currentPage !== 1) {
+      return;
+    }
+    if (resetPaginationRef.current && currentPage === 1) {
+      resetPaginationRef.current = false;
+    }
+    loadAttendanceApprovals(currentPage);
+  }, [currentPage]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await loadData();
+      setAttendanceRows([]);
+      if (currentPage === 1) {
+        await loadData();
+      } else {
+        setCurrentPage(1);
+      }
     } finally {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    resetPaginationRef.current = true;
+    loadingMoreRef.current = false;
+    if (tableViewportRef.current) {
+      tableViewportRef.current.scrollTop = 0;
+    }
+    setAttendanceRows([]);
+    setCurrentPage(1);
+  }, [canAttendanceAction, canViewAny]);
 
   const actionAttendance = async (requestRow: any, status: "approved" | "rejected") => {
     const id = getAttendanceRequestId(requestRow);
@@ -213,6 +282,33 @@ const PendingApprovals = () => {
     };
   }, [filteredAttendanceRows]);
 
+  const hasMoreApprovals = currentPage < totalPages;
+
+  const handleApprovalsScroll = () => {
+    const viewport = tableViewportRef.current;
+    if (
+      !viewport
+      || loading
+      || loadingMore
+      || loadingMoreRef.current
+      || !hasMoreApprovals
+    ) {
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    if (scrollTop <= 0 || scrollHeight <= clientHeight) return;
+    const progress = (scrollTop + clientHeight) / scrollHeight;
+    if (progress < 0.6) return;
+    loadingMoreRef.current = true;
+    setCurrentPage((prev) => {
+      if (prev >= totalPages) {
+        loadingMoreRef.current = false;
+        return prev;
+      }
+      return prev + 1;
+    });
+  };
+
   const approvalColumns = useMemo<Column<ApprovalTableRow>[]>(() => ([
     {
       header: "Employee",
@@ -250,11 +346,15 @@ const PendingApprovals = () => {
       accessor: "id",
       render: (row) => (
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="gap-2" onClick={() => setSelectedRequest(row.request)}>
+            <Eye className="h-4 w-4" />
+            View
+          </Button>
           <Button size="sm" onClick={() => actionAttendance(row.request, "approved")}>Approve</Button>
           <Button size="sm" variant="outline" onClick={() => actionAttendance(row.request, "rejected")}>Reject</Button>
         </div>
       ),
-      className: "min-w-[180px]"
+      className: "min-w-[280px]"
     }
   ]), []);
 
@@ -411,10 +511,58 @@ const PendingApprovals = () => {
                   tableClassName="w-full min-w-[960px] border-collapse"
                   containerClassName="rounded-none border-0 shadow-none bg-transparent"
                   viewportClassName="max-h-[62vh]"
+                  viewportRef={tableViewportRef}
+                  onViewportScroll={handleApprovalsScroll}
+                  hideFooter
                 />
+              )}
+              {!loading && (
+                <div className="flex items-center justify-between border-t border-border px-6 py-3 text-xs text-muted-foreground">
+                  <span>
+                    Showing {attendanceRows.length} of {totalItems || attendanceRows.length} pending attendance approvals
+                  </span>
+                  {loadingMore && <span>Loading more...</span>}
+                </div>
               )}
             </div>
           )}
+
+          <Dialog open={Boolean(selectedRequest)} onOpenChange={(open) => !open && setSelectedRequest(null)}>
+            <DialogContent className="max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Attendance Request Details</DialogTitle>
+              </DialogHeader>
+              {selectedRequest && (
+                <div className="space-y-3 text-sm overflow-hidden">
+                  <p><span className="font-medium">Employee:</span> {getEmployeeName(selectedRequest)}</p>
+                  <p><span className="font-medium">Date:</span> {formatDateKeyInOrgCalendar(selectedRequest.date)}</p>
+                  <p><span className="font-medium">Type:</span> {getRequestTypeLabel(selectedRequest.requestType)}</p>
+                  <p><span className="font-medium">Requested Check-in:</span> {selectedRequest.requestedCheckInTime || "-"}</p>
+                  <p><span className="font-medium">Requested Check-out:</span> {selectedRequest.requestedCheckOutTime || "-"}</p>
+                  <p><span className="font-medium">Status:</span> {getRequestTypeLabel(selectedRequest.status)}</p>
+                  <div className="space-y-1">
+                    <p className="font-medium">Reason:</p>
+                    <div className="max-h-48 overflow-y-auto rounded-lg border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap break-all">
+                      {selectedRequest.reason || "-"}
+                    </div>
+                  </div>
+                  {selectedRequest.rejectionReason && (
+                    <div className="space-y-1">
+                      <p className="font-medium">Rejection Reason:</p>
+                      <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap break-all">
+                        {selectedRequest.rejectionReason}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              <DialogFooter className="pt-2">
+                <Button variant="outline" onClick={() => setSelectedRequest(null)}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </MainLayout>

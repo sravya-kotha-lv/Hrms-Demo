@@ -36,7 +36,7 @@ const emergencyRelation = Joi.string().valid(
   "other"
 );
 const emergencyName = buildNameSchema({ min: 2, max: 50, required: false });
-const emergencyPhone = buildPhoneSchema({ min: 10, max: 10, required: false });
+const emergencyPhone = buildPhoneSchema({ indianMobile: true, required: false });
 const aadhaarNumberSchema = Joi.string().pattern(/^\d{12}$/).messages({
   "string.pattern.base": "Aadhaar number must be exactly 12 digits"
 });
@@ -101,7 +101,7 @@ exports.completeProfileSchema = Joi.object({
   dateOfJoining: Joi.date().optional(),
   employmentType: employmentType.optional(),
 
-  phone: buildPhoneSchema({ required: true }),
+  phone: buildPhoneSchema({ indianMobile: true, required: true }),
   dob: Joi.date().required(),
   gender: Joi.string().required(),
   bloodGroup: bloodGroupSchema.optional(),
@@ -139,7 +139,7 @@ exports.updateEmployeeSchema = Joi.object({
 
   firstName: buildNameSchema(),
   lastName: buildNameSchema(),
-  phone: buildPhoneSchema({ allowEmpty: true }),
+  phone: buildPhoneSchema({ indianMobile: true, allowEmpty: true }),
 
   employeeCode: Joi.string().trim().optional(),
   departmentId: objectId.optional(),

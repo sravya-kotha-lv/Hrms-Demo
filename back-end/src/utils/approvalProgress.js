@@ -17,6 +17,7 @@ const cloneSteps = (steps = []) =>
       approverEmployeeId: s.approverEmployeeId || null,
       approverRoleSlug: s.approverRoleSlug || null,
       actionBy: s.actionBy || null,
+      actionByName: s.actionByName || null,
       actionAt: s.actionAt || null,
       remarks: s.remarks || null
     };
@@ -85,6 +86,7 @@ exports.advanceApprovalSteps = ({
   steps = [],
   action,
   actionBy = null,
+  actionByName = null,
   remarks = null
 }) => {
   const normalizedAction = String(action || "").toLowerCase();
@@ -109,6 +111,7 @@ exports.advanceApprovalSteps = ({
 
   const pendingStep = nextSteps[pendingIndex];
   pendingStep.actionBy = actionBy || null;
+  pendingStep.actionByName = actionByName || null;
   pendingStep.actionAt = new Date();
   pendingStep.remarks = remarks || null;
 

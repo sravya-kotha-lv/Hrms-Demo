@@ -23,6 +23,8 @@ const roleMatchesStep = (stepRoleValue, actorRoleSlug, actorRoleName) => {
   );
 };
 
+const ADMIN_OVERRIDE_ROLE_SLUGS = new Set(["admin", "org-admin", "superadmin"]);
+
 const findRoleForStep = async ({ organizationId, roleValue }) => {
   const normalizedRoleValue = normalizeRoleKey(roleValue);
   if (!organizationId || !normalizedRoleValue) return null;
@@ -137,8 +139,18 @@ exports.getActorApprovalContext = async (req) => {
   };
 };
 
-exports.canActorApproveStep = (step, actorContext) => {
+exports.isAdminOverrideActor = (actorContext) =>
+  Boolean(
+    actorContext
+    && ADMIN_OVERRIDE_ROLE_SLUGS.has(normalizeRoleKey(actorContext.actorRoleSlug))
+  );
+
+exports.canActorApproveStep = (step, actorContext, options = {}) => {
+  const allowAdminOverride = Boolean(options.allowAdminOverride);
   if (!step || !actorContext) return false;
+  if (allowAdminOverride && exports.isAdminOverrideActor(actorContext)) {
+    return true;
+  }
   if (step.approverType === "manager" || step.approverType === "employee") {
     if (!step.approverEmployeeId || !actorContext.actorEmployeeId) return false;
     return step.approverEmployeeId.toString() === actorContext.actorEmployeeId.toString();
