@@ -2902,16 +2902,39 @@ exports.raiseAttendanceRequest = async (req) => {
 
 exports.getMyAttendanceRequests = async (req) => {
   const employee = await getEmployeeFromReq(req);
-  const rows = await AttendanceRequest.find({
+  const query = {
     organizationId: req.user.organizationId,
     employeeId: employee._id
-  })
+  };
+  const pageRequested = req.query.page !== undefined || req.query.limit !== undefined;
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 20), 100);
+  const baseQuery = AttendanceRequest.find(query)
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });
 
-  await Promise.all(rows.map((row) => repairPendingAttendanceApprovalState(row)));
-  return serializeMongoIdsDeep(rows);
+  if (!pageRequested) {
+    const rows = await baseQuery;
+    await Promise.all(rows.map((row) => repairPendingAttendanceApprovalState(row)));
+    return serializeMongoIdsDeep(rows);
+  }
+
+  const [items, total] = await Promise.all([
+    baseQuery.skip((page - 1) * limit).limit(limit),
+    AttendanceRequest.countDocuments(query)
+  ]);
+
+  await Promise.all(items.map((row) => repairPendingAttendanceApprovalState(row)));
+  return {
+    items: serializeMongoIdsDeep(items),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit))
+    }
+  };
 };
 
 exports.getAttendanceRequests = async (req) => {
@@ -2960,8 +2983,21 @@ exports.getAttendanceRequests = async (req) => {
 
 exports.getMyPendingAttendanceApprovals = async (req) => {
   const actorRoleSlug = await getActorRoleSlug(req);
+  const pageRequested = req.query.page !== undefined || req.query.limit !== undefined;
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 20), 100);
   if (!REQUEST_APPROVER_ROLE_SLUGS.has(actorRoleSlug)) {
-    return [];
+    return pageRequested
+      ? {
+          items: [],
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 1
+          }
+        }
+      : [];
   }
 
   const query = {
@@ -2976,7 +3012,17 @@ exports.getMyPendingAttendanceApprovals = async (req) => {
     }).select("_id");
 
     if (!managerEmployee) {
-      return [];
+      return pageRequested
+        ? {
+            items: [],
+            pagination: {
+              page,
+              limit,
+              total: 0,
+              totalPages: 1
+            }
+          }
+        : [];
     }
 
     const reportIds = await Employee.find({
@@ -3004,7 +3050,21 @@ exports.getMyPendingAttendanceApprovals = async (req) => {
     return canActorApproveStep(currentStep, actorContext);
   });
 
-  return serializeMongoIdsDeep(filteredRows);
+  if (!pageRequested) {
+    return serializeMongoIdsDeep(filteredRows);
+  }
+
+  const total = filteredRows.length;
+  const items = filteredRows.slice((page - 1) * limit, (page - 1) * limit + limit);
+  return {
+    items: serializeMongoIdsDeep(items),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit))
+    }
+  };
 };
 
 exports.actionAttendanceRequest = async (req) => {

@@ -94,15 +94,18 @@ const buildEmailSchema = ({
 const buildPhoneSchema = ({
   min = 10,
   max = 15,
+  indianMobile = false,
   required = false,
   allowEmpty = false
 } = {}) => {
-  const regex = new RegExp(`^\\d{${min},${max}}$`);
+  const regex = indianMobile ? /^[6-9]\d{9}$/ : new RegExp(`^\\d{${min},${max}}$`);
   let schema = Joi.string()
     .trim()
     .pattern(regex)
     .messages({
-      "string.pattern.base": `Phone must be ${min}-${max} digits`
+      "string.pattern.base": indianMobile
+        ? "Phone must be a valid 10-digit Indian mobile number"
+        : `Phone must be ${min}-${max} digits`
     });
   if (allowEmpty) {
     schema = schema.allow("");

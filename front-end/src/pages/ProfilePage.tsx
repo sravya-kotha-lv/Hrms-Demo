@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Info } from "lucide-react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ const ID_CARD_FRONT_SKELETON = (import.meta as any).env?.VITE_IDCARD_FRONT_SKELE
 const ID_CARD_BACK_SKELETON = (import.meta as any).env?.VITE_IDCARD_BACK_SKELETON || "/idcard_back.jpg";
 const ID_CARD_INFO_ROW_NUDGES = [2.5, 1.5, 1, -1];
 const ID_CARD_NAME_MAX_LETTERS = 15;
+const INDIAN_MOBILE_REGEX = /^[6-9]\d{9}$/;
 const sanitizePlaceName = (value: string) => value.replace(/[^A-Za-z .'-]/g, "");
 const isValidPlaceName = (value: string) => /^[A-Za-z]+(?:[A-Za-z .'-]*[A-Za-z])?$/.test(value.trim());
 
@@ -67,6 +69,26 @@ const formatIdCardName = (firstName?: string, lastName?: string) => {
   if (firstLetters + 1 > ID_CARD_NAME_MAX_LETTERS) return firstWithinLimit || "Employee Name";
   return `${firstWithinLimit} ${lastInitial}`.trim();
 };
+
+const buildProfileFormState = (profile: any) => ({
+  phone: profile?.phone || "",
+  dob: profile?.dob ? new Date(profile.dob).toISOString().slice(0, 10) : "",
+  gender: profile?.gender || "",
+  bloodGroup: profile?.bloodGroup || "",
+  address: profile?.address || {
+    line1: "",
+    line2: "",
+    city: "",
+    state: "",
+    country: "",
+    zip: ""
+  },
+  emergencyContacts: profile?.emergencyContacts?.length
+    ? profile.emergencyContacts
+    : [{ name: "", relation: "", phone: "" }],
+  profileImageUpload: null,
+  addressProofUpload: null
+});
 
 const ProfilePage = () => {
   const { loadProfile } = useAuth();
@@ -130,25 +152,7 @@ const ProfilePage = () => {
     const res = await getApiWithToken("/employees/me");
     if (res?.success) {
       setProfile(res.data);
-      setForm({
-        phone: res.data.phone || "",
-        dob: res.data.dob ? new Date(res.data.dob).toISOString().slice(0, 10) : "",
-        gender: res.data.gender || "",
-        bloodGroup: res.data.bloodGroup || "",
-        address: res.data.address || {
-          line1: "",
-          line2: "",
-          city: "",
-          state: "",
-          country: "",
-          zip: ""
-        },
-        emergencyContacts: res.data.emergencyContacts?.length
-          ? res.data.emergencyContacts
-          : [{ name: "", relation: "", phone: "" }],
-        profileImageUpload: null,
-        addressProofUpload: null
-      });
+      setForm(buildProfileFormState(res.data));
       setProfilePreviewUrl("");
       setProfilePicInputKey((v) => v + 1);
     }
@@ -168,6 +172,10 @@ const ProfilePage = () => {
   }
 
   const handleSave = async () => {
+    if (form.phone.trim() && !INDIAN_MOBILE_REGEX.test(form.phone.trim())) {
+      toast.error("Phone number must be a valid 10-digit Indian mobile number");
+      return;
+    }
     if (form.address?.zip?.trim() && !/^\d+$/.test(form.address.zip.trim())) {
       toast.error("PIN/Zip code must contain only numbers");
       return;
@@ -196,8 +204,8 @@ const ProfilePage = () => {
         toast.error("Emergency contact name should contain only letters (2-50 chars)");
         return;
       }
-      if (!/^\d{10}$/.test(emergency.phone.trim())) {
-        toast.error("Emergency contact mobile number must be 10 digits");
+      if (!INDIAN_MOBILE_REGEX.test(emergency.phone.trim())) {
+        toast.error("Emergency contact mobile number must be a valid 10-digit Indian mobile number");
         return;
       }
     }
@@ -224,6 +232,13 @@ const ProfilePage = () => {
     } else {
       toast.error(res?.message || "Update failed");
     }
+  };
+
+  const handleCancelEdit = () => {
+    setForm(buildProfileFormState(profile));
+    setProfilePreviewUrl("");
+    setProfilePicInputKey((v) => v + 1);
+    setOpen(false);
   };
 
   const loadImage = (src: string): Promise<HTMLImageElement> =>
@@ -696,7 +711,16 @@ const ProfilePage = () => {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            handleCancelEdit();
+            return;
+          }
+          setOpen(true);
+        }}
+      >
         <DialogContent className="max-h-[92vh] overflow-y-auto border-slate-200 bg-white p-0 shadow-2xl sm:max-w-4xl">
           <DialogHeader className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-6 py-5">
             <DialogTitle className="text-xl font-semibold text-slate-900">Edit Profile</DialogTitle>
@@ -704,17 +728,39 @@ const ProfilePage = () => {
           <div className="space-y-6 px-6 py-6">
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
               <Label className="mb-2 block">Profile Picture</Label>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                <img
-                  src={profilePreviewUrl || profile?.profileImage || "https://placehold.co/80x80?text=User"}
-                  alt="Profile preview"
-                  className="h-20 w-20 rounded-full border border-slate-200 object-cover shadow-sm"
-                />
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
+                <div className="flex items-center gap-4">
+                  <label
+                    htmlFor="profile-picture-upload"
+                    className="relative flex h-24 w-24 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white text-center shadow-sm transition hover:border-slate-300 hover:shadow md:h-28 md:w-28"
+                    aria-label="Click profile picture to update"
+                  >
+                    {(profilePreviewUrl || profile?.profileImage) ? (
+                      <img
+                        src={profilePreviewUrl || profile?.profileImage}
+                        alt="Profile preview"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span className="px-3 text-sm font-medium text-slate-500">Upload</span>
+                    )}
+                  </label>
+                  <div className="min-w-0">
+                    <p className="truncate text-lg font-semibold text-slate-900">
+                      {`${profile?.firstName || ""} ${profile?.lastName || ""}`.trim() || "Employee"}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Employee ID: <span className="font-medium text-slate-700">{profile?.employeeCode || "-"}</span>
+                    </p>
+                  </div>
+                </div>
                 <div className="min-w-0 flex-1 space-y-2">
                   <Input
+                    id="profile-picture-upload"
                     key={profilePicInputKey}
                     type="file"
                     accept="image/*"
+                    className="hidden"
                     aria-label="Choose profile picture file"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
@@ -732,8 +778,9 @@ const ProfilePage = () => {
                       });
                     }}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Choose profile picture file. JPG, PNG, WEBP up to 2MB
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Info className="h-3.5 w-3.5 shrink-0" />
+                    Click on the profile picture to update. JPG, PNG, WEBP up to 2MB
                   </p>
                   {form.profileImageUpload?.fileName && (
                     <p className="text-xs text-muted-foreground">{form.profileImageUpload.fileName}</p>
@@ -752,6 +799,8 @@ const ProfilePage = () => {
                   <Input
                     placeholder="Phone"
                     validationType="phone"
+                    inputMode="numeric"
+                    maxLength={10}
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   />
@@ -920,6 +969,9 @@ const ProfilePage = () => {
                 <Label className="mb-2 block">Mobile Number</Label>
                 <Input
                   placeholder="Mobile Number"
+                  validationType="phone"
+                  inputMode="numeric"
+                  maxLength={10}
                   value={form.emergencyContacts[0]?.phone || ""}
                   onChange={(e) => setForm({
                     ...form,
@@ -929,7 +981,10 @@ const ProfilePage = () => {
                 </div>
               </div>
             </div>
-            <div className="flex justify-end border-t border-slate-200 pt-2">
+            <div className="flex justify-end gap-3 border-t border-slate-200 pt-2">
+              <Button variant="outline" className="min-w-28" onClick={handleCancelEdit} disabled={loading}>
+                Cancel
+              </Button>
               <Button className="min-w-32 shadow-sm" onClick={handleSave} disabled={loading}>Save</Button>
             </div>
           </div>

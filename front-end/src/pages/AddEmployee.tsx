@@ -49,6 +49,7 @@ const RELATION_OPTIONS = [
   { label: "Friend", value: "friend" },
   { label: "Other", value: "other" }
 ];
+const INDIAN_MOBILE_REGEX = /^[6-9]\d{9}$/;
 
 /* ================= TYPES ================= */
 
@@ -623,8 +624,8 @@ const AddEmployee = () => {
       return;
     }
 
-    if (isEdit && form.phone.trim() && !/^\d{10,15}$/.test(form.phone.trim())) {
-      toast.error("Phone must be 10-15 digits");
+    if (isEdit && form.phone.trim() && !INDIAN_MOBILE_REGEX.test(form.phone.trim())) {
+      toast.error("Phone must be a valid 10-digit Indian mobile number");
       return;
     }
     if (isEdit && form.aadhaarNumber.trim() && !/^\d{12}$/.test(form.aadhaarNumber.trim())) {
@@ -655,8 +656,8 @@ const AddEmployee = () => {
           toast.error("Emergency contact name should contain only letters (2-50 chars)");
           return;
         }
-        if (!/^\d{10}$/.test(emergency.phone.trim())) {
-          toast.error("Emergency contact mobile number must be 10 digits");
+        if (!INDIAN_MOBILE_REGEX.test(emergency.phone.trim())) {
+          toast.error("Emergency contact mobile number must be a valid 10-digit Indian mobile number");
           return;
         }
       }
@@ -1584,9 +1585,11 @@ const AddEmployee = () => {
                 <Label>Phone</Label>
                 <Input
                   validationType="phone"
+                  inputMode="numeric"
+                  maxLength={10}
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  placeholder="10-15 digit phone number"
+                  placeholder="10-digit Indian mobile number"
                 />
               </div>
 
@@ -1757,6 +1760,8 @@ const AddEmployee = () => {
                 <Label>Emergency Contact Phone</Label>
                 <Input
                   validationType="phone"
+                  inputMode="numeric"
+                  maxLength={10}
                   value={form.emergencyContacts[0]?.phone || ""}
                   onChange={(e) =>
                     setForm({

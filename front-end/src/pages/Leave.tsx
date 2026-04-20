@@ -77,6 +77,7 @@ type ApprovalStep = {
   approverEmployeeId?: PersonRef | null;
   status?: "queued" | "pending" | "approved" | "rejected";
   actionBy?: PersonRef | null;
+  actionByName?: string | null;
 };
 
 type LeaveTypeRef = {
@@ -99,6 +100,7 @@ type LeaveRecord = {
   _id?: string;
   employeeId?: PersonRef | null;
   actionBy?: PersonRef | null;
+  actionByName?: string | null;
   leaveTypeId?: LeaveTypeRef | null;
   leaveTypeName?: string;
   fromDate?: string;
@@ -148,6 +150,7 @@ type LeaveBalanceRow = {
 };
 
 const ALL_EMPLOYEES_VALUE = "__all_employees__";
+const ADMIN_OVERRIDE_ROLE_SLUGS = new Set(["admin", "org-admin", "superadmin"]);
 
 const normalizeLeaveTypes = (payload: unknown, options: { includeInactive?: boolean } = {}): LeaveTypeRef[] => {
   const includeInactive = Boolean(options.includeInactive);
@@ -295,6 +298,28 @@ const getActionActor = (leave: LeaveRecord) => {
   return latestActionStep?.actionBy || null;
 };
 
+const getActionActorName = (leave: LeaveRecord) => {
+  const actor = getActionActor(leave);
+  if (actor) return toActorName(actor);
+  if (leave.actionByName) return leave.actionByName;
+  const steps = Array.isArray(leave.approvalSteps) ? [...leave.approvalSteps] : [];
+  const latestActionStep = steps
+    .filter((step) => step?.status === leave.status && (step?.actionBy || step?.actionByName))
+    .sort((a, b) => Number(b.stepNumber || 0) - Number(a.stepNumber || 0))[0];
+  if (latestActionStep?.actionBy) return toActorName(latestActionStep.actionBy);
+  return latestActionStep?.actionByName || "";
+};
+
+const getApprovalStepActorName = (leave: LeaveRecord, step: ApprovalStep) => {
+  if (step?.actionBy) return toActorName(step.actionBy);
+  if (step?.actionByName) return step.actionByName;
+  const finalActorName = getActionActorName(leave);
+  if (!finalActorName) return "";
+  if (leave.status === "approved" && step?.status === "approved") return finalActorName;
+  if (leave.status === "rejected" && step?.status === "rejected") return finalActorName;
+  return "";
+};
+
 const getCurrentMonthValue = () => {
   return toDateKeyInOrgTimeZone(new Date()).slice(0, 7);
 };
@@ -349,7 +374,7 @@ const Leave = () => {
   const leavePageSize = 200;
   const tableViewportRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
-  const resetPaginationRef = useRef(false);
+  const hasInitializedFiltersRef = useRef(false);
   const [viewMode, setViewMode] = useState<"all" | "my">("all");
   const [applyOpen, setApplyOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
@@ -404,6 +429,7 @@ const Leave = () => {
   }, [applyForm.fromDate, applyForm.toDate, leaveApplyWindow]);
 
   const canCurrentActorActionLeave = (leave: LeaveRecord) => {
+    if (ADMIN_OVERRIDE_ROLE_SLUGS.has(currentRoleSlug)) return true;
     const steps = Array.isArray(leave?.approvalSteps) ? leave.approvalSteps : [];
     if (!steps.length) return true;
     const pendingStep = steps.find((s) => s.status === "pending");
@@ -432,6 +458,10 @@ const Leave = () => {
         limit: String(leavePageSize)
       });
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
+      if (monthFilter) params.set("month", monthFilter);
+      if (statusFilter !== "all" && statusFilter !== "on_leave_today") {
+        params.set("status", statusFilter);
+      }
 
       let res = null;
 
@@ -483,7 +513,7 @@ const Leave = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [canViewAny, isEmployeeRole, leavePageSize, searchQuery, statusFilter]);
+  }, [canViewAny, isEmployeeRole, leavePageSize, monthFilter, searchQuery, statusFilter]);
 
   const refreshLeaveList = useCallback(async () => {
     setLeaves([]);
@@ -495,22 +525,25 @@ const Leave = () => {
   }, [currentPage, fetchLeaves]);
 
   useEffect(() => {
-    resetPaginationRef.current = true;
+    if (!hasInitializedFiltersRef.current) {
+      hasInitializedFiltersRef.current = true;
+      return;
+    }
     loadingMoreRef.current = false;
     if (tableViewportRef.current) {
       tableViewportRef.current.scrollTop = 0;
     }
-    setCurrentPage(1);
     setLeaves([]);
-  }, [monthFilter, searchQuery, statusFilter]);
-
-  useEffect(() => {
-    if (resetPaginationRef.current && currentPage !== 1) {
+    setTotalItems(0);
+    setTotalPages(1);
+    if (currentPage === 1) {
+      fetchLeaves(1);
       return;
     }
-    if (resetPaginationRef.current && currentPage === 1) {
-      resetPaginationRef.current = false;
-    }
+    setCurrentPage(1);
+  }, [currentPage, fetchLeaves, monthFilter, searchQuery, statusFilter]);
+
+  useEffect(() => {
     fetchLeaves(currentPage);
   }, [currentPage, fetchLeaves]);
 
@@ -1169,71 +1202,185 @@ const Leave = () => {
       </Dialog>
 
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Leave Details</DialogTitle>
+        <DialogContent className="max-h-[88vh] overflow-y-auto border-slate-200 bg-white p-0 shadow-2xl sm:max-w-3xl">
+          <DialogHeader className="border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-emerald-50/40 px-6 py-5">
+            <DialogTitle className="text-xl font-semibold text-slate-900">Leave Details</DialogTitle>
           </DialogHeader>
           {selectedLeave && (
-            <div className="space-y-2 text-sm">
-              <p><span className="font-medium">Employee:</span> {selectedLeave.employeeId
-                ? `${selectedLeave.employeeId.firstName || ""} ${selectedLeave.employeeId.lastName || ""}`.trim()
-                : "You"}</p>
-              <p><span className="font-medium">Leave Type:</span> {selectedLeave.leaveTypeId?.name || "-"}</p>
-              <p><span className="font-medium">From:</span> {selectedLeave.fromDate ? formatDateInOrgTimeZone(selectedLeave.fromDate) : "-"}</p>
-              <p><span className="font-medium">To:</span> {selectedLeave.toDate ? formatDateInOrgTimeZone(selectedLeave.toDate) : "-"}</p>
-              <p><span className="font-medium">Days:</span> {selectedLeave.totalDays ?? "-"}</p>
-              <p><span className="font-medium">Duration:</span> {getLeaveDurationLabel(selectedLeave)}</p>
-              <p><span className="font-medium">Status:</span> {selectedLeave.status || "-"}</p>
-              <p>
-                <span className="font-medium">Sandwich Rule:</span>{" "}
-                {selectedLeave.sandwichRuleEnabled ? "Enabled" : "Disabled"}
-              </p>
-              <p>
-                <span className="font-medium">Sandwich Deduction:</span>{" "}
-                {selectedLeave.sandwichSummary?.applied
-                  ? `${selectedLeave.sandwichSummary?.deductedDays || 0} non-working day(s) deducted`
-                  : "No holiday or week off deducted"}
-              </p>
-              {selectedLeave.sandwichSummary?.description && (
-                <p className={`text-xs ${selectedLeave.sandwichSummary?.applied ? "text-amber-700" : "text-muted-foreground"}`}>
-                  {selectedLeave.sandwichSummary.description}
-                </p>
-              )}
-              {selectedLeave.sandwichSummary?.applied && (
-                <p className="text-xs text-muted-foreground">
-                  Deducted dates: {(selectedLeave.sandwichSummary.deductedDateKeys || []).join(", ")}
-                </p>
-              )}
-              <p><span className="font-medium">Approval:</span> {getApprovalProgressLabel(selectedLeave)}</p>
-              <p><span className="font-medium">Attached Flow:</span> {selectedLeave.approvalFlowId?.name || "No named flow attached"}</p>
-              <p><span className="font-medium">Saved Step Count:</span> {Array.isArray(selectedLeave.approvalSteps) ? selectedLeave.approvalSteps.length : 0}</p>
-              {(!Array.isArray(selectedLeave.approvalSteps) || selectedLeave.approvalSteps.length === 0) && (
-                <p className="text-xs text-amber-600">
-                  This request has no saved approval steps, so it behaves like a single-step request.
-                </p>
-              )}
-              <p><span className="font-medium">Reason:</span> {selectedLeave.reason || "-"}</p>
-              {selectedLeave.rejectionReason && (
-                <p><span className="font-medium">Rejection Reason:</span> {selectedLeave.rejectionReason}</p>
-              )}
-              {Array.isArray(selectedLeave.approvalSteps) && selectedLeave.approvalSteps.length > 0 && (
-                <div className="pt-2">
-                  <p className="font-medium mb-1">Approval Steps</p>
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    {[...selectedLeave.approvalSteps]
-                      .sort((a, b) => Number(a.stepNumber) - Number(b.stepNumber))
-                      .map((step) => (
-                        <div key={`leave-step-${selectedLeave._id}-${step.stepNumber}`}>
-                          {`S${step.stepNumber} • ${getStepApproverLabel(step)} • ${step.status}${step.actionBy ? ` • by ${toActorName(step.actionBy)}` : ""}`}
-                        </div>
-                      ))}
+            <div className="space-y-5 px-6 py-6 text-sm">
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-emerald-50/40 p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Leave Request</p>
+                    <div>
+                      <h3 className="text-2xl font-semibold text-slate-900">
+                        {selectedLeave.leaveTypeId?.name || "-"}
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {selectedLeave.employeeId
+                          ? `${selectedLeave.employeeId.firstName || ""} ${selectedLeave.employeeId.lastName || ""}`.trim()
+                          : "You"}
+                        {selectedLeave.employeeId?.employeeCode ? ` • ${selectedLeave.employeeId.employeeCode}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {getStatusBadge(selectedLeave.status || "-")}
+                    <Badge variant="outline" className="border-slate-300 bg-white/80 text-slate-700">
+                      {getLeaveDurationLabel(selectedLeave)}
+                    </Badge>
+                    <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                      {selectedLeave.totalDays ?? "-"} day{Number(selectedLeave.totalDays) === 1 ? "" : "s"}
+                    </Badge>
                   </div>
                 </div>
-              )}
+                <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-white/80 p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">From</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
+                      {selectedLeave.fromDate ? formatDateInOrgTimeZone(selectedLeave.fromDate) : "-"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white/80 p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">To</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
+                      {selectedLeave.toDate ? formatDateInOrgTimeZone(selectedLeave.toDate) : "-"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-sm font-semibold text-slate-900">Request Summary</p>
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Approval</p>
+                        <p className="mt-1 font-medium text-slate-900">{getApprovalProgressLabel(selectedLeave)}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Flow</p>
+                        <p className="mt-1 font-medium text-slate-900">
+                          {selectedLeave.approvalFlowId?.name || "No named flow attached"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Sandwich Rule</p>
+                        <p className="mt-1 font-medium text-slate-900">
+                          {selectedLeave.sandwichRuleEnabled ? "Enabled" : "Disabled"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Saved Steps</p>
+                        <p className="mt-1 font-medium text-slate-900">
+                          {Array.isArray(selectedLeave.approvalSteps) ? selectedLeave.approvalSteps.length : 0}
+                        </p>
+                      </div>
+                    </div>
+                    {(!Array.isArray(selectedLeave.approvalSteps) || selectedLeave.approvalSteps.length === 0) && (
+                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                        This request has no saved approval steps, so it behaves like a single-step request.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-sm font-semibold text-slate-900">Reason</p>
+                    <div className="mt-3 rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                      {selectedLeave.reason || "-"}
+                    </div>
+                    {selectedLeave.rejectionReason && (
+                      <>
+                        <p className="mt-4 text-sm font-semibold text-slate-900">Rejection Reason</p>
+                        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-700">
+                          {selectedLeave.rejectionReason}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-sm font-semibold text-slate-900">Sandwich Impact</p>
+                    <div className={`mt-3 rounded-xl border px-4 py-3 ${
+                      selectedLeave.sandwichSummary?.applied
+                        ? "border-amber-200 bg-amber-50"
+                        : "border-emerald-200 bg-emerald-50"
+                    }`}>
+                      <p className={`font-medium ${
+                        selectedLeave.sandwichSummary?.applied ? "text-amber-800" : "text-emerald-800"
+                      }`}>
+                        {selectedLeave.sandwichSummary?.applied
+                          ? `${selectedLeave.sandwichSummary?.deductedDays || 0} non-working day(s) deducted`
+                          : "No holiday or week off deducted"}
+                      </p>
+                      {selectedLeave.sandwichSummary?.description && (
+                        <p className={`mt-2 text-xs leading-5 ${
+                          selectedLeave.sandwichSummary?.applied ? "text-amber-700" : "text-emerald-700"
+                        }`}>
+                          {selectedLeave.sandwichSummary.description}
+                        </p>
+                      )}
+                      {selectedLeave.sandwichSummary?.applied && (
+                        <p className="mt-2 text-xs text-slate-500">
+                          Deducted dates: {(selectedLeave.sandwichSummary.deductedDateKeys || []).join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {Array.isArray(selectedLeave.approvalSteps) && selectedLeave.approvalSteps.length > 0 && (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <p className="text-sm font-semibold text-slate-900">Approval Steps</p>
+                      <div className="mt-4 space-y-3">
+                        {[...selectedLeave.approvalSteps]
+                          .sort((a, b) => Number(a.stepNumber) - Number(b.stepNumber))
+                          .map((step) => {
+                            const stepActorName = getApprovalStepActorName(selectedLeave, step);
+                            return (
+                              <div
+                                key={`leave-step-${selectedLeave._id}-${step.stepNumber}`}
+                                className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                      Step {step.stepNumber}
+                                    </p>
+                                    <p className="mt-1 font-medium text-slate-900">{getStepApproverLabel(step)}</p>
+                                    {stepActorName && (
+                                      <p className="mt-1 text-xs text-slate-500">Approved by {stepActorName}</p>
+                                    )}
+                                  </div>
+                                  <Badge
+                                    variant="outline"
+                                    className={`capitalize ${
+                                      step.status === "approved"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        : step.status === "rejected"
+                                          ? "border-red-200 bg-red-50 text-red-700"
+                                          : step.status === "pending"
+                                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                                            : "border-slate-200 bg-white text-slate-600"
+                                    }`}
+                                  >
+                                    {step.status || "-"}
+                                  </Badge>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
+          <DialogFooter className="border-t border-slate-200 bg-slate-50/70 px-6 py-4">
+            <Button variant="outline" className="min-w-28" onClick={() => setViewDialogOpen(false)}>
               Close
             </Button>
           </DialogFooter>

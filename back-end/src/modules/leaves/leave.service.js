@@ -11,6 +11,7 @@ const Organization =
   require("../organizations/organization.model");
 const Role = require("../roles/role.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
+const User = require("../users/user.model");
 const sendMail = require("../../utils/sendMail");
 const { createNotificationSafe } = require("../notifications/notification.service");
 const {
@@ -18,7 +19,8 @@ const {
   buildRuntimeSteps,
   getActorApprovalContext,
   canActorApproveStep,
-  resolveRecipientsForStep
+  resolveRecipientsForStep,
+  isAdminOverrideActor
 } = require("../../utils/approvalFlowEngine");
 const ApprovalFlow = require("../approvalFlows/approvalFlow.model");
 const {
@@ -323,10 +325,97 @@ const normalizeApprovalStateSnapshot = (steps = [], currentApprovalStep = null) 
       approverRoleSlug: step?.approverRoleSlug || null,
       status: step?.status || null,
       actionBy: step?.actionBy?._id || step?.actionBy || null,
+      actionByName: step?.actionByName || null,
       actionAt: step?.actionAt ? new Date(step.actionAt).toISOString() : null,
       remarks: step?.remarks || null
     }))
   });
+
+const toActorDisplayName = (employee, fallbackEmail = "") => {
+  const fullName = `${employee?.firstName || ""} ${employee?.lastName || ""}`.trim();
+  if (fullName) {
+    return employee?.employeeCode ? `${fullName} (${employee.employeeCode})` : fullName;
+  }
+  return fallbackEmail || "Organization Admin";
+};
+
+const finalizeApprovalStepsByAdminOverride = ({
+  steps = [],
+  action,
+  actionBy = null,
+  actionByName = null,
+  remarks = null
+}) => {
+  const normalizedAction = String(action || "").toLowerCase();
+  if (!["approved", "rejected"].includes(normalizedAction)) {
+    throw new Error("Invalid approval action");
+  }
+
+  const timestamp = new Date();
+  const sortedSteps = [...(steps || [])]
+    .map((step) => (typeof step?.toObject === "function" ? step.toObject() : { ...step }))
+    .sort((a, b) => Number(a?.stepNumber || 0) - Number(b?.stepNumber || 0));
+
+  if (!sortedSteps.length) {
+    return {
+      steps: [],
+      finalStatus: normalizedAction,
+      currentApprovalStep: null
+    };
+  }
+
+  const firstOpenStepIndex = sortedSteps.findIndex(
+    (step) => !["approved", "rejected"].includes(String(step?.status || ""))
+  );
+
+  const nextSteps = sortedSteps.map((step, index) => {
+    const nextStep = {
+      ...step,
+      approverEmployeeId: step?.approverEmployeeId || null,
+      approverRoleSlug: step?.approverRoleSlug || null,
+      actionBy: step?.actionBy || null,
+      actionByName: step?.actionByName || null,
+      actionAt: step?.actionAt || null,
+      remarks: step?.remarks || null
+    };
+
+    if (step?.status === "approved" || step?.status === "rejected") {
+      return nextStep;
+    }
+
+    if (normalizedAction === "approved") {
+      return {
+        ...nextStep,
+        status: "approved",
+        actionBy: actionBy || null,
+        actionByName: actionByName || null,
+        actionAt: timestamp,
+        remarks: index === firstOpenStepIndex
+          ? (remarks || "Approved by organization admin")
+          : (remarks || "Auto-approved by organization admin")
+      };
+    }
+
+    if (index === firstOpenStepIndex) {
+      return {
+        ...nextStep,
+        status: "rejected",
+        actionBy: actionBy || null,
+        actionByName: actionByName || null,
+        actionAt: timestamp,
+        remarks: remarks || "Rejected by organization admin"
+      };
+    }
+
+    return nextStep;
+  });
+
+  return {
+    steps: nextSteps,
+    finalStatus: normalizedAction,
+    currentApprovalStep: null
+  };
+};
 
 const repairPendingLeaveApprovalState = async (leave) => {
   if (!leave || leave.status !== "pending" || !leave.approvalFlowId || !Array.isArray(leave.approvalSteps) || !leave.approvalSteps.length) {
@@ -1165,7 +1254,7 @@ exports.getMyPendingApprovals = async (req) => {
     if (!steps.length) return true;
     const currentStep = getCurrentPendingStep(steps);
     if (!currentStep) return false;
-    return canActorApproveStep(currentStep, actorContext);
+    return canActorApproveStep(currentStep, actorContext, { allowAdminOverride: true });
   });
 };
 
@@ -1181,6 +1270,8 @@ exports.actionLeave = async (req) => {
     userId: req.user.userId,
     organizationId: req.user.organizationId
   });
+  const actorUser = await User.findById(req.user.userId).select("email");
+  const actorDisplayName = toActorDisplayName(actor, actorUser?.email || req.user.email || "");
 
   await assertRequestApproverAccess(req, leave.employeeId);
 
@@ -1225,18 +1316,31 @@ exports.actionLeave = async (req) => {
       throw new Error("No pending approval step found");
     }
 
-    const allowedByFlow = canActorApproveStep(currentStep, actorContext);
+    const allowedByFlow = canActorApproveStep(currentStep, actorContext, { allowAdminOverride: true });
     if (allowedByFlow) {
-      const progress = advanceApprovalSteps({
-        steps: resolvedProgress.steps,
-        action: req.body.status,
-        actionBy: actor?._id || null,
-        remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : null
-      });
+      const isAdminOverride = isAdminOverrideActor(actorContext)
+        && !canActorApproveStep(currentStep, actorContext);
+      const progress = isAdminOverride
+        ? finalizeApprovalStepsByAdminOverride({
+            steps: resolvedProgress.steps,
+            action: req.body.status,
+            actionBy: actor?._id || null,
+            actionByName: actorDisplayName,
+            remarks: req.body.status === "rejected"
+              ? req.body.rejectionReason || "Rejected by organization admin"
+              : "Approved by organization admin"
+          })
+        : advanceApprovalSteps({
+            steps: resolvedProgress.steps,
+            action: req.body.status,
+            actionBy: actor?._id || null,
+            actionByName: actorDisplayName,
+            remarks: req.body.status === "rejected" ? req.body.rejectionReason || "" : null
+          });
       leave.approvalSteps = progress.steps;
       leave.currentApprovalStep = progress.currentApprovalStep;
       finalStatusToApply = progress.finalStatus;
-      isIntermediateApproval = progress.isIntermediateApproval;
+      isIntermediateApproval = Boolean(progress.isIntermediateApproval);
     } else {
       throw new Error(`You are not the current approver for this step. Pending step: ${describeApprovalStep(currentStep)}`);
     }
@@ -1293,6 +1397,7 @@ exports.actionLeave = async (req) => {
   }
   leave.status = finalStatusToApply;
   leave.actionBy = actor?._id;
+  leave.actionByName = actorDisplayName;
   leave.actionAt = new Date();
 
   await leave.save();
