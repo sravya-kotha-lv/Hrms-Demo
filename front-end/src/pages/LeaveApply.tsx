@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { postApiWithToken, getApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { DateRange } from "react-day-picker";
+import { useLocation, useNavigate } from "react-router-dom";
 
 type LeaveType = {
   _id: string;
@@ -141,6 +143,8 @@ const getRangeExcludedDays = ({
 const LEAVE_REASON_REGEX = /^(?=.*[A-Za-z])[A-Za-z\s.,'()&/-]+$/;
 
 const LeaveApply = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
@@ -160,6 +164,7 @@ const LeaveApply = () => {
   const [halfDaySession, setHalfDaySession] = useState<HalfDaySession>("first_half");
   const [isMobile, setIsMobile] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(new Date());
+  const backTarget = (location.state as { from?: string } | null)?.from || "/leave";
 
   const loadContext = async () => {
     try {
@@ -412,6 +417,26 @@ const LeaveApply = () => {
       title="Apply Leave"
       breadcrumb={[{ label: "Home", href: "/" }, { label: "Leave", href: "/leave" }, { label: "Apply" }]}
     >
+      <div className="mb-4">
+        <Button
+          variant="outline"
+          className="gap-2"
+          onClick={() => {
+            if ((location.state as { from?: string } | null)?.from) {
+              navigate(backTarget);
+              return;
+            }
+            if (window.history.length > 1) {
+              navigate(-1);
+              return;
+            }
+            navigate("/leave");
+          }}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <Card className="lg:col-span-7 min-w-0">
           <CardHeader>
