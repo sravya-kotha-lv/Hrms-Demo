@@ -300,6 +300,7 @@ const getMonthBoundary = (monthValue: string) => {
 };
 
 const leaveMatchesMonth = (leave: LeaveRecord, monthValue: string) => {
+  if (leave?.status === "pending") return true;
   const boundary = getMonthBoundary(monthValue);
   if (!boundary) return true;
   const fromKey = leave.fromDate ? toDateKeyInOrgCalendar(leave.fromDate) : "";
@@ -308,11 +309,19 @@ const leaveMatchesMonth = (leave: LeaveRecord, monthValue: string) => {
   return fromKey <= boundary.endKey && toKey >= boundary.startKey;
 };
 
+const isLeaveActiveToday = (leave: LeaveRecord) => {
+  if (leave.status !== "approved" || !leave.fromDate || !leave.toDate) return false;
+  const todayKey = toDateKeyInOrgTimeZone(new Date());
+  const fromKey = toDateKeyInOrgCalendar(leave.fromDate);
+  const toKey = toDateKeyInOrgCalendar(leave.toDate);
+  return todayKey >= fromKey && todayKey <= toKey;
+};
+
 const Leave = () => {
   const { hasAnyPermission, profile } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected" | "on_leave_today">("all");
   const [monthFilter, setMonthFilter] = useState(getCurrentMonthValue);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -412,7 +421,6 @@ const Leave = () => {
         limit: String(leavePageSize)
       });
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
-      if (monthFilter) params.set("month", monthFilter);
 
       let res = await getApiWithToken(`/leaves?${params.toString()}`, null, {
         requiredPermissions: ["LEAVE_VIEW_ALL"]
@@ -461,7 +469,7 @@ const Leave = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [canViewAny, leavePageSize, monthFilter, searchQuery, statusFilter]);
+  }, [canViewAny, leavePageSize, searchQuery, statusFilter]);
 
   const refreshLeaveList = useCallback(async () => {
     setLeaves([]);
@@ -803,7 +811,7 @@ const Leave = () => {
     }
   };
 
-  const handleStatusCardClick = (nextStatus: "all" | "pending" | "approved" | "rejected") => {
+  const handleStatusCardClick = (nextStatus: "all" | "pending" | "approved" | "rejected" | "on_leave_today") => {
     setStatusFilter(nextStatus);
   };
 
@@ -816,21 +824,18 @@ const Leave = () => {
   );
 
   const filteredLeaves = useMemo(() => {
+    if (statusFilter === "on_leave_today") {
+      return monthScopedLeaves.filter((leave) => isLeaveActiveToday(leave));
+    }
     if (statusFilter === "all") return monthScopedLeaves;
     return monthScopedLeaves.filter((leave) => leave.status === statusFilter);
   }, [monthScopedLeaves, statusFilter]);
 
   const derivedLeaveStats = useMemo(() => {
-    const todayKey = toDateKeyInOrgTimeZone(new Date());
     const pending = monthScopedLeaves.filter((leave) => leave.status === "pending").length;
     const approved = monthScopedLeaves.filter((leave) => leave.status === "approved").length;
     const rejected = monthScopedLeaves.filter((leave) => leave.status === "rejected").length;
-    const onLeaveToday = monthScopedLeaves.filter((leave) => {
-      if (leave.status !== "approved" || !leave.fromDate || !leave.toDate) return false;
-      const fromKey = toDateKeyInOrgCalendar(leave.fromDate);
-      const toKey = toDateKeyInOrgCalendar(leave.toDate);
-      return todayKey >= fromKey && todayKey <= toKey;
-    }).length;
+    const onLeaveToday = monthScopedLeaves.filter((leave) => isLeaveActiveToday(leave)).length;
     return { pending, approved, rejected, onLeaveToday };
   }, [monthScopedLeaves]);
 
@@ -880,11 +885,11 @@ const Leave = () => {
           <p className="text-sm text-muted-foreground mt-1">total</p>
         </motion.div>
         <motion.div
-          className={getCardClassName(false)}
+          className={getCardClassName(statusFilter === "on_leave_today")}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          onClick={() => handleStatusCardClick("approved")}
+          onClick={() => handleStatusCardClick("on_leave_today")}
         >
           <p className="text-sm text-muted-foreground mb-1">On Leave Today</p>
           <p className="text-3xl font-bold text-primary">{derivedLeaveStats.onLeaveToday}</p>
@@ -921,6 +926,7 @@ const Leave = () => {
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="approved">Approved</SelectItem>
               <SelectItem value="rejected">Rejected</SelectItem>
+              <SelectItem value="on_leave_today">On Leave Today</SelectItem>
             </SelectContent>
           </Select>
           {/* <Button variant="outline" className="gap-2">
