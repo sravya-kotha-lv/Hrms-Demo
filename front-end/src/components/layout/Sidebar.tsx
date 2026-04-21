@@ -367,13 +367,15 @@ export const Sidebar = memo(({
                 )}
               </AnimatePresence>
             </NavLink>
-            <button
-              onClick={() => setCollapsed(!collapsed)}
-              disabled={isMobile}
-              className="w-8 h-8 rounded-lg border border-white/12 bg-white/10 hover:bg-white/18 disabled:opacity-50 flex items-center justify-center text-white transition-all"
-            >
-              {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-            </button>
+            {!effectiveCollapsed && (
+              <button
+                onClick={() => setCollapsed(!collapsed)}
+                disabled={isMobile}
+                className="w-8 h-8 rounded-lg border border-white/12 bg-white/10 hover:bg-white/18 disabled:opacity-50 flex items-center justify-center text-white transition-all"
+              >
+                {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+              </button>
+            )}
           </div>
         </div>
 
