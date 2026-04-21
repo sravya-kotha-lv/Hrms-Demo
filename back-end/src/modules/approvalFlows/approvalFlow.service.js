@@ -13,7 +13,10 @@ const normalizeSteps = (steps = []) =>
     .sort((a, b) => a.stepNumber - b.stepNumber);
 
 const validateDaysRange = (minDays, maxDays) => {
-  if (minDays == null || maxDays == null) return;
+  if (minDays == null) {
+    throw new Error("Min days is required");
+  }
+  if (maxDays == null) return;
   if (Number(minDays) > Number(maxDays)) {
     throw new Error("minDays cannot be greater than maxDays");
   }
@@ -25,6 +28,7 @@ const normalizeRange = (flowLike = {}) => ({
 });
 
 const rangesOverlap = (a, b) => a.min <= b.max && b.min <= a.max;
+const isDefaultRange = (flowLike = {}) => flowLike.minDays == null && flowLike.maxDays == null;
 
 const validateSteps = async (organizationId, steps = []) => {
   if (!Array.isArray(steps) || !steps.length) {
@@ -96,6 +100,13 @@ const validateActiveOverlap = async ({
 
   const flows = await ApprovalFlow.find(query).select("name minDays maxDays");
   for (const flow of flows) {
+    if (isDefaultRange({ minDays, maxDays }) || isDefaultRange(flow)) {
+      if (isDefaultRange({ minDays, maxDays }) && isDefaultRange(flow)) {
+        throw new Error(`Default active flow already exists as "${flow.name}"`);
+      }
+      continue;
+    }
+
     const existingRange = normalizeRange(flow);
     if (rangesOverlap(currentRange, existingRange)) {
       throw new Error(`Active range overlaps with flow "${flow.name}"`);

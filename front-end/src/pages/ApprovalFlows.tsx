@@ -89,6 +89,11 @@ const createStepRow = (stepNumber: number): StepFormRow => ({
 const moduleLabel = (moduleKey: ModuleKey) =>
   moduleKey === "leave" ? "Leave" : "Attendance Request";
 
+const rangeLabel = (flow: ApprovalFlow) => {
+  if (flow.minDays == null && flow.maxDays == null) return "Default";
+  return `${flow.minDays ?? 0} - ${flow.maxDays ?? "Any"}`;
+};
+
 const approverLabel = (step: FlowStep) => {
   if (step.approverType === "manager") return "Reporting Manager";
   if (step.approverType === "role") return `Role: ${step.roleSlug || "-"}`;
@@ -259,6 +264,10 @@ const ApprovalFlows = () => {
       toast.error("Add at least one approval step");
       return;
     }
+    if (form.minDays === null || form.minDays === undefined) {
+      toast.error("Min days is required");
+      return;
+    }
 
     const normalizedSteps = [...stepRows]
       .map((row) => ({
@@ -347,7 +356,7 @@ const ApprovalFlows = () => {
     {
       header: "Range (Days)",
       accessor: "minDays",
-      render: (row) => `${row.minDays ?? 0} - ${row.maxDays ?? "Any"}`
+      render: (row) => rangeLabel(row)
     },
     {
       header: "Steps",
@@ -467,7 +476,8 @@ const ApprovalFlows = () => {
             <Input
               type="number"
               min={0}
-              placeholder="Min days"
+              required
+              placeholder="Min days *"
               value={form.minDays ?? ""}
               onChange={(e) =>
                 setForm((prev) => ({

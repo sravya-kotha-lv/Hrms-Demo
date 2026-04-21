@@ -7,7 +7,9 @@ const asyncHandler = require("../../middlewares/asyncHandler");
 const controller = require("./leave.controller");
 const {
   applyLeaveSchema,
-  leaveActionSchema
+  leaveActionSchema,
+  leaveRevertRequestSchema,
+  leaveRevertActionSchema
 } = require("./leave.validation");
 
 // Employee applies leave
@@ -63,6 +65,22 @@ router.put(
   authorize("LEAVE_ACTION"),
   validate(leaveActionSchema),
   asyncHandler(controller.action)
+);
+
+router.post(
+  "/:id/revert-request",
+  auth,
+  authorize("LEAVE_VIEW_SELF"),
+  validate(leaveRevertRequestSchema),
+  asyncHandler(controller.requestRevert)
+);
+
+router.put(
+  "/:id/revert-request/action",
+  auth,
+  authorize("LEAVE_ACTION"),
+  validate(leaveRevertActionSchema),
+  asyncHandler(controller.revertAction)
 );
 
 module.exports = router;

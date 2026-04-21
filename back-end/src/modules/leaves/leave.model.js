@@ -42,6 +42,67 @@ const approvalStepSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const revertRequestSchema = new mongoose.Schema(
+  {
+    fromDate: {
+      type: Date,
+      default: null
+    },
+    toDate: {
+      type: Date,
+      default: null
+    },
+    effectiveDateKeys: {
+      type: [String],
+      default: []
+    },
+    totalDays: {
+      type: Number,
+      default: 0
+    },
+    reason: {
+      type: String,
+      default: ""
+    },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending"
+    },
+    requestedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees",
+      default: null
+    },
+    requestedByName: {
+      type: String,
+      default: null
+    },
+    requestedAt: {
+      type: Date,
+      default: null
+    },
+    actionBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "employees",
+      default: null
+    },
+    actionByName: {
+      type: String,
+      default: null
+    },
+    actionAt: {
+      type: Date,
+      default: null
+    },
+    rejectionReason: {
+      type: String,
+      default: ""
+    }
+  },
+  { _id: false }
+);
+
 const leaveSchema = new mongoose.Schema(
   {
     organizationId: {
@@ -130,6 +191,10 @@ const leaveSchema = new mongoose.Schema(
     },
     currentApprovalStep: {
       type: Number,
+      default: null
+    },
+    revertRequest: {
+      type: revertRequestSchema,
       default: null
     },
 

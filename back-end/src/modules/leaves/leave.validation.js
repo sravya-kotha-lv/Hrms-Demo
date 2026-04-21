@@ -37,3 +37,20 @@ exports.leaveActionSchema = Joi.object({
     otherwise: Joi.optional()
   })
 });
+
+exports.leaveRevertRequestSchema = Joi.object({
+  fromDate: Joi.date().required(),
+  toDate: Joi.date().required(),
+  reason: Joi.string().trim().max(500).allow("").optional()
+});
+
+exports.leaveRevertActionSchema = Joi.object({
+  status: Joi.string()
+    .valid("approved", "rejected")
+    .required(),
+  rejectionReason: Joi.when("status", {
+    is: "rejected",
+    then: Joi.string().trim().min(3).required(),
+    otherwise: Joi.optional().allow("")
+  })
+});

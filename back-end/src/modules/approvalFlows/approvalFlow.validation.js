@@ -26,7 +26,7 @@ exports.createApprovalFlowSchema = Joi.object({
   moduleKey: Joi.string().valid("leave", "attendance_request").required(),
   name: buildNameSchema({ required: true }),
   isActive: Joi.boolean().default(true),
-  minDays: Joi.number().min(0).allow(null),
+  minDays: Joi.number().min(0).required(),
   maxDays: Joi.number().min(0).allow(null),
   steps: Joi.array().items(stepSchema).min(1).required()
 });
@@ -35,7 +35,7 @@ exports.updateApprovalFlowSchema = Joi.object({
   moduleKey: Joi.string().valid("leave", "attendance_request").optional(),
   name: buildNameSchema(),
   isActive: Joi.boolean().optional(),
-  minDays: Joi.number().min(0).allow(null),
+  minDays: Joi.number().min(0).optional(),
   maxDays: Joi.number().min(0).allow(null),
   steps: Joi.array().items(stepSchema).min(1).optional()
 });

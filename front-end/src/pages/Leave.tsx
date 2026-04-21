@@ -108,7 +108,7 @@ type LeaveRecord = {
   totalDays?: number;
   duration?: "full_day" | "half_day";
   halfDaySession?: "first_half" | "second_half";
-  status?: "pending" | "approved" | "rejected";
+  status?: "pending" | "approved" | "rejected" | "cancelled";
   reason?: string;
   rejectionReason?: string;
   approvalFlowId?: ApprovalFlowRef | null;
@@ -122,6 +122,21 @@ type LeaveRecord = {
     holidayDateKeys?: string[];
     weekOffDateKeys?: string[];
     description?: string;
+  } | null;
+  revertRequest?: {
+    fromDate?: string;
+    toDate?: string;
+    effectiveDateKeys?: string[];
+    totalDays?: number;
+    reason?: string;
+    status?: "pending" | "approved" | "rejected";
+    requestedBy?: PersonRef | null;
+    requestedByName?: string | null;
+    requestedAt?: string;
+    actionBy?: PersonRef | null;
+    actionByName?: string | null;
+    actionAt?: string;
+    rejectionReason?: string;
   } | null;
 };
 
@@ -211,6 +226,12 @@ const getStatusBadge = (status: string) => {
           <XCircle className="w-3 h-3" /> Rejected
         </Badge>
       );
+    case "cancelled":
+      return (
+        <Badge variant="secondary" className="gap-1">
+          <XCircle className="w-3 h-3" /> Cancelled
+        </Badge>
+      );
     default:
       return <Badge variant="secondary">{status || "-"}</Badge>;
   }
@@ -243,6 +264,9 @@ const getStepApproverLabel = (step: ApprovalStep | null | undefined) => {
 };
 
 const getApprovalProgressLabel = (record: LeaveRecord) => {
+  if (record?.revertRequest?.status === "pending") return "Revert request pending";
+  if (record?.revertRequest?.status === "approved") return "Revert approved";
+  if (record?.revertRequest?.status === "rejected") return "Revert rejected";
   const steps = Array.isArray(record?.approvalSteps) ? record.approvalSteps : [];
   if (!steps.length) return "Single-step";
   const pending = steps.find((s) => s.status === "pending");
@@ -251,6 +275,7 @@ const getApprovalProgressLabel = (record: LeaveRecord) => {
     const rejectedStep = steps.find((s) => s.status === "rejected");
     return rejectedStep ? `Rejected at S${rejectedStep.stepNumber}` : "Rejected";
   }
+  if (record?.status === "cancelled") return "Cancelled";
   if (!pending) return "Pending";
   return `S${pending.stepNumber}/${steps.length} • ${getStepApproverLabel(pending)}`;
 };
@@ -289,7 +314,7 @@ const getActorDisplayName = (employee: PersonRef | null | undefined) => {
 };
 
 const getActionActor = (leave: LeaveRecord) => {
-  if (!["approved", "rejected"].includes(String(leave.status || ""))) return null;
+  if (!["approved", "rejected", "cancelled"].includes(String(leave.status || ""))) return null;
   if (leave.actionBy) return leave.actionBy;
   const steps = Array.isArray(leave.approvalSteps) ? [...leave.approvalSteps] : [];
   const latestActionStep = steps
@@ -319,6 +344,17 @@ const getApprovalStepActorName = (leave: LeaveRecord, step: ApprovalStep) => {
   if (leave.status === "rejected" && step?.status === "rejected") return finalActorName;
   return "";
 };
+
+const canEmployeeRequestRevert = (leave: LeaveRecord) => {
+  if (leave.status !== "approved" || !leave.fromDate) return false;
+  if (leave.revertRequest?.status === "pending") return false;
+  const todayKey = toDateKeyInOrgTimeZone(new Date());
+  const fromKey = toDateKeyInOrgCalendar(leave.fromDate);
+  return Boolean(fromKey && fromKey > todayKey);
+};
+
+const canAdminActionRevertRequest = (leave: LeaveRecord, roleSlug: string) =>
+  ADMIN_OVERRIDE_ROLE_SLUGS.has(roleSlug) && leave.revertRequest?.status === "pending";
 
 const getCurrentMonthValue = () => {
   return toDateKeyInOrgTimeZone(new Date()).slice(0, 7);
@@ -359,10 +395,16 @@ const Leave = () => {
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected" | "on_leave_today">("all");
   const [monthFilter, setMonthFilter] = useState(getCurrentMonthValue);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [revertDialogOpen, setRevertDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedLeave, setSelectedLeave] = useState<LeaveRecord | null>(null);
-  const [actionType, setActionType] = useState<"approve" | "reject">("approve");
+  const [actionType, setActionType] = useState<"approve" | "reject" | "revert_approve" | "revert_reject">("approve");
   const [comment, setComment] = useState("");
+  const [revertForm, setRevertForm] = useState({
+    fromDate: "",
+    toDate: "",
+    reason: ""
+  });
   const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -409,6 +451,19 @@ const Leave = () => {
   const currentEmployeeId = toIdString(profile?.employeeId);
   const currentRoleSlug = profile?.activeRole?.slug || "";
   const isEmployeeRole = currentRoleSlug === "employee";
+  const revertDateError = useMemo(() => {
+    if (!selectedLeave || !revertForm.fromDate || !revertForm.toDate) return "";
+    if (revertForm.fromDate > revertForm.toDate) {
+      return "Revert from date cannot be greater than revert to date.";
+    }
+    const leaveFrom = selectedLeave.fromDate ? toDateKeyInOrgCalendar(selectedLeave.fromDate) : "";
+    const leaveTo = selectedLeave.toDate ? toDateKeyInOrgCalendar(selectedLeave.toDate) : "";
+    if (!leaveFrom || !leaveTo) return "";
+    if (revertForm.fromDate < leaveFrom || revertForm.toDate > leaveTo) {
+      return "Select revert dates within the approved leave range.";
+    }
+    return "";
+  }, [revertForm.fromDate, revertForm.toDate, selectedLeave]);
   const applyDateError = useMemo(() => {
     if (!applyForm.fromDate || !applyForm.toDate) return "";
     if (applyForm.fromDate > applyForm.toDate) {
@@ -811,14 +866,34 @@ const Leave = () => {
     });
   };
 
-  const handleAction = (leave: LeaveRecord, action: "approve" | "reject") => {
+  const handleAction = (leave: LeaveRecord, action: "approve" | "reject" | "revert_approve" | "revert_reject") => {
     if (!canCurrentActorActionLeave(leave)) {
-      toast.error("You are not the current approver for this request");
+      if (!action.startsWith("revert_")) {
+        toast.error("You are not the current approver for this request");
+        return;
+      }
+    }
+    if (action.startsWith("revert_") && !canAdminActionRevertRequest(leave, currentRoleSlug)) {
+      toast.error("You do not have permission to action this revert request");
       return;
     }
     setSelectedLeave(leave);
     setActionType(action);
     setActionDialogOpen(true);
+  };
+
+  const handleOpenRevertRequest = (leave: LeaveRecord) => {
+    if (!canEmployeeRequestRevert(leave)) {
+      toast.error("Only approved future leave can be reverted");
+      return;
+    }
+    setSelectedLeave(leave);
+    setRevertForm({
+      fromDate: leave.fromDate ? toDateKeyInOrgCalendar(leave.fromDate) : "",
+      toDate: leave.toDate ? toDateKeyInOrgCalendar(leave.toDate) : "",
+      reason: ""
+    });
+    setRevertDialogOpen(true);
   };
 
   const handleView = (leave: LeaveRecord) => {
@@ -834,27 +909,66 @@ const Leave = () => {
     }
 
     const payload: { status: "approved" | "rejected"; rejectionReason?: string } = {
-      status: actionType === "approve" ? "approved" : "rejected",
+      status: actionType === "approve" || actionType === "revert_approve" ? "approved" : "rejected",
     };
-    if (actionType === "reject") {
+    if (actionType === "reject" || actionType === "revert_reject") {
       payload.rejectionReason = comment || "Rejected";
     }
 
     const res = await putApiWithToken(
-      `/leaves/${selectedLeave._id}/action`,
+      actionType.startsWith("revert_")
+        ? `/leaves/${selectedLeave._id}/revert-request/action`
+        : `/leaves/${selectedLeave._id}/action`,
       payload,
       null,
       { requiredPermissions: ["LEAVE_ACTION"] }
     );
     if (res?.skipped) return;
     if (res?.success) {
-      toast.success(`Leave ${payload.status}`);
+      toast.success(
+        actionType.startsWith("revert_")
+          ? `Revert request ${payload.status}`
+          : `Leave ${payload.status}`
+      );
       setActionDialogOpen(false);
       setSelectedLeave(null);
       setComment("");
       refreshLeaveList();
     } else {
       toast.error(res?.message || "Action failed");
+    }
+  };
+
+  const submitRevertRequest = async () => {
+    if (!selectedLeave?._id) return;
+    if (!revertForm.fromDate || !revertForm.toDate) {
+      toast.error("Select revert from and to dates");
+      return;
+    }
+    if (revertDateError) {
+      toast.error(revertDateError);
+      return;
+    }
+
+    const res = await postApiWithToken(
+      `/leaves/${selectedLeave._id}/revert-request`,
+      {
+        fromDate: revertForm.fromDate,
+        toDate: revertForm.toDate,
+        reason: revertForm.reason.trim()
+      },
+      null,
+      { requiredPermissions: ["LEAVE_VIEW_SELF"] }
+    );
+    if (res?.skipped) return;
+    if (res?.success) {
+      toast.success("Leave revert request sent");
+      setRevertDialogOpen(false);
+      setSelectedLeave(null);
+      setRevertForm({ fromDate: "", toDate: "", reason: "" });
+      refreshLeaveList();
+    } else {
+      toast.error(res?.message || "Failed to request leave revert");
     }
   };
 
@@ -1143,6 +1257,21 @@ const Leave = () => {
                               </DropdownMenuItem>
                             </>
                           )}
+                          {viewMode === "my" && canEmployeeRequestRevert(leave) && (
+                            <DropdownMenuItem onClick={() => handleOpenRevertRequest(leave)}>
+                              <RefreshCw className="w-4 h-4 mr-2 text-amber-600" /> Request Revert
+                            </DropdownMenuItem>
+                          )}
+                          {canAction && viewMode === "all" && canAdminActionRevertRequest(leave, currentRoleSlug) && (
+                            <>
+                              <DropdownMenuItem onClick={() => handleAction(leave, "revert_approve")}>
+                                <CheckCircle className="w-4 h-4 mr-2 text-green-600" /> Approve Revert
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleAction(leave, "revert_reject")}>
+                                <XCircle className="w-4 h-4 mr-2 text-red-600" /> Reject Revert
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                   </TableCell>
@@ -1170,16 +1299,26 @@ const Leave = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {actionType === "approve" ? "Approve Leave" : "Reject Leave"}
+              {actionType === "approve"
+                ? "Approve Leave"
+                : actionType === "reject"
+                  ? "Reject Leave"
+                  : actionType === "revert_approve"
+                    ? "Approve Leave Revert"
+                    : "Reject Leave Revert"}
             </DialogTitle>
             <DialogDescription>
               {actionType === "approve"
                 ? "Confirm approval for this leave request."
-                : "Provide a reason for rejection."}
+                : actionType === "reject"
+                  ? "Provide a reason for rejection."
+                  : actionType === "revert_approve"
+                    ? "Approve this leave revert request and credit the leave days back to the employee."
+                    : "Provide a reason for rejecting this leave revert request."}
             </DialogDescription>
           </DialogHeader>
 
-          {actionType === "reject" && (
+          {(actionType === "reject" || actionType === "revert_reject") && (
             <div className="space-y-2">
               <Label>Rejection Reason</Label>
               <Textarea
@@ -1195,7 +1334,84 @@ const Leave = () => {
               Cancel
             </Button>
             <Button onClick={confirmAction}>
-              {actionType === "approve" ? "Approve" : "Reject"}
+              {actionType === "approve"
+                ? "Approve"
+                : actionType === "reject"
+                  ? "Reject"
+                  : actionType === "revert_approve"
+                    ? "Approve Revert"
+                    : "Reject Revert"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={revertDialogOpen}
+        onOpenChange={(open) => {
+          setRevertDialogOpen(open);
+          if (!open) {
+            setRevertForm({ fromDate: "", toDate: "", reason: "" });
+            setSelectedLeave(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request Leave Revert</DialogTitle>
+            <DialogDescription>
+              Select full or partial approved leave dates to request credit back to the employee balance.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Approved leave range: {selectedLeave?.fromDate ? formatDateInOrgTimeZone(selectedLeave.fromDate) : "-"}
+              {" "}to{" "}
+              {selectedLeave?.toDate ? formatDateInOrgTimeZone(selectedLeave.toDate) : "-"}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <Label>Revert From</Label>
+                <Input
+                  type="date"
+                  value={revertForm.fromDate}
+                  min={selectedLeave?.fromDate ? toDateKeyInOrgCalendar(selectedLeave.fromDate) : undefined}
+                  max={selectedLeave?.toDate ? toDateKeyInOrgCalendar(selectedLeave.toDate) : undefined}
+                  onChange={(e) => setRevertForm((prev) => ({ ...prev, fromDate: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>Revert To</Label>
+                <Input
+                  type="date"
+                  value={revertForm.toDate}
+                  min={revertForm.fromDate || (selectedLeave?.fromDate ? toDateKeyInOrgCalendar(selectedLeave.fromDate) : undefined)}
+                  max={selectedLeave?.toDate ? toDateKeyInOrgCalendar(selectedLeave.toDate) : undefined}
+                  onChange={(e) => setRevertForm((prev) => ({ ...prev, toDate: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {revertDateError && <p className="text-sm text-destructive">{revertDateError}</p>}
+
+            <div>
+              <Label>Reason</Label>
+              <Textarea
+                value={revertForm.reason}
+                onChange={(e) => setRevertForm((prev) => ({ ...prev, reason: e.target.value }))}
+                placeholder="Optional reason for revert request"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevertDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitRevertRequest} disabled={Boolean(revertDateError)}>
+              Raise Revert Request
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1290,6 +1506,32 @@ const Leave = () => {
                     <div className="mt-3 rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-700">
                       {selectedLeave.reason || "-"}
                     </div>
+                    {selectedLeave.revertRequest && (
+                      <>
+                        <p className="mt-4 text-sm font-semibold text-slate-900">Leave Revert Request</p>
+                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                          <p className="font-medium capitalize">
+                            Status: {selectedLeave.revertRequest.status || "-"}
+                          </p>
+                          <p className="mt-2">
+                            Revert dates: {selectedLeave.revertRequest.fromDate ? formatDateInOrgTimeZone(selectedLeave.revertRequest.fromDate) : "-"}
+                            {" "}to{" "}
+                            {selectedLeave.revertRequest.toDate ? formatDateInOrgTimeZone(selectedLeave.revertRequest.toDate) : "-"}
+                          </p>
+                          <p className="mt-1">
+                            Requested days: {selectedLeave.revertRequest.totalDays ?? "-"}
+                          </p>
+                          {selectedLeave.revertRequest.reason && (
+                            <p className="mt-2">Reason: {selectedLeave.revertRequest.reason}</p>
+                          )}
+                          {selectedLeave.revertRequest.rejectionReason && (
+                            <p className="mt-2 text-red-700">
+                              Rejection reason: {selectedLeave.revertRequest.rejectionReason}
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )}
                     {selectedLeave.rejectionReason && (
                       <>
                         <p className="mt-4 text-sm font-semibold text-slate-900">Rejection Reason</p>
