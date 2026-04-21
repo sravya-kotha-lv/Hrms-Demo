@@ -547,37 +547,32 @@ const EmployeeDashboard = () => {
 
       const attendanceHours = Number(matrixCell?.workedMinutes || 0) / 60;
 
-      const completedHours = dayKey === todayKey
-        ? Math.max(timesheetHours, attendanceHours)
-        : Math.max(timesheetHours, attendanceHours);
-
       return {
         dayName,
         date: dayDate,
         timesheetHours,
         attendanceHours,
-        completedHours
+        completedHours: timesheetHours
       };
     });
-
-    const completedIncludingToday = dayRows
-      .filter((d) => toDateInput(new Date(d.date)) <= todayKey)
-      .reduce((sum, d) => sum + Number(d.completedHours || 0), 0);
 
     const completedTimesheetHours = dayRows
       .filter((d) => toDateInput(new Date(d.date)) <= todayKey)
       .reduce((sum, d) => sum + Number(d.timesheetHours || 0), 0);
 
     const todayTimesheetHours = dayRows.find((d) => toDateInput(new Date(d.date)) === todayKey)?.timesheetHours || 0;
+    const authoritativeWeeklyHours = Number.isFinite(Number(weeklyHours))
+      ? Number(weeklyHours)
+      : completedTimesheetHours;
 
     return {
       completedTimesheetHours,
       todayTimesheetHours,
       todayLiveHours: Number((matrixDays[new Date().getDate()]?.workedMinutes || 0) / 60),
-      completedIncludingToday,
+      completedIncludingToday: authoritativeWeeklyHours,
       dayRows
     };
-  }, [weeklyEntries, matrixDays]);
+  }, [weeklyEntries, matrixDays, weeklyHours]);
 
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
