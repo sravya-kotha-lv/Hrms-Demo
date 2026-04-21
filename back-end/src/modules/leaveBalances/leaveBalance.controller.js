@@ -8,7 +8,8 @@ exports.getMyLeaveBalance = async (req, res) => {
   const data = await service.getEmployeeBalance(
     req.user.organizationId,
     req.user.userId,        // ✅ USE TOKEN userId AS STRING
-    "USER"
+    "USER",
+    { includeInactive: false }
   );
 
   return res.status(200).json(

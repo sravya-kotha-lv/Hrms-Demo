@@ -61,6 +61,104 @@ const parsePositiveInt = (value, fallback) => {
 const isSameDate = (d1, d2) =>
   new Date(d1).setHours(0, 0, 0, 0) === new Date(d2).setHours(0, 0, 0, 0);
 
+const getLeaveCycleStartYear = (leaveDate, leaveCycleStartMonth) =>
+  new Date(leaveDate).getMonth() + 1 < leaveCycleStartMonth
+    ? new Date(leaveDate).getFullYear() - 1
+    : new Date(leaveDate).getFullYear();
+
+const isContiguousDateKeyArray = (dateKeys = []) => {
+  if (dateKeys.length <= 1) return true;
+  for (let index = 1; index < dateKeys.length; index += 1) {
+    if (addDaysToDateKey(dateKeys[index - 1], 1) !== dateKeys[index]) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const buildRevertDateSelection = ({ leave, requestedFromDate, requestedToDate, timeZone }) => {
+  const leaveDateKeys = (Array.isArray(leave?.effectiveDateKeys) ? leave.effectiveDateKeys : [])
+    .filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(String(key || "")))
+    .sort();
+  if (!leaveDateKeys.length) {
+    throw new Error("This leave does not have any reversible leave days");
+  }
+
+  const requestedFromKey = toDateKeyInOrgTz(requestedFromDate, timeZone);
+  const requestedToKey = toDateKeyInOrgTz(requestedToDate, timeZone);
+  if (requestedFromKey > requestedToKey) {
+    throw new Error("Revert from date cannot be greater than revert to date");
+  }
+
+  const selectedKeys = leaveDateKeys.filter(
+    (key) => key >= requestedFromKey && key <= requestedToKey
+  );
+  if (!selectedKeys.length) {
+    throw new Error("Select revert dates within the approved leave days");
+  }
+
+  const requestedTouchesStart = selectedKeys.every((key, index) => key === leaveDateKeys[index]);
+  const requestedTouchesEnd = selectedKeys.every(
+    (key, index) => key === leaveDateKeys[leaveDateKeys.length - selectedKeys.length + index]
+  );
+  if (selectedKeys.length !== leaveDateKeys.length && !requestedTouchesStart && !requestedTouchesEnd) {
+    throw new Error("Partial leave revert is allowed only from the start or end of the approved leave");
+  }
+
+  return {
+    fromDate: selectedKeys[0],
+    toDate: selectedKeys[selectedKeys.length - 1],
+    effectiveDateKeys: selectedKeys,
+    totalDays:
+      leave.duration === "half_day" && leaveDateKeys.length === 1 && selectedKeys.length === 1
+        ? 0.5
+        : selectedKeys.length
+  };
+};
+
+const buildRemainingApprovedLeave = (leave, revertedDateKeys = []) => {
+  const originalKeys = (Array.isArray(leave?.effectiveDateKeys) ? leave.effectiveDateKeys : [])
+    .filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(String(key || "")))
+    .sort();
+  const revertedSet = new Set(revertedDateKeys);
+  const remainingKeys = originalKeys.filter((key) => !revertedSet.has(key));
+
+  if (!remainingKeys.length) {
+    return {
+      effectiveDateKeys: [],
+      totalDays: 0,
+      fromDate: leave.fromDate,
+      toDate: leave.toDate,
+      duration: leave.duration || "full_day",
+      halfDaySession: leave.halfDaySession || null,
+      fullyReverted: true
+    };
+  }
+
+  if (!isContiguousDateKeyArray(remainingKeys)) {
+    throw new Error("Selected revert dates would split the approved leave into multiple parts, which is not supported");
+  }
+
+  return {
+    effectiveDateKeys: remainingKeys,
+    totalDays:
+      leave.duration === "half_day" && remainingKeys.length === 1
+        ? 0.5
+        : remainingKeys.length,
+    fromDate: startOfDayInTimeZone(remainingKeys[0], "UTC"),
+    toDate: endOfDayInTimeZone(remainingKeys[remainingKeys.length - 1], "UTC"),
+    duration:
+      leave.duration === "half_day" && remainingKeys.length === 1
+        ? "half_day"
+        : "full_day",
+    halfDaySession:
+      leave.duration === "half_day" && remainingKeys.length === 1
+        ? leave.halfDaySession || null
+        : null,
+    fullyReverted: false
+  };
+};
+
 const applyMonthFilterToQuery = (query, monthValue, timeZone = "UTC") => {
   if (!monthValue || !/^\d{4}-\d{2}$/.test(String(monthValue))) return;
   const monthRange = parseMonthRangeInTimeZone(String(monthValue), timeZone);
@@ -799,6 +897,190 @@ exports.applyLeave = async (req) => {
   return leave;
 };
 
+exports.requestLeaveRevert = async (req) => {
+  const employee = await Employee.findOne({
+    userId: req.user.userId,
+    organizationId: req.user.organizationId
+  });
+  if (!employee) throw new Error("Employee not found");
+
+  const leave = await Leave.findOne({
+    _id: req.params.id,
+    organizationId: req.user.organizationId,
+    employeeId: employee._id
+  });
+  if (!leave) throw new Error("Approved leave not found");
+  if (leave.status !== "approved") {
+    throw new Error("Only approved leave can be reverted");
+  }
+
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const leaveStartDateKey = toDateKeyInOrgTz(leave.fromDate, organizationTimeZone);
+  const todayDateKey = toDateKeyInOrgTz(new Date(), organizationTimeZone);
+  if (leaveStartDateKey <= todayDateKey) {
+    throw new Error("Leave revert request is allowed only before the leave start date");
+  }
+
+  if (leave.revertRequest?.status === "pending") {
+    throw new Error("A leave revert request is already pending for this leave");
+  }
+
+  const revertSelection = buildRevertDateSelection({
+    leave,
+    requestedFromDate: req.body.fromDate,
+    requestedToDate: req.body.toDate,
+    timeZone: organizationTimeZone
+  });
+
+  leave.revertRequest = {
+    fromDate: startOfDayInTimeZone(revertSelection.fromDate, organizationTimeZone),
+    toDate: endOfDayInTimeZone(revertSelection.toDate, organizationTimeZone),
+    effectiveDateKeys: revertSelection.effectiveDateKeys,
+    totalDays: revertSelection.totalDays,
+    reason: String(req.body.reason || "").trim(),
+    status: "pending",
+    requestedBy: employee._id,
+    requestedByName: toActorDisplayName(employee, req.user.email || ""),
+    requestedAt: new Date(),
+    actionBy: null,
+    actionByName: null,
+    actionAt: null,
+    rejectionReason: ""
+  };
+  leave.markModified("revertRequest");
+  await leave.save();
+
+  await audit({
+    req,
+    module: "leaves",
+    action: "REQUEST_REVERT",
+    entityId: leave._id,
+    after: leave.toObject()
+  });
+
+  const adminUsers = await User.find({
+    organizationId: req.user.organizationId,
+    activeRoleSlug: { $in: ["admin", "org-admin", "superadmin"] }
+  }).select("_id");
+  await Promise.all(
+    adminUsers.map((user) =>
+      createNotificationSafe({
+        organizationId: req.user.organizationId,
+        recipientUserId: user._id,
+        recipientEmployeeId: null,
+        actorEmployeeId: employee._id,
+        type: "leave_revert_request",
+        title: "Leave revert request pending",
+        message: `${employee.firstName || "Employee"} ${employee.lastName || ""}`.trim()
+          + ` requested leave revert for ${revertSelection.fromDate} to ${revertSelection.toDate}.`,
+        meta: {
+          leaveId: leave._id,
+          revertRequestStatus: "pending"
+        }
+      })
+    )
+  );
+
+  return leave;
+};
+
+exports.actionLeaveRevert = async (req) => {
+  const leave = await Leave.findById(req.params.id);
+  if (!leave) throw new Error("Leave not found");
+  if (leave.status !== "approved") {
+    throw new Error("Only approved leave can be reverted");
+  }
+  if (!leave.revertRequest || leave.revertRequest.status !== "pending") {
+    throw new Error("No pending leave revert request found");
+  }
+
+  const actor = await Employee.findOne({
+    userId: req.user.userId,
+    organizationId: req.user.organizationId
+  });
+  const actorUser = await User.findById(req.user.userId).select("email");
+  const actorDisplayName = toActorDisplayName(actor, actorUser?.email || req.user.email || "");
+  const actorRoleSlug = await getActorRoleSlug(req);
+  if (!["admin", "org-admin", "superadmin"].includes(actorRoleSlug)) {
+    throw new Error("Only organization admin can action leave revert requests");
+  }
+
+  const organizationTimeZone = await getOrganizationTimeZone(leave.organizationId);
+  const leaveStartDateKey = toDateKeyInOrgTz(leave.fromDate, organizationTimeZone);
+  const todayDateKey = toDateKeyInOrgTz(new Date(), organizationTimeZone);
+  if (leaveStartDateKey <= todayDateKey) {
+    throw new Error("Leave revert request can be actioned only before the leave start date");
+  }
+
+  if (req.body.status === "rejected") {
+    leave.revertRequest.status = "rejected";
+    leave.revertRequest.actionBy = actor?._id || null;
+    leave.revertRequest.actionByName = actorDisplayName;
+    leave.revertRequest.actionAt = new Date();
+    leave.revertRequest.rejectionReason = String(req.body.rejectionReason || "").trim();
+    leave.markModified("revertRequest");
+    await leave.save();
+    return leave;
+  }
+
+  const org = await Organization.findById(leave.organizationId);
+  const cycleStartYear = getLeaveCycleStartYear(leave.fromDate, org.leaveCycleStartMonth);
+  const balance = await LeaveBalance.findOne({
+    organizationId: leave.organizationId,
+    employeeId: leave.employeeId,
+    leaveTypeId: leave.leaveTypeId,
+    cycleStartYear
+  });
+  if (!balance) {
+    throw new Error("Leave balance not found");
+  }
+
+  const revertKeys = Array.isArray(leave.revertRequest.effectiveDateKeys)
+    ? leave.revertRequest.effectiveDateKeys
+    : [];
+  const revertDays = Number(leave.revertRequest.totalDays || 0);
+  if (!revertKeys.length || !revertDays) {
+    throw new Error("Invalid leave revert request");
+  }
+
+  const remainingLeave = buildRemainingApprovedLeave(leave, revertKeys);
+  balance.used = Math.max(0, balance.used - revertDays);
+  balance.remaining += revertDays;
+  await balance.save();
+
+  leave.revertRequest.status = "approved";
+  leave.revertRequest.actionBy = actor?._id || null;
+  leave.revertRequest.actionByName = actorDisplayName;
+  leave.revertRequest.actionAt = new Date();
+  leave.revertRequest.rejectionReason = "";
+
+  if (remainingLeave.fullyReverted) {
+    leave.status = "cancelled";
+    leave.totalDays = revertDays;
+    leave.actionBy = actor?._id || null;
+    leave.actionByName = actorDisplayName;
+    leave.actionAt = new Date();
+  } else {
+    leave.effectiveDateKeys = remainingLeave.effectiveDateKeys;
+    leave.totalDays = remainingLeave.totalDays;
+    leave.fromDate = startOfDayInTimeZone(remainingLeave.effectiveDateKeys[0], organizationTimeZone);
+    leave.toDate = endOfDayInTimeZone(
+      remainingLeave.effectiveDateKeys[remainingLeave.effectiveDateKeys.length - 1],
+      organizationTimeZone
+    );
+    leave.duration = remainingLeave.duration;
+    leave.halfDaySession = remainingLeave.halfDaySession;
+    leave.actionBy = actor?._id || null;
+    leave.actionByName = actorDisplayName;
+    leave.actionAt = new Date();
+  }
+
+  leave.markModified("revertRequest");
+  await leave.save();
+
+  return leave;
+};
+
 exports.getApplyContext = async (req) => {
   const employee = await Employee.findOne({
     userId: req.user.userId,
@@ -987,6 +1269,8 @@ exports.getMyLeaves = async (req) => {
     .populate("leaveTypeId", "name code")
     .populate("approvalFlowId", "name moduleKey minDays maxDays")
     .populate("actionBy", "firstName lastName employeeCode designationId")
+    .populate("revertRequest.requestedBy", "firstName lastName employeeCode")
+    .populate("revertRequest.actionBy", "firstName lastName employeeCode designationId")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate({
       path: "approvalSteps.actionBy",
@@ -1143,6 +1427,12 @@ exports.getAllLeaves = async (req) => {
       select: "firstName lastName employeeCode designationId",
       populate: { path: "designationId", select: "name" }
     })
+    .populate("revertRequest.requestedBy", "firstName lastName employeeCode")
+    .populate({
+      path: "revertRequest.actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate({
       path: "approvalSteps.actionBy",
@@ -1235,6 +1525,12 @@ exports.getMyPendingApprovals = async (req) => {
     .populate("approvalFlowId", "name moduleKey minDays maxDays")
     .populate({
       path: "actionBy",
+      select: "firstName lastName employeeCode designationId",
+      populate: { path: "designationId", select: "name" }
+    })
+    .populate("revertRequest.requestedBy", "firstName lastName employeeCode")
+    .populate({
+      path: "revertRequest.actionBy",
       select: "firstName lastName employeeCode designationId",
       populate: { path: "designationId", select: "name" }
     })

@@ -50,6 +50,7 @@ const RELATION_OPTIONS = [
   { label: "Other", value: "other" }
 ];
 const INDIAN_MOBILE_REGEX = /^[6-9]\d{9}$/;
+const PLACE_NAME_REGEX = /^[A-Za-z]+(?:[A-Za-z .'-]*[A-Za-z])?$/;
 
 /* ================= TYPES ================= */
 
@@ -121,6 +122,7 @@ const AddEmployee = () => {
   const isEdit = Boolean(id);
 
   const [form, setForm] = useState(emptyForm);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [departments, setDepartments] = useState<Option[]>([]);
   const [designations, setDesignations] = useState<Option[]>([]);
   const [roles, setRoles] = useState<Option[]>([]);
@@ -609,58 +611,171 @@ const AddEmployee = () => {
     return "";
   };
 
-  const handleSubmit = async () => {
+  const clearFieldError = (field: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const getFieldError = (field: string) => fieldErrors[field] || "";
+
+  const showValidationToast = (errors: Record<string, string>) => {
+    const count = Object.keys(errors).length;
+    toast.error(
+      count === 1
+        ? "Please fix the highlighted field"
+        : `Please fix the ${count} highlighted fields`
+    );
+  };
+
+  const mapSaveResponseToFieldErrors = (message: string) => {
+    const normalizedMessage = message.toLowerCase();
+    const responseFieldErrors: Record<string, string> = {};
+
+    if (normalizedMessage.includes("employee code already exists")) {
+      responseFieldErrors.employeeCode = "This employee code already exists";
+    }
     if (
-      !form.email ||
-      !form.firstName ||
-      !form.lastName ||
+      normalizedMessage.includes("user already exists") ||
+      normalizedMessage.includes("email already exists") ||
+      normalizedMessage.includes("email must be a valid email")
+    ) {
+      responseFieldErrors.email = normalizedMessage.includes("valid email")
+        ? "Enter a valid email address"
+        : "This email is already registered";
+    }
+    if (normalizedMessage.includes("first name")) {
+      responseFieldErrors.firstName = message;
+    }
+    if (normalizedMessage.includes("last name")) {
+      responseFieldErrors.lastName = message;
+    }
+    if (normalizedMessage.includes("department")) {
+      responseFieldErrors.departmentId = message;
+    }
+    if (normalizedMessage.includes("designation")) {
+      responseFieldErrors.designationId = message;
+    }
+    if (normalizedMessage.includes("dateofjoining") || normalizedMessage.includes("date of joining")) {
+      responseFieldErrors.dateOfJoining = message;
+    }
+    if (normalizedMessage.includes("employmenttype") || normalizedMessage.includes("employment type")) {
+      responseFieldErrors.employmentType = message;
+    }
+    if (normalizedMessage.includes("roleids") || normalizedMessage.includes("role ids")) {
+      responseFieldErrors.roleIds = message;
+    }
+    if (normalizedMessage.includes("phone")) {
+      if (normalizedMessage.includes("emergency")) {
+        responseFieldErrors.emergencyPhone = message;
+      } else {
+        responseFieldErrors.phone = message;
+      }
+    }
+    if (normalizedMessage.includes("aadhaar")) {
+      responseFieldErrors.aadhaarNumber = message;
+    }
+    if (normalizedMessage.includes("pan")) {
+      responseFieldErrors.panNumber = message;
+    }
+    if (normalizedMessage.includes("zip")) {
+      responseFieldErrors.addressZip = message;
+    }
+    if (normalizedMessage.includes("city")) {
+      responseFieldErrors.addressCity = message;
+    }
+    if (normalizedMessage.includes("state")) {
+      responseFieldErrors.addressState = message;
+    }
+    if (normalizedMessage.includes("country")) {
+      responseFieldErrors.addressCountry = message;
+    }
+    if (normalizedMessage.includes("lastworkingday") || normalizedMessage.includes("last working day")) {
+      responseFieldErrors.lastWorkingDay = message;
+    }
+    if (normalizedMessage.includes("emergency contact")) {
+      if (normalizedMessage.includes("name")) responseFieldErrors.emergencyName = message;
+      if (normalizedMessage.includes("relation")) responseFieldErrors.emergencyRelation = message;
+      if (normalizedMessage.includes("phone")) responseFieldErrors.emergencyPhone = message;
+    }
+
+    return responseFieldErrors;
+  };
+
+  const handleSubmit = async () => {
+    const nextFieldErrors: Record<string, string> = {};
+
+    if (
+      !form.email.trim() ||
+      !form.firstName.trim() ||
+      !form.lastName.trim() ||
       !form.departmentId ||
       !form.designationId ||
       !form.roleIds?.length ||
       !form.employmentType ||
       !form.dateOfJoining
     ) {
-      toast.error("Please fill all required fields");
-      return;
+      if (!form.email.trim()) nextFieldErrors.email = "Email is required";
+      if (!form.firstName.trim()) nextFieldErrors.firstName = "First name is required";
+      if (!form.lastName.trim()) nextFieldErrors.lastName = "Last name is required";
+      if (!form.departmentId) nextFieldErrors.departmentId = "Department is required";
+      if (!form.designationId) nextFieldErrors.designationId = "Designation is required";
+      if (!form.roleIds?.length) nextFieldErrors.roleIds = "Select at least one role";
+      if (!form.employmentType) nextFieldErrors.employmentType = "Employment type is required";
+      if (!form.dateOfJoining) nextFieldErrors.dateOfJoining = "Date of joining is required";
     }
 
     if (isEdit && form.phone.trim() && !INDIAN_MOBILE_REGEX.test(form.phone.trim())) {
-      toast.error("Phone must be a valid 10-digit Indian mobile number");
-      return;
+      nextFieldErrors.phone = "Enter a valid 10-digit Indian mobile number";
     }
     if (isEdit && form.aadhaarNumber.trim() && !/^\d{12}$/.test(form.aadhaarNumber.trim())) {
-      toast.error("Aadhaar number must be 12 digits");
-      return;
+      nextFieldErrors.aadhaarNumber = "Aadhaar number must be 12 digits";
     }
     if (isEdit && form.panNumber.trim() && !/^[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}$/.test(form.panNumber.trim())) {
-      toast.error("PAN number format is invalid");
-      return;
+      nextFieldErrors.panNumber = "PAN number format is invalid";
     }
     if (isEdit && form.address.zip.trim() && !/^\d+$/.test(form.address.zip.trim())) {
-      toast.error("PIN/Zip code must contain only numbers");
-      return;
+      nextFieldErrors.addressZip = "PIN/Zip code must contain only numbers";
+    }
+    if (isEdit && form.address.city.trim() && !PLACE_NAME_REGEX.test(form.address.city.trim())) {
+      nextFieldErrors.addressCity = "City must contain only letters";
+    }
+    if (isEdit && form.address.state.trim() && !PLACE_NAME_REGEX.test(form.address.state.trim())) {
+      nextFieldErrors.addressState = "State must contain only letters";
+    }
+    if (isEdit && form.address.country.trim() && !PLACE_NAME_REGEX.test(form.address.country.trim())) {
+      nextFieldErrors.addressCountry = "Country must contain only letters";
+    }
+    if (isEdit && shouldShowLastWorkingDay && !form.lastWorkingDay) {
+      nextFieldErrors.lastWorkingDay = "Last working day is required";
     }
     if (isEdit) {
-      if (shouldShowLastWorkingDay && !form.lastWorkingDay) {
-        toast.error("Last working day is required");
-        return;
-      }
       const emergency = form.emergencyContacts[0];
       const hasEmergencyValue = Boolean(emergency?.name || emergency?.relation || emergency?.phone);
       if (hasEmergencyValue) {
-        if (!emergency?.name || !emergency?.relation || !emergency?.phone) {
-          toast.error("Complete all emergency contact fields");
-          return;
+        if (!emergency?.name) {
+          nextFieldErrors.emergencyName = "Emergency contact name is required";
+        } else if (!/^[A-Za-z ]{2,50}$/.test(emergency.name.trim())) {
+          nextFieldErrors.emergencyName = "Use only letters, 2-50 characters";
         }
-        if (!/^[A-Za-z ]{2,50}$/.test(emergency.name.trim())) {
-          toast.error("Emergency contact name should contain only letters (2-50 chars)");
-          return;
+        if (!emergency?.relation) {
+          nextFieldErrors.emergencyRelation = "Emergency relation is required";
         }
-        if (!INDIAN_MOBILE_REGEX.test(emergency.phone.trim())) {
-          toast.error("Emergency contact mobile number must be a valid 10-digit Indian mobile number");
-          return;
+        if (!emergency?.phone) {
+          nextFieldErrors.emergencyPhone = "Emergency mobile number is required";
+        } else if (!INDIAN_MOBILE_REGEX.test(emergency.phone.trim())) {
+          nextFieldErrors.emergencyPhone = "Enter a valid 10-digit Indian mobile number";
         }
       }
+    }
+
+    setFieldErrors(nextFieldErrors);
+    if (Object.keys(nextFieldErrors).length > 0) {
+      showValidationToast(nextFieldErrors);
+      return;
     }
 
     const payload = {
@@ -727,12 +842,20 @@ const AddEmployee = () => {
     setLoading(false);
 
     if (res?.success) {
+      setFieldErrors({});
       toast.success(isEdit ? "Employee updated" : "Employee created & onboarding email sent");
       if (isEdit && res?.data?._id) {
         sessionStorage.setItem("employees:last-updated", JSON.stringify(res.data));
       }
       navigate("/employees");
     } else {
+      const message = String(res?.message || "");
+      const responseFieldErrors = mapSaveResponseToFieldErrors(message);
+      if (Object.keys(responseFieldErrors).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...responseFieldErrors }));
+        showValidationToast(responseFieldErrors);
+        return;
+      }
       toast.error(res?.message || "Failed to save employee");
     }
   };
@@ -1141,10 +1264,14 @@ const AddEmployee = () => {
             validationType="email"
             infoText="Enter a valid email address. Spaces are removed and letters are stored in lowercase."
             value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            onChange={(e) => {
+              clearFieldError("email");
+              setForm({ ...form, email: e.target.value });
+            }}
             placeholder="employee@email.com"
             required
           />
+          {getFieldError("email") && <p className="mt-1 text-xs text-red-600">{getFieldError("email")}</p>}
         </div>
 
         <div>
@@ -1155,11 +1282,13 @@ const AddEmployee = () => {
             validationType="code"
             infoText="Allowed characters: A-Z, 0-9, underscore and hyphen. Leave empty to auto-generate."
             value={form.employeeCode}
-            onChange={(e) =>
-              setForm({ ...form, employeeCode: e.target.value.toUpperCase() })
-            }
+            onChange={(e) => {
+              clearFieldError("employeeCode");
+              setForm({ ...form, employeeCode: e.target.value.toUpperCase() });
+            }}
             placeholder={!isEdit ? `${orgEmployeeCodePrefix}-0001 (optional)` : ""}
           />
+          {getFieldError("employeeCode") && <p className="mt-1 text-xs text-red-600">{getFieldError("employeeCode")}</p>}
           <p className="mt-1 text-xs text-muted-foreground">
             Must be unique within this organization. Leave empty to auto-generate.
           </p>
@@ -1173,11 +1302,13 @@ const AddEmployee = () => {
             value={form.firstName}
             validationType="name"
             infoText="Use letters and spaces only."
-            onChange={(e) =>
-              setForm({ ...form, firstName: e.target.value })
-            }
+            onChange={(e) => {
+              clearFieldError("firstName");
+              setForm({ ...form, firstName: e.target.value });
+            }}
             required
           />
+          {getFieldError("firstName") && <p className="mt-1 text-xs text-red-600">{getFieldError("firstName")}</p>}
         </div>
 
         <div>
@@ -1188,11 +1319,13 @@ const AddEmployee = () => {
             value={form.lastName}
             validationType="name"
             infoText="Use letters and spaces only."
-            onChange={(e) =>
-              setForm({ ...form, lastName: e.target.value })
-            }
+            onChange={(e) => {
+              clearFieldError("lastName");
+              setForm({ ...form, lastName: e.target.value });
+            }}
             required
           />
+          {getFieldError("lastName") && <p className="mt-1 text-xs text-red-600">{getFieldError("lastName")}</p>}
         </div>
 
         <div>
@@ -1206,6 +1339,7 @@ const AddEmployee = () => {
                 navigate("/departments");
                 return;
               }
+              clearFieldError("departmentId");
               setForm({ ...form, departmentId: v });
             }}
           >
@@ -1221,6 +1355,7 @@ const AddEmployee = () => {
               ))}
             </SelectContent>
           </Select>
+          {getFieldError("departmentId") && <p className="mt-1 text-xs text-red-600">{getFieldError("departmentId")}</p>}
         </div>
 
         <div>
@@ -1234,6 +1369,7 @@ const AddEmployee = () => {
                 navigate("/designations");
                 return;
               }
+              clearFieldError("designationId");
               setForm({ ...form, designationId: v });
             }}
           >
@@ -1249,6 +1385,7 @@ const AddEmployee = () => {
               ))}
             </SelectContent>
           </Select>
+          {getFieldError("designationId") && <p className="mt-1 text-xs text-red-600">{getFieldError("designationId")}</p>}
         </div>
 
         <div>
@@ -1415,6 +1552,7 @@ const AddEmployee = () => {
                                 ? (prev.roleIds || []).filter((id) => id !== r._id)
                                 : Array.from(new Set([...(prev.roleIds || []), r._id])),
                             }));
+                            clearFieldError("roleIds");
                           }}
                         >
                           <Checkbox checked={checked} className="mr-2" />
@@ -1427,6 +1565,7 @@ const AddEmployee = () => {
               </Command>
             </PopoverContent>
           </Popover>
+          {getFieldError("roleIds") && <p className="mt-1 text-xs text-red-600">{getFieldError("roleIds")}</p>}
         </div>
 
         <div>
@@ -1435,9 +1574,10 @@ const AddEmployee = () => {
           </Label>
           <Select
             value={form.employmentType}
-            onValueChange={(v) =>
-              setForm({ ...form, employmentType: v })
-            }
+            onValueChange={(v) => {
+              clearFieldError("employmentType");
+              setForm({ ...form, employmentType: v });
+            }}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select Type" />
@@ -1448,6 +1588,7 @@ const AddEmployee = () => {
               <SelectItem value="contract">Contract</SelectItem>
             </SelectContent>
           </Select>
+          {getFieldError("employmentType") && <p className="mt-1 text-xs text-red-600">{getFieldError("employmentType")}</p>}
         </div>
 
         <div>
@@ -1457,10 +1598,12 @@ const AddEmployee = () => {
           <Input
             type="date"
             value={form.dateOfJoining}
-            onChange={(e) =>
-              setForm({ ...form, dateOfJoining: e.target.value })
-            }
+            onChange={(e) => {
+              clearFieldError("dateOfJoining");
+              setForm({ ...form, dateOfJoining: e.target.value });
+            }}
           />
+          {getFieldError("dateOfJoining") && <p className="mt-1 text-xs text-red-600">{getFieldError("dateOfJoining")}</p>}
         </div>
 
         {isEdit && (
@@ -1562,10 +1705,12 @@ const AddEmployee = () => {
                 <Input
                   type="date"
                   value={form.lastWorkingDay}
-                  onChange={(e) =>
-                    setForm({ ...form, lastWorkingDay: e.target.value })
-                  }
+                  onChange={(e) => {
+                    clearFieldError("lastWorkingDay");
+                    setForm({ ...form, lastWorkingDay: e.target.value });
+                  }}
                 />
+                {getFieldError("lastWorkingDay") && <p className="mt-1 text-xs text-red-600">{getFieldError("lastWorkingDay")}</p>}
               </div>
             )}
           </div>
@@ -1588,9 +1733,13 @@ const AddEmployee = () => {
                   inputMode="numeric"
                   maxLength={10}
                   value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  onChange={(e) => {
+                    clearFieldError("phone");
+                    setForm({ ...form, phone: e.target.value });
+                  }}
                   placeholder="10-digit Indian mobile number"
                 />
+                {getFieldError("phone") && <p className="mt-1 text-xs text-red-600">{getFieldError("phone")}</p>}
               </div>
 
               <div>
@@ -1644,18 +1793,26 @@ const AddEmployee = () => {
                 <Label>Aadhaar Number</Label>
                 <Input
                   value={form.aadhaarNumber}
-                  onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value.replace(/\D/g, "").slice(0, 12) })}
+                  onChange={(e) => {
+                    clearFieldError("aadhaarNumber");
+                    setForm({ ...form, aadhaarNumber: e.target.value.replace(/\D/g, "").slice(0, 12) });
+                  }}
                   placeholder="12 digit Aadhaar number"
                 />
+                {getFieldError("aadhaarNumber") && <p className="mt-1 text-xs text-red-600">{getFieldError("aadhaarNumber")}</p>}
               </div>
 
               <div>
                 <Label>PAN Number</Label>
                 <Input
                   value={form.panNumber}
-                  onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })}
+                  onChange={(e) => {
+                    clearFieldError("panNumber");
+                    setForm({ ...form, panNumber: e.target.value.toUpperCase() });
+                  }}
                   placeholder="ABCDE1234F"
                 />
+                {getFieldError("panNumber") && <p className="mt-1 text-xs text-red-600">{getFieldError("panNumber")}</p>}
               </div>
 
               <div className="md:col-span-2">
@@ -1678,24 +1835,36 @@ const AddEmployee = () => {
                 <Label>City</Label>
                 <Input
                   value={form.address.city}
-                  onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })}
+                  onChange={(e) => {
+                    clearFieldError("addressCity");
+                    setForm({ ...form, address: { ...form.address, city: e.target.value } });
+                  }}
                 />
+                {getFieldError("addressCity") && <p className="mt-1 text-xs text-red-600">{getFieldError("addressCity")}</p>}
               </div>
 
               <div>
                 <Label>State</Label>
                 <Input
                   value={form.address.state}
-                  onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value } })}
+                  onChange={(e) => {
+                    clearFieldError("addressState");
+                    setForm({ ...form, address: { ...form.address, state: e.target.value } });
+                  }}
                 />
+                {getFieldError("addressState") && <p className="mt-1 text-xs text-red-600">{getFieldError("addressState")}</p>}
               </div>
 
               <div>
                 <Label>Country</Label>
                 <Input
                   value={form.address.country}
-                  onChange={(e) => setForm({ ...form, address: { ...form.address, country: e.target.value } })}
+                  onChange={(e) => {
+                    clearFieldError("addressCountry");
+                    setForm({ ...form, address: { ...form.address, country: e.target.value } });
+                  }}
                 />
+                {getFieldError("addressCountry") && <p className="mt-1 text-xs text-red-600">{getFieldError("addressCountry")}</p>}
               </div>
 
               <div>
@@ -1703,8 +1872,12 @@ const AddEmployee = () => {
                 <Input
                   inputMode="numeric"
                   value={form.address.zip}
-                  onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value.replace(/\D/g, "") } })}
+                  onChange={(e) => {
+                    clearFieldError("addressZip");
+                    setForm({ ...form, address: { ...form.address, zip: e.target.value.replace(/\D/g, "") } });
+                  }}
                 />
+                {getFieldError("addressZip") && <p className="mt-1 text-xs text-red-600">{getFieldError("addressZip")}</p>}
               </div>
 
               <div>
@@ -1713,17 +1886,21 @@ const AddEmployee = () => {
                   validationType="name"
                   value={form.emergencyContacts[0]?.name || ""}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      emergencyContacts: [
-                        {
-                          ...(form.emergencyContacts[0] || { name: "", relation: "", phone: "" }),
-                          name: e.target.value
-                        }
-                      ]
-                    })
+                    {
+                      clearFieldError("emergencyName");
+                      setForm({
+                        ...form,
+                        emergencyContacts: [
+                          {
+                            ...(form.emergencyContacts[0] || { name: "", relation: "", phone: "" }),
+                            name: e.target.value
+                          }
+                        ]
+                      });
+                    }
                   }
                 />
+                {getFieldError("emergencyName") && <p className="mt-1 text-xs text-red-600">{getFieldError("emergencyName")}</p>}
               </div>
 
               <div>
@@ -1731,15 +1908,18 @@ const AddEmployee = () => {
                 <Select
                   value={form.emergencyContacts[0]?.relation || "none"}
                   onValueChange={(v) =>
-                    setForm({
-                      ...form,
-                      emergencyContacts: [
-                        {
-                          ...(form.emergencyContacts[0] || { name: "", relation: "", phone: "" }),
-                          relation: v === "none" ? "" : v
-                        }
-                      ]
-                    })
+                    {
+                      clearFieldError("emergencyRelation");
+                      setForm({
+                        ...form,
+                        emergencyContacts: [
+                          {
+                            ...(form.emergencyContacts[0] || { name: "", relation: "", phone: "" }),
+                            relation: v === "none" ? "" : v
+                          }
+                        ]
+                      });
+                    }
                   }
                 >
                   <SelectTrigger>
@@ -1754,6 +1934,7 @@ const AddEmployee = () => {
                     ))}
                   </SelectContent>
                 </Select>
+                {getFieldError("emergencyRelation") && <p className="mt-1 text-xs text-red-600">{getFieldError("emergencyRelation")}</p>}
               </div>
 
               <div>
@@ -1764,17 +1945,21 @@ const AddEmployee = () => {
                   maxLength={10}
                   value={form.emergencyContacts[0]?.phone || ""}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      emergencyContacts: [
-                        {
-                          ...(form.emergencyContacts[0] || { name: "", relation: "", phone: "" }),
-                          phone: e.target.value
-                        }
-                      ]
-                    })
+                    {
+                      clearFieldError("emergencyPhone");
+                      setForm({
+                        ...form,
+                        emergencyContacts: [
+                          {
+                            ...(form.emergencyContacts[0] || { name: "", relation: "", phone: "" }),
+                            phone: e.target.value
+                          }
+                        ]
+                      });
+                    }
                   }
                 />
+                {getFieldError("emergencyPhone") && <p className="mt-1 text-xs text-red-600">{getFieldError("emergencyPhone")}</p>}
               </div>
             </div>
           </div>

@@ -49,3 +49,17 @@ exports.action = async (req, res) => {
     buildSuccessResponse({ message: req.body.status })
   );
 };
+
+exports.requestRevert = async (req, res) => {
+  const data = await service.requestLeaveRevert(req);
+  res.status(200).json(
+    buildSuccessResponse({ message: "Leave revert requested", data })
+  );
+};
+
+exports.revertAction = async (req, res) => {
+  const data = await service.actionLeaveRevert(req);
+  res.status(200).json(
+    buildSuccessResponse({ message: `Leave revert ${req.body.status}`, data })
+  );
+};

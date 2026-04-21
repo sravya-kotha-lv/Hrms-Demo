@@ -18,6 +18,29 @@ const getCycleStartYear = (date, startMonth) => {
  * Round value to 2 decimals
  */
 const roundTwo = (value) => Math.round(value * 100) / 100;
+const roundToHalfDay = (value) => roundTwo(Math.round(Number(value || 0) * 2) / 2);
+const normalizeBalanceToHalfDay = async (balance) => {
+  const nextTotal = roundToHalfDay(balance.total);
+  const nextUsed = roundToHalfDay(balance.used);
+  const nextPending = roundToHalfDay(balance.pending || 0);
+  const nextRemaining = roundToHalfDay(nextTotal - nextUsed - nextPending);
+
+  if (
+    balance.total === nextTotal &&
+    balance.used === nextUsed &&
+    (balance.pending || 0) === nextPending &&
+    balance.remaining === nextRemaining
+  ) {
+    return balance;
+  }
+
+  balance.total = nextTotal;
+  balance.used = nextUsed;
+  balance.pending = nextPending;
+  balance.remaining = nextRemaining;
+  await balance.save();
+  return balance;
+};
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -157,17 +180,18 @@ exports.initializeForEmployee = async (employee, organizationId) => {
 
   // 4️⃣ prepare bulk insert
   const bulkOps = leaveTypes.map((lt) => {
-    const creditPerPeriod = roundTwo(lt.daysPerYear / periodsPerYear);
-    let total = roundTwo(creditPerPeriod * remainingPeriods);
+    const creditPerPeriod = lt.daysPerYear / periodsPerYear;
+    let total = creditPerPeriod * remainingPeriods;
 
     if (frequency === "yearly") {
-      total = roundTwo((lt.daysPerYear / totalPeriods) * remainingPeriods);
+      total = (lt.daysPerYear / totalPeriods) * remainingPeriods;
     }
 
     if (frequency === "monthly") {
       const joinDay = doj.getDate();
-      if (joinDay > 15) total = roundTwo(total - creditPerPeriod / 2);
+      if (joinDay > 15) total -= creditPerPeriod / 2;
     }
+    total = roundToHalfDay(total);
 
     return {
       updateOne: {
@@ -228,13 +252,14 @@ exports.initializeForNewLeaveType = async (leaveType, organizationId) => {
       org.leaveCycleStartMonth
     );
 
-    const creditPerPeriod = roundTwo(leaveType.daysPerYear / periodsPerYear);
-    let total = roundTwo(leaveType.daysPerYear);
+    const creditPerPeriod = leaveType.daysPerYear / periodsPerYear;
+    let total = roundToHalfDay(leaveType.daysPerYear);
     if (leaveTypeCreditMode === "current_month_onwards") {
-      total = roundTwo(creditPerPeriod * remainingPeriods);
+      total = creditPerPeriod * remainingPeriods;
       if (frequency === "yearly") {
-        total = roundTwo((leaveType.daysPerYear / totalPeriods) * remainingPeriods);
+        total = (leaveType.daysPerYear / totalPeriods) * remainingPeriods;
       }
+      total = roundToHalfDay(total);
     }
 
     return {
@@ -263,7 +288,8 @@ exports.initializeForNewLeaveType = async (leaveType, organizationId) => {
 };
 
 
-exports.getEmployeeBalance = async (organizationId, id, type = "USER") => {
+exports.getEmployeeBalance = async (organizationId, id, type = "USER", options = {}) => {
+  const includeInactive = options.includeInactive !== false;
 
   let employeeQuery = { organizationId };
 
@@ -284,18 +310,23 @@ exports.getEmployeeBalance = async (organizationId, id, type = "USER") => {
   const balances = await LeaveBalance.find({
     organizationId,
     employeeId: employee._id
-  }).populate("leaveTypeId", "name code");
+  }).populate("leaveTypeId", "name code status");
 
-  return balances.map((b) => ({
-    _id: b._id,
-    leaveTypeId: b.leaveTypeId._id,
-    leaveType: b.leaveTypeId.name,
-    code: b.leaveTypeId.code,
-    total: b.total,
-    used: b.used,
-    pending: b.pending || 0,
-    remaining: b.remaining
-  }));
+  await Promise.all(balances.map((balance) => normalizeBalanceToHalfDay(balance)));
+
+  return balances
+    .filter((b) => b.leaveTypeId && (includeInactive || b.leaveTypeId.status !== "inactive"))
+    .map((b) => ({
+      _id: b._id,
+      leaveTypeId: b.leaveTypeId._id,
+      leaveType: b.leaveTypeId.name,
+      code: b.leaveTypeId.code,
+      status: b.leaveTypeId.status,
+      total: b.total,
+      used: b.used,
+      pending: b.pending || 0,
+      remaining: b.remaining
+    }));
 };
 
 exports.adjustEmployeeBalance = async (req) => {

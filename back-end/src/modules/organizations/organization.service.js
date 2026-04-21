@@ -2,9 +2,115 @@ const Organization = require("./organization.model");
 const User = require("../users/user.model");
 const OrgUser = require("./org-user.model");
 const Role = require("../roles/role.model");
+const Employee = require("../employees/employee.model");
+const OrgSettings = require("../orgSettings/orgSettings.model");
+const leaveBalanceService = require("../leaveBalances/leaveBalance.service");
 const { seedOrgRolesAndPermissions } = require("../roles/role.seeder");
 const mongoose = require("mongoose");
 const { getPayrollPgPool, isPayrollDbEnabled } = require("../../config/payrollDb");
+
+const toNameCase = (value) => {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  return text
+    .split(" ")
+    .map((part) =>
+      part
+        .split("-")
+        .map((segment) =>
+          segment ? `${segment.charAt(0).toUpperCase()}${segment.slice(1).toLowerCase()}` : segment
+        )
+        .join("-")
+    )
+    .join(" ");
+};
+
+const deriveNamePartsFromEmail = (email) => {
+  const localPart = String(email || "").split("@")[0] || "";
+  const tokens = localPart
+    .split(/[._-]+/)
+    .map((part) => toNameCase(part))
+    .filter(Boolean);
+
+  return {
+    firstName: tokens[0] || "Organization",
+    lastName: tokens.slice(1).join(" ") || "Admin"
+  };
+};
+
+const generateEmployeeCode = async (organizationId) => {
+  const orgSettings = await OrgSettings.findOne({ organizationId }, "employeeIdPrefix").lean();
+  const envPrefix = (process.env.EMPLOYEE_ID_PREFIX || process.env.EMPLOYEE_CODE_PREFIX || "LV").trim();
+  const prefix = ((orgSettings?.employeeIdPrefix || envPrefix || "LV").trim() || "LV").toUpperCase();
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const codePattern = new RegExp(`^${escapedPrefix}-(\\d+)$`, "i");
+  const existingEmployees = await Employee.find({
+    organizationId,
+    employeeCode: { $regex: `^${escapedPrefix}-`, $options: "i" }
+  }).select("employeeCode");
+
+  let sequence = existingEmployees.reduce((max, row) => {
+    const match = codePattern.exec(String(row?.employeeCode || ""));
+    if (!match) return max;
+    const current = Number(match[1]);
+    return Number.isFinite(current) ? Math.max(max, current) : max;
+  }, 0);
+
+  while (true) {
+    sequence += 1;
+    const code = `${prefix}-${String(sequence).padStart(4, "0")}`;
+    const exists = await Employee.findOne({ organizationId, employeeCode: code }).select("_id");
+    if (!exists) return code;
+  }
+};
+
+const ensureOrgAdminEmployeeRecord = async ({ organizationId, user }) => {
+  if (!organizationId || !user?._id) return null;
+
+  let employee = await Employee.findOne({
+    organizationId,
+    userId: user._id,
+    isDeleted: false
+  });
+  if (employee) return employee;
+
+  const existingEmployee = await Employee.findOne({ userId: user._id }).sort({ createdAt: -1 });
+  const derivedName = deriveNamePartsFromEmail(user.email || "");
+  const employeeCode = await generateEmployeeCode(organizationId);
+
+  const payload = {
+    organizationId,
+    userId: user._id,
+    firstName: toNameCase(existingEmployee?.firstName || derivedName.firstName || "Organization"),
+    lastName: toNameCase(existingEmployee?.lastName || derivedName.lastName || "Admin"),
+    employeeCode,
+    departmentId: existingEmployee?.departmentId || undefined,
+    designationId: existingEmployee?.designationId || undefined,
+    dateOfJoining: existingEmployee?.dateOfJoining || new Date(),
+    employmentType: existingEmployee?.employmentType || "full_time",
+    managerId: existingEmployee?.managerId || undefined,
+    shiftId: existingEmployee?.shiftId || undefined,
+    phone: existingEmployee?.phone || "",
+    profileCompleted: existingEmployee?.profileCompleted || false,
+    profileImage: existingEmployee?.profileImage || null,
+    status: existingEmployee?.status || "active",
+    employmentLifecycleStatus: existingEmployee?.employmentLifecycleStatus || "confirmed"
+  };
+
+  if (existingEmployee) {
+    const orgChanged = String(existingEmployee.organizationId || "") !== String(organizationId);
+    existingEmployee.set(payload);
+    await existingEmployee.save();
+    if (orgChanged) {
+      await leaveBalanceService.initializeForEmployee(existingEmployee, organizationId);
+    }
+    return existingEmployee;
+  }
+
+  employee = await Employee.create(payload);
+  await leaveBalanceService.initializeForEmployee(employee, organizationId);
+  return employee;
+};
 
 /**
  * CREATE ORGANIZATION + ASSIGN ADMIN
@@ -66,6 +172,11 @@ exports.createOrganization = async ({
     userId: admin._id,
     organizationId: org._id,
     roleIds: [adminRole._id]
+  });
+
+  await ensureOrgAdminEmployeeRecord({
+    organizationId: org._id,
+    user: admin
   });
 
   return org;

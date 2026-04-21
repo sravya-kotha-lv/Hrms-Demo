@@ -73,6 +73,24 @@ const buildRuntimeSteps = ({ flow, subjectEmployee }) => {
 
 exports.buildRuntimeSteps = buildRuntimeSteps;
 
+const isDefaultRange = (flow = {}) => flow.minDays == null && flow.maxDays == null;
+
+const rangeSize = (flow = {}) => {
+  const min = flow.minDays == null ? Number.NEGATIVE_INFINITY : Number(flow.minDays);
+  const max = flow.maxDays == null ? Number.POSITIVE_INFINITY : Number(flow.maxDays);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return Number.POSITIVE_INFINITY;
+  return max - min;
+};
+
+const compareFlowPriority = (a, b) => {
+  if (isDefaultRange(a) !== isDefaultRange(b)) {
+    return isDefaultRange(a) ? 1 : -1;
+  }
+  const sizeDiff = rangeSize(a) - rangeSize(b);
+  if (sizeDiff !== 0) return sizeDiff;
+  return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+};
+
 exports.resolveApplicableFlow = async ({
   organizationId,
   moduleKey,
@@ -99,9 +117,9 @@ exports.resolveApplicableFlow = async ({
       organizationId,
       moduleKey,
       isActive: true
-    }).sort({ createdAt: -1 });
+    });
 
-    flow = flows.find((f) => {
+    flow = flows.sort(compareFlowPriority).find((f) => {
       if (totalDays == null) return true;
       const minOk = f.minDays == null || Number(totalDays) >= Number(f.minDays);
       const maxOk = f.maxDays == null || Number(totalDays) <= Number(f.maxDays);

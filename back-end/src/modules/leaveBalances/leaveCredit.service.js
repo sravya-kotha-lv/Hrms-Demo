@@ -5,6 +5,7 @@ const Organization = require("../organizations/organization.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
 
 const roundTwo = (value) => Math.round(value * 100) / 100;
+const roundToHalfDay = (value) => roundTwo(Math.round(Number(value || 0) * 2) / 2);
 
 const getCycleStartDate = (date, startMonth) => {
   const d = new Date(date);
@@ -80,7 +81,7 @@ exports.applyLeaveCreditsForOrg = async (organizationId, date = new Date()) => {
   const bulkOps = [];
 
   for (const lt of leaveTypes) {
-    const creditPerPeriod = roundTwo(lt.daysPerYear / periodsPerYear);
+    const creditPerPeriod = roundToHalfDay(lt.daysPerYear / periodsPerYear);
 
     for (const emp of employees) {
       bulkOps.push({

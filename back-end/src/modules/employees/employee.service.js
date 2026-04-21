@@ -52,6 +52,86 @@ const toNameCase = (value) => {
     .join(" ");
 };
 
+const deriveNamePartsFromEmail = (email) => {
+  const localPart = String(email || "").split("@")[0] || "";
+  const tokens = localPart
+    .split(/[._-]+/)
+    .map((part) => toNameCase(part))
+    .filter(Boolean);
+
+  return {
+    firstName: tokens[0] || "Organization",
+    lastName: tokens.slice(1).join(" ") || "Admin"
+  };
+};
+
+const ensureEmployeeRecordForOrgUser = async ({
+  organizationId,
+  userId
+}) => {
+  if (!organizationId || !userId) return null;
+
+  let employee = await Employee.findOne({
+    userId,
+    organizationId,
+    isDeleted: false
+  });
+  if (employee) return employee;
+
+  const [user, existingEmployee] = await Promise.all([
+    User.findById(userId).select("email"),
+    Employee.findOne({ userId }).sort({ createdAt: -1 })
+  ]);
+
+  const derivedName = deriveNamePartsFromEmail(user?.email || "");
+  const generatedEmployeeCode = await generateEmployeeCode(organizationId);
+
+  const basePayload = {
+    organizationId,
+    userId,
+    firstName: toNameCase(existingEmployee?.firstName || derivedName.firstName || "Organization"),
+    lastName: toNameCase(existingEmployee?.lastName || derivedName.lastName || "Admin"),
+    employeeCode: generatedEmployeeCode,
+    departmentId: existingEmployee?.departmentId || undefined,
+    designationId: existingEmployee?.designationId || undefined,
+    dateOfJoining: existingEmployee?.dateOfJoining || new Date(),
+    employmentType: existingEmployee?.employmentType || "full_time",
+    managerId: existingEmployee?.managerId || undefined,
+    shiftId: existingEmployee?.shiftId || undefined,
+    phone: existingEmployee?.phone || "",
+    dob: existingEmployee?.dob || undefined,
+    gender: existingEmployee?.gender || "",
+    bloodGroup: existingEmployee?.bloodGroup || "",
+    address: existingEmployee?.address || undefined,
+    emergencyContacts: existingEmployee?.emergencyContacts || [],
+    profileImage: existingEmployee?.profileImage || null,
+    addressProof: existingEmployee?.addressProof || null,
+    aadhaarNumber: existingEmployee?.aadhaarNumber || null,
+    panNumber: existingEmployee?.panNumber || null,
+    aadhaarProof: existingEmployee?.aadhaarProof || null,
+    panProof: existingEmployee?.panProof || null,
+    leaveApprovalFlowId: existingEmployee?.leaveApprovalFlowId || null,
+    attendanceApprovalFlowId: existingEmployee?.attendanceApprovalFlowId || null,
+    profileCompleted: existingEmployee?.profileCompleted || false,
+    status: existingEmployee?.status || "active",
+    employmentLifecycleStatus: existingEmployee?.employmentLifecycleStatus || "confirmed"
+  };
+
+  if (existingEmployee) {
+    const orgChanged = String(existingEmployee.organizationId || "") !== String(organizationId);
+    existingEmployee.set(basePayload);
+    await existingEmployee.save();
+    if (orgChanged) {
+      await leaveBalanceService.initializeForEmployee(existingEmployee, organizationId);
+    }
+    return existingEmployee;
+  }
+
+  employee = await Employee.create(basePayload);
+  await leaveBalanceService.initializeForEmployee(employee, organizationId);
+  return employee;
+};
+
 /* ------------------------------------------------------------------ */
 /* HR / ADMIN CREATES EMPLOYEE                                         */
 /* ------------------------------------------------------------------ */
@@ -284,14 +364,10 @@ exports.createByHr = async (req) => {
 /* EMPLOYEE COMPLETES OWN PROFILE                                      */
 /* ------------------------------------------------------------------ */
 exports.completeMyProfile = async (req) => {
-  const employee = await Employee.findOne({
-    userId: req.user.userId,
-    organizationId: req.user.organizationId
+  const employee = await ensureEmployeeRecordForOrgUser({
+    organizationId: req.user.organizationId,
+    userId: req.user.userId
   });
-
-  if (!employee) {
-    throw { code: 404, message: "Employee record not found. Contact admin." };
-  }
 
   const editableFields = {
     phone: req.body.phone,
@@ -1058,8 +1134,13 @@ exports.getById = async (req) => {
 };
 
 exports.getMe = async (req) => {
+  const ensuredEmployee = await ensureEmployeeRecordForOrgUser({
+    organizationId: req.user.organizationId,
+    userId: req.user.userId
+  });
+
   const employee = await Employee.findOne({
-    userId: req.user.userId,
+    _id: ensuredEmployee?._id,
     organizationId: req.user.organizationId,
     isDeleted: false
   })
