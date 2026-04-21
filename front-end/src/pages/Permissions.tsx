@@ -76,6 +76,11 @@ const normalizeRoleSlug = (value: string | null | undefined) =>
     .replace(/[_\s]+/g, "-")
     .replace(/-+/g, "-");
 
+const permissionLabel = (code: string) =>
+  String(code || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
 const Permissions = () => {
   const { hasAnyPermission } = useAuth();
   const [roles, setRoles] = useState<RoleRow[]>([]);
@@ -359,7 +364,7 @@ const Permissions = () => {
       header: "Role",
       accessor: "name",
       sortable: true,
-      className: "sticky left-0 z-40 bg-card min-w-[240px] max-w-[260px] shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)]",
+      className: "sticky left-0 z-40 bg-card w-[220px] min-w-[220px] max-w-[220px] shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)]",
       render: (row) => (
         <div>
           <p className="font-medium">{row.name}</p>
@@ -371,7 +376,7 @@ const Permissions = () => {
     const permColumns: Column<RoleRow>[] = orderedPermissions.map((perm) => ({
       header: perm.code,
       accessor: perm.code as any,
-      className: "min-w-[160px] text-center",
+      className: "w-[118px] min-w-[118px] max-w-[118px] px-2 text-center",
     }));
 
     return [roleColumn, ...permColumns];
@@ -410,7 +415,7 @@ const Permissions = () => {
         <TableRow className="bg-muted/40">
           <TableHead
             rowSpan={2}
-            className="sticky left-0 z-50 bg-muted/40 min-w-[240px] max-w-[260px] shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)]"
+            className="sticky left-0 z-50 bg-muted/40 w-[220px] min-w-[220px] max-w-[220px] shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)]"
           >
             Role
           </TableHead>
@@ -432,9 +437,11 @@ const Permissions = () => {
               const indeterminate =
                 checkedCount > 0 && checkedCount < editableRoles.length;
               return (
-                <TableHead key={`${module}-${perm._id}`} className="text-center">
+                <TableHead key={`${module}-${perm._id}`} className="w-[118px] min-w-[118px] max-w-[118px] px-2 text-center">
                   <div className="flex flex-col items-center gap-2">
-                    <span className="text-xs font-medium">{perm.code}</span>
+                    <span className="max-w-[104px] truncate text-[11px] font-medium leading-tight" title={permissionLabel(perm.code)}>
+                      {perm.code}
+                    </span>
                     <Checkbox
                       checked={indeterminate ? "indeterminate" : allChecked}
                       onCheckedChange={() => handleSelectAllPermission(perm)}
@@ -459,7 +466,7 @@ const Permissions = () => {
 
     return (
       <>
-        <TableCell className="sticky left-0 z-40 bg-card min-w-[240px] max-w-[260px] shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)]">
+        <TableCell className="sticky left-0 z-40 bg-card w-[220px] min-w-[220px] max-w-[220px] shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)]">
           <div className="flex items-center gap-3">
             <Checkbox
               checked={isIndeterminate ? "indeterminate" : isAll}
@@ -476,7 +483,7 @@ const Permissions = () => {
           perms.map((perm) => {
             const checked = current.includes(perm._id);
             return (
-              <TableCell key={`${row._id}-${perm._id}`} className="text-center">
+              <TableCell key={`${row._id}-${perm._id}`} className="w-[118px] min-w-[118px] max-w-[118px] px-2 text-center">
                 <Checkbox
                   checked={checked}
                   disabled={disabled}
@@ -531,7 +538,7 @@ const Permissions = () => {
                 data={roles}
                 rowKey="_id"
                 searchKey="name"
-                tableClassName="min-w-[1200px] border-separate border-spacing-0"
+                tableClassName="w-max min-w-0 border-separate border-spacing-0"
                 renderHeader={renderHeader}
                 renderRow={renderRow}
                 columnsCountOverride={1 + permissions.length}

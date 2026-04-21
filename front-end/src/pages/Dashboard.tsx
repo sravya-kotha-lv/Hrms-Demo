@@ -41,7 +41,7 @@ import { useAuth } from "@/context/useAuth";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Label, LabelList, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from "recharts";
 
 /* ========================= Dashboard ========================= */
 
@@ -865,22 +865,93 @@ const Dashboard = () => {
     return { submitted, approved, rejected, draft, total: weeklyList.length };
   }, [weeklyList]);
 
+  const openCheckoutCount = useMemo(
+    () =>
+      (todayStatusList || []).filter((item) =>
+        Boolean(item.checkInAt && !item.checkOutAt && !(item.isOnLeave || item.isWeekOff || item.holidayName))
+      ).length,
+    [todayStatusList]
+  );
+
   const workforceComposition = useMemo<DoughnutSlice[]>(() => {
+    const normalPresent = Math.max(0, Number(kpis.presentToday || 0) - openCheckoutCount);
     const slices: DoughnutSlice[] = [
-      { key: "present", label: "Present", value: kpis.presentToday, ...doughnutPalette.present },
+      { key: "present", label: "Present", value: normalPresent, ...doughnutPalette.present },
+      { key: "missed", label: "Open Checkout", value: openCheckoutCount, ...doughnutPalette.missed },
       { key: "absent", label: "Absent", value: kpis.absentToday, ...doughnutPalette.absent },
       { key: "leave", label: "On Leave", value: kpis.onLeaveToday, ...doughnutPalette.leave },
-      { key: "missed", label: "Missed Checkout", value: kpis.checkedInOnly, ...doughnutPalette.missed },
       { key: "weekOff", label: "Week Off", value: monthDaySummary.weekOff, ...doughnutPalette.weekOff },
       { key: "holiday", label: "Holiday", value: monthDaySummary.holiday, ...doughnutPalette.holiday }
     ];
     const withValues = slices.filter((slice) => slice.value > 0);
     return withValues.length ? withValues : slices.slice(0, 1);
-  }, [kpis, monthDaySummary.holiday, monthDaySummary.weekOff]);
+  }, [kpis.absentToday, kpis.onLeaveToday, kpis.presentToday, monthDaySummary.holiday, monthDaySummary.weekOff, openCheckoutCount]);
 
   const workforceCompositionTotal = useMemo(
     () => workforceComposition.reduce((sum, slice) => sum + slice.value, 0),
     [workforceComposition]
+  );
+
+  const workforceSignals = useMemo(() => {
+    const total = Math.max(1, workforceCompositionTotal);
+    const presentRate = Math.round((Number(kpis.presentToday || 0) / total) * 100);
+    const exceptionCount = Number(kpis.absentToday || 0)
+      + Number(openCheckoutCount || 0)
+      + Number(kpis.lateArrivals || 0);
+    const exceptionRate = Math.min(100, Math.round((exceptionCount / total) * 100));
+    const checkoutRate = Math.min(100, Math.round((Number(openCheckoutCount || 0) / total) * 100));
+    const leaveRate = Math.min(100, Math.round((Number(kpis.onLeaveToday || 0) / total) * 100));
+
+    return [
+      {
+        label: "Coverage",
+        value: `${presentRate}%`,
+        note: `${kpis.presentToday} present today`,
+        progress: presentRate,
+        color: "from-emerald-700 to-emerald-400"
+      },
+      {
+        label: "Needs Attention",
+        value: exceptionCount,
+        note: "Absent, late, or pending checkout",
+        progress: exceptionRate,
+        color: "from-orange-700 to-amber-400"
+      },
+      {
+        label: "Open Checkouts",
+        value: openCheckoutCount,
+        note: "Close before payroll lock",
+        progress: checkoutRate,
+        color: "from-indigo-700 to-blue-400"
+      },
+      {
+        label: "Leave Load",
+        value: `${leaveRate}%`,
+        note: `${kpis.onLeaveToday} employees on leave`,
+        progress: leaveRate,
+        color: "from-sky-700 to-cyan-400"
+      }
+    ];
+  }, [kpis.absentToday, kpis.lateArrivals, kpis.onLeaveToday, kpis.presentToday, openCheckoutCount, workforceCompositionTotal]);
+
+  const workforceFollowUpCards = useMemo(
+    () => [
+      {
+        label: "Late Arrivals",
+        value: kpis.lateArrivals,
+        note: "Employees beyond grace window",
+        color: "#f59e0b",
+        gradient: "from-amber-600 to-yellow-400"
+      },
+      {
+        label: "Pending Checkout",
+        value: openCheckoutCount,
+        note: "Open sessions to close today",
+        color: "#6366f1",
+        gradient: "from-indigo-700 to-blue-400"
+      }
+    ],
+    [kpis.lateArrivals, openCheckoutCount]
   );
 
   const departmentChartData = useMemo(
@@ -888,10 +959,28 @@ const Dashboard = () => {
       departmentAnalytics.map((department) => ({
         name: department.name,
         fullName: department.name,
+        employees: department.employees,
         present: department.present,
         absent: department.absent,
         onLeave: department.onLeave
       })),
+    [departmentAnalytics]
+  );
+
+  const departmentCoverageRows = useMemo(
+    () =>
+      departmentAnalytics.slice(0, 5).map((department) => {
+        const total = Math.max(1, Number(department.employees || 0));
+        const presentPct = Math.round((Number(department.present || 0) / total) * 100);
+        const leavePct = Math.round((Number(department.onLeave || 0) / total) * 100);
+        const absentPct = Math.max(0, 100 - presentPct - leavePct);
+        return {
+          ...department,
+          presentPct,
+          leavePct,
+          absentPct
+        };
+      }),
     [departmentAnalytics]
   );
 
@@ -1916,9 +2005,11 @@ const Dashboard = () => {
 	            </div>
 	            <Badge variant="outline">Live Today</Badge>
 	          </div>
-	          <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(280px,340px),minmax(0,1fr)] items-start">
-	            <div className="rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(248,250,252,0.92)_55%,_rgba(241,245,249,0.9))] p-4 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)]">
-	              <ChartContainer config={chartConfig} className="h-[304px] w-full min-w-0">
+          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(260px,320px),minmax(0,1fr)] items-stretch">
+            <div className="relative overflow-hidden rounded-[30px] border border-slate-200/80 bg-[radial-gradient(circle_at_50%_0%,rgba(255,247,237,0.9),rgba(255,255,255,0.96)_42%,rgba(248,250,252,0.92)_100%)] p-4 shadow-[0_24px_70px_-36px_rgba(15,23,42,0.35)]">
+              <div className="pointer-events-none absolute -left-16 top-10 h-40 w-40 rounded-full bg-orange-200/30 blur-3xl" />
+              <div className="pointer-events-none absolute -right-20 bottom-0 h-44 w-44 rounded-full bg-sky-200/35 blur-3xl" />
+              <ChartContainer config={chartConfig} className="relative h-[342px] w-full min-w-0">
 	                <PieChart>
 	                <defs>
 	                  <filter id="dashboard-pie-shadow" x="-40%" y="-40%" width="180%" height="190%">
@@ -1970,77 +2061,76 @@ const Dashboard = () => {
                   {workforceComposition.map((slice) => (
                     <Cell key={slice.key} fill={slice.color} />
                   ))}
-                  <Label
-                    position="center"
-                    content={({ viewBox }) => {
-                      if (!viewBox || !("cx" in viewBox) || !("cy" in viewBox)) return null;
-	                      const { cx, cy } = viewBox;
-	                      return (
-	                        <g>
-	                          <text x={cx} y={cy - 16} textAnchor="middle" className="fill-slate-400 text-[10px] font-semibold tracking-[0.28em] uppercase">
-	                            Workforce
-	                          </text>
-	                          <text x={cx} y={cy + 10} textAnchor="middle" className="fill-slate-900 text-[34px] font-bold">
-	                            {workforceCompositionTotal}
-	                          </text>
-	                          <text x={cx} y={cy + 30} textAnchor="middle" className="fill-slate-500 text-[11px] font-medium">
-	                            employees today
-	                          </text>
-	                        </g>
-	                      );
-	                    }}
-	                  />
-	                </Pie>
+                </Pie>
 	                <circle cx="50%" cy="50%" r="66" fill="url(#dashboard-donut-core)" filter="url(#dashboard-core-shadow)" />
 	                <circle cx="50%" cy="50%" r="69" fill="none" stroke="url(#dashboard-donut-rim)" strokeOpacity="0.92" strokeWidth="2.5" />
-	                <path
-	                  d="M 146 74 C 172 50, 228 50, 254 74"
-	                  fill="none"
-	                  stroke="url(#dashboard-donut-sheen)"
-	                  strokeWidth="14"
-	                  strokeLinecap="round"
-	                />
-	                </PieChart>
-	              </ChartContainer>
-	              <div className="mt-4 flex flex-wrap justify-center gap-2.5">
-	                {workforceComposition.map((slice) => {
-	                  const percentage = workforceCompositionTotal ? Math.round((slice.value / workforceCompositionTotal) * 100) : 0;
-	                  return (
-	                    <div
-	                      key={`legend-${slice.key}`}
-	                      className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.35)] backdrop-blur"
-	                    >
-	                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
-	                      <span>{slice.label}</span>
-	                      <span className="text-slate-400">{percentage}%</span>
-	                    </div>
-	                  );
-	                })}
-	              </div>
-	            </div>
-	            <div className="min-w-0 space-y-3">
-	              <div className="rounded-[28px] border border-slate-200/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] p-5 shadow-[0_22px_60px_-28px_rgba(15,23,42,0.3)]">
-	                <div className="flex items-start justify-between gap-4">
-	                  <div className="min-w-0">
-	                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Workforce Total</p>
-	                    <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-900">{workforceCompositionTotal}</p>
-	                    <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">
-	                      Employees represented across today&apos;s live attendance mix.
-	                    </p>
-	                  </div>
+                <path
+                  d="M 146 74 C 172 50, 228 50, 254 74"
+                  fill="none"
+                  stroke="url(#dashboard-donut-sheen)"
+                  strokeWidth="14"
+                  strokeLinecap="round"
+                />
+                <text x="50%" y="43%" textAnchor="middle" className="fill-slate-400 text-[10px] font-semibold tracking-[0.28em] uppercase">
+                  Workforce
+                </text>
+                <text x="50%" y="52%" textAnchor="middle" className="fill-slate-900 text-[34px] font-bold">
+                  {workforceCompositionTotal}
+                </text>
+                <text x="50%" y="59%" textAnchor="middle" className="fill-slate-500 text-[11px] font-medium">
+                  employees today
+                </text>
+                </PieChart>
+              </ChartContainer>
+              <div className="relative mt-3 rounded-[26px] border border-slate-200/80 bg-white/75 p-3 shadow-[0_18px_48px_-34px_rgba(15,23,42,0.42)] backdrop-blur">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Operational Signals</p>
+                    <p className="text-xs text-slate-500">Today&apos;s admin follow-up cues</p>
+                  </div>
+                  <span className="rounded-full border border-slate-200/80 bg-white/85 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Admin
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {workforceSignals.map((signal) => (
+                    <div key={signal.label} className="rounded-[18px] border border-slate-100 bg-white/88 p-3 shadow-[0_14px_34px_-30px_rgba(15,23,42,0.45)]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{signal.label}</p>
+                          <p className="mt-1 truncate text-xs text-slate-500">{signal.note}</p>
+                        </div>
+                        <p className="shrink-0 text-lg font-semibold tracking-tight text-slate-900">{signal.value}</p>
+                      </div>
+                      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                        <div className={`h-full rounded-full bg-gradient-to-r ${signal.color}`} style={{ width: `${signal.progress}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="min-w-0 space-y-3">
+              <div className="rounded-[28px] border border-slate-200/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] p-4 shadow-[0_22px_60px_-28px_rgba(15,23,42,0.3)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Workforce Total</p>
+                    <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-900">{workforceCompositionTotal}</p>
+                    <p className="mt-1 max-w-xs text-sm leading-6 text-slate-500">Employees represented in today&apos;s attendance mix.</p>
+                  </div>
 	                  <div className="shrink-0 rounded-full border border-slate-200/80 bg-white/90 px-3 py-1.5 text-xs font-semibold tracking-[0.16em] text-slate-500 uppercase shadow-[0_10px_24px_-18px_rgba(15,23,42,0.35)]">
 	                    Live Mix
 	                  </div>
 	                </div>
 	              </div>
-	              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-1">
-	                {workforceComposition.map((slice) => {
-	                  const percentage = workforceCompositionTotal ? Math.round((slice.value / workforceCompositionTotal) * 100) : 0;
-	                  return (
-	                    <div
-	                      key={`mix-${slice.key}`}
-	                      className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.32)]"
-	                    >
+              <div className="grid grid-cols-1 gap-3">
+                {workforceComposition.map((slice) => {
+                  const percentage = workforceCompositionTotal ? Math.round((slice.value / workforceCompositionTotal) * 100) : 0;
+                  return (
+                    <div
+                      key={`mix-${slice.key}`}
+                      className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] p-3.5 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.32)]"
+                    >
 	                      <div className="flex items-start justify-between gap-3">
 	                        <div className="min-w-0 flex-1">
 	                          <div className="flex items-center gap-2.5">
@@ -2050,11 +2140,11 @@ const Dashboard = () => {
 	                            />
 	                            <span className="text-sm font-semibold leading-5 text-slate-900 break-words">{slice.label}</span>
 	                          </div>
-	                          <div className="mt-3 flex items-end justify-between gap-3">
-	                            <div>
-	                              <p className="text-[28px] font-semibold leading-none tracking-tight text-slate-900">{slice.value}</p>
-	                              <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">Employees</p>
-	                            </div>
+                          <div className="mt-2.5 flex items-end justify-between gap-3">
+                            <div>
+                              <p className="text-[26px] font-semibold leading-none tracking-tight text-slate-900">{slice.value}</p>
+                              <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">Employees</p>
+                            </div>
 	                            <div className="shrink-0 text-right">
 	                              <p className="text-lg font-semibold leading-none text-slate-700">{percentage}%</p>
 	                              <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-400">Share</p>
@@ -2062,7 +2152,7 @@ const Dashboard = () => {
 	                          </div>
 	                        </div>
 	                      </div>
-	                      <div className="mt-4 h-2 rounded-full bg-slate-100">
+                      <div className="mt-3 h-2 rounded-full bg-slate-100">
 	                        <div
 	                          className="h-2 rounded-full"
 	                          style={{
@@ -2075,8 +2165,34 @@ const Dashboard = () => {
 	                    </div>
 	                  );
 	                })}
+                  {workforceFollowUpCards.map((card) => (
+                    <div
+                      key={`follow-up-${card.label}`}
+                      className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] p-3.5 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.32)]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className="h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-white"
+                              style={{ backgroundColor: card.color, boxShadow: `0 8px 20px -10px ${card.color}` }}
+                            />
+                            <span className="text-sm font-semibold leading-5 text-slate-900">{card.label}</span>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500">{card.note}</p>
+                        </div>
+                        <p className="shrink-0 text-[26px] font-semibold leading-none tracking-tight text-slate-900">{card.value}</p>
+                      </div>
+                      <div className="mt-3 h-2 rounded-full bg-slate-100">
+                        <div
+                          className={`h-2 rounded-full bg-gradient-to-r ${card.gradient}`}
+                          style={{ width: `${Math.min(100, Number(card.value || 0) * 20)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
 	              </div>
-	            </div>
+            </div>
           </div>
         </div>
 
@@ -2091,8 +2207,9 @@ const Dashboard = () => {
             </div>
             <Badge variant="outline">Live Split</Badge>
           </div>
-          <div className="space-y-4">
-            <ChartContainer config={chartConfig} className="h-[290px] w-full xl:h-[272px]">
+          <div className="flex h-full min-h-[820px] flex-col space-y-4">
+            <div className="rounded-[30px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.72))] p-4 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.32)]">
+            <ChartContainer config={chartConfig} className="h-[330px] w-full">
               <BarChart data={departmentChartData} barGap={8} barCategoryGap={22}>
                 <defs>
                   <linearGradient id="dept-present-gradient" x1="0" y1="0" x2="1" y2="0">
@@ -2126,6 +2243,30 @@ const Dashboard = () => {
                   content={
                     <ChartTooltipContent
                       labelFormatter={(_, payload) => String(payload?.[0]?.payload?.fullName || "")}
+                      formatter={(value, name) => {
+                        const seriesMeta = {
+                          present: { label: "Present", color: "#22c55e" },
+                          onLeave: { label: "On Leave", color: "#3b82f6" },
+                          absent: { label: "Absent", color: "#f97316" }
+                        } as const;
+                        const key = String(name || "") as keyof typeof seriesMeta;
+                        const meta = seriesMeta[key] || { label: String(name || ""), color: "#94a3b8" };
+
+                        return (
+                          <div className="flex w-full min-w-[120px] items-center justify-between gap-4">
+                            <span className="flex items-center gap-2 text-muted-foreground">
+                              <span
+                                className="h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: meta.color }}
+                              />
+                              {meta.label}
+                            </span>
+                            <span className="font-mono font-medium tabular-nums text-foreground">
+                              {Number(value || 0).toLocaleString()}
+                            </span>
+                          </div>
+                        );
+                      }}
                     />
                   }
                 />
@@ -2138,6 +2279,7 @@ const Dashboard = () => {
                 />
               </BarChart>
             </ChartContainer>
+            </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {departmentMixHighlights.map((item) => (
                 <div
@@ -2152,6 +2294,42 @@ const Dashboard = () => {
                   </div>
                 </div>
               ))}
+            </div>
+            <div className="min-h-0 flex-1 rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top_left,rgba(239,246,255,0.82),rgba(255,255,255,0.98)_38%,rgba(248,250,252,0.92)_100%)] p-5 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.34)]">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Department Coverage</p>
+                  <p className="text-xs text-slate-500">Top teams by live workforce status</p>
+                </div>
+                <div className="rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Filled Split
+                </div>
+              </div>
+              <div className="space-y-4">
+                {departmentCoverageRows.length === 0 && (
+                  <p className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-4 text-sm text-slate-500">No department data available.</p>
+                )}
+                {departmentCoverageRows.map((department) => (
+                  <div key={`coverage-${department.name}`} className="rounded-[22px] border border-white/80 bg-white/80 p-4 shadow-[0_18px_50px_-38px_rgba(15,23,42,0.38)]">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{department.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">{department.employees} employees</p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-right text-xs">
+                        <span className="text-emerald-600">{department.present} P</span>
+                        <span className="text-blue-600">{department.onLeave} L</span>
+                        <span className="text-orange-600">{department.absent} A</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full bg-gradient-to-r from-emerald-700 to-emerald-400" style={{ width: `${department.presentPct}%` }} />
+                      <div className="h-full bg-gradient-to-r from-blue-700 to-blue-400" style={{ width: `${department.leavePct}%` }} />
+                      <div className="h-full bg-gradient-to-r from-orange-700 to-orange-400" style={{ width: `${department.absentPct}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
