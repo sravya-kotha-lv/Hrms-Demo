@@ -46,9 +46,6 @@ const getWeekStart = (value: Date) => {
   return d;
 };
 
-const today = new Date();
-const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-const currentYear = today.getFullYear();
 
 type AttendanceDay = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
@@ -302,6 +299,9 @@ const captureSelfieFromCamera = async (): Promise<string | null> => {
 
 const EmployeeDashboard = () => {
   const navigate = useNavigate();
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const currentYear = today.getFullYear();
 
   const [weeklyStatus, setWeeklyStatus] = useState<string | null>(null);
   const [weeklyHours, setWeeklyHours] = useState<number>(0);

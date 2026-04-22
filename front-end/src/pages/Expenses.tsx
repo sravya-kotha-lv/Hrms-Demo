@@ -55,7 +55,7 @@ const paymentModeOptions = [
   { value: "other", label: "Other" }
 ];
 
-const emptyForm = {
+const makeEmptyForm = () => ({
   category: "assets",
   title: "",
   vendorId: "none",
@@ -71,7 +71,7 @@ const emptyForm = {
   reimbursementNote: "",
   notes: "",
   receiptUrl: ""
-};
+});
 
 const formatMoney = (value: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(value || 0));
@@ -130,7 +130,7 @@ const Expenses = () => {
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ ...emptyForm });
+  const [form, setForm] = useState(makeEmptyForm());
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
@@ -205,12 +205,11 @@ const Expenses = () => {
     );
 
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const thisMonth = (visibleRows || []).reduce(
       (acc, row) => {
-        const d = row.expenseDate ? new Date(row.expenseDate) : null;
-        if (!d || d.getMonth() !== currentMonth || d.getFullYear() !== currentYear) {
+        const dateKey = row.expenseDate ? String(row.expenseDate).slice(0, 7) : null;
+        if (!dateKey || dateKey !== currentMonthKey) {
           return acc;
         }
         const amount = Number(row.amount || 0);
@@ -330,7 +329,7 @@ const Expenses = () => {
   const openCreate = () => {
     setIsEdit(false);
     setEditingId(null);
-    setForm({ ...emptyForm });
+    setForm(makeEmptyForm());
     setOpen(true);
   };
 

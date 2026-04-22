@@ -120,7 +120,7 @@ const shiftDateKey = (dateKey: string, dayDelta: number) => {
 const normalizeEntries = (weekDates: Date[], rawEntries: WeeklyEntry[]) => {
   const byDate = new Map<string, WeeklyEntry>();
   (rawEntries || []).forEach((entry) => {
-    const key = toDateInput(new Date(entry.date));
+    const key = String(entry.date || "").slice(0, 10);
     if (!byDate.has(key)) {
       byDate.set(key, {
         date: key,
@@ -728,7 +728,7 @@ const Timesheets = () => {
       toast.success("Attendance request raised");
       setAttendanceRequestOpen(false);
       setAttendanceRequestForm({
-        date: toDateInput(new Date()),
+        date: toDateKeyInOrgTimeZone(new Date()),
         requestType: "missed_checkout",
         requestedCheckInTime: "",
         requestedCheckOutTime: "",

@@ -237,7 +237,7 @@ const toOrgDateKey = (value: string | number | Date) => {
 
 const shiftDateKey = (dateKey: string, deltaDays: number) => {
   const [year, month, day] = dateKey.split("-").map(Number);
-  const utc = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  const utc = new Date(Date.UTC(year, month - 1, day));
   utc.setUTCDate(utc.getUTCDate() + deltaDays);
   const y = utc.getUTCFullYear();
   const m = String(utc.getUTCMonth() + 1).padStart(2, "0");
