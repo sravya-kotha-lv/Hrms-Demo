@@ -20,10 +20,43 @@ const tableByScope = {
   employer_contribution: "employer_contribution_components"
 };
 
+const starterConstraintByScope = {
+  earning: "uq_earning_component_version",
+  deduction: "uq_deduction_component_version",
+  employer_contribution: "uq_employer_component_version"
+};
+
 const ensurePool = async () => {
   const pool = await getPayrollPgPool();
   if (!pool) throw { code: 400, message: "Payroll Postgres is not enabled" };
   return pool;
+};
+
+const isWizardComponentCreate = (payload = {}) =>
+  String(payload?.metadata?.wizardVersion || "").trim().toLowerCase() === "v1";
+
+const fetchExistingSalaryComponentByCode = async ({ client, tenantId, scope, code }) => {
+  const tableName = tableByScope[scope];
+  if (!tableName) return null;
+
+  const result = await client.query(
+    `
+      SELECT *
+      FROM ${tableName}
+      WHERE tenant_id = $1
+        AND code = $2
+      ORDER BY version_no DESC, effective_from DESC, created_at DESC
+      LIMIT 1
+    `,
+    [tenantId, code]
+  );
+
+  return result.rows[0] || null;
+};
+
+const isStarterPackComponent = (component) => {
+  const metadata = toJson(component?.metadata, {});
+  return metadata?.autoProvisioned === true || metadata?.starterPack === true;
 };
 
 const getOrgPayrollSettings = async (organizationId) =>
@@ -421,103 +454,123 @@ exports.createSalaryComponent = async (req) => {
     const tableName = tableByScope[payload.scope];
     if (!tableName) throw { code: 400, message: "Invalid component scope" };
 
-    let result;
-    if (payload.scope === "earning") {
-      result = await client.query(
-        `
-          INSERT INTO earning_components (
-            tenant_id, code, name, display_name, description, calculation_mode, taxable,
-            priority, pf_applicable, esi_applicable, prorate_with_attendance, rounding_policy,
-            effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
-          )
-          VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15::jsonb,$16,$16
-          )
-          RETURNING *
-        `,
-        [
-          tenantId,
-          payload.code,
-          payload.name,
-          payload.displayName || null,
-          payload.description || null,
-          payload.calculationMode,
-          payload.taxable ?? true,
-          payload.priority ?? 100,
-          payload.pfApplicable ?? false,
-          payload.esiApplicable ?? false,
-          payload.prorateWithAttendance ?? true,
-          payload.roundingPolicy || "nearest_rupee",
-          payload.effectiveFrom,
-          payload.effectiveTo || null,
-          JSON.stringify(payload.metadata || {}),
-          actorId
-        ]
-      );
-    } else if (payload.scope === "deduction") {
-      result = await client.query(
-        `
-          INSERT INTO deduction_components (
-            tenant_id, code, name, display_name, description, calculation_mode, taxable,
-            priority, is_statutory, employee_share_only, cap_amount, rounding_policy,
-            effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
-          )
-          VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15::jsonb,$16,$16
-          )
-          RETURNING *
-        `,
-        [
-          tenantId,
-          payload.code,
-          payload.name,
-          payload.displayName || null,
-          payload.description || null,
-          payload.calculationMode,
-          payload.taxable ?? false,
-          payload.priority ?? 100,
-          payload.isStatutory ?? false,
-          payload.employeeShareOnly ?? true,
-          payload.capAmount ?? null,
-          payload.roundingPolicy || "nearest_rupee",
-          payload.effectiveFrom,
-          payload.effectiveTo || null,
-          JSON.stringify(payload.metadata || {}),
-          actorId
-        ]
-      );
-    } else {
-      result = await client.query(
-        `
-          INSERT INTO employer_contribution_components (
-            tenant_id, code, name, display_name, description, calculation_mode, priority,
-            contributes_to_ctc, linked_deduction_code, rounding_policy,
-            effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
-          )
-          VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,1,true,$13::jsonb,$14,$14
-          )
-          RETURNING *
-        `,
-        [
-          tenantId,
-          payload.code,
-          payload.name,
-          payload.displayName || null,
-          payload.description || null,
-          payload.calculationMode,
-          payload.priority ?? 100,
-          payload.contributesToCtc ?? true,
-          payload.linkedDeductionCode || null,
-          payload.roundingPolicy || "nearest_rupee",
-          payload.effectiveFrom,
-          payload.effectiveTo || null,
-          JSON.stringify(payload.metadata || {}),
-          actorId
-        ]
-      );
+    try {
+      let result;
+      if (payload.scope === "earning") {
+        result = await client.query(
+          `
+            INSERT INTO earning_components (
+              tenant_id, code, name, display_name, description, calculation_mode, taxable,
+              priority, pf_applicable, esi_applicable, prorate_with_attendance, rounding_policy,
+              effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
+            )
+            VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15::jsonb,$16,$16
+            )
+            RETURNING *
+          `,
+          [
+            tenantId,
+            payload.code,
+            payload.name,
+            payload.displayName || null,
+            payload.description || null,
+            payload.calculationMode,
+            payload.taxable ?? true,
+            payload.priority ?? 100,
+            payload.pfApplicable ?? false,
+            payload.esiApplicable ?? false,
+            payload.prorateWithAttendance ?? true,
+            payload.roundingPolicy || "nearest_rupee",
+            payload.effectiveFrom,
+            payload.effectiveTo || null,
+            JSON.stringify(payload.metadata || {}),
+            actorId
+          ]
+        );
+      } else if (payload.scope === "deduction") {
+        result = await client.query(
+          `
+            INSERT INTO deduction_components (
+              tenant_id, code, name, display_name, description, calculation_mode, taxable,
+              priority, is_statutory, employee_share_only, cap_amount, rounding_policy,
+              effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
+            )
+            VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15::jsonb,$16,$16
+            )
+            RETURNING *
+          `,
+          [
+            tenantId,
+            payload.code,
+            payload.name,
+            payload.displayName || null,
+            payload.description || null,
+            payload.calculationMode,
+            payload.taxable ?? false,
+            payload.priority ?? 100,
+            payload.isStatutory ?? false,
+            payload.employeeShareOnly ?? true,
+            payload.capAmount ?? null,
+            payload.roundingPolicy || "nearest_rupee",
+            payload.effectiveFrom,
+            payload.effectiveTo || null,
+            JSON.stringify(payload.metadata || {}),
+            actorId
+          ]
+        );
+      } else {
+        result = await client.query(
+          `
+            INSERT INTO employer_contribution_components (
+              tenant_id, code, name, display_name, description, calculation_mode, priority,
+              contributes_to_ctc, linked_deduction_code, rounding_policy,
+              effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
+            )
+            VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,1,true,$13::jsonb,$14,$14
+            )
+            RETURNING *
+          `,
+          [
+            tenantId,
+            payload.code,
+            payload.name,
+            payload.displayName || null,
+            payload.description || null,
+            payload.calculationMode,
+            payload.priority ?? 100,
+            payload.contributesToCtc ?? true,
+            payload.linkedDeductionCode || null,
+            payload.roundingPolicy || "nearest_rupee",
+            payload.effectiveFrom,
+            payload.effectiveTo || null,
+            JSON.stringify(payload.metadata || {}),
+            actorId
+          ]
+        );
+      }
+      return result.rows[0];
+    } catch (error) {
+      const isExpectedDuplicate =
+        error?.code === "23505" && error?.constraint === starterConstraintByScope[payload.scope];
+      if (!isExpectedDuplicate || !isWizardComponentCreate(payload)) {
+        throw error;
+      }
+
+      const existing = await fetchExistingSalaryComponentByCode({
+        client,
+        tenantId,
+        scope: payload.scope,
+        code: payload.code
+      });
+      if (!existing || !isStarterPackComponent(existing)) {
+        throw error;
+      }
+
+      return existing;
     }
-    return result.rows[0];
   } finally {
     client.release();
   }

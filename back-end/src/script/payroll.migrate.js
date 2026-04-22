@@ -8,6 +8,7 @@ const {
   getAppliedMigrations,
   loadMigrations,
   migrateUp,
+  runStatements,
   withAdvisoryLock
 } = require("../modules/payroll/payrollSchema.service");
 

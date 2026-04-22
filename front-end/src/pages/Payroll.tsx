@@ -200,6 +200,7 @@ const Payroll = () => {
   const [payslipOpen, setPayslipOpen] = useState(false);
   const [payslipData, setPayslipData] = useState<PayslipData | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardPayGroupId, setWizardPayGroupId] = useState("");
   const [payGroups, setPayGroups] = useState<PayGroup[]>([]);
   const [payGroupDialogOpen, setPayGroupDialogOpen] = useState(false);
   const [payGroupForm, setPayGroupForm] = useState<PayGroupForm>(emptyPayGroupForm);
@@ -585,6 +586,11 @@ const Payroll = () => {
     setPayGroupDialogOpen(true);
   };
 
+  const openSetupWizardForPayGroup = (payGroupId: string) => {
+    setWizardPayGroupId(payGroupId);
+    setWizardOpen(true);
+  };
+
   const openEditPayGroup = (group: PayGroup) => {
     const basicPercent =
       group?.metadata?.salaryRules?.basicPercent ??
@@ -706,13 +712,6 @@ const Payroll = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setWizardOpen(true)}
-            disabled={!canManageConfig || !payrollReady}
-          >
-            Setup Wizard
-          </Button>
           <Button onClick={onGenerateSnapshot} disabled={!canCreateRun || !!loadingAction || !payrollReady}>
             Generate Snapshot
           </Button>
@@ -784,6 +783,14 @@ const Payroll = () => {
                       )}
                     </TableCell>
                     <TableCell className="text-right space-x-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openSetupWizardForPayGroup(group.id)}
+                        disabled={!payrollReady}
+                      >
+                        Setup Wizard
+                      </Button>
                       <Button size="sm" variant="outline" onClick={() => openEditPayGroup(group)}>
                         Edit
                       </Button>
@@ -1164,8 +1171,12 @@ const Payroll = () => {
 
       <PayrollSetupWizard
         open={wizardOpen}
-        onOpenChange={setWizardOpen}
+        onOpenChange={(open) => {
+          setWizardOpen(open);
+          if (!open) setWizardPayGroupId("");
+        }}
         initialSettings={settings}
+        preferredPayGroupId={wizardPayGroupId}
         payrollCutoffDay={Number(settings?.payrollCutoffDay || 25)}
         onActivated={() => {
           loadSettings();

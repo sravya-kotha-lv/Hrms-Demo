@@ -154,5 +154,6 @@ module.exports = {
   loadMigrations,
   migrateUp,
   ensurePayrollSchema,
+  runStatements,
   withAdvisoryLock
 };

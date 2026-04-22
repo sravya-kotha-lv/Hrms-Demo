@@ -62,12 +62,34 @@ type PayGroupOption = {
   pay_frequency: string;
   salary_pay_day: number;
   is_active: boolean;
+  metadata?: Record<string, any>;
+};
+
+type PayrollSettingsPayload = {
+  default_pay_group_id?: string | null;
+  defaultPayGroupId?: string | null;
+  attendance_lock_mode?: "payroll_cutoff" | "days_window";
+  attendance_lock_after_days?: number;
+  lop_calculation_method?: "calendar_days" | "working_days";
+  default_working_days?: number;
+  enable_proration?: boolean;
+  metadata?: Record<string, any>;
+};
+
+type SalaryComponentPayload = {
+  scope: ComponentDraft["scope"];
+  code?: string;
+  name?: string;
+  calculation_mode?: ComponentDraft["calculationMode"];
+  taxable?: boolean;
+  metadata?: Record<string, any>;
 };
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialSettings?: any;
+  preferredPayGroupId?: string;
   payrollCutoffDay?: number;
   onActivated?: () => void;
 };
@@ -116,6 +138,15 @@ const FORMULA_PRESETS = [
     help: "Useful when TA is derived from Basic and HRA."
   }
 ] as const;
+
+const STARTER_FORMULA_BY_CODE: Record<string, string> = {
+  BASIC: "BASIC_PAY",
+  HRA: "round(BASIC_PAY * HRA_PERCENT_OF_BASIC / 100)",
+  VARIABLE: "VARIABLE_PAY",
+  EPF: "round(min(BASIC_PAY, 15000) * 0.12)",
+  ESI: "round(ESI_AMOUNT)",
+  EMPLOYER_EPF: "round(EMPLOYER_EPF)"
+};
 
 const TELANGANA_DEFAULT_TEMPLATE: PayrollTemplate = {
   id: "telangana_standard_monthly_v1",
@@ -290,23 +321,87 @@ const getRuleStatusClass = (status: TelanganaRuleItem["status"]) => {
   return "bg-blue-100 text-blue-700";
 };
 
+const buildPayGroupState = (
+  settings?: PayrollSettingsPayload,
+  preferredPayGroupId?: string,
+  availablePayGroups: PayGroupOption[] = []
+) => {
+  const defaultPayGroupId = String(
+    preferredPayGroupId ||
+      settings?.default_pay_group_id ||
+      settings?.defaultPayGroupId ||
+      ""
+  );
+  const matchedPayGroup = availablePayGroups.find((group) => group.id === defaultPayGroupId);
+
+  return {
+    defaultPayGroupId,
+    payFrequency: String(matchedPayGroup?.pay_frequency || "monthly"),
+    salaryPayDay: String(matchedPayGroup?.salary_pay_day || 30)
+  };
+};
+
+const buildStatutoryState = (settings?: PayrollSettingsPayload) => {
+  const statutory = settings?.metadata?.statutory || {};
+  return {
+    enablePf: typeof statutory.enablePf === "boolean" ? statutory.enablePf : true,
+    enableEsi: typeof statutory.enableEsi === "boolean" ? statutory.enableEsi : true,
+    enablePt: typeof statutory.enablePt === "boolean" ? statutory.enablePt : true,
+    enableLwf: typeof statutory.enableLwf === "boolean" ? statutory.enableLwf : false,
+    pfWageThreshold: String(statutory.pfWageThreshold || "15000"),
+    esiWageThreshold: String(statutory.esiWageThreshold || "21000"),
+    stateCode: String(statutory.stateCode || "TS")
+  };
+};
+
+const buildAttendanceRulesState = (settings?: PayrollSettingsPayload) => ({
+  attendanceLockMode: (settings?.attendance_lock_mode || "payroll_cutoff") as
+    | "payroll_cutoff"
+    | "days_window",
+  attendanceLockAfterDays: String(settings?.attendance_lock_after_days || 7),
+  lopCalculationMethod: (settings?.lop_calculation_method || "calendar_days") as
+    | "calendar_days"
+    | "working_days",
+  defaultWorkingDays: String(settings?.default_working_days || 30),
+  enableProration:
+    typeof settings?.enable_proration === "boolean" ? settings.enable_proration : true
+});
+
+const mapComponentToDraft = (component: SalaryComponentPayload): ComponentDraft => {
+  const metadata = component?.metadata || {};
+  const code = String(component?.code || "").toUpperCase();
+  const formulaExpression = String(
+    metadata.expression || STARTER_FORMULA_BY_CODE[code] || ""
+  );
+  return {
+    scope: component.scope,
+    code,
+    name: String(component?.name || ""),
+    calculationMode: (component?.calculation_mode || "fixed") as ComponentDraft["calculationMode"],
+    taxable: Boolean(component?.taxable),
+    amount: String(
+      metadata.monthlyAmount ?? metadata.amount ?? metadata.defaultAmount ?? metadata.percentage ?? ""
+    ),
+    percentageOf: String(metadata.base || "MONTHLY_GROSS"),
+    formulaTemplate:
+      FORMULA_PRESETS.find((preset) => preset.expression === formulaExpression)?.id || "custom",
+    formulaExpression
+  };
+};
+
 export const PayrollSetupWizard = ({
   open,
   onOpenChange,
   initialSettings,
+  preferredPayGroupId,
   payrollCutoffDay = 25,
   onActivated
 }: Props) => {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [loadingExistingSetup, setLoadingExistingSetup] = useState(false);
 
-  const [payGroup, setPayGroup] = useState({
-    defaultPayGroupId: String(
-      initialSettings?.default_pay_group_id || initialSettings?.defaultPayGroupId || ""
-    ),
-    payFrequency: "monthly",
-    salaryPayDay: "30"
-  });
+  const [payGroup, setPayGroup] = useState(buildPayGroupState(initialSettings, preferredPayGroupId));
 
   const [components, setComponents] = useState<ComponentDraft[]>([defaultComponent()]);
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
@@ -314,30 +409,9 @@ export const PayrollSetupWizard = ({
   const [availablePayGroups, setAvailablePayGroups] = useState<PayGroupOption[]>([]);
   const [loadingPayGroups, setLoadingPayGroups] = useState(false);
 
-  const [statutory, setStatutory] = useState({
-    enablePf: true,
-    enableEsi: true,
-    enablePt: true,
-    enableLwf: false,
-    pfWageThreshold: "15000",
-    esiWageThreshold: "21000",
-    stateCode: "TS"
-  });
+  const [statutory, setStatutory] = useState(buildStatutoryState(initialSettings));
 
-  const [attendanceRules, setAttendanceRules] = useState({
-    attendanceLockMode: (initialSettings?.attendance_lock_mode || "payroll_cutoff") as
-      | "payroll_cutoff"
-      | "days_window",
-    attendanceLockAfterDays: String(initialSettings?.attendance_lock_after_days || 7),
-    lopCalculationMethod: (initialSettings?.lop_calculation_method || "calendar_days") as
-      | "calendar_days"
-      | "working_days",
-    defaultWorkingDays: String(initialSettings?.default_working_days || 30),
-    enableProration:
-      typeof initialSettings?.enable_proration === "boolean"
-        ? initialSettings.enable_proration
-        : true
-  });
+  const [attendanceRules, setAttendanceRules] = useState(buildAttendanceRulesState(initialSettings));
 
   const activeComponentCount = useMemo(
     () => components.filter((c) => c.code.trim() && c.name.trim()).length,
@@ -350,6 +424,20 @@ export const PayrollSetupWizard = ({
       .filter(Boolean);
     return [...new Set(["MONTHLY_GROSS", ...codes])];
   }, [components]);
+
+  useEffect(() => {
+    if (!open) return;
+    setPayGroup((prev) => ({
+      ...prev,
+      defaultPayGroupId: String(
+        preferredPayGroupId ||
+          initialSettings?.default_pay_group_id ||
+          initialSettings?.defaultPayGroupId ||
+          prev.defaultPayGroupId ||
+          ""
+      )
+    }));
+  }, [open, preferredPayGroupId, initialSettings]);
 
   useEffect(() => {
     if (!open) return;
@@ -366,14 +454,6 @@ export const PayrollSetupWizard = ({
         if (res?.success) {
           const rows = Array.isArray(res.data) ? res.data : [];
           setAvailablePayGroups(rows);
-          setPayGroup((prev) => {
-            if (prev.defaultPayGroupId.trim()) return prev;
-            if (!rows[0]?.id) return prev;
-            return {
-              ...prev,
-              defaultPayGroupId: String(rows[0].id)
-            };
-          });
           return;
         }
 
@@ -390,6 +470,61 @@ export const PayrollSetupWizard = ({
       active = false;
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+
+    const loadExistingSetup = async () => {
+      setLoadingExistingSetup(true);
+      try {
+        const [settingsRes, earningsRes, deductionsRes, employerRes] = await Promise.all([
+          getApiWithToken("/payroll/settings", null, {
+            requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+          }),
+          getApiWithToken("/payroll/salary-components?scope=earning", null, {
+            requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+          }),
+          getApiWithToken("/payroll/salary-components?scope=deduction", null, {
+            requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+          }),
+          getApiWithToken("/payroll/salary-components?scope=employer_contribution", null, {
+            requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+          })
+        ]);
+
+        if (!active) return;
+
+        const nextSettings = settingsRes?.success ? settingsRes.data : initialSettings;
+        const allComponents = [
+          ...(Array.isArray(earningsRes?.data)
+            ? earningsRes.data.map((item: SalaryComponentPayload) => ({ ...item, scope: "earning" as const }))
+            : []),
+          ...(Array.isArray(deductionsRes?.data)
+            ? deductionsRes.data.map((item: SalaryComponentPayload) => ({ ...item, scope: "deduction" as const }))
+            : []),
+          ...(Array.isArray(employerRes?.data)
+            ? employerRes.data.map((item: SalaryComponentPayload) => ({
+                ...item,
+                scope: "employer_contribution" as const
+              }))
+            : [])
+        ];
+
+        setPayGroup(buildPayGroupState(nextSettings, preferredPayGroupId, availablePayGroups));
+        setStatutory(buildStatutoryState(nextSettings));
+        setAttendanceRules(buildAttendanceRulesState(nextSettings));
+        setComponents(allComponents.length ? allComponents.map(mapComponentToDraft) : [defaultComponent()]);
+      } finally {
+        if (active) setLoadingExistingSetup(false);
+      }
+    };
+
+    loadExistingSetup();
+    return () => {
+      active = false;
+    };
+  }, [open, preferredPayGroupId, initialSettings, availablePayGroups]);
 
   const canNext = () => {
     if (step === 0) return Boolean(payGroup.defaultPayGroupId.trim()) && isPayGroupIdValid;
@@ -465,14 +600,17 @@ export const PayrollSetupWizard = ({
           metadata:
             component.calculationMode === "percentage"
               ? {
+                  wizardVersion: "v1",
                   base: component.percentageOf || "MONTHLY_GROSS",
                   percentage: Number(component.amount || 0)
                 }
               : component.calculationMode === "formula"
                 ? {
+                    wizardVersion: "v1",
                     expression: component.formulaExpression || "0"
                   }
                 : {
+                    wizardVersion: "v1",
                     monthlyAmount: Number(component.amount || 0)
                   }
         };
@@ -623,6 +761,9 @@ export const PayrollSetupWizard = ({
 
         {step === 1 && (
           <div className="space-y-3">
+            {loadingExistingSetup && (
+              <p className="text-sm text-muted-foreground">Loading existing payroll setup...</p>
+            )}
             <p className="text-sm text-muted-foreground">
               Add salary components in simple words. Example: Basic, HRA, PF, TDS.
             </p>
