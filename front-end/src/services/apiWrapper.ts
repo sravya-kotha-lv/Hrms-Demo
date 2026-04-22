@@ -218,6 +218,7 @@ export const getApiWithToken = async (
         rememberRecentGetResponse(cacheKey, response.data);
         return response.data;
       })
+      .catch((error) => normalizeApiError(error))
       .finally(() => {
         inflightGetRequests.delete(cacheKey);
       });
@@ -288,6 +289,7 @@ export const getApiWithOutToken = async (apiUrl: string) => {
         rememberRecentGetResponse(cacheKey, response.data);
         return response.data;
       })
+      .catch((error) => normalizeApiError(error))
       .finally(() => {
         inflightGetRequests.delete(cacheKey);
       });

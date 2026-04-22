@@ -36,6 +36,7 @@ const OrganizationSettings = () => {
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [maxActiveLoginsPerUser, setMaxActiveLoginsPerUser] = useState(1);
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
+  const [payrollEnabled, setPayrollEnabled] = useState(false);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
   const [attendanceAllowedIp, setAttendanceAllowedIp] = useState("");
@@ -77,6 +78,7 @@ const OrganizationSettings = () => {
       setPayrollCutoffDay(
         typeof res.data?.payrollCutoffDay === "number" ? res.data.payrollCutoffDay : 25
       );
+      setPayrollEnabled(Boolean(res.data?.payrollEnabled));
       setMinWorkHoursPerDay(
         typeof res.data?.minWorkHoursPerDay === "number" ? res.data.minWorkHoursPerDay : 8
       );
@@ -136,6 +138,7 @@ const OrganizationSettings = () => {
         timezone,
         maxActiveLoginsPerUser: Number(maxActiveLoginsPerUser || 1),
         payrollCutoffDay: Number(payrollCutoffDay),
+        payrollEnabled,
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours),
         attendanceIpEnabled: attendanceCheckInMode === "ip",
@@ -188,7 +191,7 @@ const OrganizationSettings = () => {
                 Settings Console
               </h2>
               <p className="mt-1 text-sm text-slate-600">
-                Configure leave, attendance rules, and check-in policies from one place.
+                Configure leave, attendance rules, payroll defaults, and check-in policies from one place.
               </p>
             </div>
             <div className="rounded-xl border border-white/70 bg-white/75 px-4 py-3 text-sm text-slate-700 backdrop-blur">
@@ -206,7 +209,7 @@ const OrganizationSettings = () => {
           <section className="rounded-2xl border border-slate-200 bg-card p-5 card-shadow transition-all duration-300 hover:shadow-lg">
             <div className="mb-4 flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-indigo-600" />
-              <h3 className="text-base font-semibold text-slate-900">Leave and Employment Policy</h3>
+              <h3 className="text-base font-semibold text-slate-900">Leave Policy</h3>
             </div>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -244,6 +247,23 @@ const OrganizationSettings = () => {
                 </Select>
               </div>
 
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <Checkbox
+                  checked={sandwichRuleEnabled}
+                  onCheckedChange={(value) => setSandwichRuleEnabled(Boolean(value))}
+                  disabled={!canManage}
+                />
+                <span>Enable sandwich rule (count week-offs/holidays between leave dates)</span>
+              </label>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-card p-5 card-shadow transition-all duration-300 hover:shadow-lg">
+            <div className="mb-4 flex items-center gap-2">
+              <Clock3 className="h-5 w-5 text-cyan-600" />
+              <h3 className="text-base font-semibold text-slate-900">Employment Defaults</h3>
+            </div>
+            <div className="space-y-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Probation Period (Days)</label>
@@ -285,22 +305,13 @@ const OrganizationSettings = () => {
               <p className="text-xs text-muted-foreground">
                 Probation is auto-completed after the configured days. Notice period is used when moving an employee to notice.
               </p>
-
-              <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                <Checkbox
-                  checked={sandwichRuleEnabled}
-                  onCheckedChange={(value) => setSandwichRuleEnabled(Boolean(value))}
-                  disabled={!canManage}
-                />
-                <span>Enable sandwich rule (count week-offs/holidays between leave dates)</span>
-              </label>
             </div>
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-card p-5 card-shadow transition-all duration-300 hover:shadow-lg">
             <div className="mb-4 flex items-center gap-2">
-              <Clock3 className="h-5 w-5 text-cyan-600" />
-              <h3 className="text-base font-semibold text-slate-900">Workday and Lock Rules</h3>
+              <Clock3 className="h-5 w-5 text-sky-600" />
+              <h3 className="text-base font-semibold text-slate-900">Attendance Rules</h3>
             </div>
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -332,44 +343,6 @@ const OrganizationSettings = () => {
               <p className="text-xs text-muted-foreground">
                 Hours below half-day threshold are treated as invalid on timesheet submission.
               </p>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Organization Timezone</label>
-                <Select
-                  value={timezone}
-                  onValueChange={setTimezone}
-                  disabled={!canManage}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select timezone" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIMEZONE_OPTIONS.map((tz) => (
-                      <SelectItem key={tz} value={tz}>
-                        {tz}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Attendance boundaries use this timezone. Timestamps remain stored in UTC.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Max Active Logins Per User</label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={maxActiveLoginsPerUser}
-                  onChange={(e) => setMaxActiveLoginsPerUser(Number(e.target.value))}
-                  disabled={!canManage}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Limits how many devices a user can stay logged into at the same time for this organization.
-                </p>
-              </div>
 
               <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                 <Checkbox
@@ -409,22 +382,87 @@ const OrganizationSettings = () => {
                     placeholder="Ex: 7"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Payroll Cutoff Day</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={payrollCutoffDay}
-                    onChange={(e) => setPayrollCutoffDay(Number(e.target.value))}
-                    disabled={!canManage || !attendanceLockEnabled || attendanceLockMode !== "payroll_cutoff"}
-                    placeholder="Ex: 25"
-                  />
-                </div>
               </div>
-              <p className="text-xs text-muted-foreground">
-                In payroll cutoff mode, editable attendance starts from cutoff+1 day of the current cycle.
-              </p>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-card p-5 card-shadow transition-all duration-300 hover:shadow-lg">
+            <div className="mb-4 flex items-center gap-2">
+              <Clock3 className="h-5 w-5 text-emerald-600" />
+              <h3 className="text-base font-semibold text-slate-900">Payroll Settings</h3>
+            </div>
+            <div className="space-y-4">
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <Checkbox
+                  checked={payrollEnabled}
+                  onCheckedChange={(value) => setPayrollEnabled(Boolean(value))}
+                  disabled={!canManage}
+                />
+                <span>
+                  Enable payroll for this organization and auto-provision payroll setup.
+                </span>
+              </label>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Payroll Cutoff Day</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={payrollCutoffDay}
+                  onChange={(e) => setPayrollCutoffDay(Number(e.target.value))}
+                  disabled={!canManage}
+                  placeholder="Ex: 25"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This is the single payroll cutoff used for attendance lock rules and payroll setup defaults.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-card p-5 card-shadow transition-all duration-300 hover:shadow-lg lg:col-span-2">
+            <div className="mb-4 flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-violet-600" />
+              <h3 className="text-base font-semibold text-slate-900">Organization Access and Timezone</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Max Active Logins Per User</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={maxActiveLoginsPerUser}
+                  onChange={(e) => setMaxActiveLoginsPerUser(Number(e.target.value))}
+                  disabled={!canManage}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Limits how many devices a user can stay logged into at the same time for this organization.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Organization Timezone</label>
+                <Select
+                  value={timezone}
+                  onValueChange={setTimezone}
+                  disabled={!canManage}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select timezone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIMEZONE_OPTIONS.map((tz) => (
+                      <SelectItem key={tz} value={tz}>
+                        {tz}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Attendance boundaries use this timezone. Timestamps remain stored in UTC.
+                </p>
+              </div>
             </div>
           </section>
         </div>

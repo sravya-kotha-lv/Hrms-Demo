@@ -2,6 +2,7 @@ const OrgSettings = require("./orgSettings.model");
 const Organization = require("../organizations/organization.model");
 const { isValidTimeZone } = require("../../utils/timezone");
 const { getDefaultMaxActiveLoginsPerUser } = require("../../utils/orgSettingsDefaults");
+const { ensurePayrollTenantAndDefaults } = require("../payroll/payrollProvisioning.service");
 
 const DEFAULT_MAX_ACTIVE_LOGINS_PER_USER = getDefaultMaxActiveLoginsPerUser();
 
@@ -14,6 +15,7 @@ const DEFAULTS = {
   attendanceLockMode: "payroll_cutoff",
   timezone: "Asia/Kolkata",
   payrollCutoffDay: 25,
+  payrollEnabled: false,
   minWorkHoursPerDay: 8,
   minHalfDayHours: 4,
   attendanceIpEnabled: false,
@@ -81,6 +83,7 @@ exports.upsert = async (req) => {
     attendanceLockMode,
     timezone,
     payrollCutoffDay,
+    payrollEnabled,
     minWorkHoursPerDay,
     minHalfDayHours,
     attendanceIpEnabled,
@@ -143,6 +146,7 @@ exports.upsert = async (req) => {
       attendanceLockMode,
       timezone,
       payrollCutoffDay,
+      payrollEnabled,
       minWorkHoursPerDay,
       minHalfDayHours,
       attendanceIpEnabled,
@@ -162,6 +166,14 @@ exports.upsert = async (req) => {
   );
 
   await Organization.findByIdAndUpdate(req.user.organizationId, { timezone });
+
+  if (settings.payrollEnabled) {
+    await ensurePayrollTenantAndDefaults({
+      organizationId: req.user.organizationId,
+      actorId: req.user.userId,
+      orgSettings: settings.toObject ? settings.toObject() : settings
+    });
+  }
 
   return settings;
 };

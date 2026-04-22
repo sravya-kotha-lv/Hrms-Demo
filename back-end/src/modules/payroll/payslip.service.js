@@ -1,6 +1,7 @@
 const { getPayrollPgPool } = require("../../config/payrollDb");
 const Employee = require("../employees/employee.model");
 const Organization = require("../organizations/organization.model");
+const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -364,8 +365,9 @@ exports.getPayslipByRun = async (req) => {
 
   const client = await pool.connect();
   try {
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const { runId, employeeExternalId } = req.params;
     const context = await fetchRunContext(client, tenantId, runId, employeeExternalId);
@@ -392,8 +394,9 @@ exports.getPayslipByMonth = async (req) => {
 
   const client = await pool.connect();
   try {
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const { month, employeeExternalId } = req.query;
     const runResult = await client.query(

@@ -38,7 +38,7 @@ type GraphDefinition = { title: string; description: string; weekly: TrendPoint[
 
 const shiftDateKey = (dateKey: string, deltaDays: number) => {
   const [year, month, day] = dateKey.split("-").map(Number);
-  const utc = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  const utc = new Date(Date.UTC(year, month - 1, day));
   utc.setUTCDate(utc.getUTCDate() + deltaDays);
   return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, "0")}-${String(utc.getUTCDate()).padStart(2, "0")}`;
 };
@@ -251,10 +251,13 @@ const DashboardGraphDetails = () => {
   const backTarget = (location.state as { from?: string } | null)?.from || "/dashboard";
   const sumSeries = (points: TrendPoint[]) =>
     points.reduce((acc, point) => acc + definition.series.reduce((sum, series) => sum + Number(point[series.key] || 0), 0), 0);
-  const peakPoint = (points: TrendPoint[]) =>
-    [...points].sort((a, b) =>
-      definition.series.reduce((sum, series) => sum + Number(b[series.key] || 0), 0)
-      - definition.series.reduce((sum, series) => sum + Number(a[series.key] || 0), 0))[0];
+  const peakPoint = (points: TrendPoint[]) => {
+    const withSums = points.map((point) => ({
+      point,
+      sum: definition.series.reduce((s, series) => s + Number(point[series.key] || 0), 0)
+    }));
+    return withSums.sort((a, b) => b.sum - a.sum)[0]?.point;
+  };
 
   return (
     <MainLayout title={definition.title} breadcrumb={[{ label: "Home", href: "/" }, { label: "Dashboard", href: "/dashboard" }, { label: definition.title }]}>

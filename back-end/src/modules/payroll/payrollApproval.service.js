@@ -1,5 +1,6 @@
 const { getPayrollPgPool } = require("../../config/payrollDb");
 const { safeRollback } = require("./payrollTx");
+const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
 
 const getTenantId = async (client, organizationId) => {
   const result = await client.query(
@@ -128,8 +129,9 @@ exports.submitForApproval = async (req) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const run = await getRunForUpdate(client, tenantId, req.params.runId);
     if (!run) throw { code: 404, message: "Payroll run not found" };
@@ -177,8 +179,9 @@ exports.approveRun = async (req) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const run = await getRunForUpdate(client, tenantId, req.params.runId);
     if (!run) throw { code: 404, message: "Payroll run not found" };
@@ -238,8 +241,9 @@ exports.rejectRun = async (req) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const run = await getRunForUpdate(client, tenantId, req.params.runId);
     if (!run) throw { code: 404, message: "Payroll run not found" };
@@ -297,8 +301,9 @@ exports.lockRun = async (req) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const run = await getRunForUpdate(client, tenantId, req.params.runId);
     if (!run) throw { code: 404, message: "Payroll run not found" };
@@ -349,8 +354,9 @@ exports.reopenRun = async (req) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const run = await getRunForUpdate(client, tenantId, req.params.runId);
     if (!run) throw { code: 404, message: "Payroll run not found" };
@@ -398,8 +404,9 @@ exports.listRunAuditEntries = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const result = await client.query(
       `

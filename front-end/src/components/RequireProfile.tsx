@@ -79,7 +79,7 @@ const RequireProfile = ({ children }: RequireProfileProps) => {
     };
 
     run();
-  }, [profileCheckKey, location.pathname, navigate, isSuperAdmin, hasAnyPermission, profile?.roles]);
+  }, [profileCheckKey, location.pathname, navigate, isSuperAdmin, hasAnyPermission, profile]);
 
   if (loading) return <PageLoader label="Preparing your workspace..." />;
 
