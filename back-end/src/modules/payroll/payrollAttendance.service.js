@@ -8,6 +8,7 @@ const Holiday = require("../holidays/holiday.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
 const Organization = require("../organizations/organization.model");
 const { getPayrollPgPool } = require("../../config/payrollDb");
+const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
 const {
   parseMonthRangeInTimeZone,
   toDateKeyInTimeZone,
@@ -407,14 +408,9 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
   try {
     await client.query("BEGIN");
 
-    const tenantId = await getTenantIdByOrganization(client, organizationId);
-    if (!tenantId) {
-      throw {
-        code: 400,
-        message:
-          "Payroll tenant not found for this organization. Create payroll_tenants row before generating snapshots."
-      };
-    }
+    const tenantId = await getTenantIdForOrganization(client, organizationId, {
+      actorId: req.user.userId
+    });
 
     if (forceRebuild && employeeIdStrings.length) {
       await client.query(
@@ -639,14 +635,9 @@ exports.listMonthlyAttendanceSnapshots = async (req) => {
 
   const client = await pool.connect();
   try {
-    const tenantId = await getTenantIdByOrganization(client, organizationId);
-    if (!tenantId) {
-      throw {
-        code: 400,
-        message:
-          "Payroll tenant not found for this organization. Create payroll_tenants row before fetching snapshots."
-      };
-    }
+    const tenantId = await getTenantIdForOrganization(client, organizationId, {
+      actorId: req.user.userId
+    });
 
     const values = [tenantId, month];
     let filterClause = "";

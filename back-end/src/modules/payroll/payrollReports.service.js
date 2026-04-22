@@ -1,4 +1,5 @@
 const { getPayrollPgPool } = require("../../config/payrollDb");
+const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -82,8 +83,9 @@ exports.getPayrollRegister = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const runs = await resolveRuns(client, tenantId, req.query);
     const runIds = runs.map((r) => r.id);
@@ -152,8 +154,9 @@ exports.getBankTransferExport = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const runs = await resolveRuns(client, tenantId, req.query);
     const runIds = runs.map((r) => r.id);
@@ -241,8 +244,9 @@ exports.getDeductionSummary = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const runs = await resolveRuns(client, tenantId, req.query);
     const runIds = runs.map((r) => r.id);
@@ -292,8 +296,9 @@ exports.getEmployerContributionSummary = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const runs = await resolveRuns(client, tenantId, req.query);
     const runIds = runs.map((r) => r.id);
@@ -340,8 +345,9 @@ exports.getCostCenterTotals = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await getTenantId(client, req.user.organizationId);
-    if (!tenantId) throw { code: 400, message: "Payroll tenant not found for organization" };
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const runs = await resolveRuns(client, tenantId, req.query);
     const runIds = runs.map((r) => r.id);

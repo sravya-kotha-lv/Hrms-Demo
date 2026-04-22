@@ -1,6 +1,8 @@
 const { getPayrollPgPool } = require("../../config/payrollDb");
 const { safeRollback } = require("./payrollTx");
 const Employee = require("../employees/employee.model");
+const OrgSettings = require("../orgSettings/orgSettings.model");
+const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
 
 const toJson = (value, fallback = {}) => {
   if (!value) return fallback;
@@ -18,30 +20,21 @@ const tableByScope = {
   employer_contribution: "employer_contribution_components"
 };
 
-const getTenantId = async (client, organizationId) => {
-  const result = await client.query(
-    `SELECT id FROM payroll_tenants WHERE organization_id = $1`,
-    [String(organizationId)]
-  );
-  return result.rows[0]?.id || null;
-};
-
-const requireTenantId = async (client, organizationId) => {
-  const tenantId = await getTenantId(client, organizationId);
-  if (!tenantId) {
-    throw {
-      code: 400,
-      message:
-        "Payroll tenant not found for this organization. Configure payroll_tenants before using payroll APIs."
-    };
-  }
-  return tenantId;
-};
-
 const ensurePool = async () => {
   const pool = await getPayrollPgPool();
   if (!pool) throw { code: 400, message: "Payroll Postgres is not enabled" };
   return pool;
+};
+
+const getOrgPayrollSettings = async (organizationId) =>
+  OrgSettings.findOne({ organizationId })
+    .select("payrollEnabled payrollCutoffDay")
+    .lean();
+
+const resolvePayGroupCutoffDay = async (organizationId, payloadCutoffDay) => {
+  if (payloadCutoffDay !== undefined) return payloadCutoffDay ?? null;
+  const orgSettings = await getOrgPayrollSettings(organizationId);
+  return Number(orgSettings?.payrollCutoffDay ?? 25);
 };
 
 const throwPayGroupConflictError = (error) => {
@@ -68,10 +61,21 @@ const throwPayGroupConflictError = (error) => {
 };
 
 exports.getSettings = async (req) => {
+  const orgSettings = await getOrgPayrollSettings(req.user.organizationId);
+  if (!orgSettings?.payrollEnabled) {
+    return {
+      payrollEnabled: false,
+      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25)
+    };
+  }
+
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId,
+      orgSettings
+    });
     const result = await client.query(
       `
         SELECT *
@@ -81,7 +85,11 @@ exports.getSettings = async (req) => {
       `,
       [tenantId]
     );
-    return result.rows[0] || null;
+    return {
+      ...(result.rows[0] || {}),
+      payrollEnabled: true,
+      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25)
+    };
   } finally {
     client.release();
   }
@@ -91,7 +99,9 @@ exports.listPayGroups = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const includeInactive =
       req.query?.includeInactive === true || req.query?.includeInactive === "true";
 
@@ -123,7 +133,9 @@ exports.getPayGroup = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const result = await client.query(
       `
@@ -156,9 +168,12 @@ exports.createPayGroup = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const payload = req.body;
+    const cutoffDay = await resolvePayGroupCutoffDay(req.user.organizationId, payload.cutoffDay);
 
     try {
       const result = await client.query(
@@ -198,7 +213,7 @@ exports.createPayGroup = async (req) => {
           payload.name,
           payload.description || null,
           payload.payFrequency,
-          payload.cutoffDay ?? null,
+          cutoffDay,
           payload.salaryPayDay,
           payload.workWeekDays ?? 6,
           payload.isActive ?? true,
@@ -219,9 +234,12 @@ exports.updatePayGroup = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const payload = req.body;
+    const cutoffDay = await resolvePayGroupCutoffDay(req.user.organizationId, payload.cutoffDay);
 
     try {
       const result = await client.query(
@@ -264,9 +282,7 @@ exports.updatePayGroup = async (req) => {
             ? (payload.description || null)
             : null,
           payload.payFrequency ?? null,
-          Object.prototype.hasOwnProperty.call(payload, "cutoffDay")
-            ? (payload.cutoffDay ?? null)
-            : null,
+          cutoffDay,
           payload.salaryPayDay ?? null,
           payload.workWeekDays ?? null,
           payload.isActive ?? null,
@@ -289,7 +305,9 @@ exports.archivePayGroup = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
 
     const result = await client.query(
@@ -316,7 +334,9 @@ exports.upsertSettings = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const payload = req.body;
 
@@ -393,7 +413,9 @@ exports.createSalaryComponent = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const payload = req.body;
     const tableName = tableByScope[payload.scope];
@@ -505,7 +527,9 @@ exports.listSalaryComponents = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const { scope, includeInactive, code } = req.query;
     const tableName = tableByScope[scope];
     if (!tableName) throw { code: 400, message: "Invalid component scope" };
@@ -540,7 +564,9 @@ exports.getSalaryComponentById = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const { scope } = req.query;
     const tableName = tableByScope[scope];
     if (!tableName) throw { code: 400, message: "scope query is required" };
@@ -560,7 +586,9 @@ exports.updateSalaryComponent = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const { scope } = req.query;
     const tableName = tableByScope[scope];
@@ -705,7 +733,9 @@ exports.deleteSalaryComponent = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const { scope } = req.query;
     const tableName = tableByScope[scope];
@@ -732,7 +762,9 @@ exports.createEmployeeProfile = async (req) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const p = req.body;
 
@@ -788,7 +820,9 @@ exports.listEmployeeProfiles = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const { payrollStatus, employeeExternalId, includeLatest, limit, offset } = req.query;
     const params = [tenantId];
     const filters = ["tenant_id = $1"];
@@ -876,7 +910,9 @@ exports.getEmployeeProfile = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const profileId = req.params.profileId;
 
     const profileResult = await client.query(
@@ -935,7 +971,9 @@ exports.updateEmployeeProfile = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const p = req.body;
 
@@ -987,7 +1025,9 @@ exports.deleteEmployeeProfile = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const result = await client.query(
       `
         DELETE FROM employee_payroll_profiles
@@ -1007,7 +1047,9 @@ exports.upsertBankDetail = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const profileId = req.params.profileId;
     const p = req.body;
@@ -1077,7 +1119,9 @@ exports.lookupBankByAccount = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const accountNumber = String(req.query.accountNumber || "").trim();
 
     const result = await client.query(
@@ -1141,7 +1185,9 @@ exports.upsertStatutoryDetail = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const profileId = req.params.profileId;
     const p = req.body;
@@ -1213,7 +1259,9 @@ exports.createSalaryStructure = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const profileId = req.params.profileId;
     const p = req.body;
@@ -1369,7 +1417,9 @@ exports.createPayrollRun = async (req) => {
   let payload = null;
   try {
     await client.query("BEGIN");
-    tenantId = await requireTenantId(client, req.user.organizationId);
+    tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     payload = req.body;
     const runCode =
@@ -1534,7 +1584,9 @@ exports.listPayrollRuns = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const { payMonth, status, payGroupId, limit, offset } = req.query;
 
     const filters = ["tenant_id = $1"];
@@ -1574,7 +1626,9 @@ exports.getPayrollRun = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const runId = req.params.runId;
 
     const runRes = await client.query(
@@ -1611,7 +1665,9 @@ exports.previewPayrollRun = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const runId = req.params.runId;
     const { includeComponents, includeEmployees, limitEmployees } = req.body;
 
@@ -1670,7 +1726,9 @@ exports.getRunEmployeeBreakdown = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
-    const tenantId = await requireTenantId(client, req.user.organizationId);
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const runId = req.params.runId;
     const search = String(req.query?.search || "").trim().toLowerCase();
     const limit = Number(req.query?.limit || 500);

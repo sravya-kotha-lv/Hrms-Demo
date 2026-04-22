@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { getPayrollPgPool } = require("../../config/payrollDb");
 const logger = require("../../logger/logger");
 const { observePayrollIdempotencyReplay } = require("../../observability/payrollMetrics");
+const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
 
 const MAX_KEY_LENGTH = 120;
 const MAX_IN_PROGRESS_AGE_SECONDS = Number(process.env.PAYROLL_IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SEC || 600);
@@ -105,10 +106,9 @@ exports.executeIdempotentPayrollAction = async ({ req, actionKey, runId = null, 
   let idempotencyRecordId = null;
 
   try {
-    const tenantId = await getTenantId(lockClient, req.user.organizationId);
-    if (!tenantId) {
-      throw { code: 400, message: "Payroll tenant not found for organization" };
-    }
+    const tenantId = await getTenantIdForOrganization(lockClient, req.user.organizationId, {
+      actorId: req.user.userId
+    });
 
     const requestHash = createRequestHash(req, actionKey, runId);
     const actorUserId = req.user?.userId ? String(req.user.userId) : null;

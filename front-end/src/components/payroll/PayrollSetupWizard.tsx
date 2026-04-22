@@ -68,6 +68,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialSettings?: any;
+  payrollCutoffDay?: number;
   onActivated?: () => void;
 };
 
@@ -293,6 +294,7 @@ export const PayrollSetupWizard = ({
   open,
   onOpenChange,
   initialSettings,
+  payrollCutoffDay = 25,
   onActivated
 }: Props) => {
   const [step, setStep] = useState(0);
@@ -303,8 +305,7 @@ export const PayrollSetupWizard = ({
       initialSettings?.default_pay_group_id || initialSettings?.defaultPayGroupId || ""
     ),
     payFrequency: "monthly",
-    salaryPayDay: "30",
-    attendanceCutoffDay: String(initialSettings?.attendance_lock_after_days || 25)
+    salaryPayDay: "30"
   });
 
   const [components, setComponents] = useState<ComponentDraft[]>([defaultComponent()]);
@@ -437,7 +438,7 @@ export const PayrollSetupWizard = ({
           payGroup: {
             payFrequency: payGroup.payFrequency,
             salaryPayDay: Number(payGroup.salaryPayDay || 30),
-            attendanceCutoffDay: Number(payGroup.attendanceCutoffDay || 25)
+            attendanceCutoffDay: Number(payrollCutoffDay || 25)
           },
           statutory
         }
@@ -610,18 +611,10 @@ export const PayrollSetupWizard = ({
                 </p>
               </div>
               <div>
-                <label className="text-sm font-medium">Attendance Cutoff Day</label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={payGroup.attendanceCutoffDay}
-                  onChange={(e) =>
-                    setPayGroup((prev) => ({ ...prev, attendanceCutoffDay: e.target.value }))
-                  }
-                />
+                <label className="text-sm font-medium">Payroll Cutoff Day</label>
+                <Input type="number" value={payrollCutoffDay} disabled readOnly />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Example: 25 means attendance till 25th is considered.
+                  Managed from Organization Settings and reused across payroll setup.
                 </p>
               </div>
             </div>
@@ -1078,7 +1071,7 @@ export const PayrollSetupWizard = ({
               </p>
               <p className="text-sm text-muted-foreground">
                 Cycle: {payGroup.payFrequency}, Salary Day: {payGroup.salaryPayDay}, Cutoff Day:{" "}
-                {payGroup.attendanceCutoffDay}
+                {payrollCutoffDay}
               </p>
             </div>
             <div className="rounded border p-3">

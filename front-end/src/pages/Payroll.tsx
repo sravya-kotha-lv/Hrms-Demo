@@ -99,7 +99,6 @@ type PayGroupForm = {
   name: string;
   description: string;
   payFrequency: "monthly" | "semi_monthly" | "weekly";
-  cutoffDay: string;
   salaryPayDay: string;
   workWeekDays: string;
   basicPercent: string;
@@ -125,7 +124,6 @@ const emptyPayGroupForm: PayGroupForm = {
   name: "",
   description: "",
   payFrequency: "monthly",
-  cutoffDay: "25",
   salaryPayDay: "30",
   workWeekDays: "6",
   basicPercent: "50"
@@ -189,6 +187,7 @@ const Payroll = () => {
   const [searchQuery, setSearchQuery] = useState("");
 
   const [settings, setSettings] = useState<any>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [runDetail, setRunDetail] = useState<any>(null);
@@ -220,12 +219,14 @@ const Payroll = () => {
   const canLockRun = hasAnyPermission(["PAYROLL_RUN_LOCK"]);
   const canViewReports = hasAnyPermission(["PAYROLL_REPORT_VIEW"]);
   const canViewPayslip = hasAnyPermission(["PAYROLL_PAYSLIP_VIEW"]);
+  const payrollReady = !settingsLoaded || settings?.payrollEnabled !== false;
 
   const loadSettings = async () => {
     const res = await getApiWithToken("/payroll/settings");
     if (res?.success) {
       setSettings(res.data || null);
     }
+    setSettingsLoaded(true);
   };
 
   const fetchAllEmployees = useCallback(async () => {
@@ -323,12 +324,24 @@ const Payroll = () => {
 
   useEffect(() => {
     loadSettings();
-    loadPayGroups();
-  }, [loadPayGroups]);
+  }, []);
 
   useEffect(() => {
+    if (!settingsLoaded || settings?.payrollEnabled === false) {
+      setPayGroups([]);
+      return;
+    }
+    loadPayGroups();
+  }, [loadPayGroups, settingsLoaded, settings?.payrollEnabled]);
+
+  useEffect(() => {
+    if (!settingsLoaded || settings?.payrollEnabled === false) {
+      setRuns([]);
+      setSelectedRunId("");
+      return;
+    }
     loadRuns(monthFilter);
-  }, [loadRuns, monthFilter]);
+  }, [loadRuns, monthFilter, settingsLoaded, settings?.payrollEnabled]);
 
   useEffect(() => {
     if (selectedRunId) {
@@ -583,7 +596,6 @@ const Payroll = () => {
       name: group.name || "",
       description: group.description || "",
       payFrequency: group.pay_frequency || "monthly",
-      cutoffDay: group.cutoff_day ? String(group.cutoff_day) : "",
       salaryPayDay: String(group.salary_pay_day || 30),
       workWeekDays: String(group.work_week_days || 6),
       basicPercent: String(basicPercent)
@@ -602,7 +614,6 @@ const Payroll = () => {
       name: payGroupForm.name.trim(),
       description: payGroupForm.description.trim() || null,
       payFrequency: payGroupForm.payFrequency,
-      cutoffDay: payGroupForm.cutoffDay ? Number(payGroupForm.cutoffDay) : null,
       salaryPayDay: Number(payGroupForm.salaryPayDay || 30),
       workWeekDays: Number(payGroupForm.workWeekDays || 6),
       metadata: {
@@ -695,19 +706,23 @@ const Payroll = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setWizardOpen(true)} disabled={!canManageConfig}>
+          <Button
+            variant="outline"
+            onClick={() => setWizardOpen(true)}
+            disabled={!canManageConfig || !payrollReady}
+          >
             Setup Wizard
           </Button>
-          <Button onClick={onGenerateSnapshot} disabled={!canCreateRun || !!loadingAction}>
+          <Button onClick={onGenerateSnapshot} disabled={!canCreateRun || !!loadingAction || !payrollReady}>
             Generate Snapshot
           </Button>
-          <Button onClick={openCreateRunDialog} disabled={!canCreateRun || !!loadingAction}>
+          <Button onClick={openCreateRunDialog} disabled={!canCreateRun || !!loadingAction || !payrollReady}>
             Create Run
           </Button>
           <Button
             variant="outline"
             onClick={onExportBankTransfer}
-            disabled={!canViewReports || !selectedRunId}
+            disabled={!canViewReports || !selectedRunId || !payrollReady}
             className="gap-2"
           >
             <Download className="w-4 h-4" /> Bank Export
@@ -715,7 +730,13 @@ const Payroll = () => {
         </div>
       </div>
 
-      {canManageConfig && (
+      {settingsLoaded && settings?.payrollEnabled === false && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Payroll is disabled for this organization. Enable it from Organization Settings to auto-create payroll setup and use payroll APIs.
+        </div>
+      )}
+
+      {canManageConfig && settings?.payrollEnabled !== false && (
         <div className="bg-card rounded-xl card-shadow overflow-hidden mb-6">
           <div className="p-4 border-b flex items-center justify-between gap-2">
             <div>
@@ -1145,6 +1166,7 @@ const Payroll = () => {
         open={wizardOpen}
         onOpenChange={setWizardOpen}
         initialSettings={settings}
+        payrollCutoffDay={Number(settings?.payrollCutoffDay || 25)}
         onActivated={() => {
           loadSettings();
           loadRuns(monthFilter);
@@ -1305,15 +1327,12 @@ const Payroll = () => {
               </Select>
             </div>
             <div>
-              <label className="text-sm font-medium">Cutoff Day</label>
+              <label className="text-sm font-medium">Payroll Cutoff Day</label>
               <Input
                 type="number"
-                min={1}
-                max={31}
-                value={payGroupForm.cutoffDay}
-                onChange={(e) =>
-                  setPayGroupForm((prev) => ({ ...prev, cutoffDay: e.target.value }))
-                }
+                value={Number(settings?.payrollCutoffDay || 25)}
+                disabled
+                readOnly
               />
             </div>
             <div>

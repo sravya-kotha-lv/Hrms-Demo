@@ -1,4 +1,5 @@
 const { getPayrollPgPool } = require("../../config/payrollDb");
+const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -46,13 +47,9 @@ exports.validatePayrollRun = async (req) => {
   try {
     await client.query("BEGIN");
 
-    const tenantId = await getTenantId(client, organizationId);
-    if (!tenantId) {
-      throw {
-        code: 400,
-        message: "Payroll tenant not found for organization. Configure payroll_tenants first."
-      };
-    }
+    const tenantId = await getTenantIdForOrganization(client, organizationId, {
+      actorId
+    });
 
     const runResult = await client.query(
       `

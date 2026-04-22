@@ -46,6 +46,10 @@ const orgSettingsSchema = new mongoose.Schema(
       type: Number,
       default: 25
     },
+    payrollEnabled: {
+      type: Boolean,
+      default: false
+    },
 
     minWorkHoursPerDay: {
       type: Number,
