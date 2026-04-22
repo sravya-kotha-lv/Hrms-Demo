@@ -131,6 +131,7 @@ const Expenses = () => {
   const [isEdit, setIsEdit] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(makeEmptyForm());
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
@@ -330,6 +331,7 @@ const Expenses = () => {
     setIsEdit(false);
     setEditingId(null);
     setForm(makeEmptyForm());
+    setFormErrors({});
     setOpen(true);
   };
 
@@ -341,7 +343,7 @@ const Expenses = () => {
       title: row.title || "",
       vendorId: row.vendorId?._id || "none",
       vendor: row.vendor || "",
-      expenseDate: row.expenseDate ? new Date(row.expenseDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      expenseDate: row.expenseDate ? String(row.expenseDate).slice(0, 10) : new Date().toISOString().slice(0, 10),
       amount: String(row.amount ?? ""),
       taxAmount: String(row.taxAmount ?? 0),
       paymentMode: row.paymentMode || "bank_transfer",
@@ -353,26 +355,58 @@ const Expenses = () => {
       notes: row.notes || "",
       receiptUrl: row.receiptUrl || ""
     });
+    setFormErrors({});
     setOpen(true);
   };
 
   const handleSubmit = async () => {
+    const newErrors: Record<string, string> = {};
+
     if (!form.title.trim()) {
-      toast.error("Title is required");
-      return;
+      newErrors.title = "Title is required";
+    } else if (form.title.trim().length < 2) {
+      newErrors.title = "Title must be at least 2 characters";
+    } else if (form.title.trim().length > 150) {
+      newErrors.title = "Title must be under 150 characters";
     }
+
     if (!form.expenseDate) {
-      toast.error("Expense date is required");
+      newErrors.expenseDate = "Expense date is required";
+    }
+
+    if (form.amount === "" || form.amount === null || form.amount === undefined) {
+      newErrors.amount = "Amount is required";
+    } else if (isNaN(Number(form.amount))) {
+      newErrors.amount = "Enter a valid number";
+    } else if (Number(form.amount) < 0) {
+      newErrors.amount = "Amount must be 0 or more";
+    }
+
+    if (form.taxAmount !== "" && (isNaN(Number(form.taxAmount)) || Number(form.taxAmount) < 0)) {
+      newErrors.taxAmount = "Tax amount must be 0 or more";
+    }
+
+    if (form.reimbursementMethod === "payroll") {
+      if (form.purchasedBy === "none") {
+        newErrors.purchasedBy = "Select an employee for payroll reimbursement";
+      }
+      if (form.reimbursementAmount !== "" && (isNaN(Number(form.reimbursementAmount)) || Number(form.reimbursementAmount) < 0)) {
+        newErrors.reimbursementAmount = "Reimbursement amount must be 0 or more";
+      }
+      if (form.reimbursementPayrollMonth && !/^\d{4}-\d{2}$/.test(form.reimbursementPayrollMonth)) {
+        newErrors.reimbursementPayrollMonth = "Enter a valid month (YYYY-MM)";
+      }
+    }
+
+    if (form.notes && form.notes.length > 500) {
+      newErrors.notes = "Notes must be under 500 characters";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setFormErrors(newErrors);
       return;
     }
-    if (Number(form.amount) < 0) {
-      toast.error("Amount must be positive");
-      return;
-    }
-    if (form.reimbursementMethod === "payroll" && form.purchasedBy === "none") {
-      toast.error("Select employee for payroll reimbursement");
-      return;
-    }
+    setFormErrors({});
 
     const payload: any = {
       category: form.category,
