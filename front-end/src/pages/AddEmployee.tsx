@@ -21,7 +21,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ChevronDown, Info } from "lucide-react";
+import { ArrowLeft, Calculator, ChevronDown, History, Info, Landmark, ListChecks } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -33,6 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { hasAnyPermission } from "@/utils/auth";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -51,6 +52,12 @@ const RELATION_OPTIONS = [
 ];
 const INDIAN_MOBILE_REGEX = /^[6-9]\d{9}$/;
 const PLACE_NAME_REGEX = /^[A-Za-z]+(?:[A-Za-z .'-]*[A-Za-z])?$/;
+const formatInr = (value: number | string | null | undefined) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0
+  }).format(Number(value || 0));
 
 /* ================= TYPES ================= */
 
@@ -88,6 +95,19 @@ type PayrollComponent = {
   metadata?: Record<string, any>;
 };
 
+type SalaryStructureRow = {
+  id: string;
+  annual_ctc?: number | string | null;
+  monthly_gross?: number | string | null;
+  basic_pay?: number | string | null;
+  variable_pay?: number | string | null;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  is_current?: boolean;
+  revision_reason?: string | null;
+  metadata?: Record<string, any>;
+};
+
 type EmployeeComponentOverride = {
   scope: PayrollComponent["scope"];
   code: string;
@@ -97,8 +117,41 @@ type EmployeeComponentOverride = {
   taxable: boolean;
   amount: string;
   base: string;
+  formulaTemplate: string;
   formulaExpression: string;
+  bonusCreditTiming: "immediate" | "after_probation" | "manual_date";
+  bonusEligibilityDate: string;
+  bonusPayoutMonths: string;
+  metadata?: Record<string, any>;
 };
+
+const FORMULA_PRESETS = [
+  {
+    value: "custom",
+    label: "Custom Formula",
+    expression: ""
+  },
+  {
+    value: "basic_percent_4_81",
+    label: "4.81% of Basic Pay",
+    expression: "round(BASIC_PAY * 0.0481)"
+  },
+  {
+    value: "basic_percent_12",
+    label: "12% of Basic Pay",
+    expression: "round(BASIC_PAY * 0.12)"
+  },
+  {
+    value: "gross_percent_10",
+    label: "10% of Monthly Gross",
+    expression: "round(MONTHLY_GROSS * 0.10)"
+  },
+  {
+    value: "fixed_zero",
+    label: "Zero Amount",
+    expression: "0"
+  }
+];
 
 const ADVANCED_COMPONENT_EXCLUDE = new Set([
   "BASIC",
@@ -167,7 +220,26 @@ const buildComponentOverrideState = (
         : Boolean(component.taxable),
     amount: String(existingOverride?.amount ?? metadata.monthlyAmount ?? metadata.percentage ?? ""),
     base: String(existingOverride?.base ?? metadata.base ?? "MONTHLY_GROSS"),
-    formulaExpression: String(existingOverride?.formulaExpression ?? metadata.expression ?? "")
+    formulaTemplate: String(existingOverride?.formulaTemplate ?? metadata.formulaTemplate ?? "custom"),
+    formulaExpression: String(existingOverride?.formulaExpression ?? metadata.expression ?? ""),
+    bonusCreditTiming: (
+      existingOverride?.bonusCreditTiming ||
+      existingOverride?.metadata?.bonusRule?.creditTiming ||
+      metadata.bonusRule?.creditTiming ||
+      "after_probation"
+    ) as EmployeeComponentOverride["bonusCreditTiming"],
+    bonusEligibilityDate: String(
+      existingOverride?.bonusEligibilityDate ||
+      existingOverride?.metadata?.bonusRule?.eligibilityDate ||
+      metadata.bonusRule?.eligibilityDate ||
+      ""
+    ),
+    bonusPayoutMonths: String(
+      existingOverride?.bonusPayoutMonths ||
+      existingOverride?.metadata?.bonusRule?.payoutMonths ||
+      metadata.bonusRule?.payoutMonths ||
+      "2"
+    )
   };
 };
 
@@ -215,7 +287,7 @@ const AddEmployee = () => {
   const [savingBank, setSavingBank] = useState(false);
   const [lookingUpIfsc, setLookingUpIfsc] = useState(false);
   const [lookingUpAccount, setLookingUpAccount] = useState(false);
-  const [currentSalaryEffectiveFrom, setCurrentSalaryEffectiveFrom] = useState("");
+  const [salaryStructures, setSalaryStructures] = useState<SalaryStructureRow[]>([]);
   const [salaryAutoCalc, setSalaryAutoCalc] = useState(true);
   const [salaryForm, setSalaryForm] = useState({
     payGroupId: "",
@@ -231,10 +303,11 @@ const AddEmployee = () => {
     restrictPfWage: true,
     pfWageCeiling: "15000",
     includeEsi: true,
+    variablePayEnabled: false,
     annualCtc: "",
     monthlyGross: "",
     basicPay: "",
-    variablePay: "0",
+    variablePay: "",
     effectiveFrom: new Date().toISOString().slice(0, 10),
     revisionReason: "Initial salary setup"
   });
@@ -292,6 +365,60 @@ const AddEmployee = () => {
       : payGroupBasicPercent
   );
 
+  const applySalaryRevisionToForm = (salary: SalaryStructureRow) => {
+    const salaryRules = salary?.metadata?.salaryRules || {};
+    setComponentOverrides(salaryRules.componentOverrides || {});
+    setSalaryForm((prev) => ({
+      ...prev,
+      basicPercentSource: salaryRules.basicPercentSource || "pay_group",
+      employeeBasicPercent:
+        salaryRules.employeeBasicPercent !== undefined && salaryRules.employeeBasicPercent !== null
+          ? String(salaryRules.employeeBasicPercent)
+          : "",
+      hraPercentOfBasic:
+        salaryRules.hraPercentOfBasic !== undefined && salaryRules.hraPercentOfBasic !== null
+          ? String(salaryRules.hraPercentOfBasic)
+          : prev.hraPercentOfBasic,
+      epfMode: salaryRules.epfMode || prev.epfMode,
+      epfPercentOfBasic:
+        salaryRules.epfPercentOfBasic !== undefined && salaryRules.epfPercentOfBasic !== null
+          ? String(salaryRules.epfPercentOfBasic)
+          : prev.epfPercentOfBasic,
+      epfFixedAmount:
+        salaryRules.epfFixedAmount !== undefined && salaryRules.epfFixedAmount !== null
+          ? String(salaryRules.epfFixedAmount)
+          : prev.epfFixedAmount,
+      restrictPfWage:
+        typeof salaryRules.restrictPfWage === "boolean"
+          ? salaryRules.restrictPfWage
+          : prev.restrictPfWage,
+      pfWageCeiling:
+        salaryRules.pfWageCeiling !== undefined && salaryRules.pfWageCeiling !== null
+          ? String(salaryRules.pfWageCeiling)
+          : prev.pfWageCeiling,
+      includeEsi:
+        typeof salaryRules.includeEsi === "boolean" ? salaryRules.includeEsi : prev.includeEsi,
+      variablePayEnabled: Number(salary?.variable_pay || 0) > 0,
+      annualCtc: salary?.annual_ctc ? String(salary.annual_ctc) : "",
+      monthlyGross: salary?.monthly_gross ? String(salary.monthly_gross) : "",
+      basicPay: salary?.basic_pay ? String(salary.basic_pay) : "",
+      variablePay:
+        salary?.variable_pay !== undefined && salary?.variable_pay !== null && Number(salary.variable_pay) > 0
+          ? String(salary.variable_pay)
+          : "",
+      effectiveFrom: (salary?.effective_from || "").slice(0, 10) || prev.effectiveFrom,
+      revisionReason: salary?.revision_reason || prev.revisionReason
+    }));
+  };
+
+  const startNewSalaryRevision = () => {
+    setSalaryForm((prev) => ({
+      ...prev,
+      effectiveFrom: new Date().toISOString().slice(0, 10),
+      revisionReason: "Salary revision"
+    }));
+  };
+
   const salaryBreakdown = useMemo(() => {
     const annualCtc = Number(salaryForm.annualCtc || 0);
     const monthlyGross = Number(salaryForm.monthlyGross || 0);
@@ -340,6 +467,11 @@ const AddEmployee = () => {
     salaryForm.pfWageCeiling,
     salaryForm.includeEsi
   ]);
+
+  const enabledEmployeeComponents = useMemo(
+    () => Object.values(componentOverrides).filter((override) => override?.enabled),
+    [componentOverrides]
+  );
 
   /* ================= FETCH MASTER DATA ================= */
 
@@ -579,7 +711,7 @@ const AddEmployee = () => {
       salaryStructures.find((row: any) => row.is_current) || salaryStructures[0] || null;
     const currentBank = bankDetails[0] || null;
     const currentStatutory = statutoryDetails[0] || null;
-    setCurrentSalaryEffectiveFrom((currentSalary?.effective_from || "").slice(0, 10));
+    setSalaryStructures(salaryStructures);
     const salaryRules = currentSalary?.metadata?.salaryRules || {};
     const taxDeclaration = currentStatutory?.metadata?.taxDeclaration || {};
     setComponentOverrides(salaryRules.componentOverrides || {});
@@ -618,13 +750,14 @@ const AddEmployee = () => {
           : prev.pfWageCeiling,
       includeEsi:
         typeof salaryRules.includeEsi === "boolean" ? salaryRules.includeEsi : prev.includeEsi,
+      variablePayEnabled: Number(currentSalary?.variable_pay || 0) > 0,
       annualCtc: currentSalary?.annual_ctc ? String(currentSalary.annual_ctc) : "",
       monthlyGross: currentSalary?.monthly_gross ? String(currentSalary.monthly_gross) : "",
       basicPay: currentSalary?.basic_pay ? String(currentSalary.basic_pay) : "",
       variablePay:
         currentSalary?.variable_pay !== undefined && currentSalary?.variable_pay !== null
           ? String(currentSalary.variable_pay)
-          : "0",
+          : "",
       effectiveFrom:
         (currentSalary?.effective_from || "").slice(0, 10) ||
         detail?.date_of_joining?.slice(0, 10) ||
@@ -753,14 +886,16 @@ const AddEmployee = () => {
       ? Number((projectedGross * 0.0325).toFixed(2))
       : 0;
     const monthlyGross = Number((monthlyCtc - employerEpf - esiEmployerAmount).toFixed(2));
-    const variablePay = Number((monthlyGross - basicPay - hraAmount).toFixed(2));
+    const variablePay = salaryForm.variablePayEnabled
+      ? Number(Math.max(0, monthlyGross - basicPay - hraAmount).toFixed(2))
+      : 0;
 
     setSalaryForm((prev) => {
       const next = {
         ...prev,
         monthlyGross: String(monthlyGross),
         basicPay: String(basicPay),
-        variablePay: String(variablePay)
+        variablePay: salaryForm.variablePayEnabled ? String(variablePay) : ""
       };
 
       if (
@@ -783,6 +918,7 @@ const AddEmployee = () => {
     salaryForm.restrictPfWage,
     salaryForm.pfWageCeiling,
     salaryForm.includeEsi,
+    salaryForm.variablePayEnabled,
     effectiveBasicPercent
   ]);
 
@@ -1067,17 +1203,13 @@ const AddEmployee = () => {
       toast.error("Annual CTC is required");
       return;
     }
-    if (
-      currentSalaryEffectiveFrom &&
-      salaryForm.effectiveFrom &&
-      salaryForm.effectiveFrom < currentSalaryEffectiveFrom
-    ) {
+    const currentEffectiveFrom = (salaryStructures.find((row) => row.is_current)?.effective_from || "").slice(0, 10);
+    if (currentEffectiveFrom && salaryForm.effectiveFrom && salaryForm.effectiveFrom < currentEffectiveFrom) {
       toast.error(
-        `Effective From cannot be earlier than current salary start date (${currentSalaryEffectiveFrom})`
+        `Create a salary revision from ${currentEffectiveFrom} or later. Older salary rows are kept as history.`
       );
       return;
     }
-
     setSavingSalary(true);
     try {
       let profileId = payrollProfileId;
@@ -1129,7 +1261,7 @@ const AddEmployee = () => {
           annualCtc: Number(salaryForm.annualCtc),
           monthlyGross: salaryForm.monthlyGross ? Number(salaryForm.monthlyGross) : null,
           basicPay: salaryForm.basicPay ? Number(salaryForm.basicPay) : null,
-          variablePay: salaryForm.variablePay ? Number(salaryForm.variablePay) : 0,
+          variablePay: salaryForm.variablePayEnabled && salaryForm.variablePay ? Number(salaryForm.variablePay) : 0,
           isCurrent: true,
           revisionReason: salaryForm.revisionReason || "Salary update",
           effectiveFrom: salaryForm.effectiveFrom,
@@ -1151,7 +1283,28 @@ const AddEmployee = () => {
                           ? null
                           : Number(override.amount),
                       base: override.base || null,
-                      formulaExpression: override.formulaExpression || null
+                      formulaTemplate: override.formulaTemplate || "custom",
+                      formulaExpression: override.formulaExpression || null,
+                      ...(String(code).toUpperCase() === "BONUS"
+                        ? {
+                            bonusCreditTiming: override.bonusCreditTiming || "after_probation",
+                            bonusEligibilityDate:
+                              override.bonusCreditTiming === "after_probation"
+                                ? form.confirmedDate || override.bonusEligibilityDate || null
+                                : override.bonusEligibilityDate || null,
+                            bonusPayoutMonths: Number(override.bonusPayoutMonths || 1),
+                            metadata: {
+                              bonusRule: {
+                                creditTiming: override.bonusCreditTiming || "after_probation",
+                                eligibilityDate:
+                                  override.bonusCreditTiming === "after_probation"
+                                    ? form.confirmedDate || override.bonusEligibilityDate || null
+                                    : override.bonusEligibilityDate || null,
+                                payoutMonths: Number(override.bonusPayoutMonths || 1)
+                              }
+                            }
+                          }
+                        : {})
                     }
                   ])
               ),
@@ -2327,15 +2480,91 @@ const AddEmployee = () => {
               </p>
             ) : (
               <>
-                <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
+                <div className="flex flex-col gap-3 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <p className="text-sm font-medium">Auto Calculate From CTC + Pay Group</p>
-                    <p className="text-xs text-muted-foreground">
-                      Monthly Gross = CTC/12, Basic = configured % in pay group, Variable = remaining.
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary">Compensation workspace</p>
+                    <h2 className="mt-1 text-2xl font-semibold text-foreground">Salary Details</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Add payroll, salary rules, statutory contributions, and employee-specific components in one flow.
                     </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary" className="rounded-md px-3 py-1">
+                      {salaryForm.payrollStatus.replaceAll("_", " ")}
+                    </Badge>
+                    {selectedPayGroup && (
+                      <Badge variant="outline" className="rounded-md px-3 py-1">
+                        {selectedPayGroup.code}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+                  <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4 rounded-lg border bg-secondary/40 px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <Calculator className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold">Auto Calculate From CTC + Pay Group</p>
+                      <p className="text-xs text-muted-foreground">
+                        Monthly gross, basic, variable, EPF, and ESI update as you edit.
+                      </p>
+                    </div>
                   </div>
                   <Switch checked={salaryAutoCalc} onCheckedChange={setSalaryAutoCalc} />
                 </div>
+
+                {salaryStructures.length > 0 && (
+                  <div className="rounded-md border p-4">
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Salary Revision History</p>
+                        <p className="text-xs text-muted-foreground">
+                          Same effective date updates that revision. A new effective date creates the next salary version.
+                        </p>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={startNewSalaryRevision}>
+                        New Revision
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {salaryStructures.map((salary) => {
+                        const effectiveFrom = (salary.effective_from || "").slice(0, 10);
+                        const effectiveTo = (salary.effective_to || "").slice(0, 10) || "Current";
+                        const isSelected = effectiveFrom && salaryForm.effectiveFrom === effectiveFrom;
+                        return (
+                          <button
+                            key={salary.id || effectiveFrom}
+                            type="button"
+                            onClick={() => applySalaryRevisionToForm(salary)}
+                            className={`w-full rounded-md border p-3 text-left transition-colors ${
+                              isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/40"
+                            }`}
+                          >
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-sm font-medium">
+                                  {formatInr(salary.annual_ctc)} CTC
+                                  {salary.is_current ? " - Current" : ""}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {effectiveFrom || "-"} to {effectiveTo}
+                                </p>
+                              </div>
+                              <div className="text-xs text-muted-foreground sm:text-right">
+                                <p>Gross {formatInr(salary.monthly_gross)}</p>
+                                <p>Variable {Number(salary.variable_pay || 0) > 0 ? formatInr(salary.variable_pay) : "Not eligible"}</p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -2522,14 +2751,34 @@ const AddEmployee = () => {
                   </div>
 
                   <div>
-                    <Label>Variable Pay (Monthly)</Label>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <Label>Variable Pay (Monthly)</Label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Eligible</span>
+                        <Switch
+                          checked={salaryForm.variablePayEnabled}
+                          onCheckedChange={(checked) =>
+                            setSalaryForm((prev) => ({
+                              ...prev,
+                              variablePayEnabled: checked,
+                              variablePay: checked ? prev.variablePay : ""
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
                     <Input
                       type="number"
                       value={salaryForm.variablePay}
+                      disabled={!salaryForm.variablePayEnabled}
                       onChange={(e) =>
                         setSalaryForm((prev) => ({ ...prev, variablePay: e.target.value }))
                       }
+                      placeholder={salaryForm.variablePayEnabled ? "Optional monthly variable base" : "Not eligible"}
                     />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Employees receive variable pay only after an approved variable-pay request.
+                    </p>
                   </div>
 
                   <div className="rounded-md border p-3 md:col-span-2 space-y-3">
@@ -2644,63 +2893,26 @@ const AddEmployee = () => {
                   </div>
                 </div>
 
-                <div className="rounded-md border overflow-hidden">
-                  <div className="grid grid-cols-4 bg-muted/40 px-4 py-2 text-xs font-semibold">
-                    <div>Salary Component</div>
-                    <div>Calculation</div>
-                    <div className="text-right">Monthly Amount</div>
-                    <div className="text-right">Annual Amount</div>
-                  </div>
-                  <div className="grid grid-cols-4 px-4 py-3 text-sm border-t">
-                    <div>Basic Salary</div>
-                    <div>{Number(effectiveBasicPercent).toFixed(2)}% of CTC</div>
-                    <div className="text-right">{salaryBreakdown.basicPay.toFixed(2)}</div>
-                    <div className="text-right">{(salaryBreakdown.basicPay * 12).toFixed(2)}</div>
-                  </div>
-                  <div className="grid grid-cols-4 px-4 py-3 text-sm border-t">
-                    <div>House Rent Allowance</div>
-                    <div>{Number(salaryForm.hraPercentOfBasic || 0).toFixed(2)}% of Basic</div>
-                    <div className="text-right">{salaryBreakdown.hraAmount.toFixed(2)}</div>
-                    <div className="text-right">{(salaryBreakdown.hraAmount * 12).toFixed(2)}</div>
-                  </div>
-                  <div className="grid grid-cols-4 px-4 py-3 text-sm border-t bg-muted/30">
-                    <div>Fixed Allowance</div>
-                    <div>Monthly CTC - (Basic + HRA)</div>
-                    <div className="text-right">{salaryBreakdown.fixedAllowance.toFixed(2)}</div>
-                    <div className="text-right">{(salaryBreakdown.fixedAllowance * 12).toFixed(2)}</div>
-                  </div>
-                  <div className="grid grid-cols-4 px-4 py-3 text-sm border-t">
-                    <div>EPF - Employer Contribution</div>
-                    <div>
-                      {salaryForm.epfMode === "fixed"
-                        ? "Fixed amount"
-                        : `${Number(salaryForm.epfPercentOfBasic || 12).toFixed(2)}% of ${
-                            salaryForm.restrictPfWage ? "restricted PF wage" : "basic"
-                          }`}
-                    </div>
-                    <div className="text-right">{salaryBreakdown.employerEpf.toFixed(2)}</div>
-                    <div className="text-right">{(salaryBreakdown.employerEpf * 12).toFixed(2)}</div>
-                  </div>
-                  {salaryForm.includeEsi && (
-                    <div className="grid grid-cols-4 px-4 py-3 text-sm border-t">
-                      <div>ESI - Employer Contribution</div>
-                      <div>3.25% of eligible ESI wages</div>
-                      <div className="text-right">{salaryBreakdown.esiEmployerAmount.toFixed(2)}</div>
-                      <div className="text-right">{(salaryBreakdown.esiEmployerAmount * 12).toFixed(2)}</div>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-4 px-4 py-3 text-sm border-t bg-blue-50 font-medium">
-                    <div>Cost to Company</div>
-                    <div />
-                    <div className="text-right">{salaryBreakdown.monthlyCtc.toFixed(2)}</div>
-                    <div className="text-right">{salaryBreakdown.annualCtc.toFixed(2)}</div>
-                  </div>
-                </div>
-
                 {payrollComponents.length > 0 && (
                   <div className="rounded-md border p-4 space-y-4">
                     <div>
-                      <p className="text-sm font-medium">Employee Component Overrides</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">Employee Component Overrides</p>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label="About employee component overrides"
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <Info className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            Enable this only for components that should differ from the selected pay group for this employee.
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         Use this only when this employee’s structure differs from the pay group. You can
                         enable or disable components like bonus, ESOP, PT, TDS, or gratuity for this
@@ -2808,18 +3020,55 @@ const AddEmployee = () => {
                                     </div>
                                   </>
                                 ) : override.calculationMode === "formula" ? (
-                                  <div className="md:col-span-2">
-                                    <Label>Formula Expression</Label>
-                                    <Input
-                                      value={override.formulaExpression}
-                                      onChange={(e) =>
-                                        setComponentOverrides((prev) => ({
-                                          ...prev,
-                                          [key]: { ...override, formulaExpression: e.target.value }
-                                        }))
-                                      }
-                                      placeholder="round(BASIC_PAY * 0.0481)"
-                                    />
+                                  <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2">
+                                    <div>
+                                      <Label>Formula Preset</Label>
+                                      <Select
+                                        value={override.formulaTemplate || "custom"}
+                                        onValueChange={(value) => {
+                                          const preset = FORMULA_PRESETS.find((item) => item.value === value);
+                                          setComponentOverrides((prev) => ({
+                                            ...prev,
+                                            [key]: {
+                                              ...override,
+                                              formulaTemplate: value,
+                                              formulaExpression:
+                                                value === "custom"
+                                                  ? override.formulaExpression
+                                                  : preset?.expression || override.formulaExpression
+                                            }
+                                          }));
+                                        }}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select formula" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {FORMULA_PRESETS.map((preset) => (
+                                            <SelectItem key={preset.value} value={preset.value}>
+                                              {preset.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div>
+                                      <Label>Custom Formula</Label>
+                                      <Input
+                                        value={override.formulaExpression}
+                                        onChange={(e) =>
+                                          setComponentOverrides((prev) => ({
+                                            ...prev,
+                                            [key]: {
+                                              ...override,
+                                              formulaTemplate: "custom",
+                                              formulaExpression: e.target.value
+                                            }
+                                          }))
+                                        }
+                                        placeholder="round(BASIC_PAY * 0.0481)"
+                                      />
+                                    </div>
                                   </div>
                                 ) : (
                                   <div>
@@ -2836,6 +3085,87 @@ const AddEmployee = () => {
                                     />
                                   </div>
                                 )}
+
+                                {key === "BONUS" && (
+                                  <div className="md:col-span-2 rounded-md border bg-slate-50/70 p-3">
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                                      <div>
+                                        <Label>Credit Timing</Label>
+                                        <Select
+                                          value={override.bonusCreditTiming || "after_probation"}
+                                          onValueChange={(value) =>
+                                            setComponentOverrides((prev) => ({
+                                              ...prev,
+                                              [key]: {
+                                                ...override,
+                                                bonusCreditTiming: value as EmployeeComponentOverride["bonusCreditTiming"],
+                                                bonusEligibilityDate:
+                                                  value === "after_probation"
+                                                    ? form.confirmedDate || override.bonusEligibilityDate
+                                                    : override.bonusEligibilityDate
+                                              }
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="after_probation">After Probation</SelectItem>
+                                            <SelectItem value="manual_date">Custom Date</SelectItem>
+                                            <SelectItem value="immediate">Immediate</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div>
+                                        <Label>Eligibility Date</Label>
+                                        <Input
+                                          type="date"
+                                          value={
+                                            override.bonusCreditTiming === "after_probation"
+                                              ? form.confirmedDate || override.bonusEligibilityDate
+                                              : override.bonusEligibilityDate
+                                          }
+                                          disabled={override.bonusCreditTiming === "immediate"}
+                                          onChange={(e) =>
+                                            setComponentOverrides((prev) => ({
+                                              ...prev,
+                                              [key]: {
+                                                ...override,
+                                                bonusCreditTiming: "manual_date",
+                                                bonusEligibilityDate: e.target.value
+                                              }
+                                            }))
+                                          }
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Pay Over</Label>
+                                        <Select
+                                          value={override.bonusPayoutMonths || "2"}
+                                          onValueChange={(value) =>
+                                            setComponentOverrides((prev) => ({
+                                              ...prev,
+                                              [key]: { ...override, bonusPayoutMonths: value }
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="1">1 Month</SelectItem>
+                                            <SelectItem value="2">2 Months</SelectItem>
+                                            <SelectItem value="3">3 Months</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </div>
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                      The bonus amount is treated as the total approved bonus and is released from the eligibility month across the selected payout months.
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -2844,6 +3174,183 @@ const AddEmployee = () => {
                     </div>
                   </div>
                 )}
+
+                  </div>
+
+                  <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+                    <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+                      <div className="border-b bg-primary px-5 py-4 text-primary-foreground">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-primary-foreground/75">Review</p>
+                            <p className="text-lg font-semibold">All Salary Details</p>
+                          </div>
+                          <ListChecks className="h-5 w-5 text-primary-foreground/85" />
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <div className="rounded-md bg-white/10 p-3">
+                            <p className="text-xs text-primary-foreground/70">Annual CTC</p>
+                            <p className="mt-1 text-base font-semibold">{formatInr(salaryBreakdown.annualCtc)}</p>
+                          </div>
+                          <div className="rounded-md bg-white/10 p-3">
+                            <p className="text-xs text-primary-foreground/70">Monthly CTC</p>
+                            <p className="mt-1 text-base font-semibold">{formatInr(salaryBreakdown.monthlyCtc)}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-5 p-5">
+                        <section>
+                          <div className="mb-3 flex items-center gap-2">
+                            <Landmark className="h-4 w-4 text-primary" />
+                            <p className="text-sm font-semibold">Payroll Setup</p>
+                          </div>
+                          <div className="grid gap-2 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">Pay group</span>
+                              <span className="text-right font-medium">
+                                {selectedPayGroup ? `${selectedPayGroup.name} (${selectedPayGroup.code})` : "Not selected"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">Payroll status</span>
+                              <span className="font-medium capitalize">{salaryForm.payrollStatus.replaceAll("_", " ")}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">Payment mode</span>
+                              <span className="font-medium capitalize">{salaryForm.defaultPaymentMode.replaceAll("_", " ")}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">Tax regime</span>
+                              <span className="font-medium">{salaryForm.taxRegime === "old" ? "Old Regime" : "New Regime"}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">Effective from</span>
+                              <span className="font-medium">{salaryForm.effectiveFrom || "-"}</span>
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="rounded-lg border bg-muted/20">
+                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+                            <span>Component</span>
+                            <span className="text-right">Monthly</span>
+                            <span className="text-right">Annual</span>
+                          </div>
+                          {[
+                            ["Basic Salary", salaryBreakdown.basicPay],
+                            ["House Rent Allowance", salaryBreakdown.hraAmount],
+                            ["Fixed Allowance", salaryBreakdown.fixedAllowance],
+                            ["EPF Employer", salaryBreakdown.employerEpf],
+                            ...(salaryForm.includeEsi ? [["ESI Employer", salaryBreakdown.esiEmployerAmount] as [string, number]] : [])
+                          ].map(([label, amount]) => (
+                            <div key={label} className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm last:border-b-0">
+                              <span>{label}</span>
+                              <span className="text-right font-medium">{formatInr(amount)}</span>
+                              <span className="text-right text-muted-foreground">{formatInr(Number(amount) * 12)}</span>
+                            </div>
+                          ))}
+                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 bg-secondary px-3 py-3 text-sm font-semibold">
+                            <span>Cost to Company</span>
+                            <span className="text-right">{formatInr(salaryBreakdown.monthlyCtc)}</span>
+                            <span className="text-right">{formatInr(salaryBreakdown.annualCtc)}</span>
+                          </div>
+                        </section>
+
+                        <section>
+                          <p className="mb-3 text-sm font-semibold">Rules & Contributions</p>
+                          <div className="grid gap-2 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">Basic rule</span>
+                              <span className="font-medium">{Number(effectiveBasicPercent || 0).toFixed(2)}%</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">HRA rule</span>
+                              <span className="font-medium">{Number(salaryForm.hraPercentOfBasic || 0).toFixed(2)}% of Basic</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">PF wage ceiling</span>
+                              <span className="font-medium">
+                                {salaryForm.restrictPfWage ? formatInr(salaryForm.pfWageCeiling) : "Not restricted"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">EPF calculation</span>
+                              <span className="font-medium">
+                                {salaryForm.epfMode === "fixed"
+                                  ? formatInr(salaryForm.epfFixedAmount)
+                                  : `${Number(salaryForm.epfPercentOfBasic || 12).toFixed(2)}%`}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">ESI</span>
+                              <span className="font-medium">{salaryForm.includeEsi ? "Enabled" : "Disabled"}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">Variable pay</span>
+                              <span className="font-medium">
+                                {salaryForm.variablePayEnabled ? formatInr(salaryForm.variablePay || 0) : "Not eligible"}
+                              </span>
+                            </div>
+                          </div>
+                        </section>
+
+                        <section>
+                          <p className="mb-3 text-sm font-semibold">Employee Overrides</p>
+                          {enabledEmployeeComponents.length > 0 ? (
+                            <div className="space-y-2">
+                              {enabledEmployeeComponents.map((override) => (
+                                <div key={override.code} className="rounded-md border bg-background p-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-medium">{override.name}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {override.scope.replaceAll("_", " ")} · {override.calculationMode}
+                                      </p>
+                                    </div>
+                                    <Badge variant="outline" className="rounded-md">
+                                      {override.amount ? formatInr(override.amount) : override.calculationMode}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                              No employee-specific component overrides enabled.
+                            </p>
+                          )}
+                        </section>
+                      </div>
+                    </div>
+
+                    {salaryStructures.length > 0 && (
+                      <div className="rounded-lg border bg-card p-4 shadow-sm">
+                        <div className="mb-3 flex items-center gap-2">
+                          <History className="h-4 w-4 text-primary" />
+                          <p className="text-sm font-semibold">Revision Timeline</p>
+                        </div>
+                        <div className="space-y-2">
+                          {salaryStructures.slice(0, 4).map((salary) => {
+                            const effectiveFrom = (salary.effective_from || "").slice(0, 10);
+                            const effectiveTo = (salary.effective_to || "").slice(0, 10) || "Current";
+                            return (
+                              <div key={`review-${salary.id || effectiveFrom}`} className="rounded-md border px-3 py-2">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-sm font-medium">{formatInr(salary.annual_ctc)}</span>
+                                  {salary.is_current && <Badge className="rounded-md">Current</Badge>}
+                                </div>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {effectiveFrom || "-"} to {effectiveTo}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </aside>
+                </div>
 
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
@@ -2856,23 +3363,10 @@ const AddEmployee = () => {
                     </p>
                   )}
                 </div>
-                {currentSalaryEffectiveFrom &&
-                  salaryForm.effectiveFrom &&
-                  salaryForm.effectiveFrom < currentSalaryEffectiveFrom && (
-                    <p className="text-xs text-red-600">
-                      Effective From cannot be earlier than current salary start date (
-                      {currentSalaryEffectiveFrom}).
-                    </p>
-                  )}
                 <div className="flex justify-end">
                   <Button
                     onClick={handleSaveSalary}
-                    disabled={
-                      savingSalary ||
-                      (Boolean(currentSalaryEffectiveFrom) &&
-                        Boolean(salaryForm.effectiveFrom) &&
-                        salaryForm.effectiveFrom < currentSalaryEffectiveFrom)
-                    }
+                    disabled={savingSalary}
                   >
                     {savingSalary
                       ? payrollProfileId

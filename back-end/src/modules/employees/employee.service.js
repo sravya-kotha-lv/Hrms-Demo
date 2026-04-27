@@ -745,13 +745,13 @@ const buildEmployeeListContext = async (req) => {
   const isSuperAdmin = await OrganizationService.isUserSuperAdmin(userId);
   const effectiveOrganizationId = isSuperAdmin && orgIdOverride ? orgIdOverride : organizationId;
 
-  let isManager = false;
+  let activeRoleSlug = "";
   if (activeRoleId) {
     const role = await Role.findOne({
       _id: activeRoleId,
       organizationId
     }).select("slug");
-    isManager = role?.slug === "manager";
+    activeRoleSlug = role?.slug || "";
   }
 
   const query = {
@@ -759,7 +759,38 @@ const buildEmployeeListContext = async (req) => {
     isDeleted: false
   };
 
-  if (isManager) {
+  if (activeRoleSlug === "employee") {
+    const currentEmployee = await Employee.findOne({
+      userId,
+      organizationId,
+      isDeleted: false
+    }).select("_id managerId");
+
+    if (currentEmployee?.managerId) {
+      const teamEmployees = await Employee.find({
+        organizationId,
+        isDeleted: false,
+        managerId: currentEmployee.managerId,
+        status: { $ne: "resigned" },
+        employmentLifecycleStatus: { $ne: "terminated" }
+      }).select("_id");
+
+      query._id = {
+        $in: [
+          currentEmployee.managerId,
+          ...teamEmployees.map((employee) => employee._id)
+        ]
+      };
+      query.status = { $ne: "resigned" };
+      query.employmentLifecycleStatus = { $ne: "terminated" };
+    } else if (currentEmployee) {
+      query._id = currentEmployee._id;
+      query.status = { $ne: "resigned" };
+      query.employmentLifecycleStatus = { $ne: "terminated" };
+    } else {
+      query._id = { $in: [] };
+    }
+  } else if (activeRoleSlug === "manager") {
     const managerEmployee = await Employee.findOne({
       userId,
       organizationId
@@ -778,7 +809,7 @@ const buildEmployeeListContext = async (req) => {
 
   if (departmentId) query.departmentId = departmentId;
   if (designationId) query.designationId = designationId;
-  if (status) query.status = status;
+  if (status && activeRoleSlug !== "employee") query.status = status;
   if (managerId) query.managerId = managerId;
   if (employmentType) query.employmentType = employmentType;
 
@@ -908,7 +939,8 @@ const loadPayrollExportMap = async (organizationId) => {
 };
 
 exports.listByOrganization = async (req) => {
-  const { page, limit } = req.query;
+  const { page, limit, scope } = req.query;
+  const isOrganizationTreeScope = scope === "organizationTree";
   const { query, sortField, sortDirection, effectiveOrganizationId } =
     await buildEmployeeListContext(req);
 
@@ -927,8 +959,9 @@ exports.listByOrganization = async (req) => {
 
   let pagination = null;
 
-  // ✅ Apply pagination only if BOTH page and limit exist
-  if (page && limit) {
+  // Apply pagination only for normal list views. The org tree needs the full
+  // scoped employee set so managers can be attached to their reports.
+  if (!isOrganizationTreeScope && page && limit) {
     const pageNum = Number(page);
     const limitNum = Number(limit);
     const skip = (pageNum - 1) * limitNum;
