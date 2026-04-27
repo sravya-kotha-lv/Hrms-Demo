@@ -13,9 +13,12 @@ import {
   AlertCircle,
   LogIn,
   LogOut,
+  Network,
+  UserCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useNavigate } from "react-router-dom";
@@ -156,6 +159,7 @@ type UpcomingEvent = {
 };
 
 type MyProfile = {
+  _id?: string;
   profileCompleted?: boolean;
   phone?: string;
   dob?: string;
@@ -168,6 +172,29 @@ type MyProfile = {
     startTime?: string | null;
     endTime?: string | null;
   } | null;
+  managerId?: {
+    _id?: string;
+    firstName?: string;
+    lastName?: string;
+  } | null;
+  firstName?: string;
+  lastName?: string;
+  employeeCode?: string;
+  departmentId?: { _id?: string; name?: string } | null;
+  designationId?: { _id?: string; name?: string } | null;
+  profileImage?: string | null;
+  status?: string;
+};
+
+type TeamMember = {
+  _id?: string;
+  firstName?: string;
+  lastName?: string;
+  employeeCode?: string;
+  departmentId?: { _id?: string; name?: string } | null;
+  designationId?: { _id?: string; name?: string } | null;
+  profileImage?: string | null;
+  status?: string;
 };
 
 type TimesheetSummary = {
@@ -338,6 +365,24 @@ const EmployeeDashboard = () => {
   });
   const hasShownMatrixCompatibilityErrorRef = useRef(false);
 
+  const [directReports, setDirectReports] = useState<TeamMember[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const teamLoadedRef = useRef(false);
+
+  const loadTeam = useCallback(async () => {
+    setTeamLoading(true);
+    const myId = myProfile?._id;
+    if (myId) {
+      const res = await getApiWithToken(`/employees?managerId=${myId}&limit=50`, null, {
+        requiredPermissions: ["EMP_VIEW"],
+      });
+      if (res?.success) {
+        setDirectReports(res.data?.items || res.data || []);
+      }
+    }
+    setTeamLoading(false);
+  }, [myProfile?._id]);
+
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
 
   const loadDashboard = useCallback(async (silent = false) => {
@@ -478,6 +523,13 @@ const EmployeeDashboard = () => {
     }, 30000);
     return () => window.clearInterval(timer);
   }, [loadDashboard]);
+
+  useEffect(() => {
+    if (activeTab === "team" && !teamLoadedRef.current && myProfile?._id) {
+      teamLoadedRef.current = true;
+      loadTeam();
+    }
+  }, [activeTab, myProfile?._id, loadTeam]);
 
   const monthlySummary = useMemo(() => ({
     present: Number(matrixSummary?.presentDays || 0),
@@ -890,10 +942,11 @@ const EmployeeDashboard = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
-        <TabsList className="grid grid-cols-3 w-full md:w-[480px]">
+        <TabsList className="grid grid-cols-4 w-full md:w-[560px]">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
           <TabsTrigger value="planning">Planning</TabsTrigger>
+          <TabsTrigger value="team">Team</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
@@ -1105,6 +1158,133 @@ const EmployeeDashboard = () => {
               </div>
             </motion.div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="team" className="mt-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Manager card */}
+            <motion.div
+              className={`stat-card ${panelGradientClassName}`}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <UserCircle2 className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-semibold">Reporting To</h3>
+              </div>
+              {myProfile?.managerId ? (
+                <div className={`flex items-center gap-3 rounded-xl border p-3 ${softInsetClassName}`}>
+                  <Avatar className="w-10 h-10 shrink-0">
+                    <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-violet-500 text-white text-sm font-semibold">
+                      {`${myProfile.managerId.firstName?.[0] || ""}${myProfile.managerId.lastName?.[0] || ""}`.toUpperCase() || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">
+                      {`${myProfile.managerId.firstName || ""} ${myProfile.managerId.lastName || ""}`.trim() || "Manager"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Your direct manager</p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-indigo-300 text-indigo-700 bg-indigo-50 shrink-0">
+                    Manager
+                  </Badge>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No manager assigned</p>
+              )}
+            </motion.div>
+
+            {/* Direct reports */}
+            <motion.div
+              className={`stat-card ${panelGradientClassName}`}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-muted-foreground" />
+                  <h3 className="font-semibold">Direct Reports</h3>
+                  {directReports.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      {directReports.length}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              {teamLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2 rounded-lg border">
+                      <div className="w-8 h-8 rounded-full bg-muted animate-pulse shrink-0" />
+                      <div className="space-y-1 flex-1">
+                        <div className="h-3.5 w-28 rounded bg-muted animate-pulse" />
+                        <div className="h-3 w-20 rounded bg-muted animate-pulse" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : directReports.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No direct reports</p>
+              ) : (
+                <div className="space-y-2 max-h-56 overflow-y-auto custom-scroll pr-1">
+                  {directReports.map((emp) => {
+                    const initials = `${emp.firstName?.[0] || ""}${emp.lastName?.[0] || ""}`.toUpperCase() || "?";
+                    const fullName = `${emp.firstName || ""} ${emp.lastName || ""}`.trim() || "Employee";
+                    return (
+                      <div key={emp._id} className={`flex items-center gap-3 rounded-xl border p-2.5 ${softInsetClassName}`}>
+                        <Avatar className="w-8 h-8 shrink-0">
+                          <AvatarImage src={emp.profileImage || undefined} />
+                          <AvatarFallback className="bg-gradient-to-br from-indigo-400 to-violet-400 text-white text-xs font-semibold">
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{fullName}</p>
+                          {emp.designationId?.name && (
+                            <p className="text-xs text-muted-foreground truncate">{emp.designationId.name}</p>
+                          )}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0 capitalize shrink-0 ${
+                            emp.status === "active"
+                              ? "border-emerald-300 text-emerald-700 bg-emerald-50"
+                              : "border-muted text-muted-foreground"
+                          }`}
+                        >
+                          {emp.status || "active"}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </motion.div>
+          </div>
+
+          {/* Link to full org tree */}
+          <motion.div
+            className={`stat-card ${panelGradientClassName} mt-4`}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Network className="w-4 h-4 text-muted-foreground" />
+                <div>
+                  <h3 className="font-semibold text-sm">Full Organization Tree</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    View the complete reporting hierarchy across the organization
+                  </p>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => navigate("/employee-tree")}>
+                View Org Tree
+              </Button>
+            </div>
+          </motion.div>
         </TabsContent>
       </Tabs>
 

@@ -41,7 +41,7 @@ router.put(
 router.get(
   "/",
   auth,
-  authorize("EMP_VIEW"),
+  authorize(["EMP_VIEW", "EMP_ORG_TREE_VIEW"]),
   validate(listEmployeesQuerySchema, "query"),
   asyncHandler(controller.listByOrganization)
 );

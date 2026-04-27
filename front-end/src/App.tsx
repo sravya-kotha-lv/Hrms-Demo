@@ -58,6 +58,7 @@ const Documentation = lazyWithRetry(() => import("./pages/Documentation"), "Docu
 const Expenses = lazyWithRetry(() => import("./pages/Expenses"), "Expenses");
 const Projects = lazyWithRetry(() => import("./pages/Projects"), "Projects");
 const Hiring = lazyWithRetry(() => import("./pages/Hiring"), "Hiring");
+const EmployeeTree = lazyWithRetry(() => import("./pages/EmployeeTree"), "EmployeeTree");
 
 const queryClient = new QueryClient();
 
@@ -556,6 +557,16 @@ const App = () => (
                 <RequireAuth permissions={["HIRING_VIEW", "HIRING_MANAGE"]}>
                   <RequireProfile>
                     <Hiring />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/employee-tree"
+              element={
+                <RequireAuth permissions={["EMP_VIEW", "EMP_ORG_TREE_VIEW", "EMP_SELF_VIEW"]}>
+                  <RequireProfile>
+                    <EmployeeTree />
                   </RequireProfile>
                 </RequireAuth>
               }

@@ -803,7 +803,7 @@ const buildRoleMapByUserIds = async ({ organizationId, userIds }) => {
     organizationId,
     userId: { $in: userIds }
   })
-    .populate("roleIds", "name")
+    .populate("roleIds", "name slug")
     .select("userId roleIds");
 
   return new Map(
@@ -811,7 +811,8 @@ const buildRoleMapByUserIds = async ({ organizationId, userIds }) => {
       String(orgUser.userId),
       (orgUser.roleIds || []).map((role) => ({
         _id: role._id,
-        name: role.name
+        name: role.name,
+        slug: role.slug
       }))
     ])
   );
