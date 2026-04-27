@@ -190,8 +190,36 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
     children: [
       {
         icon: <DollarSign size={18} />,
-        label: "Run",
-        to: "/payroll",
+        label: "Setup",
+        to: "/payroll/setup",
+        permissions: [
+          "PAYROLL_CONFIG_MANAGE",
+          "PAYROLL_RUN_CREATE",
+          "PAYROLL_RUN_APPROVE",
+          "PAYROLL_RUN_LOCK",
+          "PAYROLL_REPORT_VIEW",
+          "PAYROLL_PAYSLIP_VIEW",
+          "PAYROLL_RUN_VIEW"
+        ]
+      },
+      {
+        icon: <Users size={18} />,
+        label: "Employees",
+        to: "/payroll/employees",
+        permissions: [
+          "PAYROLL_CONFIG_MANAGE",
+          "PAYROLL_RUN_CREATE",
+          "PAYROLL_RUN_APPROVE",
+          "PAYROLL_RUN_LOCK",
+          "PAYROLL_REPORT_VIEW",
+          "PAYROLL_PAYSLIP_VIEW",
+          "PAYROLL_RUN_VIEW"
+        ]
+      },
+      {
+        icon: <DollarSign size={18} />,
+        label: "Runs",
+        to: "/payroll/runs",
         permissions: [
           "PAYROLL_CONFIG_MANAGE",
           "PAYROLL_RUN_CREATE",

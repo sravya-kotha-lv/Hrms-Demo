@@ -40,7 +40,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { deleteApiWithToken, getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
+import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/useAuth";
@@ -57,7 +57,7 @@ const getStatusBadge = (status: string) => {
     case "on_leave":
       return <Badge className="status-badge status-pending">On Leave</Badge>;
     case "resigned":
-      return <Badge className="status-badge status-inactive">Resigned</Badge>;
+      return <Badge className="status-badge status-inactive">Inactive</Badge>;
     default:
       return <Badge variant="secondary">{status || "-"}</Badge>;
   }
@@ -116,7 +116,6 @@ const Employees = () => {
   const [deptSearch, setDeptSearch] = useState("");
   const [designationSearch, setDesignationSearch] = useState("");
   const [managerSearch, setManagerSearch] = useState("");
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
@@ -170,8 +169,7 @@ const Employees = () => {
   const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
   const canView = hasAnyPermission(["EMP_VIEW"]);
   const canEdit = hasAnyPermission(["EMP_UPDATE"]);
-  const canDelete = hasAnyPermission(["EMP_DELETE"]);
-  const canAnyAction = canView || canEdit || canDelete;
+  const canAnyAction = canView || canEdit;
   const tableColumnCount = 14 + (canAnyAction ? 1 : 0);
 
   const selectedOrgId = useMemo(
@@ -735,35 +733,36 @@ const Employees = () => {
     });
   };
 
-  const handleDelete = (employee: any) => {
+  const handleStatusAction = (employee: any) => {
     setSelectedEmployee(employee);
-    setDeleteDialogOpen(true);
+    setStatusDialogOpen(true);
   };
 
-  const confirmDelete = async () => {
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+
+  const confirmStatusChange = async () => {
     if (!selectedEmployee?._id) return;
-    if (!canDelete) {
-      toast.error("You do not have permission to delete");
+    if (!canEdit) {
+      toast.error("You do not have permission to update employee status");
       return;
     }
 
-    const res = await deleteApiWithToken(`/employees/${selectedEmployee._id}`);
+    const nextStatus = selectedEmployee.status === "resigned" ? "active" : "resigned";
+    const res = await putApiWithToken(`/employees/${selectedEmployee._id}`, {
+      status: nextStatus
+    });
     if (res?.success) {
-      toast.success("Employee deleted");
-      setEmployees((prev) => prev.filter((emp) => emp._id !== selectedEmployee._id));
-      setSelectedEmployeeIds((prev) => prev.filter((id) => id !== selectedEmployee._id));
-      setTotalItems((prev) => {
-        const nextTotal = Math.max(0, prev - 1);
-        const nextPages = Math.max(1, Math.ceil(nextTotal / pageSize));
-        setTotalPages(nextPages);
-        setCurrentPage((cp) => Math.min(cp, nextPages));
-        return nextTotal;
-      });
+      toast.success(nextStatus === "active" ? "Employee marked active" : "Employee marked inactive");
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          emp._id === selectedEmployee._id ? { ...emp, status: nextStatus } : emp
+        )
+      );
     } else {
-      toast.error(res?.message || "Delete failed");
+      toast.error(res?.message || "Status update failed");
     }
 
-    setDeleteDialogOpen(false);
+    setStatusDialogOpen(false);
     setSelectedEmployee(null);
   };
 
@@ -1455,9 +1454,10 @@ const Employees = () => {
                             <Edit className="w-4 h-4 mr-2" /> Enable Details Form
                           </DropdownMenuItem>
                         </PermissionGate>
-                        <PermissionGate permissions={["EMP_DELETE"]}>
-                          <DropdownMenuItem onClick={() => handleDelete(employee)}>
-                            <Trash2 className="w-4 h-4 mr-2 text-red-500" /> Delete
+                        <PermissionGate permissions={["EMP_UPDATE"]}>
+                          <DropdownMenuItem onClick={() => handleStatusAction(employee)}>
+                            <Trash2 className="w-4 h-4 mr-2 text-amber-500" />
+                            {employee.status === "resigned" ? "Mark Active" : "Mark Inactive"}
                           </DropdownMenuItem>
                         </PermissionGate>
                       </DropdownMenuContent>
@@ -1503,21 +1503,24 @@ const Employees = () => {
       </motion.div>
       )}
 
-      {/* Delete Confirmation */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Employee</DialogTitle>
+            <DialogTitle>
+              {selectedEmployee?.status === "resigned" ? "Mark Employee Active" : "Mark Employee Inactive"}
+            </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this employee? This action cannot be undone.
+              {selectedEmployee?.status === "resigned"
+                ? "This employee will become active again and appear as active across HR flows."
+                : "This employee will be marked inactive instead of being deleted."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
-              Delete
+            <Button onClick={confirmStatusChange}>
+              {selectedEmployee?.status === "resigned" ? "Mark Active" : "Mark Inactive"}
             </Button>
           </DialogFooter>
         </DialogContent>

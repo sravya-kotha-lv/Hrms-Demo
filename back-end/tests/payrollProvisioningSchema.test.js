@@ -129,7 +129,7 @@ test("ensurePayrollTenantAndDefaults bootstraps payroll schema before tenant pro
     assert.equal(result.tenantId, "tenant-1");
     assert.equal(queryOrder[0], "ensureSchema");
     assert.equal(queryOrder[1], "insertTenant");
-    assert.equal(queryOrder.filter((item) => item === "insertFormula").length, 6);
+    assert.equal(queryOrder.filter((item) => item === "insertFormula").length, 10);
   } finally {
     delete require.cache[servicePath];
     for (const restore of restores.reverse()) restore();

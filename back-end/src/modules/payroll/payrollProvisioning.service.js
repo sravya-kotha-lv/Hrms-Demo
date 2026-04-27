@@ -49,6 +49,53 @@ const STARTER_COMPONENTS = {
       prorate_with_attendance: true,
       rounding_policy: "nearest_rupee",
       priority: 30
+    },
+    {
+      code: "OTHER_ALLOWANCE",
+      name: "Other Allowance",
+      display_name: "Other Allowance",
+      calculation_mode: "formula",
+      taxable: true,
+      pf_applicable: false,
+      esi_applicable: true,
+      prorate_with_attendance: true,
+      rounding_policy: "nearest_rupee",
+      priority: 40,
+      metadata: {
+        defaultEnabled: true
+      }
+    },
+    {
+      code: "BONUS",
+      name: "Bonus",
+      display_name: "Bonus",
+      calculation_mode: "fixed",
+      taxable: true,
+      pf_applicable: false,
+      esi_applicable: false,
+      prorate_with_attendance: false,
+      rounding_policy: "nearest_rupee",
+      priority: 50,
+      metadata: {
+        defaultEnabled: false,
+        frequency: "monthly"
+      }
+    },
+    {
+      code: "ESOP",
+      name: "ESOP Perquisite",
+      display_name: "ESOP",
+      calculation_mode: "fixed",
+      taxable: true,
+      pf_applicable: false,
+      esi_applicable: false,
+      prorate_with_attendance: false,
+      rounding_policy: "nearest_rupee",
+      priority: 60,
+      metadata: {
+        defaultEnabled: false,
+        frequency: "event_based"
+      }
     }
   ],
   deduction: [
@@ -73,6 +120,40 @@ const STARTER_COMPONENTS = {
       employee_share_only: true,
       rounding_policy: "nearest_rupee",
       priority: 120
+    },
+    {
+      code: "PT",
+      name: "Professional Tax",
+      display_name: "PT",
+      calculation_mode: "slab",
+      taxable: false,
+      is_statutory: true,
+      employee_share_only: true,
+      rounding_policy: "nearest_rupee",
+      priority: 130,
+      metadata: {
+        defaultEnabled: true,
+        base: "MONTHLY_GROSS",
+        slabs: [
+          { upto: 15000, amount: 0 },
+          { upto: 20000, amount: 150 },
+          { upto: null, amount: 200 }
+        ]
+      }
+    },
+    {
+      code: "TDS",
+      name: "Tax Deducted at Source",
+      display_name: "TDS",
+      calculation_mode: "formula",
+      taxable: false,
+      is_statutory: true,
+      employee_share_only: true,
+      rounding_policy: "nearest_rupee",
+      priority: 140,
+      metadata: {
+        defaultEnabled: false
+      }
     }
   ],
   employer_contribution: [
@@ -85,6 +166,33 @@ const STARTER_COMPONENTS = {
       linked_deduction_code: "EPF",
       rounding_policy: "nearest_rupee",
       priority: 210
+    },
+    {
+      code: "ESI_ER",
+      name: "Employer State Insurance",
+      display_name: "Employer ESI",
+      calculation_mode: "formula",
+      contributes_to_ctc: true,
+      linked_deduction_code: "ESI",
+      rounding_policy: "nearest_rupee",
+      priority: 220,
+      metadata: {
+        defaultEnabled: false
+      }
+    },
+    {
+      code: "GRATUITY",
+      name: "Gratuity Provision",
+      display_name: "Gratuity",
+      calculation_mode: "formula",
+      contributes_to_ctc: true,
+      linked_deduction_code: null,
+      rounding_policy: "nearest_rupee",
+      priority: 230,
+      metadata: {
+        defaultEnabled: false,
+        eligibilityNote: "Payable after 5 years of service under the Gratuity Act"
+      }
     }
   ]
 };
@@ -115,6 +223,14 @@ const STARTER_FORMULAS = [
     executionOrder: 30
   },
   {
+    scope: "earning",
+    componentCode: "OTHER_ALLOWANCE",
+    formulaCode: "OTHER_ALLOWANCE_AUTO",
+    formulaName: "Other Allowance Balancing Figure",
+    expression: "round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE + BONUS), 0))",
+    executionOrder: 40
+  },
+  {
     scope: "deduction",
     componentCode: "EPF",
     formulaCode: "EPF_AUTO",
@@ -127,8 +243,16 @@ const STARTER_FORMULAS = [
     componentCode: "ESI",
     formulaCode: "ESI_AUTO",
     formulaName: "Employee ESI",
-    expression: "round(ESI_AMOUNT)",
+    expression: "round(ESI_EMPLOYEE_AMOUNT)",
     executionOrder: 120
+  },
+  {
+    scope: "deduction",
+    componentCode: "TDS",
+    formulaCode: "TDS_AUTO",
+    formulaName: "TDS From Employee Tax Engine",
+    expression: "round(TDS_AMOUNT)",
+    executionOrder: 140
   },
   {
     scope: "employer_contribution",
@@ -137,6 +261,22 @@ const STARTER_FORMULAS = [
     formulaName: "Employer EPF",
     expression: "round(EMPLOYER_EPF)",
     executionOrder: 210
+  },
+  {
+    scope: "employer_contribution",
+    componentCode: "ESI_ER",
+    formulaCode: "EMPLOYER_ESI_AUTO",
+    formulaName: "Employer ESI",
+    expression: "round(ESI_EMPLOYER_AMOUNT)",
+    executionOrder: 220
+  },
+  {
+    scope: "employer_contribution",
+    componentCode: "GRATUITY",
+    formulaCode: "GRATUITY_AUTO",
+    formulaName: "Gratuity Provision",
+    expression: "round(BASIC_PAY * 0.0481)",
+    executionOrder: 230
   }
 ];
 
@@ -195,7 +335,7 @@ const getOrgSettings = async (organizationId, orgSettings = null) => {
   if (orgSettings) return orgSettings;
   return OrgSettings.findOne({ organizationId })
     .select(
-      "payrollEnabled payrollCutoffDay timezone attendanceLockMode attendanceLockAfterDays"
+      "payrollEnabled payrollCutoffDay payrollSalaryPayDay timezone attendanceLockMode attendanceLockAfterDays"
     )
     .lean();
 };
@@ -237,6 +377,12 @@ const hasRows = async (client, sql, params) => {
   return Number(result.rows[0]?.count || 0) > 0;
 };
 
+const buildStarterMetadata = (component) => ({
+  autoProvisioned: true,
+  starterPack: true,
+  ...(component.metadata || {})
+});
+
 const insertStarterEarningComponent = async (client, tenantId, component, actorId) => {
   const result = await client.query(
     `
@@ -268,7 +414,7 @@ const insertStarterEarningComponent = async (client, tenantId, component, actorI
       component.prorate_with_attendance,
       component.rounding_policy,
       STARTER_EFFECTIVE_FROM,
-      JSON.stringify({ autoProvisioned: true, starterPack: true }),
+      JSON.stringify(buildStarterMetadata(component)),
       actorId
     ]
   );
@@ -305,7 +451,7 @@ const insertStarterDeductionComponent = async (client, tenantId, component, acto
       component.employee_share_only,
       component.rounding_policy,
       STARTER_EFFECTIVE_FROM,
-      JSON.stringify({ autoProvisioned: true, starterPack: true }),
+      JSON.stringify(buildStarterMetadata(component)),
       actorId
     ]
   );
@@ -341,7 +487,7 @@ const insertStarterEmployerComponent = async (client, tenantId, component, actor
       component.linked_deduction_code,
       component.rounding_policy,
       STARTER_EFFECTIVE_FROM,
-      JSON.stringify({ autoProvisioned: true, starterPack: true }),
+      JSON.stringify(buildStarterMetadata(component)),
       actorId
     ]
   );
@@ -478,6 +624,7 @@ const ensureDefaultPayGroup = async ({
   tenantId,
   organization,
   cutoffDay,
+  salaryPayDay,
   actorId
 }) => {
   const existingResult = await client.query(
@@ -497,10 +644,11 @@ const ensureDefaultPayGroup = async ({
         UPDATE pay_groups
         SET
           cutoff_day = $2,
-          updated_by = $3
+          salary_pay_day = $3,
+          updated_by = $4
         WHERE tenant_id = $1
       `,
-      [tenantId, cutoffDay, actorId]
+      [tenantId, cutoffDay, salaryPayDay, actorId]
     );
     return existingResult.rows[0].id;
   }
@@ -535,7 +683,7 @@ const ensureDefaultPayGroup = async ({
       name,
       "Auto-created from organization settings",
       cutoffDay,
-      DEFAULT_SALARY_PAY_DAY,
+      salaryPayDay,
       JSON.stringify({ autoProvisioned: true }),
       actorId
     ]
@@ -665,11 +813,13 @@ exports.ensurePayrollTenantAndDefaults = async ({
 
     const tenantId = result.rows[0]?.id;
     const cutoffDay = toDay(settings?.payrollCutoffDay, 25);
+    const salaryPayDay = toDay(settings?.payrollSalaryPayDay, DEFAULT_SALARY_PAY_DAY);
     const defaultPayGroupId = await ensureDefaultPayGroup({
       client,
       tenantId,
       organization,
       cutoffDay,
+      salaryPayDay,
       actorId: String(actorId || "system")
     });
 
@@ -687,7 +837,12 @@ exports.ensurePayrollTenantAndDefaults = async ({
       actorId: String(actorId || "system")
     });
 
-    return { tenantId, defaultPayGroupId, payrollCutoffDay: cutoffDay };
+    return {
+      tenantId,
+      defaultPayGroupId,
+      payrollCutoffDay: cutoffDay,
+      payrollSalaryPayDay: salaryPayDay
+    };
   } finally {
     if (!existingClient && client) client.release();
   }

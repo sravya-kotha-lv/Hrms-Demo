@@ -10,10 +10,11 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
+import { deleteApiWithToken, getApiWithToken, postApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 
 type ComponentDraft = {
+  id?: string;
   scope: "earning" | "deduction" | "employer_contribution";
   code: string;
   name: string;
@@ -77,12 +78,23 @@ type PayrollSettingsPayload = {
 };
 
 type SalaryComponentPayload = {
+  id?: string;
   scope: ComponentDraft["scope"];
   code?: string;
   name?: string;
+  calculationMode?: ComponentDraft["calculationMode"];
   calculation_mode?: ComponentDraft["calculationMode"];
   taxable?: boolean;
+  effectiveFrom?: string;
   metadata?: Record<string, any>;
+};
+
+type SalaryComponentUpdatePayload = {
+  name: string;
+  calculationMode: ComponentDraft["calculationMode"];
+  taxable?: boolean;
+  effectiveFrom: string;
+  metadata: Record<string, any>;
 };
 
 type Props = {
@@ -91,6 +103,7 @@ type Props = {
   initialSettings?: any;
   preferredPayGroupId?: string;
   payrollCutoffDay?: number;
+  payrollSalaryPayDay?: number;
   onActivated?: () => void;
 };
 
@@ -99,14 +112,15 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const steps = [
-  "Pay Group",
-  "Components",
-  "Statutory",
-  "Attendance Rules",
-  "Review & Activate"
+  "Salary Cycle",
+  "Salary Components",
+  "Compliance Defaults",
+  "Attendance & LOP",
+  "Review & Save"
 ];
 
 const defaultComponent = (): ComponentDraft => ({
+  id: undefined,
   scope: "earning",
   code: "",
   name: "",
@@ -133,9 +147,9 @@ const FORMULA_PRESETS = [
   },
   {
     id: "taxable_allowance_basic_minus_hra",
-    label: "Taxable Allowance = Basic - HRA",
+    label: "Other Allowance = Basic - HRA",
     expression: "BASIC - HRA",
-    help: "Useful when TA is derived from Basic and HRA."
+    help: "Useful when Other Allowance is derived from Basic and HRA."
   }
 ] as const;
 
@@ -143,8 +157,10 @@ const STARTER_FORMULA_BY_CODE: Record<string, string> = {
   BASIC: "BASIC_PAY",
   HRA: "round(BASIC_PAY * HRA_PERCENT_OF_BASIC / 100)",
   VARIABLE: "VARIABLE_PAY",
+  OTHER_ALLOWANCE: "round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE + BONUS), 0))",
   EPF: "round(min(BASIC_PAY, 15000) * 0.12)",
-  ESI: "round(ESI_AMOUNT)",
+  ESI: "round(ESI_EMPLOYEE_AMOUNT)",
+  TDS: "round(TDS_AMOUNT)",
   EMPLOYER_EPF: "round(EMPLOYER_EPF)"
 };
 
@@ -178,36 +194,58 @@ const TELANGANA_DEFAULT_TEMPLATE: PayrollTemplate = {
     },
     {
       scope: "earning",
-      code: "TA",
-      name: "Taxable Allowance",
+      code: "OTHER_ALLOWANCE",
+      name: "Other Allowance",
       calculationMode: "formula",
       taxable: true,
       amount: "",
       percentageOf: "MONTHLY_GROSS",
       formulaTemplate: "taxable_allowance_basic_minus_hra",
-      formulaExpression: "BASIC - HRA"
+      formulaExpression: "round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE + BONUS), 0))"
     },
     {
       scope: "deduction",
-      code: "PF",
-      name: "Provident Fund",
-      calculationMode: "percentage",
+      code: "EPF",
+      name: "Employee Provident Fund",
+      calculationMode: "formula",
       taxable: false,
-      amount: "12",
-      percentageOf: "BASIC",
+      amount: "",
+      percentageOf: "BASIC_PAY",
       formulaTemplate: "custom",
-      formulaExpression: ""
+      formulaExpression: "round(min(BASIC_PAY, 15000) * 0.12)"
+    },
+    {
+      scope: "deduction",
+      code: "ESI",
+      name: "Employee State Insurance",
+      calculationMode: "formula",
+      taxable: false,
+      amount: "",
+      percentageOf: "MONTHLY_GROSS",
+      formulaTemplate: "custom",
+      formulaExpression: "round(ESI_EMPLOYEE_AMOUNT)"
     },
     {
       scope: "deduction",
       code: "PT",
       name: "Professional Tax",
-      calculationMode: "fixed",
+      calculationMode: "slab",
       taxable: false,
       amount: "200",
       percentageOf: "MONTHLY_GROSS",
       formulaTemplate: "custom",
       formulaExpression: ""
+    },
+    {
+      scope: "employer_contribution",
+      code: "EMPLOYER_EPF",
+      name: "Employer Provident Fund",
+      calculationMode: "formula",
+      taxable: false,
+      amount: "",
+      percentageOf: "BASIC_PAY",
+      formulaTemplate: "custom",
+      formulaExpression: "round(EMPLOYER_EPF)"
     }
   ],
   statutory: {
@@ -309,6 +347,29 @@ const TELANGANA_RULES: TelanganaRuleItem[] = [
   }
 ];
 
+const FORMULA_FUNCTIONS = [
+  { name: "round(x)", help: "Rounds to the nearest whole number." },
+  { name: "min(a, b)", help: "Returns the smaller value." },
+  { name: "max(a, b)", help: "Returns the larger value." },
+  { name: "ceil(x)", help: "Rounds up to the next whole number." },
+  { name: "floor(x)", help: "Rounds down to the previous whole number." },
+  { name: "abs(x)", help: "Returns the absolute value." },
+  { name: "pow(a, b)", help: "Raises a number to a power." }
+] as const;
+
+const COMMON_FORMULA_VARIABLES = [
+  "BASIC",
+  "HRA",
+  "VARIABLE",
+  "MONTHLY_GROSS",
+  "BASIC_PAY",
+  "PAYABLE_DAYS",
+  "LOP_DAYS",
+  "PRORATION_FACTOR",
+  "WORKING_DAYS",
+  "CALENDAR_DAYS"
+] as const;
+
 const getRuleStatusLabel = (status: TelanganaRuleItem["status"]) => {
   if (status === "auto_default") return "Auto Default";
   if (status === "legal_update_required") return "Legal Update Needed";
@@ -321,9 +382,23 @@ const getRuleStatusClass = (status: TelanganaRuleItem["status"]) => {
   return "bg-blue-100 text-blue-700";
 };
 
+const getScopeLabel = (scope: ComponentDraft["scope"]) => {
+  if (scope === "earning") return "Earning";
+  if (scope === "deduction") return "Deduction";
+  return "Employer Contribution";
+};
+
+const getCalculationModeLabel = (mode: ComponentDraft["calculationMode"]) => {
+  if (mode === "fixed") return "Fixed Amount";
+  if (mode === "percentage") return "Percentage";
+  if (mode === "formula") return "Formula";
+  return "Slab";
+};
+
 const buildPayGroupState = (
   settings?: PayrollSettingsPayload,
   preferredPayGroupId?: string,
+  payrollSalaryPayDay = 30,
   availablePayGroups: PayGroupOption[] = []
 ) => {
   const defaultPayGroupId = String(
@@ -337,7 +412,12 @@ const buildPayGroupState = (
   return {
     defaultPayGroupId,
     payFrequency: String(matchedPayGroup?.pay_frequency || "monthly"),
-    salaryPayDay: String(matchedPayGroup?.salary_pay_day || 30)
+    salaryPayDay: String(
+      matchedPayGroup?.salary_pay_day ||
+        settings?.metadata?.payGroup?.salaryPayDay ||
+        payrollSalaryPayDay ||
+        30
+    )
   };
 };
 
@@ -367,6 +447,17 @@ const buildAttendanceRulesState = (settings?: PayrollSettingsPayload) => ({
     typeof settings?.enable_proration === "boolean" ? settings.enable_proration : true
 });
 
+const getComponentPayGroupIds = (component?: SalaryComponentPayload) => {
+  const metadata = component?.metadata || {};
+  const values = Array.isArray(metadata?.payGroupIds)
+    ? metadata.payGroupIds
+    : Array.isArray(metadata?.applicability?.payGroupIds)
+      ? metadata.applicability.payGroupIds
+      : [];
+
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+};
+
 const mapComponentToDraft = (component: SalaryComponentPayload): ComponentDraft => {
   const metadata = component?.metadata || {};
   const code = String(component?.code || "").toUpperCase();
@@ -374,6 +465,7 @@ const mapComponentToDraft = (component: SalaryComponentPayload): ComponentDraft 
     metadata.expression || STARTER_FORMULA_BY_CODE[code] || ""
   );
   return {
+    id: component?.id,
     scope: component.scope,
     code,
     name: String(component?.name || ""),
@@ -395,17 +487,24 @@ export const PayrollSetupWizard = ({
   initialSettings,
   preferredPayGroupId,
   payrollCutoffDay = 25,
+  payrollSalaryPayDay = 30,
   onActivated
 }: Props) => {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [loadingExistingSetup, setLoadingExistingSetup] = useState(false);
+  const [loadedComponentIds, setLoadedComponentIds] = useState<string[]>([]);
+  const [loadedComponentScopeMap, setLoadedComponentScopeMap] = useState<Record<string, ComponentDraft["scope"]>>({});
 
-  const [payGroup, setPayGroup] = useState(buildPayGroupState(initialSettings, preferredPayGroupId));
+  const [payGroup, setPayGroup] = useState(
+    buildPayGroupState(initialSettings, preferredPayGroupId, payrollSalaryPayDay)
+  );
 
   const [components, setComponents] = useState<ComponentDraft[]>([defaultComponent()]);
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
+  const [startupDefaultsApplied, setStartupDefaultsApplied] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
+  const [showFormulaGuide, setShowFormulaGuide] = useState(false);
   const [availablePayGroups, setAvailablePayGroups] = useState<PayGroupOption[]>([]);
   const [loadingPayGroups, setLoadingPayGroups] = useState(false);
 
@@ -416,6 +515,22 @@ export const PayrollSetupWizard = ({
   const activeComponentCount = useMemo(
     () => components.filter((c) => c.code.trim() && c.name.trim()).length,
     [components]
+  );
+  const activeComponents = useMemo(
+    () => components.filter((c) => c.code.trim() && c.name.trim()),
+    [components]
+  );
+  const earningCount = useMemo(
+    () => activeComponents.filter((component) => component.scope === "earning").length,
+    [activeComponents]
+  );
+  const deductionCount = useMemo(
+    () => activeComponents.filter((component) => component.scope === "deduction").length,
+    [activeComponents]
+  );
+  const employerContributionCount = useMemo(
+    () => activeComponents.filter((component) => component.scope === "employer_contribution").length,
+    [activeComponents]
   );
   const isPayGroupIdValid = UUID_REGEX.test(payGroup.defaultPayGroupId.trim());
   const componentCodeOptions = useMemo(() => {
@@ -496,6 +611,11 @@ export const PayrollSetupWizard = ({
         if (!active) return;
 
         const nextSettings = settingsRes?.success ? settingsRes.data : initialSettings;
+        const selectedPayGroupId =
+          preferredPayGroupId ||
+          nextSettings?.default_pay_group_id ||
+          nextSettings?.defaultPayGroupId ||
+          "";
         const allComponents = [
           ...(Array.isArray(earningsRes?.data)
             ? earningsRes.data.map((item: SalaryComponentPayload) => ({ ...item, scope: "earning" as const }))
@@ -511,10 +631,39 @@ export const PayrollSetupWizard = ({
             : [])
         ];
 
-        setPayGroup(buildPayGroupState(nextSettings, preferredPayGroupId, availablePayGroups));
-        setStatutory(buildStatutoryState(nextSettings));
-        setAttendanceRules(buildAttendanceRulesState(nextSettings));
-        setComponents(allComponents.length ? allComponents.map(mapComponentToDraft) : [defaultComponent()]);
+        setPayGroup(buildPayGroupState(nextSettings, preferredPayGroupId, payrollSalaryPayDay, availablePayGroups));
+        const applicableComponents = allComponents.filter((component) => {
+          const payGroupIds = getComponentPayGroupIds(component);
+          if (!selectedPayGroupId || !payGroupIds.length) return true;
+          return payGroupIds.includes(String(selectedPayGroupId));
+        });
+
+        if (applicableComponents.length) {
+          setStatutory(buildStatutoryState(nextSettings));
+          setAttendanceRules(buildAttendanceRulesState(nextSettings));
+          setComponents(applicableComponents.map(mapComponentToDraft));
+          setLoadedComponentIds(
+            applicableComponents
+              .map((component) => String(component.id || ""))
+              .filter(Boolean)
+          );
+          setLoadedComponentScopeMap(
+            applicableComponents.reduce<Record<string, ComponentDraft["scope"]>>((acc, component) => {
+              if (component.id) {
+                acc[String(component.id)] = component.scope;
+              }
+              return acc;
+            }, {})
+          );
+          setStartupDefaultsApplied(false);
+        } else {
+          setComponents(TELANGANA_DEFAULT_TEMPLATE.components.map((component) => ({ ...component })));
+          setStatutory(TELANGANA_DEFAULT_TEMPLATE.statutory);
+          setAttendanceRules(TELANGANA_DEFAULT_TEMPLATE.attendanceRules);
+          setLoadedComponentIds([]);
+          setLoadedComponentScopeMap({});
+          setStartupDefaultsApplied(true);
+        }
       } finally {
         if (active) setLoadingExistingSetup(false);
       }
@@ -524,7 +673,7 @@ export const PayrollSetupWizard = ({
     return () => {
       active = false;
     };
-  }, [open, preferredPayGroupId, initialSettings, availablePayGroups]);
+  }, [open, preferredPayGroupId, initialSettings, payrollSalaryPayDay, availablePayGroups]);
 
   const canNext = () => {
     if (step === 0) return Boolean(payGroup.defaultPayGroupId.trim()) && isPayGroupIdValid;
@@ -553,7 +702,8 @@ export const PayrollSetupWizard = ({
     setComponents(template.components.map((component) => ({ ...component })));
     setStatutory(template.statutory);
     setAttendanceRules(template.attendanceRules);
-    toast.success("Telangana defaults loaded. Review and edit before activate.");
+    setStartupDefaultsApplied(true);
+    toast.success("Startup defaults loaded. Review and edit before saving.");
   };
 
   const activateSetup = async () => {
@@ -586,48 +736,92 @@ export const PayrollSetupWizard = ({
       }
 
       const componentRows = components.filter((c) => c.code.trim() && c.name.trim());
-      let successCount = 0;
+      const activeComponentIds = componentRows
+        .map((component) => String(component.id || ""))
+        .filter(Boolean);
+      const removedComponentIds = loadedComponentIds.filter(
+        (componentId) => !activeComponentIds.includes(componentId)
+      );
+      let createdCount = 0;
+      let updatedCount = 0;
+      let removedCount = 0;
       let failedCount = 0;
 
       for (const component of componentRows) {
-        const componentPayload = {
+        const componentMetadata =
+          component.calculationMode === "percentage"
+            ? {
+                wizardVersion: "v1",
+                base: component.percentageOf || "MONTHLY_GROSS",
+                percentage: Number(component.amount || 0),
+                payGroupIds: [payGroup.defaultPayGroupId.trim()],
+                applicability: { payGroupIds: [payGroup.defaultPayGroupId.trim()] }
+              }
+            : component.calculationMode === "formula"
+              ? {
+                  wizardVersion: "v1",
+                  expression: component.formulaExpression || "0",
+                  payGroupIds: [payGroup.defaultPayGroupId.trim()],
+                  applicability: { payGroupIds: [payGroup.defaultPayGroupId.trim()] }
+                }
+              : {
+                wizardVersion: "v1",
+                monthlyAmount: Number(component.amount || 0),
+                payGroupIds: [payGroup.defaultPayGroupId.trim()],
+                applicability: { payGroupIds: [payGroup.defaultPayGroupId.trim()] }
+              };
+        const createPayload: SalaryComponentPayload = {
           scope: component.scope,
           code: component.code.trim().toUpperCase(),
           name: component.name.trim(),
           calculationMode: component.calculationMode,
           taxable: component.taxable,
           effectiveFrom: TODAY,
-          metadata:
-            component.calculationMode === "percentage"
-              ? {
-                  wizardVersion: "v1",
-                  base: component.percentageOf || "MONTHLY_GROSS",
-                  percentage: Number(component.amount || 0)
-                }
-              : component.calculationMode === "formula"
-                ? {
-                    wizardVersion: "v1",
-                    expression: component.formulaExpression || "0"
-                  }
-                : {
-                    wizardVersion: "v1",
-                    monthlyAmount: Number(component.amount || 0)
-                  }
+          metadata: componentMetadata
         };
-        const res = await postApiWithToken("/payroll/salary-components", componentPayload);
+        const updatePayload: SalaryComponentUpdatePayload = {
+          name: component.name.trim(),
+          calculationMode: component.calculationMode,
+          effectiveFrom: TODAY,
+          metadata: componentMetadata,
+          ...(component.scope !== "employer_contribution" ? { taxable: component.taxable } : {})
+        };
+        const res = component.id
+          ? await putApiWithToken(
+              `/payroll/salary-components/${component.id}?scope=${component.scope}`,
+              updatePayload
+            )
+          : await postApiWithToken("/payroll/salary-components", createPayload);
         if (res?.success) {
-          successCount += 1;
+          if (component.id) updatedCount += 1;
+          else createdCount += 1;
         } else {
           failedCount += 1;
         }
       }
 
+      for (const componentId of removedComponentIds) {
+        const scope = loadedComponentScopeMap[componentId];
+        if (!scope) continue;
+
+        const res = await deleteApiWithToken(
+          `/payroll/salary-components/${componentId}?scope=${scope}`
+        );
+        if (!res?.success) {
+          failedCount += 1;
+        } else {
+          removedCount += 1;
+        }
+      }
+
       if (failedCount > 0) {
         toast.warning(
-          `Setup saved. ${successCount} components added, ${failedCount} failed (likely duplicates).`
+          `Setup saved. ${createdCount} created, ${updatedCount} updated, ${removedCount} removed, ${failedCount} failed.`
         );
       } else {
-        toast.success("Payroll setup activated successfully");
+        toast.success(
+          `Payroll setup saved. ${createdCount} created, ${updatedCount} updated, ${removedCount} removed.`
+        );
       }
 
       onActivated?.();
@@ -645,6 +839,14 @@ export const PayrollSetupWizard = ({
           <DialogTitle>Payroll Setup Wizard</DialogTitle>
         </DialogHeader>
 
+        <div className="rounded-xl border bg-muted/30 p-4 mb-4">
+          <p className="font-medium">Set up payroll in plain English</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            This flow helps you choose a salary cycle, review earnings and deductions, keep common
+            Telangana compliance defaults, and save a payroll structure your team can understand.
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
           {steps.map((label, index) => (
             <div
@@ -660,8 +862,16 @@ export const PayrollSetupWizard = ({
 
         {step === 0 && (
           <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/20 p-3">
+              <p className="font-medium text-sm">What this step means</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                A pay group is your salary cycle. It decides which employees follow this payroll
+                calendar, when attendance closes, and which day salary is processed.
+              </p>
+            </div>
+
             <div>
-              <label className="text-sm font-medium">Default Pay Group</label>
+              <label className="text-sm font-medium">Choose Salary Cycle</label>
               <Select
                 value={payGroup.defaultPayGroupId || undefined}
                 onValueChange={(value) =>
@@ -688,33 +898,37 @@ export const PayrollSetupWizard = ({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
-                Choose by name. We store the UUID internally for payroll settings.
+                Pick the main salary cycle your company will use. Most startups keep one monthly
+                cycle for everyone.
               </p>
             </div>
 
-            <div>
-              <label className="text-sm font-medium">Or Paste Pay Group UUID (Advanced)</label>
-              <Input
-                value={payGroup.defaultPayGroupId}
-                onChange={(e) =>
-                  setPayGroup((prev) => ({ ...prev, defaultPayGroupId: e.target.value }))
-                }
-                placeholder="Paste pay group UUID"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Use this only if you already have an exact UUID.
-              </p>
-              {!!payGroup.defaultPayGroupId.trim() && !isPayGroupIdValid && (
-                <p className="text-xs text-red-600 mt-1">
-                  Use Pay Group UUID only. Example: `8f2c3a2e-11ab-4c89-9d00-1a2b3c4d5e6f`.
-                  Name like `Luvetha` will not work here.
+            <details className="rounded-lg border p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Advanced: paste pay group UUID manually
+              </summary>
+              <div className="mt-3">
+                <Input
+                  value={payGroup.defaultPayGroupId}
+                  onChange={(e) =>
+                    setPayGroup((prev) => ({ ...prev, defaultPayGroupId: e.target.value }))
+                  }
+                  placeholder="Paste pay group UUID"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Use this only if you already have the exact pay group id from the system.
                 </p>
-              )}
-            </div>
+                {!!payGroup.defaultPayGroupId.trim() && !isPayGroupIdValid && (
+                  <p className="text-xs text-red-600 mt-1">
+                    Use Pay Group UUID only. Example: `8f2c3a2e-11ab-4c89-9d00-1a2b3c4d5e6f`.
+                  </p>
+                )}
+              </div>
+            </details>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-sm font-medium">Pay Cycle</label>
+                <label className="text-sm font-medium">Salary Frequency</label>
                 <Select
                   value={payGroup.payFrequency}
                   onValueChange={(value) =>
@@ -730,7 +944,7 @@ export const PayrollSetupWizard = ({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Keep monthly for most Indian companies.
+                  Monthly is the simplest and most common choice for startups.
                 </p>
               </div>
               <div>
@@ -745,16 +959,24 @@ export const PayrollSetupWizard = ({
                   }
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Example: 30 means salary processed on 30th.
+                  Example: `30` means salary is usually released on the 30th.
                 </p>
               </div>
               <div>
-                <label className="text-sm font-medium">Payroll Cutoff Day</label>
+                <label className="text-sm font-medium">Attendance Cutoff Day</label>
                 <Input type="number" value={payrollCutoffDay} disabled readOnly />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Managed from Organization Settings and reused across payroll setup.
+                  This comes from Organization Settings and closes attendance for payroll.
                 </p>
               </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="font-medium text-sm">Quick Example</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                If your company pays salary every month on the 30th and closes attendance on the
+                25th, this pay group becomes the default cycle for payroll runs.
+              </p>
             </div>
           </div>
         )}
@@ -764,15 +986,40 @@ export const PayrollSetupWizard = ({
             {loadingExistingSetup && (
               <p className="text-sm text-muted-foreground">Loading existing payroll setup...</p>
             )}
-            <p className="text-sm text-muted-foreground">
-              Add salary components in simple words. Example: Basic, HRA, PF, TDS.
-            </p>
+            <div className="rounded-lg border bg-muted/20 p-3">
+              <p className="font-medium text-sm">What this step means</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Salary components are the lines you see in a payslip. Common examples are Basic,
+                HRA, Variable Pay, PF, PT, and Employer PF.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-lg border p-3">
+                <p className="font-medium text-sm">Earnings</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Paid to the employee. Example: Basic, HRA, Special Allowance, Variable Pay.
+                </p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="font-medium text-sm">Deductions</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Reduced from salary. Example: PF, PT, ESI, TDS, loan recovery.
+                </p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="font-medium text-sm">Employer Contributions</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Paid by company, not reduced from net pay. Example: Employer PF or NPS.
+                </p>
+              </div>
+            </div>
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium">Telangana Payroll Rules Checklist</p>
+                  <p className="text-sm font-medium">Telangana Payroll Checklist</p>
                   <p className="text-xs text-muted-foreground">
-                    Review legal and policy rules before loading defaults.
+                    Review which parts are legal defaults and which parts depend on your company
+                    policy.
                   </p>
                 </div>
                 <Button
@@ -810,9 +1057,10 @@ export const PayrollSetupWizard = ({
             <div className="border rounded-lg p-3 space-y-3 bg-muted/20">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium">{TELANGANA_DEFAULT_TEMPLATE.title}</p>
+                  <p className="text-sm font-medium">Startup-Friendly Default Pack</p>
                   <p className="text-xs text-muted-foreground">
-                    {TELANGANA_DEFAULT_TEMPLATE.description}
+                    Real startups usually start with a standard structure first and fine-tune after
+                    their first payroll cycles.
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -827,9 +1075,21 @@ export const PayrollSetupWizard = ({
                     size="sm"
                     onClick={() => loadTemplateForEdit(TELANGANA_DEFAULT_TEMPLATE)}
                   >
-                    Load & Edit
+                    {startupDefaultsApplied ? "Reload Startup Defaults" : "Use Startup Defaults"}
                   </Button>
                 </div>
+              </div>
+              <div className="rounded-md border bg-background px-3 py-2">
+                <p className="text-xs font-medium">
+                  {startupDefaultsApplied
+                    ? "Startup defaults are currently loaded in this wizard."
+                    : "You can load startup defaults at any time."}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Default pack includes common starter items like Basic, HRA, Other Allowance,
+                  PF, and Professional Tax so a new company does not need to build payroll from
+                  scratch.
+                </p>
               </div>
               {showTemplatePreview && (
                 <div className="space-y-2 border rounded p-3 bg-background">
@@ -848,16 +1108,34 @@ export const PayrollSetupWizard = ({
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground">
-                    Note: These are starter defaults for Telangana. HR can edit all values after loading.
+                    These are starter defaults only. Every company can change components, percentages,
+                    or formulas later.
                   </p>
                 </div>
               )}
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="font-medium text-sm">Current Structure Summary</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {activeComponentCount} active components loaded: {earningCount} earnings,{" "}
+                {deductionCount} deductions, {employerContributionCount} employer contributions.
+              </p>
             </div>
             {components.map((component, index) => (
               <div
                 key={`${index}-${component.scope}`}
                 className="border rounded-lg p-3 space-y-3 transition-colors hover:border-primary/60 hover:bg-primary/5"
               >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-sm">
+                      {component.name.trim() || component.code.trim() || `Component ${index + 1}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {getScopeLabel(component.scope)} • {getCalculationModeLabel(component.calculationMode)}
+                    </p>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
                   <Select
                     value={component.scope}
@@ -943,7 +1221,57 @@ export const PayrollSetupWizard = ({
                   </div>
                 )}
                 {component.calculationMode === "formula" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium">Formula Help</p>
+                        <p className="text-xs text-muted-foreground">
+                          Supported functions and variables used by the payroll formula engine.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowFormulaGuide((prev) => !prev)}
+                      >
+                        {showFormulaGuide ? "Hide Formula Guide" : "View Formula Guide"}
+                      </Button>
+                    </div>
+                    {showFormulaGuide && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-md border bg-background p-3">
+                        <div>
+                          <p className="text-xs font-medium mb-2">Supported Functions</p>
+                          <div className="space-y-1">
+                            {FORMULA_FUNCTIONS.map((item) => (
+                              <div key={item.name} className="text-xs text-muted-foreground">
+                                <span className="font-mono text-foreground">{item.name}</span> - {item.help}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium mb-2">Common Variables</p>
+                          <div className="flex flex-wrap gap-2">
+                            {COMMON_FORMULA_VARIABLES.map((variable) => (
+                              <span
+                                key={variable}
+                                className="rounded-full border px-2 py-1 text-xs font-mono"
+                              >
+                                {variable}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Example:{" "}
+                            <span className="font-mono text-foreground">
+                              round(min(BASIC_PAY, 15000) * 0.12)
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs font-medium">Formula Preset</label>
                       <Select
@@ -981,9 +1309,10 @@ export const PayrollSetupWizard = ({
                         }
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        Available examples: BASIC, HRA, MONTHLY_GROSS.
+                        Use variables like `BASIC`, `HRA`, `MONTHLY_GROSS`, or `BASIC_PAY`.
                       </p>
                     </div>
+                  </div>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
@@ -1013,14 +1342,18 @@ export const PayrollSetupWizard = ({
 
         {step === 2 && (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              These switches help fresh HR teams understand statutory setup quickly.
-            </p>
+            <div className="rounded-lg border bg-muted/20 p-3">
+              <p className="font-medium text-sm">What this step means</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                These are the common compliance defaults your company will usually review with your
+                accountant or payroll consultant. You can keep the simple defaults and adjust later.
+              </p>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="flex items-center justify-between border rounded p-3">
                 <div>
-                  <p className="font-medium text-sm">PF Enabled</p>
-                  <p className="text-xs text-muted-foreground">Provident Fund deduction</p>
+                  <p className="font-medium text-sm">Provident Fund (PF)</p>
+                  <p className="text-xs text-muted-foreground">Employee PF deduction and company PF contribution</p>
                 </div>
                 <Switch
                   checked={statutory.enablePf}
@@ -1029,8 +1362,8 @@ export const PayrollSetupWizard = ({
               </div>
               <div className="flex items-center justify-between border rounded p-3">
                 <div>
-                  <p className="font-medium text-sm">ESI Enabled</p>
-                  <p className="text-xs text-muted-foreground">Employee State Insurance</p>
+                  <p className="font-medium text-sm">Employee State Insurance (ESI)</p>
+                  <p className="text-xs text-muted-foreground">Use for employees who fall under ESI coverage</p>
                 </div>
                 <Switch
                   checked={statutory.enableEsi}
@@ -1041,8 +1374,8 @@ export const PayrollSetupWizard = ({
               </div>
               <div className="flex items-center justify-between border rounded p-3">
                 <div>
-                  <p className="font-medium text-sm">Professional Tax Enabled</p>
-                  <p className="text-xs text-muted-foreground">State-wise PT deduction</p>
+                  <p className="font-medium text-sm">Professional Tax (PT)</p>
+                  <p className="text-xs text-muted-foreground">Telangana monthly PT deduction</p>
                 </div>
                 <Switch
                   checked={statutory.enablePt}
@@ -1051,8 +1384,8 @@ export const PayrollSetupWizard = ({
               </div>
               <div className="flex items-center justify-between border rounded p-3">
                 <div>
-                  <p className="font-medium text-sm">LWF Enabled</p>
-                  <p className="text-xs text-muted-foreground">Labour Welfare Fund</p>
+                  <p className="font-medium text-sm">Labour Welfare Fund (LWF)</p>
+                  <p className="text-xs text-muted-foreground">Optional for companies where LWF applies</p>
                 </div>
                 <Switch
                   checked={statutory.enableLwf}
@@ -1073,6 +1406,9 @@ export const PayrollSetupWizard = ({
                     setStatutory((prev) => ({ ...prev, pfWageThreshold: e.target.value }))
                   }
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Starter reference for PF eligibility/policy checks.
+                </p>
               </div>
               <div>
                 <label className="text-sm font-medium">ESI Wage Threshold</label>
@@ -1083,6 +1419,9 @@ export const PayrollSetupWizard = ({
                     setStatutory((prev) => ({ ...prev, esiWageThreshold: e.target.value }))
                   }
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Starter reference for ESI coverage checks.
+                </p>
               </div>
               <div>
                 <label className="text-sm font-medium">State Code</label>
@@ -1101,9 +1440,16 @@ export const PayrollSetupWizard = ({
 
         {step === 3 && (
           <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/20 p-3">
+              <p className="font-medium text-sm">What this step means</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                This controls when attendance becomes final for payroll and how loss of pay is
+                calculated. If you are unsure, use payroll cutoff + working days + proration on.
+              </p>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium">Attendance Lock Mode</label>
+                <label className="text-sm font-medium">When to Lock Attendance</label>
                 <Select
                   value={attendanceRules.attendanceLockMode}
                   onValueChange={(value) =>
@@ -1122,11 +1468,11 @@ export const PayrollSetupWizard = ({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Use cutoff mode for cleaner payroll control.
+                  Cutoff mode is easier for most HR and finance teams to manage.
                 </p>
               </div>
               <div>
-                <label className="text-sm font-medium">Lock After Days</label>
+                <label className="text-sm font-medium">Lock After This Many Days</label>
                 <Input
                   type="number"
                   min={0}
@@ -1140,14 +1486,14 @@ export const PayrollSetupWizard = ({
                   }
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Example: 7 means old attendance edits stop after 7 days.
+                  Example: `7` means old attendance edits stop after 7 days.
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium">LOP Calculation</label>
+                <label className="text-sm font-medium">Loss of Pay (LOP) Calculation</label>
                 <Select
                   value={attendanceRules.lopCalculationMethod}
                   onValueChange={(value) =>
@@ -1170,7 +1516,7 @@ export const PayrollSetupWizard = ({
                 </p>
               </div>
               <div>
-                <label className="text-sm font-medium">Default Working Days</label>
+                <label className="text-sm font-medium">Default Working Days in Month</label>
                 <Input
                   type="number"
                   min={1}
@@ -1183,6 +1529,9 @@ export const PayrollSetupWizard = ({
                     }))
                   }
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Most teams keep `30` as a simple default.
+                </p>
               </div>
             </div>
 
@@ -1190,7 +1539,7 @@ export const PayrollSetupWizard = ({
               <div>
                 <p className="font-medium text-sm">Enable Salary Proration</p>
                 <p className="text-xs text-muted-foreground">
-                  Salary adjusts automatically based on payable days.
+                  Automatically adjusts salary when payable days are lower than full month.
                 </p>
               </div>
               <Switch
@@ -1205,8 +1554,15 @@ export const PayrollSetupWizard = ({
 
         {step === 4 && (
           <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/20 p-3">
+              <p className="font-medium text-sm">Final review</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Check the main payroll settings below. You can still edit components and policies
+                later after saving this setup.
+              </p>
+            </div>
             <div className="rounded border p-3">
-              <p className="font-medium mb-2">Pay Group</p>
+              <p className="font-medium mb-2">Salary Cycle</p>
               <p className="text-sm text-muted-foreground">
                 Pay Group ID: <span className="font-mono text-foreground">{payGroup.defaultPayGroupId}</span>
               </p>
@@ -1216,16 +1572,14 @@ export const PayrollSetupWizard = ({
               </p>
             </div>
             <div className="rounded border p-3">
-              <p className="font-medium mb-2">Components</p>
+              <p className="font-medium mb-2">Salary Components</p>
               <p className="text-sm text-muted-foreground">
-                {activeComponentCount} components will be created.
+                {activeComponentCount} components are included in this setup.
               </p>
               <div className="mt-2 space-y-1">
-                {components
-                  .filter((c) => c.code.trim() && c.name.trim())
-                  .map((c, i) => (
+                {activeComponents.map((c, i) => (
                     <p key={`${c.code}-${i}`} className="text-xs text-muted-foreground">
-                      {c.code.toUpperCase()} - {c.calculationMode === "percentage"
+                      {c.code.toUpperCase()} ({getScopeLabel(c.scope)}) - {c.calculationMode === "percentage"
                         ? `${c.amount || 0}% of ${c.percentageOf || "MONTHLY_GROSS"}`
                         : c.calculationMode === "formula"
                           ? c.formulaExpression || "Formula not set"
@@ -1235,14 +1589,14 @@ export const PayrollSetupWizard = ({
               </div>
             </div>
             <div className="rounded border p-3">
-              <p className="font-medium mb-2">Statutory</p>
+              <p className="font-medium mb-2">Compliance Defaults</p>
               <p className="text-sm text-muted-foreground">
                 PF: {statutory.enablePf ? "On" : "Off"}, ESI: {statutory.enableEsi ? "On" : "Off"},
                 PT: {statutory.enablePt ? "On" : "Off"}, State: {statutory.stateCode}
               </p>
             </div>
             <div className="rounded border p-3">
-              <p className="font-medium mb-2">Attendance Rules</p>
+              <p className="font-medium mb-2">Attendance & LOP</p>
               <p className="text-sm text-muted-foreground">
                 Lock Mode: {attendanceRules.attendanceLockMode}, LOP:{" "}
                 {attendanceRules.lopCalculationMethod}, Working Days:{" "}
@@ -1266,7 +1620,7 @@ export const PayrollSetupWizard = ({
             </Button>
           ) : (
             <Button onClick={activateSetup} disabled={saving}>
-              {saving ? "Activating..." : "Activate Payroll Setup"}
+              {saving ? "Saving..." : "Save Payroll Setup"}
             </Button>
           )}
         </div>

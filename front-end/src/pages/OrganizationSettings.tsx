@@ -36,6 +36,7 @@ const OrganizationSettings = () => {
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [maxActiveLoginsPerUser, setMaxActiveLoginsPerUser] = useState(1);
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
+  const [payrollSalaryPayDay, setPayrollSalaryPayDay] = useState(30);
   const [payrollEnabled, setPayrollEnabled] = useState(false);
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
@@ -77,6 +78,9 @@ const OrganizationSettings = () => {
       }
       setPayrollCutoffDay(
         typeof res.data?.payrollCutoffDay === "number" ? res.data.payrollCutoffDay : 25
+      );
+      setPayrollSalaryPayDay(
+        typeof res.data?.payrollSalaryPayDay === "number" ? res.data.payrollSalaryPayDay : 30
       );
       setPayrollEnabled(Boolean(res.data?.payrollEnabled));
       setMinWorkHoursPerDay(
@@ -138,6 +142,7 @@ const OrganizationSettings = () => {
         timezone,
         maxActiveLoginsPerUser: Number(maxActiveLoginsPerUser || 1),
         payrollCutoffDay: Number(payrollCutoffDay),
+        payrollSalaryPayDay: Number(payrollSalaryPayDay),
         payrollEnabled,
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours),
@@ -416,6 +421,22 @@ const OrganizationSettings = () => {
                 />
                 <p className="text-xs text-muted-foreground">
                   This is the single payroll cutoff used for attendance lock rules and payroll setup defaults.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Salary Pay Day</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={payrollSalaryPayDay}
+                  onChange={(e) => setPayrollSalaryPayDay(Number(e.target.value))}
+                  disabled={!canManage}
+                  placeholder="Ex: 30"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Payroll uses this as the default salary release day when creating or provisioning pay groups.
                 </p>
               </div>
             </div>

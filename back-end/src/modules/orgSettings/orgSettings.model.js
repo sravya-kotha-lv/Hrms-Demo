@@ -46,6 +46,10 @@ const orgSettingsSchema = new mongoose.Schema(
       type: Number,
       default: 25
     },
+    payrollSalaryPayDay: {
+      type: Number,
+      default: 30
+    },
     payrollEnabled: {
       type: Boolean,
       default: false

@@ -29,6 +29,9 @@ const LeaveApply = lazyWithRetry(() => import("./pages/LeaveApply"), "LeaveApply
 const Holidays = lazyWithRetry(() => import("./pages/Holidays"), "Holidays");
 const WeekOffs = lazyWithRetry(() => import("./pages/WeekOffs"), "WeekOffs");
 const Payroll = lazyWithRetry(() => import("./pages/Payroll"), "Payroll");
+const PayrollSetup = lazyWithRetry(() => import("./pages/PayrollSetup"), "PayrollSetup");
+const PayrollEmployees = lazyWithRetry(() => import("./pages/PayrollEmployees"), "PayrollEmployees");
+const PayrollRuns = lazyWithRetry(() => import("./pages/PayrollRuns"), "PayrollRuns");
 const PayrollEmployeeBreakdown = lazyWithRetry(() => import("./pages/PayrollEmployeeBreakdown"), "PayrollEmployeeBreakdown");
 const PerformanceDashboard = lazyWithRetry(() => import("./pages/PerformanceDashboard"), "PerformanceDashboard");
 const ProfilePage = lazyWithRetry(() => import("./pages/ProfilePage"), "ProfilePage");
@@ -284,6 +287,36 @@ const App = () => (
                 <RequireAuth>
                   <RequireProfile>
                     <Payroll />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/payroll/setup"
+              element={
+                <RequireAuth>
+                  <RequireProfile>
+                    <PayrollSetup />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/payroll/employees"
+              element={
+                <RequireAuth>
+                  <RequireProfile>
+                    <PayrollEmployees />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/payroll/runs"
+              element={
+                <RequireAuth>
+                  <RequireProfile>
+                    <PayrollRuns />
                   </RequireProfile>
                 </RequireAuth>
               }

@@ -1584,11 +1584,11 @@ const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone 
   const currentDay = getDayInTimeZone(today, timeZone);
 
   // payroll_cutoff mode policy:
-  // - Before or on cutoff day: dates after the previous month's cutoff remain editable.
-  // - After cutoff day: dates after the current month's cutoff remain editable.
-  // This means once the cutoff is crossed, the cutoff day and any older dates are locked.
+  // - Before cutoff day: dates after the previous month's cutoff remain editable.
+  // - On or after cutoff day: dates after the current month's cutoff remain editable.
+  // This means once the cutoff day arrives, the cutoff day and any older dates are locked.
   const [todayYear, todayMonth] = todayKey.split("-").map(Number);
-  const lockUntilKey = currentDay > cutoffDay
+  const lockUntilKey = currentDay >= cutoffDay
     ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`
     : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
 
@@ -1629,7 +1629,7 @@ const getAttendanceLockWindowMeta = (settings, timeZone = "UTC", now = new Date(
   const cutoffDay = Number(settings?.payrollCutoffDay ?? 25);
   const currentDay = getDayInTimeZone(today, timeZone);
   const [todayYear, todayMonth] = todayKey.split("-").map(Number);
-  const lockedThroughDateKey = currentDay > cutoffDay
+  const lockedThroughDateKey = currentDay >= cutoffDay
     ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`
     : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
 
@@ -1643,6 +1643,19 @@ const getAttendanceLockWindowMeta = (settings, timeZone = "UTC", now = new Date(
   };
 };
 
+const getLockTargetDateKey = (settings, monthEndDateKey) => {
+  const mode = settings?.attendanceLockMode || "days_window";
+  if (mode !== "payroll_cutoff") {
+    return monthEndDateKey;
+  }
+
+  const [year, month, monthEndDay] = String(monthEndDateKey || "").split("-").map(Number);
+  const cutoffDay = Number(settings?.payrollCutoffDay ?? 25);
+  const effectiveDay = Math.min(monthEndDay || cutoffDay, cutoffDay);
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(effectiveDay).padStart(2, "0")}`;
+};
+
 const buildLockAttendanceActionMeta = ({
   settings,
   monthEndDateKey,
@@ -1652,6 +1665,7 @@ const buildLockAttendanceActionMeta = ({
   now = new Date()
 }) => {
   const windowMeta = getAttendanceLockWindowMeta(settings, timeZone, now);
+  const lockTargetDateKey = getLockTargetDateKey(settings, monthEndDateKey);
 
   if (!windowMeta.attendanceLockEnabled) {
     return {
@@ -1663,12 +1677,12 @@ const buildLockAttendanceActionMeta = ({
     };
   }
 
-  if (!windowMeta.lockedThroughDateKey || monthEndDateKey > windowMeta.lockedThroughDateKey) {
+  if (!windowMeta.lockedThroughDateKey || lockTargetDateKey > windowMeta.lockedThroughDateKey) {
     return {
       enabled: false,
       pendingCheckoutCount,
       lockedThroughDateKey: windowMeta.lockedThroughDateKey,
-      reason: `Lock date has not been crossed yet for ${monthEndDateKey}.`,
+      reason: `Lock date has not been crossed yet for ${lockTargetDateKey}.`,
       snapshotGenerated
     };
   }

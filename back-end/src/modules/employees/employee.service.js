@@ -65,6 +65,33 @@ const deriveNamePartsFromEmail = (email) => {
   };
 };
 
+const syncEmployeePayrollStatus = async ({ organizationId, employeeId, payrollStatus }) => {
+  const pool = await getPayrollPgPool();
+  if (!pool || !organizationId || !employeeId || !payrollStatus) return;
+
+  const client = await pool.connect();
+  try {
+    const tenantResult = await client.query(
+      `SELECT id FROM payroll_tenants WHERE organization_id = $1 LIMIT 1`,
+      [String(organizationId)]
+    );
+    const tenantId = tenantResult.rows[0]?.id;
+    if (!tenantId) return;
+
+    await client.query(
+      `
+        UPDATE employee_payroll_profiles
+        SET payroll_status = $3
+        WHERE tenant_id = $1
+          AND employee_external_id = $2
+      `,
+      [tenantId, String(employeeId), payrollStatus]
+    );
+  } finally {
+    client.release();
+  }
+};
+
 const ensureEmployeeRecordForOrgUser = async ({
   organizationId,
   userId
@@ -1381,6 +1408,20 @@ exports.updateByHr = async (req) => {
 
   await employee.save();
 
+  if (employee.status === "resigned" || employee.employmentLifecycleStatus === "terminated") {
+    await syncEmployeePayrollStatus({
+      organizationId,
+      employeeId: employee._id,
+      payrollStatus: "exited"
+    });
+  } else if (employee.status === "active") {
+    await syncEmployeePayrollStatus({
+      organizationId,
+      employeeId: employee._id,
+      payrollStatus: "active"
+    });
+  }
+
   if (roleIds?.length) {
     await OrgUser.findOneAndUpdate(
       { userId: employee.userId, organizationId },
@@ -1443,6 +1484,15 @@ exports.lifecycleAction = async (req) => {
   }
 
   await employee.save();
+
+  await syncEmployeePayrollStatus({
+    organizationId,
+    employeeId: employee._id,
+    payrollStatus:
+      employee.status === "resigned" || employee.employmentLifecycleStatus === "terminated"
+        ? "exited"
+        : "active"
+  });
 
   const actorEmployee = await Employee.findOne({
     userId,
@@ -1549,6 +1599,18 @@ exports.bulkUpdate = async (req) => {
   }
 
   await Promise.all(employees.map((employee) => employee.save()));
+  await Promise.all(
+    employees.map((employee) =>
+      syncEmployeePayrollStatus({
+        organizationId,
+        employeeId: employee._id,
+        payrollStatus:
+          employee.status === "resigned" || employee.employmentLifecycleStatus === "terminated"
+            ? "exited"
+            : "active"
+      })
+    )
+  );
 
   return {
     updatedCount: employees.length,

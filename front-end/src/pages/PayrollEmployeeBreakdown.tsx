@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -19,8 +19,14 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { getApiWithToken } from "@/services/apiWrapper";
-import { Search } from "lucide-react";
+import { Calculator, IndianRupee, Layers3, Search, UsersRound } from "lucide-react";
 import { toast } from "sonner";
+import PayrollSectionNav from "@/components/payroll/PayrollSectionNav";
+import {
+  buildMonthOptions,
+  formatCurrency,
+  getStatusBadge
+} from "@/components/payroll/payrollShared";
 
 type PayrollRun = {
   id: string;
@@ -48,40 +54,6 @@ type BreakdownEmployee = {
   components: BreakdownComponent[];
 };
 
-const toMonthValue = (date: Date) => {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
-};
-
-const buildMonthOptions = () => {
-  const options: string[] = [];
-  const now = new Date();
-  for (let i = 0; i < 12; i += 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    options.push(toMonthValue(d));
-  }
-  return options;
-};
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 2
-  }).format(Number.isFinite(amount) ? amount : 0);
-
-const statusBadge = (status: string) => {
-  const s = String(status || "").toLowerCase();
-  if (["error", "validation_failed"].includes(s)) {
-    return <Badge className="bg-red-600 text-white">{status}</Badge>;
-  }
-  if (["pending", "draft", "processed"].includes(s)) {
-    return <Badge className="bg-amber-600 text-white">{status}</Badge>;
-  }
-  return <Badge className="bg-green-600 text-white">{status}</Badge>;
-};
-
 const componentBadgeClass = (scope: string) => {
   if (scope === "earning") return "bg-green-100 text-green-800";
   if (scope === "deduction") return "bg-red-100 text-red-800";
@@ -97,6 +69,24 @@ const PayrollEmployeeBreakdown = () => {
   const [rows, setRows] = useState<BreakdownEmployee[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [loadingRows, setLoadingRows] = useState(false);
+
+  const selectedRun = useMemo(
+    () => runs.find((run) => run.id === selectedRunId) || null,
+    [runs, selectedRunId]
+  );
+
+  const summary = useMemo(() => {
+    const componentCount = rows.reduce((total, row) => total + row.components.length, 0);
+    const errorCount = rows.filter((row) => row.error_message || row.payroll_status === "error").length;
+    const netPay = rows.reduce((total, row) => total + Number(row.net_pay || 0), 0);
+
+    return {
+      employeeCount: rows.length,
+      componentCount,
+      errorCount,
+      netPay
+    };
+  }, [rows]);
 
   const loadRuns = async (month: string) => {
     setLoadingRuns(true);
@@ -155,10 +145,12 @@ const PayrollEmployeeBreakdown = () => {
         { label: "Employee Breakdown" }
       ]}
     >
-      <div className="bg-card rounded-xl card-shadow p-4 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <PayrollSectionNav />
+
+      <div className="mb-6 rounded-lg border bg-card p-4 shadow-sm">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[180px_minmax(220px,1fr)_minmax(280px,380px)]">
           <div>
-            <p className="text-sm font-medium mb-1">Month</p>
+            <p className="mb-1 text-sm font-medium">Month</p>
             <Select value={monthFilter} onValueChange={setMonthFilter}>
               <SelectTrigger>
                 <SelectValue />
@@ -173,7 +165,7 @@ const PayrollEmployeeBreakdown = () => {
             </Select>
           </div>
           <div>
-            <p className="text-sm font-medium mb-1">Payroll Run</p>
+            <p className="mb-1 text-sm font-medium">Payroll Run</p>
             <Select value={selectedRunId || undefined} onValueChange={setSelectedRunId}>
               <SelectTrigger>
                 <SelectValue placeholder={loadingRuns ? "Loading runs..." : "Select run"} />
@@ -188,10 +180,10 @@ const PayrollEmployeeBreakdown = () => {
             </Select>
           </div>
           <div>
-            <p className="text-sm font-medium mb-1">Search Employee</p>
+            <p className="mb-1 text-sm font-medium">Search Employee</p>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="pl-9"
                   value={search}
@@ -207,14 +199,52 @@ const PayrollEmployeeBreakdown = () => {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl card-shadow overflow-hidden">
-        <div className="p-4 border-b">
-          <p className="font-semibold">Employee List with Salary Components</p>
-          <p className="text-sm text-muted-foreground">
-            Earnings, deductions, and employer contributions are color coded.
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">Employees</p>
+            <UsersRound className="h-4 w-4 text-slate-500" />
+          </div>
+          <p className="mt-2 text-2xl font-semibold">{summary.employeeCount}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">Components</p>
+            <Layers3 className="h-4 w-4 text-slate-500" />
+          </div>
+          <p className="mt-2 text-2xl font-semibold">{summary.componentCount}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">Net Pay</p>
+            <IndianRupee className="h-4 w-4 text-slate-500" />
+          </div>
+          <p className="mt-2 text-2xl font-semibold text-green-700">
+            {formatCurrency(summary.netPay)}
           </p>
         </div>
-        <div className="p-4 max-h-[68vh] overflow-auto">
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">Issues</p>
+            <Calculator className="h-4 w-4 text-slate-500" />
+          </div>
+          <p className="mt-2 text-2xl font-semibold">{summary.errorCount}</p>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+        <div className="flex flex-col gap-2 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold">Employee Salary Components</p>
+            <p className="text-sm text-muted-foreground">
+              {selectedRun
+                ? `${selectedRun.run_code} | ${selectedRun.run_name}`
+                : "Select a payroll run to inspect earnings, deductions, and employer contributions."}
+            </p>
+          </div>
+          {selectedRun && getStatusBadge(selectedRun.status)}
+        </div>
+        <div className="max-h-[68vh] overflow-auto p-4">
           <Table>
             <TableHeader>
               <TableRow>
@@ -225,7 +255,16 @@ const PayrollEmployeeBreakdown = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {loadingRows &&
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={`breakdown-skeleton-${index}`}>
+                    <TableCell colSpan={4}>
+                      <Skeleton className="h-12 w-full" />
+                    </TableCell>
+                  </TableRow>
+                ))}
+
+              {!loadingRows && rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>
                     <p className="font-medium">{row.employee_name || "Employee"}</p>
@@ -235,7 +274,7 @@ const PayrollEmployeeBreakdown = () => {
                   </TableCell>
                   <TableCell>
                     <div className="space-y-1">
-                      {statusBadge(row.payroll_status)}
+                      {getStatusBadge(row.payroll_status)}
                       {row.error_message && (
                         <p className="text-xs text-red-600">{row.error_message}</p>
                       )}
@@ -266,15 +305,10 @@ const PayrollEmployeeBreakdown = () => {
               ))}
               {!rows.length && !loadingRows && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    No employee breakdown rows found
-                  </TableCell>
-                </TableRow>
-              )}
-              {loadingRows && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    Loading employee breakdown...
+                  <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
+                    {selectedRunId
+                      ? "No employee breakdown rows found"
+                      : "Select a payroll run to view employee breakdown"}
                   </TableCell>
                 </TableRow>
               )}

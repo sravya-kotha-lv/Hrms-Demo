@@ -61,8 +61,26 @@ const isStarterPackComponent = (component) => {
 
 const getOrgPayrollSettings = async (organizationId) =>
   OrgSettings.findOne({ organizationId })
-    .select("payrollEnabled payrollCutoffDay")
+    .select("payrollEnabled payrollCutoffDay payrollSalaryPayDay")
     .lean();
+
+const getComponentPayGroupIds = (component) => {
+  const metadata = toJson(component?.metadata, {});
+  const fromMetadata = Array.isArray(metadata?.payGroupIds)
+    ? metadata.payGroupIds
+    : Array.isArray(metadata?.applicability?.payGroupIds)
+      ? metadata.applicability.payGroupIds
+      : [];
+
+  return [...new Set(fromMetadata.map((value) => String(value || "").trim()).filter(Boolean))];
+};
+
+const isComponentApplicableToPayGroup = (component, payGroupId) => {
+  if (!payGroupId) return true;
+  const payGroupIds = getComponentPayGroupIds(component);
+  if (!payGroupIds.length) return true;
+  return payGroupIds.includes(String(payGroupId));
+};
 
 const resolvePayGroupCutoffDay = async (organizationId, payloadCutoffDay) => {
   if (payloadCutoffDay !== undefined) return payloadCutoffDay ?? null;
@@ -98,7 +116,8 @@ exports.getSettings = async (req) => {
   if (!orgSettings?.payrollEnabled) {
     return {
       payrollEnabled: false,
-      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25)
+      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25),
+      payrollSalaryPayDay: Number(orgSettings?.payrollSalaryPayDay ?? 30)
     };
   }
 
@@ -121,7 +140,8 @@ exports.getSettings = async (req) => {
     return {
       ...(result.rows[0] || {}),
       payrollEnabled: true,
-      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25)
+      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25),
+      payrollSalaryPayDay: Number(orgSettings?.payrollSalaryPayDay ?? 30)
     };
   } finally {
     client.release();
@@ -583,7 +603,7 @@ exports.listSalaryComponents = async (req) => {
     const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
       actorId: req.user.userId
     });
-    const { scope, includeInactive, code } = req.query;
+    const { scope, includeInactive, code, payGroupId } = req.query;
     const tableName = tableByScope[scope];
     if (!tableName) throw { code: 400, message: "Invalid component scope" };
 
@@ -607,7 +627,7 @@ exports.listSalaryComponents = async (req) => {
       `,
       params
     );
-    return result.rows;
+    return result.rows.filter((row) => isComponentApplicableToPayGroup(row, payGroupId));
   } finally {
     client.release();
   }
@@ -876,7 +896,7 @@ exports.listEmployeeProfiles = async (req) => {
     const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
       actorId: req.user.userId
     });
-    const { payrollStatus, employeeExternalId, includeLatest, limit, offset } = req.query;
+    const { payrollStatus, employeeExternalId, payGroupId, includeLatest, limit, offset } = req.query;
     const params = [tenantId];
     const filters = ["tenant_id = $1"];
 
@@ -887,6 +907,10 @@ exports.listEmployeeProfiles = async (req) => {
     if (employeeExternalId) {
       params.push(employeeExternalId);
       filters.push(`employee_external_id = $${params.length}`);
+    }
+    if (payGroupId) {
+      params.push(payGroupId);
+      filters.push(`pay_group_id = $${params.length}`);
     }
     params.push(limit, offset);
 
@@ -899,10 +923,13 @@ exports.listEmployeeProfiles = async (req) => {
         ? `
             SELECT
               epp.*,
+              latest_salary.id AS latest_salary_structure_id,
               latest_salary.annual_ctc,
               latest_salary.monthly_gross,
               latest_salary.basic_pay,
               latest_salary.variable_pay,
+              latest_salary.effective_from AS latest_salary_effective_from,
+              latest_salary.metadata AS latest_salary_metadata,
               latest_bank.account_holder_name,
               latest_bank.bank_name,
               latest_bank.branch_name,
@@ -914,10 +941,13 @@ exports.listEmployeeProfiles = async (req) => {
             FROM employee_payroll_profiles epp
             LEFT JOIN LATERAL (
               SELECT
+                id,
                 annual_ctc,
                 monthly_gross,
                 basic_pay,
-                variable_pay
+                variable_pay,
+                effective_from,
+                metadata
               FROM employee_salary_structures
               WHERE employee_payroll_profile_id = epp.id
               ORDER BY is_current DESC, version_no DESC, effective_from DESC
@@ -953,7 +983,37 @@ exports.listEmployeeProfiles = async (req) => {
           `;
 
     const result = await client.query(queryText, params);
-    return result.rows;
+    const rows = result.rows;
+    if (!rows.length) return rows;
+
+    const employeeIds = rows
+      .map((row) => String(row.employee_external_id || "").trim())
+      .filter(Boolean);
+
+    const employees = await Employee.find({ _id: { $in: employeeIds } })
+      .select("_id firstName lastName employeeCode profileImage")
+      .lean();
+
+    const employeeMap = new Map(
+      employees.map((employee) => [
+        String(employee._id),
+        (() => {
+          const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+          const employeeCode = employee.employeeCode || null;
+          return {
+            employee_name: fullName || employeeCode || "Employee",
+            employee_display_name: fullName || employeeCode || "Employee",
+            employee_code: employeeCode,
+            employee_profile_image: employee.profileImage || null
+          };
+        })()
+      ])
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      ...(employeeMap.get(String(row.employee_external_id)) || {})
+    }));
   } finally {
     client.release();
   }
@@ -1532,11 +1592,54 @@ exports.createPayrollRun = async (req) => {
     );
 
     const snapshots = snapshotsResult.rows;
-    if (snapshots.length) {
+    const snapshotEmployeeIds = snapshots
+      .map((row) => String(row.employee_external_id || "").trim())
+      .filter(Boolean);
+
+    const eligibleEmployeeIds = snapshotEmployeeIds.length
+      ? new Set(
+          (
+            await Employee.find({
+              _id: { $in: snapshotEmployeeIds },
+              isDeleted: false,
+              status: { $ne: "resigned" },
+              employmentLifecycleStatus: { $ne: "terminated" }
+            })
+              .select("_id")
+              .lean()
+          ).map((employee) => String(employee._id))
+        )
+      : new Set();
+
+    const activeProfileResult = snapshotEmployeeIds.length
+      ? await client.query(
+          `
+            SELECT employee_external_id
+            FROM employee_payroll_profiles
+            WHERE tenant_id = $1
+              AND employee_external_id = ANY($2::varchar[])
+              AND payroll_status <> 'exited'
+          `,
+          [tenantId, snapshotEmployeeIds]
+        )
+      : { rows: [] };
+
+    const activeProfileEmployeeIds = new Set(
+      activeProfileResult.rows.map((row) => String(row.employee_external_id))
+    );
+
+    const eligibleSnapshots = snapshots.filter((row) => {
+      const employeeId = String(row.employee_external_id || "").trim();
+      if (!employeeId) return false;
+      if (!eligibleEmployeeIds.has(employeeId)) return false;
+      return activeProfileEmployeeIds.size === 0 || activeProfileEmployeeIds.has(employeeId);
+    });
+
+    if (eligibleSnapshots.length) {
       const values = [];
       const placeholders = [];
       let idx = 1;
-      for (const row of snapshots) {
+      for (const row of eligibleSnapshots) {
         placeholders.push(
           `($${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++})`
         );
@@ -1584,13 +1687,13 @@ exports.createPayrollRun = async (req) => {
         SET employee_count = $2, processed_employee_count = 0, updated_by = $3
         WHERE id = $1
       `,
-      [run.id, snapshots.length, actorId]
+      [run.id, eligibleSnapshots.length, actorId]
     );
 
     await client.query("COMMIT");
     return {
       ...run,
-      seededEmployees: snapshots.length
+      seededEmployees: eligibleSnapshots.length
     };
   } catch (error) {
     await safeRollback(client);
