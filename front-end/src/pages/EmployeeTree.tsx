@@ -71,19 +71,6 @@ function countDescendants(node: TreeNode): number {
   return node.children.reduce((sum, c) => sum + 1 + countDescendants(c), 0);
 }
 
-function isOrgAdmin(employee: RawEmployee): boolean {
-  return (employee.roleIds || []).some((role) => {
-    const slug = String(role.slug || "").toLowerCase();
-    const name = String(role.name || "").toLowerCase().replace(/\s+/g, "-");
-    return slug === "org-admin" || name === "orgadmin" || name === "org-admin";
-  });
-}
-
-function isVisibleInOrganizationTree(employee: RawEmployee): boolean {
-  if (isOrgAdmin(employee)) return true;
-  return employee.status !== "resigned" && employee.employmentLifecycleStatus !== "terminated";
-}
-
 const TreeNodeCard = ({
   node,
   depth,
@@ -95,7 +82,7 @@ const TreeNodeCard = ({
   expandSignal: { expand: boolean; version: number } | null;
   searchActive: boolean;
 }) => {
-  const [expanded, setExpanded] = useState(depth < 2);
+  const [expanded, setExpanded] = useState(true);
   const signalVersionRef = useRef<number | null>(null);
   const hasChildren = node.children.length > 0;
   const descendantCount = useMemo(() => countDescendants(node), [node]);
@@ -229,7 +216,7 @@ const EmployeeTree = () => {
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
-    const res = await getApiWithToken("/employees?limit=500&page=1", null, {
+    const res = await getApiWithToken("/employees?scope=organizationTree", null, {
       requiredPermissions: ["EMP_VIEW", "EMP_ORG_TREE_VIEW", "EMP_SELF_VIEW"],
     });
     if (res?.success) {
@@ -242,11 +229,7 @@ const EmployeeTree = () => {
     fetchEmployees();
   }, [fetchEmployees]);
 
-  const visibleEmployees = useMemo(
-    () => employees.filter(isVisibleInOrganizationTree),
-    [employees]
-  );
-  const tree = useMemo(() => buildTree(visibleEmployees), [visibleEmployees]);
+  const tree = useMemo(() => buildTree(employees), [employees]);
   const filteredTree = useMemo(
     () => filterTree(tree, searchQuery),
     [tree, searchQuery]
@@ -272,7 +255,7 @@ const EmployeeTree = () => {
           <h2 className="text-lg font-semibold">Organization Tree</h2>
           {!loading && (
             <Badge variant="outline" className="text-xs">
-              {visibleEmployees.length} employees
+              {employees.length} employees
             </Badge>
           )}
         </div>

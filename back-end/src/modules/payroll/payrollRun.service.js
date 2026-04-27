@@ -14,6 +14,25 @@ const monthEndDate = (month) => {
   return new Date(Date.UTC(year, monthNum, 0));
 };
 
+const monthStartDate = (month) => {
+  const [year, monthNum] = String(month || "").split("-").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(monthNum)) return null;
+  return new Date(Date.UTC(year, monthNum - 1, 1));
+};
+
+const toMonthKey = (dateValue) => {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+};
+
+const monthDiff = (fromMonth, toMonth) => {
+  const from = monthStartDate(fromMonth);
+  const to = monthStartDate(toMonth);
+  if (!from || !to) return 0;
+  return (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth());
+};
+
 const clampAmount = (value, min = 0, max = Number.POSITIVE_INFINITY) =>
   Math.min(max, Math.max(min, toNumber(value, 0)));
 
@@ -228,6 +247,24 @@ const applyEmployeeComponentOverride = ({ component, salary }) => {
   if (override.formulaExpression) {
     metadata.expression = String(override.formulaExpression);
   }
+  if (
+    componentCode === "BONUS" &&
+    (override.bonusCreditTiming || override.bonusEligibilityDate || override.bonusPayoutMonths || override.metadata?.bonusRule)
+  ) {
+    metadata.bonusRule = {
+      ...parseJson(metadata.bonusRule, {}),
+      ...parseJson(override.metadata?.bonusRule, {}),
+      creditTiming: override.bonusCreditTiming || override.metadata?.bonusRule?.creditTiming || "after_probation",
+      eligibilityDate:
+        override.bonusEligibilityDate ||
+        override.metadata?.bonusRule?.eligibilityDate ||
+        null,
+      payoutMonths: toNumber(
+        override.bonusPayoutMonths || override.metadata?.bonusRule?.payoutMonths || 1,
+        1
+      )
+    };
+  }
   if (Array.isArray(override.slabs)) {
     metadata.slabs = override.slabs;
   }
@@ -390,13 +427,32 @@ const computeSlabAmount = (baseValue, slabs) => {
   return amount;
 };
 
+const applyBonusReleaseRule = ({ amount, component, metadata, payMonth }) => {
+  if (String(component?.code || "").trim().toUpperCase() !== "BONUS") return amount;
+
+  const bonusRule = parseJson(metadata?.bonusRule, {});
+  const payoutMonths = Math.max(1, Math.min(12, Math.floor(toNumber(bonusRule.payoutMonths, 1))));
+  const creditTiming = String(bonusRule.creditTiming || "immediate");
+  if (creditTiming === "immediate") {
+    return amount / payoutMonths;
+  }
+
+  const eligibilityMonth = toMonthKey(bonusRule.eligibilityDate);
+  if (!eligibilityMonth || !payMonth) return 0;
+
+  const offset = monthDiff(eligibilityMonth, payMonth);
+  if (offset < 0 || offset >= payoutMonths) return 0;
+  return amount / payoutMonths;
+};
+
 const resolveComponentAmount = ({
   component,
   scope,
   formulaMap,
   context,
   prorationFactor,
-  shouldProrateEarning
+  shouldProrateEarning,
+  payMonth
 }) => {
   const metadata = parseJson(component.metadata, {});
   const formula = findFormulaForComponent(formulaMap, scope, component.id);
@@ -424,6 +480,8 @@ const resolveComponentAmount = ({
   if (scope === "earning" && shouldProrateEarning(component, metadata)) {
     amount *= prorationFactor;
   }
+
+  amount = applyBonusReleaseRule({ amount, component, metadata, payMonth });
 
   const maxAmount = toNumber(metadata.maxAmount, 0);
   if (maxAmount > 0) {
@@ -932,7 +990,8 @@ exports.computePayrollRun = async (req) => {
             formulaMap,
             context: computedVars,
             prorationFactor,
-            shouldProrateEarning
+            shouldProrateEarning,
+            payMonth: month
           });
           if (!amount) continue;
 
@@ -1008,7 +1067,8 @@ exports.computePayrollRun = async (req) => {
             formulaMap,
             context: computedVars,
             prorationFactor,
-            shouldProrateEarning
+            shouldProrateEarning,
+            payMonth: month
           });
           if (!amount) continue;
 
@@ -1055,7 +1115,8 @@ exports.computePayrollRun = async (req) => {
             formulaMap,
             context: computedVars,
             prorationFactor,
-            shouldProrateEarning
+            shouldProrateEarning,
+            payMonth: month
           });
           if (!amount) continue;
 

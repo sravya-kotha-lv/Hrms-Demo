@@ -97,8 +97,41 @@ type EmployeeComponentOverride = {
   taxable: boolean;
   amount: string;
   base: string;
+  formulaTemplate: string;
   formulaExpression: string;
+  bonusCreditTiming: "immediate" | "after_probation" | "manual_date";
+  bonusEligibilityDate: string;
+  bonusPayoutMonths: string;
+  metadata?: Record<string, any>;
 };
+
+const FORMULA_PRESETS = [
+  {
+    value: "custom",
+    label: "Custom Formula",
+    expression: ""
+  },
+  {
+    value: "basic_percent_4_81",
+    label: "4.81% of Basic Pay",
+    expression: "round(BASIC_PAY * 0.0481)"
+  },
+  {
+    value: "basic_percent_12",
+    label: "12% of Basic Pay",
+    expression: "round(BASIC_PAY * 0.12)"
+  },
+  {
+    value: "gross_percent_10",
+    label: "10% of Monthly Gross",
+    expression: "round(MONTHLY_GROSS * 0.10)"
+  },
+  {
+    value: "fixed_zero",
+    label: "Zero Amount",
+    expression: "0"
+  }
+];
 
 const ADVANCED_COMPONENT_EXCLUDE = new Set([
   "BASIC",
@@ -167,7 +200,26 @@ const buildComponentOverrideState = (
         : Boolean(component.taxable),
     amount: String(existingOverride?.amount ?? metadata.monthlyAmount ?? metadata.percentage ?? ""),
     base: String(existingOverride?.base ?? metadata.base ?? "MONTHLY_GROSS"),
-    formulaExpression: String(existingOverride?.formulaExpression ?? metadata.expression ?? "")
+    formulaTemplate: String(existingOverride?.formulaTemplate ?? metadata.formulaTemplate ?? "custom"),
+    formulaExpression: String(existingOverride?.formulaExpression ?? metadata.expression ?? ""),
+    bonusCreditTiming: (
+      existingOverride?.bonusCreditTiming ||
+      existingOverride?.metadata?.bonusRule?.creditTiming ||
+      metadata.bonusRule?.creditTiming ||
+      "after_probation"
+    ) as EmployeeComponentOverride["bonusCreditTiming"],
+    bonusEligibilityDate: String(
+      existingOverride?.bonusEligibilityDate ||
+      existingOverride?.metadata?.bonusRule?.eligibilityDate ||
+      metadata.bonusRule?.eligibilityDate ||
+      ""
+    ),
+    bonusPayoutMonths: String(
+      existingOverride?.bonusPayoutMonths ||
+      existingOverride?.metadata?.bonusRule?.payoutMonths ||
+      metadata.bonusRule?.payoutMonths ||
+      "2"
+    )
   };
 };
 
@@ -1151,7 +1203,28 @@ const AddEmployee = () => {
                           ? null
                           : Number(override.amount),
                       base: override.base || null,
-                      formulaExpression: override.formulaExpression || null
+                      formulaTemplate: override.formulaTemplate || "custom",
+                      formulaExpression: override.formulaExpression || null,
+                      ...(String(code).toUpperCase() === "BONUS"
+                        ? {
+                            bonusCreditTiming: override.bonusCreditTiming || "after_probation",
+                            bonusEligibilityDate:
+                              override.bonusCreditTiming === "after_probation"
+                                ? form.confirmedDate || override.bonusEligibilityDate || null
+                                : override.bonusEligibilityDate || null,
+                            bonusPayoutMonths: Number(override.bonusPayoutMonths || 1),
+                            metadata: {
+                              bonusRule: {
+                                creditTiming: override.bonusCreditTiming || "after_probation",
+                                eligibilityDate:
+                                  override.bonusCreditTiming === "after_probation"
+                                    ? form.confirmedDate || override.bonusEligibilityDate || null
+                                    : override.bonusEligibilityDate || null,
+                                payoutMonths: Number(override.bonusPayoutMonths || 1)
+                              }
+                            }
+                          }
+                        : {})
                     }
                   ])
               ),
@@ -2700,7 +2773,23 @@ const AddEmployee = () => {
                 {payrollComponents.length > 0 && (
                   <div className="rounded-md border p-4 space-y-4">
                     <div>
-                      <p className="text-sm font-medium">Employee Component Overrides</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">Employee Component Overrides</p>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label="About employee component overrides"
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <Info className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            Enable this only for components that should differ from the selected pay group for this employee.
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         Use this only when this employee’s structure differs from the pay group. You can
                         enable or disable components like bonus, ESOP, PT, TDS, or gratuity for this
@@ -2808,18 +2897,55 @@ const AddEmployee = () => {
                                     </div>
                                   </>
                                 ) : override.calculationMode === "formula" ? (
-                                  <div className="md:col-span-2">
-                                    <Label>Formula Expression</Label>
-                                    <Input
-                                      value={override.formulaExpression}
-                                      onChange={(e) =>
-                                        setComponentOverrides((prev) => ({
-                                          ...prev,
-                                          [key]: { ...override, formulaExpression: e.target.value }
-                                        }))
-                                      }
-                                      placeholder="round(BASIC_PAY * 0.0481)"
-                                    />
+                                  <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2">
+                                    <div>
+                                      <Label>Formula Preset</Label>
+                                      <Select
+                                        value={override.formulaTemplate || "custom"}
+                                        onValueChange={(value) => {
+                                          const preset = FORMULA_PRESETS.find((item) => item.value === value);
+                                          setComponentOverrides((prev) => ({
+                                            ...prev,
+                                            [key]: {
+                                              ...override,
+                                              formulaTemplate: value,
+                                              formulaExpression:
+                                                value === "custom"
+                                                  ? override.formulaExpression
+                                                  : preset?.expression || override.formulaExpression
+                                            }
+                                          }));
+                                        }}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select formula" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {FORMULA_PRESETS.map((preset) => (
+                                            <SelectItem key={preset.value} value={preset.value}>
+                                              {preset.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div>
+                                      <Label>Custom Formula</Label>
+                                      <Input
+                                        value={override.formulaExpression}
+                                        onChange={(e) =>
+                                          setComponentOverrides((prev) => ({
+                                            ...prev,
+                                            [key]: {
+                                              ...override,
+                                              formulaTemplate: "custom",
+                                              formulaExpression: e.target.value
+                                            }
+                                          }))
+                                        }
+                                        placeholder="round(BASIC_PAY * 0.0481)"
+                                      />
+                                    </div>
                                   </div>
                                 ) : (
                                   <div>
@@ -2834,6 +2960,87 @@ const AddEmployee = () => {
                                         }))
                                       }
                                     />
+                                  </div>
+                                )}
+
+                                {key === "BONUS" && (
+                                  <div className="md:col-span-2 rounded-md border bg-slate-50/70 p-3">
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                                      <div>
+                                        <Label>Credit Timing</Label>
+                                        <Select
+                                          value={override.bonusCreditTiming || "after_probation"}
+                                          onValueChange={(value) =>
+                                            setComponentOverrides((prev) => ({
+                                              ...prev,
+                                              [key]: {
+                                                ...override,
+                                                bonusCreditTiming: value as EmployeeComponentOverride["bonusCreditTiming"],
+                                                bonusEligibilityDate:
+                                                  value === "after_probation"
+                                                    ? form.confirmedDate || override.bonusEligibilityDate
+                                                    : override.bonusEligibilityDate
+                                              }
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="after_probation">After Probation</SelectItem>
+                                            <SelectItem value="manual_date">Custom Date</SelectItem>
+                                            <SelectItem value="immediate">Immediate</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div>
+                                        <Label>Eligibility Date</Label>
+                                        <Input
+                                          type="date"
+                                          value={
+                                            override.bonusCreditTiming === "after_probation"
+                                              ? form.confirmedDate || override.bonusEligibilityDate
+                                              : override.bonusEligibilityDate
+                                          }
+                                          disabled={override.bonusCreditTiming === "immediate"}
+                                          onChange={(e) =>
+                                            setComponentOverrides((prev) => ({
+                                              ...prev,
+                                              [key]: {
+                                                ...override,
+                                                bonusCreditTiming: "manual_date",
+                                                bonusEligibilityDate: e.target.value
+                                              }
+                                            }))
+                                          }
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Pay Over</Label>
+                                        <Select
+                                          value={override.bonusPayoutMonths || "2"}
+                                          onValueChange={(value) =>
+                                            setComponentOverrides((prev) => ({
+                                              ...prev,
+                                              [key]: { ...override, bonusPayoutMonths: value }
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="1">1 Month</SelectItem>
+                                            <SelectItem value="2">2 Months</SelectItem>
+                                            <SelectItem value="3">3 Months</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </div>
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                      The bonus amount is treated as the total approved bonus and is released from the eligibility month across the selected payout months.
+                                    </p>
                                   </div>
                                 )}
                               </div>

@@ -213,7 +213,8 @@ exports.listEmployeesQuerySchema = Joi.object({
       "employmentLifecycleStatus"
     )
     .optional(),
-  sortOrder: Joi.string().lowercase().valid("asc", "desc").optional()
+  sortOrder: Joi.string().lowercase().valid("asc", "desc").optional(),
+  scope: Joi.string().valid("organizationTree").optional()
 });
 
 exports.bulkUpdateEmployeesSchema = Joi.object({
