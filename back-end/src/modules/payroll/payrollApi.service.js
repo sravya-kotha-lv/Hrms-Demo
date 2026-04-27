@@ -840,6 +840,7 @@ exports.createEmployeeProfile = async (req) => {
     });
     const actorId = String(req.user.userId);
     const p = req.body;
+    const effectiveFrom = new Date(p.effectiveFrom).toISOString().slice(0, 10);
 
     const profileResult = await client.query(
       `
@@ -1167,6 +1168,8 @@ exports.upsertBankDetail = async (req) => {
     const profileId = req.params.profileId;
     const p = req.body;
 
+    await client.query("BEGIN");
+
     const versionRes = await client.query(
       `
         SELECT COALESCE(MAX(version_no), 0) + 1 AS next_version
@@ -1395,11 +1398,13 @@ exports.createSalaryStructure = async (req) => {
           UPDATE employee_salary_structures
           SET
             is_current = false,
-            effective_to = COALESCE(effective_to, GREATEST($2::date, effective_from)),
+            effective_to = ($2::date - INTERVAL '1 day')::date,
             updated_by = $3
           WHERE employee_payroll_profile_id = $1 AND is_current = true
+            AND effective_from <> $2::date
+            AND effective_from < $2::date
         `,
-        [profileId, p.effectiveFrom, actorId]
+        [profileId, effectiveFrom, actorId]
       );
     }
 
@@ -1426,6 +1431,23 @@ exports.createSalaryStructure = async (req) => {
           updated_by
         )
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,$14,$15::jsonb,$16,$16)
+        ON CONFLICT ON CONSTRAINT uq_employee_salary_structure_effective_start
+        DO UPDATE SET
+          structure_code = EXCLUDED.structure_code,
+          structure_name = EXCLUDED.structure_name,
+          annual_ctc = EXCLUDED.annual_ctc,
+          monthly_gross = EXCLUDED.monthly_gross,
+          basic_pay = EXCLUDED.basic_pay,
+          variable_pay = EXCLUDED.variable_pay,
+          is_current = EXCLUDED.is_current,
+          revision_reason = EXCLUDED.revision_reason,
+          approved_by = EXCLUDED.approved_by,
+          approved_at = NOW(),
+          effective_to = EXCLUDED.effective_to,
+          metadata = EXCLUDED.metadata,
+          updated_by = EXCLUDED.updated_by,
+          updated_at = NOW(),
+          version = employee_salary_structures.version + 1
         RETURNING *
       `,
       [
@@ -1440,14 +1462,18 @@ exports.createSalaryStructure = async (req) => {
         p.isCurrent ?? true,
         p.revisionReason || null,
         actorId,
-        p.effectiveFrom,
+        effectiveFrom,
         p.effectiveTo || null,
         nextVersion,
         JSON.stringify(p.metadata || {}),
         actorId
       ]
     );
+    await client.query("COMMIT");
     return result.rows[0];
+  } catch (error) {
+    await safeRollback(client);
+    throw error;
   } finally {
     client.release();
   }
