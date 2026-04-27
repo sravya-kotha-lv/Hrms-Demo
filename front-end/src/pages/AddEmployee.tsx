@@ -288,6 +288,8 @@ const AddEmployee = () => {
   const [lookingUpIfsc, setLookingUpIfsc] = useState(false);
   const [lookingUpAccount, setLookingUpAccount] = useState(false);
   const [salaryStructures, setSalaryStructures] = useState<SalaryStructureRow[]>([]);
+  const [selectedSalaryStructureId, setSelectedSalaryStructureId] = useState("");
+  const [salaryEditMode, setSalaryEditMode] = useState<"update" | "revision">("update");
   const [salaryAutoCalc, setSalaryAutoCalc] = useState(true);
   const [salaryForm, setSalaryForm] = useState({
     payGroupId: "",
@@ -367,6 +369,8 @@ const AddEmployee = () => {
 
   const applySalaryRevisionToForm = (salary: SalaryStructureRow) => {
     const salaryRules = salary?.metadata?.salaryRules || {};
+    setSelectedSalaryStructureId(salary.id || "");
+    setSalaryEditMode("update");
     setComponentOverrides(salaryRules.componentOverrides || {});
     setSalaryForm((prev) => ({
       ...prev,
@@ -412,6 +416,8 @@ const AddEmployee = () => {
   };
 
   const startNewSalaryRevision = () => {
+    setSelectedSalaryStructureId("");
+    setSalaryEditMode("revision");
     setSalaryForm((prev) => ({
       ...prev,
       effectiveFrom: new Date().toISOString().slice(0, 10),
@@ -712,6 +718,8 @@ const AddEmployee = () => {
     const currentBank = bankDetails[0] || null;
     const currentStatutory = statutoryDetails[0] || null;
     setSalaryStructures(salaryStructures);
+    setSelectedSalaryStructureId(currentSalary?.id || "");
+    setSalaryEditMode("update");
     const salaryRules = currentSalary?.metadata?.salaryRules || {};
     const taxDeclaration = currentStatutory?.metadata?.taxDeclaration || {};
     setComponentOverrides(salaryRules.componentOverrides || {});
@@ -1203,8 +1211,12 @@ const AddEmployee = () => {
       toast.error("Annual CTC is required");
       return;
     }
-    const currentEffectiveFrom = (salaryStructures.find((row) => row.is_current)?.effective_from || "").slice(0, 10);
-    if (currentEffectiveFrom && salaryForm.effectiveFrom && salaryForm.effectiveFrom < currentEffectiveFrom) {
+    const currentSalary = salaryStructures.find((row) => row.is_current) || salaryStructures[0] || null;
+    const salaryStructureIdToUpdate = selectedSalaryStructureId || currentSalary?.id || "";
+    const currentEffectiveFrom = (currentSalary?.effective_from || "").slice(0, 10);
+    const shouldCreateRevision = salaryEditMode === "revision" || !salaryStructureIdToUpdate;
+
+    if (shouldCreateRevision && currentEffectiveFrom && salaryForm.effectiveFrom && salaryForm.effectiveFrom < currentEffectiveFrom) {
       toast.error(
         `Create a salary revision from ${currentEffectiveFrom} or later. Older salary rows are kept as history.`
       );
@@ -1253,10 +1265,7 @@ const AddEmployee = () => {
         }
       }
 
-      const saveSalaryRes = await postApiWithToken(
-        `/payroll/employee-profiles/${profileId}/salary-structures`,
-        {
-          structureCode: `SAL-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`,
+      const salaryPayload = {
           structureName: "Standard Structure",
           annualCtc: Number(salaryForm.annualCtc),
           monthlyGross: salaryForm.monthlyGross ? Number(salaryForm.monthlyGross) : null,
@@ -1264,7 +1273,6 @@ const AddEmployee = () => {
           variablePay: salaryForm.variablePayEnabled && salaryForm.variablePay ? Number(salaryForm.variablePay) : 0,
           isCurrent: true,
           revisionReason: salaryForm.revisionReason || "Salary update",
-          effectiveFrom: salaryForm.effectiveFrom,
           metadata: {
             salaryRules: {
               componentOverrides: Object.fromEntries(
@@ -1330,17 +1338,32 @@ const AddEmployee = () => {
               esiEligibilityThreshold: 21000
             }
           }
-        },
-        null,
-        { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
-      );
+        };
+
+      const saveSalaryRes = shouldCreateRevision
+        ? await postApiWithToken(
+            `/payroll/employee-profiles/${profileId}/salary-structures`,
+            {
+              structureCode: `SAL-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`,
+              ...salaryPayload,
+              effectiveFrom: salaryForm.effectiveFrom
+            },
+            null,
+            { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
+          )
+        : await putApiWithToken(
+            `/payroll/salary-structures/${salaryStructureIdToUpdate}`,
+            salaryPayload,
+            null,
+            { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
+          );
 
       if (!saveSalaryRes?.success) {
         toast.error(saveSalaryRes?.message || "Failed to save salary structure");
         return;
       }
 
-      toast.success("Salary details saved");
+      toast.success(shouldCreateRevision ? "Salary revision created" : "Salary details updated");
       fetchPayrollData();
     } finally {
       setSavingSalary(false);
@@ -2523,18 +2546,26 @@ const AddEmployee = () => {
                       <div>
                         <p className="text-sm font-medium">Salary Revision History</p>
                         <p className="text-xs text-muted-foreground">
-                          Same effective date updates that revision. A new effective date creates the next salary version.
+                          Saving updates the selected salary. Use New Revision only when the pay change needs a new effective period.
                         </p>
                       </div>
-                      <Button type="button" variant="outline" size="sm" onClick={startNewSalaryRevision}>
-                        New Revision
+                      <Button
+                        type="button"
+                        variant={salaryEditMode === "revision" ? "default" : "outline"}
+                        size="sm"
+                        onClick={startNewSalaryRevision}
+                      >
+                        {salaryEditMode === "revision" ? "Creating Revision" : "New Revision"}
                       </Button>
                     </div>
                     <div className="space-y-2">
                       {salaryStructures.map((salary) => {
                         const effectiveFrom = (salary.effective_from || "").slice(0, 10);
                         const effectiveTo = (salary.effective_to || "").slice(0, 10) || "Current";
-                        const isSelected = effectiveFrom && salaryForm.effectiveFrom === effectiveFrom;
+                        const isSelected =
+                          salaryEditMode === "update" &&
+                          Boolean(salary.id) &&
+                          selectedSalaryStructureId === salary.id;
                         return (
                           <button
                             key={salary.id || effectiveFrom}
@@ -2875,10 +2906,16 @@ const AddEmployee = () => {
                     <Input
                       type="date"
                       value={salaryForm.effectiveFrom}
+                      disabled={salaryEditMode === "update"}
                       onChange={(e) =>
                         setSalaryForm((prev) => ({ ...prev, effectiveFrom: e.target.value }))
                       }
                     />
+                    {salaryEditMode === "update" && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Effective date is locked while updating. Use New Revision to create a new period.
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -3354,8 +3391,7 @@ const AddEmployee = () => {
 
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
-                    Salary configuration is linked to selected pay group and stored as revisioned salary
-                    structure.
+                    Save updates the selected salary details. New revisions are created only after choosing New Revision.
                   </p>
                   {selectedPayGroup && (
                     <p className="text-xs text-muted-foreground">
@@ -3369,12 +3405,12 @@ const AddEmployee = () => {
                     disabled={savingSalary}
                   >
                     {savingSalary
-                      ? payrollProfileId
-                        ? "Updating Salary..."
-                        : "Saving Salary..."
-                      : payrollProfileId
-                        ? "Update Salary"
-                        : "Save Salary"}
+                      ? salaryEditMode === "revision"
+                        ? "Creating Revision..."
+                        : "Updating Salary..."
+                      : salaryEditMode === "revision"
+                        ? "Create Revision"
+                        : "Update Salary"}
                   </Button>
                 </div>
               </>
