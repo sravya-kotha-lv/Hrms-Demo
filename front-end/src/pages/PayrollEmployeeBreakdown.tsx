@@ -66,6 +66,7 @@ const PayrollEmployeeBreakdown = () => {
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [search, setSearch] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
   const [rows, setRows] = useState<BreakdownEmployee[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -131,10 +132,10 @@ const PayrollEmployeeBreakdown = () => {
   }, [monthFilter]);
 
   useEffect(() => {
-    loadBreakdown(selectedRunId, search);
-  }, [selectedRunId]);
+    loadBreakdown(selectedRunId, submittedSearch);
+  }, [selectedRunId, submittedSearch]);
 
-  const onSearch = () => loadBreakdown(selectedRunId, search);
+  const onSearch = () => setSubmittedSearch(search);
 
   return (
     <MainLayout
