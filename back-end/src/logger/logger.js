@@ -77,6 +77,7 @@ if (!transports.length) {
 const logger = winston.createLogger({
   silent: !logEnabled,
   level: process.env.LOG_LEVEL || "info",
+  exitOnError: exceptionHandlers.length > 0,
   format: combine(
     timestamp(),
     errors({ stack: true }),

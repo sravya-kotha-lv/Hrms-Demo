@@ -84,6 +84,7 @@ const ROLE_RULES = {
 
       return (
         code.includes("_SELF") ||
+        code === "EMP_ORG_TREE_VIEW" ||
         code === "TIMESHEET_VIEW_ONLINE" ||
         code === "LEAVE_APPLY" ||
         code === "DEPT_VIEW" ||

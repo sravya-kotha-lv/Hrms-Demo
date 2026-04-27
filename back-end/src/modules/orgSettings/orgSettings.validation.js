@@ -10,6 +10,7 @@ exports.upsertOrgSettingsSchema = Joi.object({
   attendanceLockMode: Joi.string().valid("days_window", "payroll_cutoff").default("payroll_cutoff"),
   timezone: Joi.string().required(),
   payrollCutoffDay: Joi.number().integer().min(1).max(31).default(25),
+  payrollSalaryPayDay: Joi.number().integer().min(1).max(31).default(30),
   payrollEnabled: Joi.boolean().default(false),
   minWorkHoursPerDay: Joi.number().min(0).max(24).required(),
   minHalfDayHours: Joi.number().min(0).max(24).max(Joi.ref("minWorkHoursPerDay")).required(),

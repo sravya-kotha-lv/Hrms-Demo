@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ArrowLeft, Edit, Eye, EyeOff, Trash2 } from "lucide-react";
-import { deleteApiWithToken, getApiWithToken } from "@/services/apiWrapper";
+import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
 
@@ -24,7 +24,7 @@ const getStatusBadge = (status: string) => {
     case "on_leave":
       return <Badge className="status-badge status-pending">On Leave</Badge>;
     case "resigned":
-      return <Badge className="status-badge status-inactive">Resigned</Badge>;
+      return <Badge className="status-badge status-inactive">Inactive</Badge>;
     default:
       return <Badge variant="secondary">{status || "-"}</Badge>;
   }
@@ -490,14 +490,17 @@ const ViewEmployee = () => {
     }
   };
 
-  const confirmDelete = async () => {
+  const confirmStatusChange = async () => {
     if (!employee?._id) return;
-    const res = await deleteApiWithToken(`/employees/${employee._id}`);
+    const nextStatus = employee.status === "resigned" ? "active" : "resigned";
+    const res = await putApiWithToken(`/employees/${employee._id}`, {
+      status: nextStatus
+    });
     if (res?.success) {
-      toast.success("Employee deleted");
-      navigate("/employees");
+      toast.success(nextStatus === "active" ? "Employee marked active" : "Employee marked inactive");
+      setEmployee((prev: any) => (prev ? { ...prev, status: nextStatus } : prev));
     } else {
-      toast.error(res?.message || "Delete failed");
+      toast.error(res?.message || "Status update failed");
     }
     setDeleteDialogOpen(false);
   };
@@ -529,12 +532,12 @@ const ViewEmployee = () => {
             Edit
           </Button>
           <Button
-            variant="destructive"
+            variant="outline"
             onClick={() => setDeleteDialogOpen(true)}
             disabled={!employee}
           >
             <Trash2 className="w-4 h-4 mr-2" />
-            Delete
+            {employee?.status === "resigned" ? "Mark Active" : "Mark Inactive"}
           </Button>
         </div>
       </div>
@@ -823,17 +826,21 @@ const ViewEmployee = () => {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Employee</DialogTitle>
+            <DialogTitle>
+              {employee?.status === "resigned" ? "Mark Employee Active" : "Mark Employee Inactive"}
+            </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this employee? This action cannot be undone.
+              {employee?.status === "resigned"
+                ? "This employee will become active again."
+                : "This employee will be marked inactive instead of being deleted."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
-              Delete
+            <Button onClick={confirmStatusChange}>
+              {employee?.status === "resigned" ? "Mark Active" : "Mark Inactive"}
             </Button>
           </DialogFooter>
         </DialogContent>

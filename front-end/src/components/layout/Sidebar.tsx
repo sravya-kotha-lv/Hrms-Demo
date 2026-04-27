@@ -16,7 +16,8 @@ import {
   Briefcase,
   CalendarDays,
   CalendarOff,
-  ClipboardCheck
+  ClipboardCheck,
+  Network
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -153,7 +154,8 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
       { icon: <FileText size={18} />, label: "Timesheets", to: "/timesheets", permissions: ["TIMESHEET_VIEW_SELF", "TIMESHEET_VIEW_ALL"] },
       { icon: <CalendarOff size={18} />, label: "Leave", to: "/leave", permissions: ["LEAVE_VIEW_SELF", "LEAVE_VIEW_ALL", "LEAVE_APPLY"] },
       { icon: <Shield size={18} />, label: "Approvals", to: "/approvals", permissions: ["LEAVE_ACTION", "ATTENDANCE_MANAGE"] },
-      { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays", permissions: ["HOLIDAY_VIEW"] }
+      { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays", permissions: ["HOLIDAY_VIEW"] },
+      { icon: <Network size={18} />, label: "Organization Tree", to: "/employee-tree", permissions: ["EMP_VIEW", "EMP_ORG_TREE_VIEW"] }
     ]
   },
   {
@@ -190,8 +192,36 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
     children: [
       {
         icon: <DollarSign size={18} />,
-        label: "Run",
-        to: "/payroll",
+        label: "Setup",
+        to: "/payroll/setup",
+        permissions: [
+          "PAYROLL_CONFIG_MANAGE",
+          "PAYROLL_RUN_CREATE",
+          "PAYROLL_RUN_APPROVE",
+          "PAYROLL_RUN_LOCK",
+          "PAYROLL_REPORT_VIEW",
+          "PAYROLL_PAYSLIP_VIEW",
+          "PAYROLL_RUN_VIEW"
+        ]
+      },
+      {
+        icon: <Users size={18} />,
+        label: "Employees",
+        to: "/payroll/employees",
+        permissions: [
+          "PAYROLL_CONFIG_MANAGE",
+          "PAYROLL_RUN_CREATE",
+          "PAYROLL_RUN_APPROVE",
+          "PAYROLL_RUN_LOCK",
+          "PAYROLL_REPORT_VIEW",
+          "PAYROLL_PAYSLIP_VIEW",
+          "PAYROLL_RUN_VIEW"
+        ]
+      },
+      {
+        icon: <DollarSign size={18} />,
+        label: "Runs",
+        to: "/payroll/runs",
         permissions: [
           "PAYROLL_CONFIG_MANAGE",
           "PAYROLL_RUN_CREATE",
@@ -290,7 +320,8 @@ export const Sidebar = memo(({
         "/leave",
         "/timesheets",
         "/holidays",
-        "/documentation"
+        "/documentation",
+        "/employee-tree"
       ]),
     []
   );

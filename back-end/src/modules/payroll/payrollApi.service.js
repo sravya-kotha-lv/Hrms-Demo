@@ -20,16 +20,67 @@ const tableByScope = {
   employer_contribution: "employer_contribution_components"
 };
 
+const starterConstraintByScope = {
+  earning: "uq_earning_component_version",
+  deduction: "uq_deduction_component_version",
+  employer_contribution: "uq_employer_component_version"
+};
+
 const ensurePool = async () => {
   const pool = await getPayrollPgPool();
   if (!pool) throw { code: 400, message: "Payroll Postgres is not enabled" };
   return pool;
 };
 
+const isWizardComponentCreate = (payload = {}) =>
+  String(payload?.metadata?.wizardVersion || "").trim().toLowerCase() === "v1";
+
+const fetchExistingSalaryComponentByCode = async ({ client, tenantId, scope, code }) => {
+  const tableName = tableByScope[scope];
+  if (!tableName) return null;
+
+  const result = await client.query(
+    `
+      SELECT *
+      FROM ${tableName}
+      WHERE tenant_id = $1
+        AND code = $2
+      ORDER BY version_no DESC, effective_from DESC, created_at DESC
+      LIMIT 1
+    `,
+    [tenantId, code]
+  );
+
+  return result.rows[0] || null;
+};
+
+const isStarterPackComponent = (component) => {
+  const metadata = toJson(component?.metadata, {});
+  return metadata?.autoProvisioned === true || metadata?.starterPack === true;
+};
+
 const getOrgPayrollSettings = async (organizationId) =>
   OrgSettings.findOne({ organizationId })
-    .select("payrollEnabled payrollCutoffDay")
+    .select("payrollEnabled payrollCutoffDay payrollSalaryPayDay")
     .lean();
+
+const getComponentPayGroupIds = (component) => {
+  const metadata = toJson(component?.metadata, {});
+  const fromMetadata = Array.isArray(metadata?.payGroupIds)
+    ? metadata.payGroupIds
+    : Array.isArray(metadata?.applicability?.payGroupIds)
+      ? metadata.applicability.payGroupIds
+      : [];
+
+  return [...new Set(fromMetadata.map((value) => String(value || "").trim()).filter(Boolean))];
+};
+
+const isComponentApplicableToPayGroup = (component, payGroupId) => {
+  if (!payGroupId) return true;
+  const payGroupIds = getComponentPayGroupIds(component);
+  if (!payGroupIds.length) return true;
+  return payGroupIds.includes(String(payGroupId));
+};
 
 const resolvePayGroupCutoffDay = async (organizationId, payloadCutoffDay) => {
   if (payloadCutoffDay !== undefined) return payloadCutoffDay ?? null;
@@ -65,7 +116,8 @@ exports.getSettings = async (req) => {
   if (!orgSettings?.payrollEnabled) {
     return {
       payrollEnabled: false,
-      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25)
+      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25),
+      payrollSalaryPayDay: Number(orgSettings?.payrollSalaryPayDay ?? 30)
     };
   }
 
@@ -88,7 +140,8 @@ exports.getSettings = async (req) => {
     return {
       ...(result.rows[0] || {}),
       payrollEnabled: true,
-      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25)
+      payrollCutoffDay: Number(orgSettings?.payrollCutoffDay ?? 25),
+      payrollSalaryPayDay: Number(orgSettings?.payrollSalaryPayDay ?? 30)
     };
   } finally {
     client.release();
@@ -421,103 +474,123 @@ exports.createSalaryComponent = async (req) => {
     const tableName = tableByScope[payload.scope];
     if (!tableName) throw { code: 400, message: "Invalid component scope" };
 
-    let result;
-    if (payload.scope === "earning") {
-      result = await client.query(
-        `
-          INSERT INTO earning_components (
-            tenant_id, code, name, display_name, description, calculation_mode, taxable,
-            priority, pf_applicable, esi_applicable, prorate_with_attendance, rounding_policy,
-            effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
-          )
-          VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15::jsonb,$16,$16
-          )
-          RETURNING *
-        `,
-        [
-          tenantId,
-          payload.code,
-          payload.name,
-          payload.displayName || null,
-          payload.description || null,
-          payload.calculationMode,
-          payload.taxable ?? true,
-          payload.priority ?? 100,
-          payload.pfApplicable ?? false,
-          payload.esiApplicable ?? false,
-          payload.prorateWithAttendance ?? true,
-          payload.roundingPolicy || "nearest_rupee",
-          payload.effectiveFrom,
-          payload.effectiveTo || null,
-          JSON.stringify(payload.metadata || {}),
-          actorId
-        ]
-      );
-    } else if (payload.scope === "deduction") {
-      result = await client.query(
-        `
-          INSERT INTO deduction_components (
-            tenant_id, code, name, display_name, description, calculation_mode, taxable,
-            priority, is_statutory, employee_share_only, cap_amount, rounding_policy,
-            effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
-          )
-          VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15::jsonb,$16,$16
-          )
-          RETURNING *
-        `,
-        [
-          tenantId,
-          payload.code,
-          payload.name,
-          payload.displayName || null,
-          payload.description || null,
-          payload.calculationMode,
-          payload.taxable ?? false,
-          payload.priority ?? 100,
-          payload.isStatutory ?? false,
-          payload.employeeShareOnly ?? true,
-          payload.capAmount ?? null,
-          payload.roundingPolicy || "nearest_rupee",
-          payload.effectiveFrom,
-          payload.effectiveTo || null,
-          JSON.stringify(payload.metadata || {}),
-          actorId
-        ]
-      );
-    } else {
-      result = await client.query(
-        `
-          INSERT INTO employer_contribution_components (
-            tenant_id, code, name, display_name, description, calculation_mode, priority,
-            contributes_to_ctc, linked_deduction_code, rounding_policy,
-            effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
-          )
-          VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,1,true,$13::jsonb,$14,$14
-          )
-          RETURNING *
-        `,
-        [
-          tenantId,
-          payload.code,
-          payload.name,
-          payload.displayName || null,
-          payload.description || null,
-          payload.calculationMode,
-          payload.priority ?? 100,
-          payload.contributesToCtc ?? true,
-          payload.linkedDeductionCode || null,
-          payload.roundingPolicy || "nearest_rupee",
-          payload.effectiveFrom,
-          payload.effectiveTo || null,
-          JSON.stringify(payload.metadata || {}),
-          actorId
-        ]
-      );
+    try {
+      let result;
+      if (payload.scope === "earning") {
+        result = await client.query(
+          `
+            INSERT INTO earning_components (
+              tenant_id, code, name, display_name, description, calculation_mode, taxable,
+              priority, pf_applicable, esi_applicable, prorate_with_attendance, rounding_policy,
+              effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
+            )
+            VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15::jsonb,$16,$16
+            )
+            RETURNING *
+          `,
+          [
+            tenantId,
+            payload.code,
+            payload.name,
+            payload.displayName || null,
+            payload.description || null,
+            payload.calculationMode,
+            payload.taxable ?? true,
+            payload.priority ?? 100,
+            payload.pfApplicable ?? false,
+            payload.esiApplicable ?? false,
+            payload.prorateWithAttendance ?? true,
+            payload.roundingPolicy || "nearest_rupee",
+            payload.effectiveFrom,
+            payload.effectiveTo || null,
+            JSON.stringify(payload.metadata || {}),
+            actorId
+          ]
+        );
+      } else if (payload.scope === "deduction") {
+        result = await client.query(
+          `
+            INSERT INTO deduction_components (
+              tenant_id, code, name, display_name, description, calculation_mode, taxable,
+              priority, is_statutory, employee_share_only, cap_amount, rounding_policy,
+              effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
+            )
+            VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15::jsonb,$16,$16
+            )
+            RETURNING *
+          `,
+          [
+            tenantId,
+            payload.code,
+            payload.name,
+            payload.displayName || null,
+            payload.description || null,
+            payload.calculationMode,
+            payload.taxable ?? false,
+            payload.priority ?? 100,
+            payload.isStatutory ?? false,
+            payload.employeeShareOnly ?? true,
+            payload.capAmount ?? null,
+            payload.roundingPolicy || "nearest_rupee",
+            payload.effectiveFrom,
+            payload.effectiveTo || null,
+            JSON.stringify(payload.metadata || {}),
+            actorId
+          ]
+        );
+      } else {
+        result = await client.query(
+          `
+            INSERT INTO employer_contribution_components (
+              tenant_id, code, name, display_name, description, calculation_mode, priority,
+              contributes_to_ctc, linked_deduction_code, rounding_policy,
+              effective_from, effective_to, version_no, is_active, metadata, created_by, updated_by
+            )
+            VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,1,true,$13::jsonb,$14,$14
+            )
+            RETURNING *
+          `,
+          [
+            tenantId,
+            payload.code,
+            payload.name,
+            payload.displayName || null,
+            payload.description || null,
+            payload.calculationMode,
+            payload.priority ?? 100,
+            payload.contributesToCtc ?? true,
+            payload.linkedDeductionCode || null,
+            payload.roundingPolicy || "nearest_rupee",
+            payload.effectiveFrom,
+            payload.effectiveTo || null,
+            JSON.stringify(payload.metadata || {}),
+            actorId
+          ]
+        );
+      }
+      return result.rows[0];
+    } catch (error) {
+      const isExpectedDuplicate =
+        error?.code === "23505" && error?.constraint === starterConstraintByScope[payload.scope];
+      if (!isExpectedDuplicate || !isWizardComponentCreate(payload)) {
+        throw error;
+      }
+
+      const existing = await fetchExistingSalaryComponentByCode({
+        client,
+        tenantId,
+        scope: payload.scope,
+        code: payload.code
+      });
+      if (!existing || !isStarterPackComponent(existing)) {
+        throw error;
+      }
+
+      return existing;
     }
-    return result.rows[0];
   } finally {
     client.release();
   }
@@ -530,7 +603,7 @@ exports.listSalaryComponents = async (req) => {
     const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
       actorId: req.user.userId
     });
-    const { scope, includeInactive, code } = req.query;
+    const { scope, includeInactive, code, payGroupId } = req.query;
     const tableName = tableByScope[scope];
     if (!tableName) throw { code: 400, message: "Invalid component scope" };
 
@@ -554,7 +627,7 @@ exports.listSalaryComponents = async (req) => {
       `,
       params
     );
-    return result.rows;
+    return result.rows.filter((row) => isComponentApplicableToPayGroup(row, payGroupId));
   } finally {
     client.release();
   }
@@ -823,7 +896,7 @@ exports.listEmployeeProfiles = async (req) => {
     const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
       actorId: req.user.userId
     });
-    const { payrollStatus, employeeExternalId, includeLatest, limit, offset } = req.query;
+    const { payrollStatus, employeeExternalId, payGroupId, includeLatest, limit, offset } = req.query;
     const params = [tenantId];
     const filters = ["tenant_id = $1"];
 
@@ -834,6 +907,10 @@ exports.listEmployeeProfiles = async (req) => {
     if (employeeExternalId) {
       params.push(employeeExternalId);
       filters.push(`employee_external_id = $${params.length}`);
+    }
+    if (payGroupId) {
+      params.push(payGroupId);
+      filters.push(`pay_group_id = $${params.length}`);
     }
     params.push(limit, offset);
 
@@ -846,10 +923,13 @@ exports.listEmployeeProfiles = async (req) => {
         ? `
             SELECT
               epp.*,
+              latest_salary.id AS latest_salary_structure_id,
               latest_salary.annual_ctc,
               latest_salary.monthly_gross,
               latest_salary.basic_pay,
               latest_salary.variable_pay,
+              latest_salary.effective_from AS latest_salary_effective_from,
+              latest_salary.metadata AS latest_salary_metadata,
               latest_bank.account_holder_name,
               latest_bank.bank_name,
               latest_bank.branch_name,
@@ -861,10 +941,13 @@ exports.listEmployeeProfiles = async (req) => {
             FROM employee_payroll_profiles epp
             LEFT JOIN LATERAL (
               SELECT
+                id,
                 annual_ctc,
                 monthly_gross,
                 basic_pay,
-                variable_pay
+                variable_pay,
+                effective_from,
+                metadata
               FROM employee_salary_structures
               WHERE employee_payroll_profile_id = epp.id
               ORDER BY is_current DESC, version_no DESC, effective_from DESC
@@ -900,7 +983,37 @@ exports.listEmployeeProfiles = async (req) => {
           `;
 
     const result = await client.query(queryText, params);
-    return result.rows;
+    const rows = result.rows;
+    if (!rows.length) return rows;
+
+    const employeeIds = rows
+      .map((row) => String(row.employee_external_id || "").trim())
+      .filter(Boolean);
+
+    const employees = await Employee.find({ _id: { $in: employeeIds } })
+      .select("_id firstName lastName employeeCode profileImage")
+      .lean();
+
+    const employeeMap = new Map(
+      employees.map((employee) => [
+        String(employee._id),
+        (() => {
+          const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+          const employeeCode = employee.employeeCode || null;
+          return {
+            employee_name: fullName || employeeCode || "Employee",
+            employee_display_name: fullName || employeeCode || "Employee",
+            employee_code: employeeCode,
+            employee_profile_image: employee.profileImage || null
+          };
+        })()
+      ])
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      ...(employeeMap.get(String(row.employee_external_id)) || {})
+    }));
   } finally {
     client.release();
   }
@@ -1479,11 +1592,54 @@ exports.createPayrollRun = async (req) => {
     );
 
     const snapshots = snapshotsResult.rows;
-    if (snapshots.length) {
+    const snapshotEmployeeIds = snapshots
+      .map((row) => String(row.employee_external_id || "").trim())
+      .filter(Boolean);
+
+    const eligibleEmployeeIds = snapshotEmployeeIds.length
+      ? new Set(
+          (
+            await Employee.find({
+              _id: { $in: snapshotEmployeeIds },
+              isDeleted: false,
+              status: { $ne: "resigned" },
+              employmentLifecycleStatus: { $ne: "terminated" }
+            })
+              .select("_id")
+              .lean()
+          ).map((employee) => String(employee._id))
+        )
+      : new Set();
+
+    const activeProfileResult = snapshotEmployeeIds.length
+      ? await client.query(
+          `
+            SELECT employee_external_id
+            FROM employee_payroll_profiles
+            WHERE tenant_id = $1
+              AND employee_external_id = ANY($2::varchar[])
+              AND payroll_status <> 'exited'
+          `,
+          [tenantId, snapshotEmployeeIds]
+        )
+      : { rows: [] };
+
+    const activeProfileEmployeeIds = new Set(
+      activeProfileResult.rows.map((row) => String(row.employee_external_id))
+    );
+
+    const eligibleSnapshots = snapshots.filter((row) => {
+      const employeeId = String(row.employee_external_id || "").trim();
+      if (!employeeId) return false;
+      if (!eligibleEmployeeIds.has(employeeId)) return false;
+      return activeProfileEmployeeIds.size === 0 || activeProfileEmployeeIds.has(employeeId);
+    });
+
+    if (eligibleSnapshots.length) {
       const values = [];
       const placeholders = [];
       let idx = 1;
-      for (const row of snapshots) {
+      for (const row of eligibleSnapshots) {
         placeholders.push(
           `($${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++})`
         );
@@ -1531,13 +1687,13 @@ exports.createPayrollRun = async (req) => {
         SET employee_count = $2, processed_employee_count = 0, updated_by = $3
         WHERE id = $1
       `,
-      [run.id, snapshots.length, actorId]
+      [run.id, eligibleSnapshots.length, actorId]
     );
 
     await client.query("COMMIT");
     return {
       ...run,
-      seededEmployees: snapshots.length
+      seededEmployees: eligibleSnapshots.length
     };
   } catch (error) {
     await safeRollback(client);

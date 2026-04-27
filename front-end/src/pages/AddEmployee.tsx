@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowLeft, ChevronDown, Info } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   getApiWithToken,
@@ -78,6 +78,37 @@ type PayrollProfile = {
   date_of_joining?: string | null;
 };
 
+type PayrollComponent = {
+  id: string;
+  scope: "earning" | "deduction" | "employer_contribution";
+  code: string;
+  name: string;
+  calculation_mode: "fixed" | "percentage" | "formula" | "slab";
+  taxable?: boolean;
+  metadata?: Record<string, any>;
+};
+
+type EmployeeComponentOverride = {
+  scope: PayrollComponent["scope"];
+  code: string;
+  name: string;
+  enabled: boolean;
+  calculationMode: PayrollComponent["calculation_mode"];
+  taxable: boolean;
+  amount: string;
+  base: string;
+  formulaExpression: string;
+};
+
+const ADVANCED_COMPONENT_EXCLUDE = new Set([
+  "BASIC",
+  "HRA",
+  "VARIABLE",
+  "EPF",
+  "ESI",
+  "EMPLOYER_EPF"
+]);
+
 const emptyForm = {
   email: "",
   firstName: "",
@@ -114,12 +145,41 @@ const emptyForm = {
   ]
 };
 
+const buildComponentOverrideState = (
+  component: PayrollComponent,
+  existingOverride?: Partial<EmployeeComponentOverride> | null
+): EmployeeComponentOverride => {
+  const metadata = component.metadata || {};
+  return {
+    scope: component.scope,
+    code: component.code,
+    name: existingOverride?.name || component.name,
+    enabled:
+      typeof existingOverride?.enabled === "boolean"
+        ? existingOverride.enabled
+        : metadata.defaultEnabled !== false,
+    calculationMode:
+      (existingOverride?.calculationMode as PayrollComponent["calculation_mode"]) ||
+      component.calculation_mode,
+    taxable:
+      typeof existingOverride?.taxable === "boolean"
+        ? existingOverride.taxable
+        : Boolean(component.taxable),
+    amount: String(existingOverride?.amount ?? metadata.monthlyAmount ?? metadata.percentage ?? ""),
+    base: String(existingOverride?.base ?? metadata.base ?? "MONTHLY_GROSS"),
+    formulaExpression: String(existingOverride?.formulaExpression ?? metadata.expression ?? "")
+  };
+};
+
 /* ================= COMPONENT ================= */
 
 const AddEmployee = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
+  const requestedTab = searchParams.get("tab");
+  const requestedPayGroupId = searchParams.get("payGroupId") || "";
 
   const [form, setForm] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -145,8 +205,11 @@ const AddEmployee = () => {
   }>(null);
   const [originalLifecycleStatus, setOriginalLifecycleStatus] = useState("confirmed");
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("employee");
+  const [activeTab, setActiveTab] = useState(
+    requestedTab === "salary" && isEdit ? "salary" : "employee"
+  );
   const [payGroups, setPayGroups] = useState<PayGroup[]>([]);
+  const [payrollComponents, setPayrollComponents] = useState<PayrollComponent[]>([]);
   const [payrollProfileId, setPayrollProfileId] = useState<string>("");
   const [savingSalary, setSavingSalary] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
@@ -188,6 +251,30 @@ const AddEmployee = () => {
     isVerified: false,
     effectiveFrom: new Date().toISOString().slice(0, 10)
   });
+  const [statutoryForm, setStatutoryForm] = useState({
+    pan: "",
+    aadhaar: "",
+    uan: "",
+    esicNumber: "",
+    pfMember: true,
+    epsEligible: true,
+    esiEligible: false,
+    professionalTaxApplicable: true,
+    lwfApplicable: false,
+    declarationSubmitted: false,
+    effectiveFrom: new Date().toISOString().slice(0, 10),
+    previousEmployerIncomeAnnual: "",
+    previousEmployerTdsAnnual: "",
+    otherIncomeAnnual: "",
+    housingLoanInterestAnnual: "",
+    hraExemptionAnnual: "",
+    deduction80cAnnual: "",
+    deduction80ccd1bAnnual: "",
+    deduction80dAnnual: "",
+    deduction80OtherAnnual: ""
+  });
+  const [savingStatutory, setSavingStatutory] = useState(false);
+  const [componentOverrides, setComponentOverrides] = useState<Record<string, EmployeeComponentOverride>>({});
   const canManagePayroll = hasAnyPermission(["PAYROLL_CONFIG_MANAGE"]);
   const selectedPayGroup = useMemo(
     () => payGroups.find((row) => row.id === salaryForm.payGroupId) || null,
@@ -222,8 +309,12 @@ const AddEmployee = () => {
       salaryForm.epfMode === "fixed"
         ? Number(salaryForm.epfFixedAmount || 0)
         : Number((epfBase * (Number(salaryForm.epfPercentOfBasic || 12) / 100)).toFixed(2));
-    const esiAmount = salaryForm.includeEsi
-      ? Number(Math.min((basicPay * 8.33) / 100, 1250).toFixed(2))
+    const esiWages = monthlyGross > 0 ? monthlyGross : basicPay;
+    const esiEmployeeAmount = salaryForm.includeEsi && esiWages <= 21000
+      ? Number((esiWages * 0.0075).toFixed(2))
+      : 0;
+    const esiEmployerAmount = salaryForm.includeEsi && esiWages <= 21000
+      ? Number((esiWages * 0.0325).toFixed(2))
       : 0;
 
     return {
@@ -234,7 +325,8 @@ const AddEmployee = () => {
       hraAmount,
       fixedAllowance,
       employerEpf,
-      esiAmount
+      esiEmployeeAmount,
+      esiEmployerAmount
     };
   }, [
     salaryForm.annualCtc,
@@ -270,6 +362,17 @@ const AddEmployee = () => {
       fetchPayGroups();
     }
   }, []);
+
+  useEffect(() => {
+    if (requestedTab === "salary" && isEdit) {
+      setActiveTab("salary");
+    }
+  }, [isEdit, requestedTab]);
+
+  useEffect(() => {
+    if (!canManagePayroll || !salaryForm.payGroupId) return;
+    fetchPayrollComponents(salaryForm.payGroupId);
+  }, [canManagePayroll, salaryForm.payGroupId]);
 
   const fileToBase64 = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -443,7 +546,8 @@ const AddEmployee = () => {
       setPayGroups(rows);
       setSalaryForm((prev) => {
         if (prev.payGroupId) return prev;
-        return { ...prev, payGroupId: rows[0]?.id || "" };
+        const requestedPayGroup = rows.find((row) => row.id === requestedPayGroupId);
+        return { ...prev, payGroupId: requestedPayGroup?.id || rows[0]?.id || "" };
       });
     }
   };
@@ -470,11 +574,15 @@ const AddEmployee = () => {
     const detail = detailRes.data;
     const salaryStructures = Array.isArray(detail.salaryStructures) ? detail.salaryStructures : [];
     const bankDetails = Array.isArray(detail.bankDetails) ? detail.bankDetails : [];
+    const statutoryDetails = Array.isArray(detail.statutoryDetails) ? detail.statutoryDetails : [];
     const currentSalary =
       salaryStructures.find((row: any) => row.is_current) || salaryStructures[0] || null;
     const currentBank = bankDetails[0] || null;
+    const currentStatutory = statutoryDetails[0] || null;
     setCurrentSalaryEffectiveFrom((currentSalary?.effective_from || "").slice(0, 10));
     const salaryRules = currentSalary?.metadata?.salaryRules || {};
+    const taxDeclaration = currentStatutory?.metadata?.taxDeclaration || {};
+    setComponentOverrides(salaryRules.componentOverrides || {});
 
     setSalaryForm((prev) => ({
       ...prev,
@@ -540,6 +648,87 @@ const AddEmployee = () => {
         detail?.date_of_joining?.slice(0, 10) ||
         prev.effectiveFrom
     }));
+
+    setStatutoryForm((prev) => ({
+      ...prev,
+      pan: currentStatutory?.pan || "",
+      aadhaar: currentStatutory?.aadhaar || "",
+      uan: currentStatutory?.uan || "",
+      esicNumber: currentStatutory?.esic_number || "",
+      pfMember: typeof currentStatutory?.pf_member === "boolean" ? currentStatutory.pf_member : true,
+      epsEligible:
+        typeof currentStatutory?.eps_eligible === "boolean" ? currentStatutory.eps_eligible : true,
+      esiEligible:
+        typeof currentStatutory?.esi_eligible === "boolean" ? currentStatutory.esi_eligible : false,
+      professionalTaxApplicable:
+        typeof currentStatutory?.professional_tax_applicable === "boolean"
+          ? currentStatutory.professional_tax_applicable
+          : true,
+      lwfApplicable:
+        typeof currentStatutory?.lwf_applicable === "boolean" ? currentStatutory.lwf_applicable : false,
+      declarationSubmitted:
+        typeof currentStatutory?.declaration_submitted === "boolean"
+          ? currentStatutory.declaration_submitted
+          : false,
+      effectiveFrom:
+        (currentStatutory?.effective_from || "").slice(0, 10) ||
+        detail?.date_of_joining?.slice(0, 10) ||
+        prev.effectiveFrom,
+      previousEmployerIncomeAnnual: String(taxDeclaration.previousEmployerIncomeAnnual ?? ""),
+      previousEmployerTdsAnnual: String(taxDeclaration.previousEmployerTdsAnnual ?? ""),
+      otherIncomeAnnual: String(taxDeclaration.otherIncomeAnnual ?? ""),
+      housingLoanInterestAnnual: String(taxDeclaration.housingLoanInterestAnnual ?? ""),
+      hraExemptionAnnual: String(taxDeclaration.hraExemptionAnnual ?? ""),
+      deduction80cAnnual: String(taxDeclaration.deduction80cAnnual ?? ""),
+      deduction80ccd1bAnnual: String(taxDeclaration.deduction80ccd1bAnnual ?? ""),
+      deduction80dAnnual: String(taxDeclaration.deduction80dAnnual ?? ""),
+      deduction80OtherAnnual: String(taxDeclaration.deduction80OtherAnnual ?? "")
+    }));
+  };
+
+  const fetchPayrollComponents = async (payGroupId: string) => {
+    if (!payGroupId || !canManagePayroll) {
+      setPayrollComponents([]);
+      return;
+    }
+
+    const [earningsRes, deductionsRes, employerRes] = await Promise.all([
+      getApiWithToken(`/payroll/salary-components?scope=earning&payGroupId=${payGroupId}`, null, {
+        requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+      }),
+      getApiWithToken(`/payroll/salary-components?scope=deduction&payGroupId=${payGroupId}`, null, {
+        requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+      }),
+      getApiWithToken(
+        `/payroll/salary-components?scope=employer_contribution&payGroupId=${payGroupId}`,
+        null,
+        { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
+      )
+    ]);
+
+    const rows: PayrollComponent[] = [
+      ...(Array.isArray(earningsRes?.data)
+        ? earningsRes.data.map((row: any) => ({ ...row, scope: "earning" as const }))
+        : []),
+      ...(Array.isArray(deductionsRes?.data)
+        ? deductionsRes.data.map((row: any) => ({ ...row, scope: "deduction" as const }))
+        : []),
+      ...(Array.isArray(employerRes?.data)
+        ? employerRes.data.map((row: any) => ({ ...row, scope: "employer_contribution" as const }))
+        : [])
+    ]
+      .filter((row) => !ADVANCED_COMPONENT_EXCLUDE.has(String(row.code || "").toUpperCase()))
+      .sort((a, b) => String(a.code || "").localeCompare(String(b.code || "")));
+
+    setPayrollComponents(rows);
+    setComponentOverrides((prev) => {
+      const next = { ...prev };
+      for (const component of rows) {
+        const key = String(component.code || "").toUpperCase();
+        next[key] = buildComponentOverrideState(component, prev[key]);
+      }
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -559,10 +748,11 @@ const AddEmployee = () => {
       salaryForm.epfMode === "fixed"
         ? Number(salaryForm.epfFixedAmount || 0)
         : Number((epfBase * (Number(salaryForm.epfPercentOfBasic || 12) / 100)).toFixed(2));
-    const esiAmount = salaryForm.includeEsi
-      ? Number(Math.min((basicPay * 8.33) / 100, 1250).toFixed(2))
+    const projectedGross = Number((monthlyCtc - employerEpf).toFixed(2));
+    const esiEmployerAmount = salaryForm.includeEsi && projectedGross <= 21000
+      ? Number((projectedGross * 0.0325).toFixed(2))
       : 0;
-    const monthlyGross = Number((monthlyCtc - employerEpf - esiAmount).toFixed(2));
+    const monthlyGross = Number((monthlyCtc - employerEpf - esiEmployerAmount).toFixed(2));
     const variablePay = Number((monthlyGross - basicPay - hraAmount).toFixed(2));
 
     setSalaryForm((prev) => {
@@ -945,6 +1135,26 @@ const AddEmployee = () => {
           effectiveFrom: salaryForm.effectiveFrom,
           metadata: {
             salaryRules: {
+              componentOverrides: Object.fromEntries(
+                Object.entries(componentOverrides)
+                  .filter(([, override]) => Boolean(override?.code))
+                  .map(([code, override]) => [
+                    code,
+                    {
+                      enabled: override.enabled,
+                      scope: override.scope,
+                      name: override.name,
+                      calculationMode: override.calculationMode,
+                      taxable: override.taxable,
+                      amount:
+                        override.amount === "" || override.amount == null
+                          ? null
+                          : Number(override.amount),
+                      base: override.base || null,
+                      formulaExpression: override.formulaExpression || null
+                    }
+                  ])
+              ),
               basicPercentSource: salaryForm.basicPercentSource,
               payGroupBasicPercent,
               employeeBasicPercent:
@@ -959,7 +1169,12 @@ const AddEmployee = () => {
                 salaryForm.epfMode === "fixed" ? Number(salaryForm.epfFixedAmount || 0) : null,
               restrictPfWage: salaryForm.restrictPfWage,
               pfWageCeiling: Number(salaryForm.pfWageCeiling || 15000),
-              includeEsi: salaryForm.includeEsi
+              includeEsi: salaryForm.includeEsi,
+              epfEmployeeRate: Number(salaryForm.epfPercentOfBasic || 12),
+              epfEmployerRate: Number(salaryForm.epfPercentOfBasic || 12),
+              esiEmployeeRate: 0.75,
+              esiEmployerRate: 3.25,
+              esiEligibilityThreshold: 21000
             }
           }
         },
@@ -1076,6 +1291,119 @@ const AddEmployee = () => {
       fetchPayrollData();
     } finally {
       setSavingBank(false);
+    }
+  };
+
+  const handleSaveStatutory = async () => {
+    if (!isEdit || !id) {
+      toast.error("Create employee first, then configure tax and statutory details");
+      return;
+    }
+    if (!canManagePayroll) {
+      toast.error("You do not have payroll configuration permission");
+      return;
+    }
+    if (!statutoryForm.effectiveFrom) {
+      toast.error("Effective From date is required for statutory details");
+      return;
+    }
+
+    setSavingStatutory(true);
+    try {
+      let profileId = payrollProfileId;
+      if (!profileId) {
+        const createProfileRes = await postApiWithToken(
+          "/payroll/employee-profiles",
+          {
+            employeeExternalId: id,
+            employeeCode: form.employeeCode || undefined,
+            payGroupId: salaryForm.payGroupId || null,
+            payrollStatus: salaryForm.payrollStatus,
+            defaultPaymentMode: salaryForm.defaultPaymentMode,
+            taxRegime: salaryForm.taxRegime,
+            dateOfJoining: form.dateOfJoining || undefined
+          },
+          null,
+          { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
+        );
+
+        if (!createProfileRes?.success || !createProfileRes?.data?.id) {
+          toast.error(createProfileRes?.message || "Failed to create payroll profile");
+          return;
+        }
+        profileId = createProfileRes.data.id;
+        setPayrollProfileId(profileId);
+      }
+
+      const res = await postApiWithToken(
+        `/payroll/employee-profiles/${profileId}/statutory-details`,
+        {
+          pan: statutoryForm.pan || null,
+          aadhaar: statutoryForm.aadhaar || null,
+          uan: statutoryForm.uan || null,
+          esicNumber: statutoryForm.esicNumber || null,
+          pfMember: statutoryForm.pfMember,
+          epsEligible: statutoryForm.epsEligible,
+          esiEligible: statutoryForm.esiEligible,
+          professionalTaxApplicable: statutoryForm.professionalTaxApplicable,
+          lwfApplicable: statutoryForm.lwfApplicable,
+          taxRegime: salaryForm.taxRegime,
+          declarationSubmitted: statutoryForm.declarationSubmitted,
+          effectiveFrom: statutoryForm.effectiveFrom,
+          metadata: {
+            taxDeclaration: {
+              previousEmployerIncomeAnnual:
+                statutoryForm.previousEmployerIncomeAnnual === ""
+                  ? null
+                  : Number(statutoryForm.previousEmployerIncomeAnnual),
+              previousEmployerTdsAnnual:
+                statutoryForm.previousEmployerTdsAnnual === ""
+                  ? null
+                  : Number(statutoryForm.previousEmployerTdsAnnual),
+              otherIncomeAnnual:
+                statutoryForm.otherIncomeAnnual === ""
+                  ? null
+                  : Number(statutoryForm.otherIncomeAnnual),
+              housingLoanInterestAnnual:
+                statutoryForm.housingLoanInterestAnnual === ""
+                  ? null
+                  : Number(statutoryForm.housingLoanInterestAnnual),
+              hraExemptionAnnual:
+                statutoryForm.hraExemptionAnnual === ""
+                  ? null
+                  : Number(statutoryForm.hraExemptionAnnual),
+              deduction80cAnnual:
+                statutoryForm.deduction80cAnnual === ""
+                  ? null
+                  : Number(statutoryForm.deduction80cAnnual),
+              deduction80ccd1bAnnual:
+                statutoryForm.deduction80ccd1bAnnual === ""
+                  ? null
+                  : Number(statutoryForm.deduction80ccd1bAnnual),
+              deduction80dAnnual:
+                statutoryForm.deduction80dAnnual === ""
+                  ? null
+                  : Number(statutoryForm.deduction80dAnnual),
+              deduction80OtherAnnual:
+                statutoryForm.deduction80OtherAnnual === ""
+                  ? null
+                  : Number(statutoryForm.deduction80OtherAnnual)
+            }
+          }
+        },
+        null,
+        { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
+      );
+
+      if (!res?.success) {
+        toast.error(res?.message || "Failed to save statutory details");
+        return;
+      }
+
+      toast.success("Tax and statutory details saved");
+      fetchPayrollData();
+    } finally {
+      setSavingStatutory(false);
     }
   };
 
@@ -1201,6 +1529,12 @@ const AddEmployee = () => {
             className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
           >
             Bank Details
+          </TabsTrigger>
+          <TabsTrigger
+            value="statutory"
+            className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+          >
+            Tax & Statutory
           </TabsTrigger>
         </TabsList>
 
@@ -2280,7 +2614,7 @@ const AddEmployee = () => {
                         }
                       />
                       <span className="text-xs text-muted-foreground">
-                        Enable ESI: 8.33% of Basic (max ₹1250)
+                        Enable ESI when gross wages are within ₹21,000. Employee 0.75%, employer 3.25%.
                       </span>
                     </div>
                   </div>
@@ -2349,10 +2683,10 @@ const AddEmployee = () => {
                   </div>
                   {salaryForm.includeEsi && (
                     <div className="grid grid-cols-4 px-4 py-3 text-sm border-t">
-                      <div>ESI Contribution</div>
-                      <div>8.33% of Basic (max ₹1250)</div>
-                      <div className="text-right">{salaryBreakdown.esiAmount.toFixed(2)}</div>
-                      <div className="text-right">{(salaryBreakdown.esiAmount * 12).toFixed(2)}</div>
+                      <div>ESI - Employer Contribution</div>
+                      <div>3.25% of eligible ESI wages</div>
+                      <div className="text-right">{salaryBreakdown.esiEmployerAmount.toFixed(2)}</div>
+                      <div className="text-right">{(salaryBreakdown.esiEmployerAmount * 12).toFixed(2)}</div>
                     </div>
                   )}
                   <div className="grid grid-cols-4 px-4 py-3 text-sm border-t bg-blue-50 font-medium">
@@ -2362,6 +2696,154 @@ const AddEmployee = () => {
                     <div className="text-right">{salaryBreakdown.annualCtc.toFixed(2)}</div>
                   </div>
                 </div>
+
+                {payrollComponents.length > 0 && (
+                  <div className="rounded-md border p-4 space-y-4">
+                    <div>
+                      <p className="text-sm font-medium">Employee Component Overrides</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Use this only when this employee’s structure differs from the pay group. You can
+                        enable or disable components like bonus, ESOP, PT, TDS, or gratuity for this
+                        employee and override their values.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      {payrollComponents.map((component) => {
+                        const key = String(component.code || "").toUpperCase();
+                        const override =
+                          componentOverrides[key] || buildComponentOverrideState(component);
+
+                        return (
+                          <div key={`${component.scope}-${component.code}`} className="rounded-md border p-3 space-y-3">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <p className="text-sm font-medium">{override.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {component.scope.replaceAll("_", " ")} • {component.code}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">Use for this employee</span>
+                                <Switch
+                                  checked={override.enabled}
+                                  onCheckedChange={(checked) =>
+                                    setComponentOverrides((prev) => ({
+                                      ...prev,
+                                      [key]: { ...override, enabled: checked }
+                                    }))
+                                  }
+                                />
+                              </div>
+                            </div>
+
+                            {override.enabled && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <Label>Display Name</Label>
+                                  <Input
+                                    value={override.name}
+                                    onChange={(e) =>
+                                      setComponentOverrides((prev) => ({
+                                        ...prev,
+                                        [key]: { ...override, name: e.target.value }
+                                      }))
+                                    }
+                                  />
+                                </div>
+
+                                <div>
+                                  <Label>Calculation Mode</Label>
+                                  <Select
+                                    value={override.calculationMode}
+                                    onValueChange={(value) =>
+                                      setComponentOverrides((prev) => ({
+                                        ...prev,
+                                        [key]: {
+                                          ...override,
+                                          calculationMode: value as EmployeeComponentOverride["calculationMode"]
+                                        }
+                                      }))
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="fixed">Fixed Amount</SelectItem>
+                                      <SelectItem value="percentage">Percentage</SelectItem>
+                                      <SelectItem value="formula">Formula</SelectItem>
+                                      <SelectItem value="slab">Slab</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                {override.calculationMode === "percentage" ? (
+                                  <>
+                                    <div>
+                                      <Label>Percentage</Label>
+                                      <Input
+                                        type="number"
+                                        value={override.amount}
+                                        onChange={(e) =>
+                                          setComponentOverrides((prev) => ({
+                                            ...prev,
+                                            [key]: { ...override, amount: e.target.value }
+                                          }))
+                                        }
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label>Base Variable</Label>
+                                      <Input
+                                        value={override.base}
+                                        onChange={(e) =>
+                                          setComponentOverrides((prev) => ({
+                                            ...prev,
+                                            [key]: { ...override, base: e.target.value.toUpperCase() }
+                                          }))
+                                        }
+                                        placeholder="MONTHLY_GROSS or BASIC_PAY"
+                                      />
+                                    </div>
+                                  </>
+                                ) : override.calculationMode === "formula" ? (
+                                  <div className="md:col-span-2">
+                                    <Label>Formula Expression</Label>
+                                    <Input
+                                      value={override.formulaExpression}
+                                      onChange={(e) =>
+                                        setComponentOverrides((prev) => ({
+                                          ...prev,
+                                          [key]: { ...override, formulaExpression: e.target.value }
+                                        }))
+                                      }
+                                      placeholder="round(BASIC_PAY * 0.0481)"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <Label>{override.calculationMode === "slab" ? "Manual Amount" : "Monthly Amount"}</Label>
+                                    <Input
+                                      type="number"
+                                      value={override.amount}
+                                      onChange={(e) =>
+                                        setComponentOverrides((prev) => ({
+                                          ...prev,
+                                          [key]: { ...override, amount: e.target.value }
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
@@ -2399,6 +2881,199 @@ const AddEmployee = () => {
                       : payrollProfileId
                         ? "Update Salary"
                         : "Save Salary"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="statutory">
+          <div className="stat-card space-y-4">
+            {!isEdit ? (
+              <p className="text-sm text-muted-foreground">
+                Save employee first. Then open this tab to configure tax and statutory details.
+              </p>
+            ) : !canManagePayroll ? (
+              <p className="text-sm text-muted-foreground">
+                You need `PAYROLL_CONFIG_MANAGE` permission to configure statutory details.
+              </p>
+            ) : (
+              <>
+                <div className="rounded-md border bg-muted/30 p-3">
+                  <p className="text-sm font-medium">TDS Estimation Inputs</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    These values are used to estimate monthly TDS during payroll runs. This is a payroll
+                    estimate for operations, not a final CA filing engine.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>PAN</Label>
+                    <Input
+                      value={statutoryForm.pan}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, pan: e.target.value.toUpperCase() }))}
+                      placeholder="ABCDE1234F"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Aadhaar</Label>
+                    <Input
+                      value={statutoryForm.aadhaar}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, aadhaar: e.target.value }))}
+                      placeholder="12 digit Aadhaar"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>UAN</Label>
+                    <Input
+                      value={statutoryForm.uan}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, uan: e.target.value }))}
+                      placeholder="PF UAN"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>ESIC Number</Label>
+                    <Input
+                      value={statutoryForm.esicNumber}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, esicNumber: e.target.value }))}
+                      placeholder="ESIC number"
+                    />
+                  </div>
+
+                  <div className="space-y-3 rounded-md border p-3 md:col-span-2">
+                    <p className="text-sm font-medium">Applicability</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                        <span className="text-sm">PF Member</span>
+                        <Switch checked={statutoryForm.pfMember} onCheckedChange={(checked) => setStatutoryForm((prev) => ({ ...prev, pfMember: checked }))} />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                        <span className="text-sm">EPS Eligible</span>
+                        <Switch checked={statutoryForm.epsEligible} onCheckedChange={(checked) => setStatutoryForm((prev) => ({ ...prev, epsEligible: checked }))} />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                        <span className="text-sm">ESI Eligible</span>
+                        <Switch checked={statutoryForm.esiEligible} onCheckedChange={(checked) => setStatutoryForm((prev) => ({ ...prev, esiEligible: checked }))} />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                        <span className="text-sm">Professional Tax</span>
+                        <Switch checked={statutoryForm.professionalTaxApplicable} onCheckedChange={(checked) => setStatutoryForm((prev) => ({ ...prev, professionalTaxApplicable: checked }))} />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                        <span className="text-sm">LWF Applicable</span>
+                        <Switch checked={statutoryForm.lwfApplicable} onCheckedChange={(checked) => setStatutoryForm((prev) => ({ ...prev, lwfApplicable: checked }))} />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                        <span className="text-sm">Declarations Submitted</span>
+                        <Switch checked={statutoryForm.declarationSubmitted} onCheckedChange={(checked) => setStatutoryForm((prev) => ({ ...prev, declarationSubmitted: checked }))} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>Previous Employer Income (Annual)</Label>
+                    <Input
+                      type="number"
+                      value={statutoryForm.previousEmployerIncomeAnnual}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, previousEmployerIncomeAnnual: e.target.value }))}
+                      placeholder="If joined mid-year"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Previous Employer TDS</Label>
+                    <Input
+                      type="number"
+                      value={statutoryForm.previousEmployerTdsAnnual}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, previousEmployerTdsAnnual: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Other Income (Annual)</Label>
+                    <Input
+                      type="number"
+                      value={statutoryForm.otherIncomeAnnual}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, otherIncomeAnnual: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Housing Loan Interest (Annual)</Label>
+                    <Input
+                      type="number"
+                      value={statutoryForm.housingLoanInterestAnnual}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, housingLoanInterestAnnual: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>HRA Exemption (Annual, old regime)</Label>
+                    <Input
+                      type="number"
+                      value={statutoryForm.hraExemptionAnnual}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, hraExemptionAnnual: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>80C Deduction</Label>
+                    <Input
+                      type="number"
+                      value={statutoryForm.deduction80cAnnual}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, deduction80cAnnual: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>80CCD(1B) Deduction</Label>
+                    <Input
+                      type="number"
+                      value={statutoryForm.deduction80ccd1bAnnual}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, deduction80ccd1bAnnual: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>80D Deduction</Label>
+                    <Input
+                      type="number"
+                      value={statutoryForm.deduction80dAnnual}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, deduction80dAnnual: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Other Old-Regime Deductions</Label>
+                    <Input
+                      type="number"
+                      value={statutoryForm.deduction80OtherAnnual}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, deduction80OtherAnnual: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Effective From</Label>
+                    <Input
+                      type="date"
+                      value={statutoryForm.effectiveFrom}
+                      onChange={(e) => setStatutoryForm((prev) => ({ ...prev, effectiveFrom: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    Payroll will use these declarations together with the selected tax regime to estimate
+                    monthly TDS during run computation.
+                  </p>
+                  <Button onClick={handleSaveStatutory} disabled={savingStatutory}>
+                    {savingStatutory ? "Saving..." : "Save Tax & Statutory"}
                   </Button>
                 </div>
               </>

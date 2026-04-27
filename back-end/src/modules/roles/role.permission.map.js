@@ -63,6 +63,7 @@ const ROLE_PERMISSION_MAP = {
   ],
 
   employee: [
+    "EMP_ORG_TREE_VIEW",
     "EMP_SELF_VIEW",
     "ATTENDANCE_VIEW_SELF",
     "NOTIFICATION_VIEW_SELF",

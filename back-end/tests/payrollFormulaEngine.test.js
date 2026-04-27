@@ -8,7 +8,11 @@ const {
   computeSlabAmount,
   resolveComponentAmount,
   roundAmount,
-  normalizeComponentRows
+  normalizeComponentRows,
+  isComponentEnabledForEmployee,
+  applyEmployeeComponentOverride,
+  computeAnnualTdsEstimate,
+  computeTelanganaProfessionalTax
 } = __test__;
 
 test("evaluateFormula supports math helpers and context variables", () => {
@@ -103,4 +107,103 @@ test("normalizeComponentRows merges duplicate component lines", () => {
   assert.equal(merged[0].quantity, 1.5);
   assert.equal(merged[0].taxable, true);
   assert.equal(merged[0].affects_net_pay, true);
+});
+
+test("isComponentEnabledForEmployee respects pay group applicability and employee disable override", () => {
+  const component = {
+    code: "BONUS",
+    metadata: {
+      payGroupIds: ["pay-group-1"],
+      defaultEnabled: false
+    }
+  };
+
+  assert.equal(
+    isComponentEnabledForEmployee({
+      component,
+      payGroupId: "pay-group-1",
+      salary: {
+        metadata: {
+          salaryRules: {
+            componentOverrides: {
+              BONUS: { enabled: true }
+            }
+          }
+        }
+      }
+    }),
+    true
+  );
+
+  assert.equal(
+    isComponentEnabledForEmployee({
+      component,
+      payGroupId: "pay-group-2",
+      salary: { metadata: {} }
+    }),
+    false
+  );
+});
+
+test("applyEmployeeComponentOverride merges employee-specific calculation metadata", () => {
+  const component = {
+    code: "BONUS",
+    name: "Bonus",
+    calculation_mode: "fixed",
+    taxable: true,
+    metadata: { monthlyAmount: 0 }
+  };
+
+  const overridden = applyEmployeeComponentOverride({
+    component,
+    salary: {
+      metadata: {
+        salaryRules: {
+          componentOverrides: {
+            BONUS: {
+              name: "Quarterly Bonus",
+              calculationMode: "percentage",
+              amount: 20,
+              base: "MONTHLY_GROSS",
+              taxable: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(overridden.name, "Quarterly Bonus");
+  assert.equal(overridden.calculation_mode, "percentage");
+  assert.equal(overridden.metadata.percentage, 20);
+  assert.equal(overridden.metadata.base, "MONTHLY_GROSS");
+});
+
+test("computeTelanganaProfessionalTax uses Telangana monthly slabs", () => {
+  assert.equal(computeTelanganaProfessionalTax(14000, true), 0);
+  assert.equal(computeTelanganaProfessionalTax(18000, true), 150);
+  assert.equal(computeTelanganaProfessionalTax(30000, true), 200);
+});
+
+test("computeAnnualTdsEstimate calculates monthly TDS for new regime with declarations", () => {
+  const estimate = computeAnnualTdsEstimate({
+    payMonth: "2026-04",
+    projectedTaxableMonthlyIncome: 120000,
+    statutory: {
+      tax_regime: "new",
+      metadata: {
+        taxDeclaration: {
+          previousEmployerTdsAnnual: 10000
+        }
+      }
+    },
+    salary: {},
+    professionalTaxMonthly: 200
+  });
+
+  assert.equal(estimate.regime, "new");
+  assert.ok(estimate.taxableIncome > 0);
+  assert.ok(estimate.annualTaxLiability > 0);
+  assert.equal(estimate.monthsRemaining, 12);
+  assert.ok(estimate.monthlyTds > 0);
 });

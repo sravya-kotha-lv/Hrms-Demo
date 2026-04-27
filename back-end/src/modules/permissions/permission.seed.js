@@ -10,6 +10,7 @@ const PERMISSIONS = [
   { code: "EMP_UPDATE", name: "Update Employee", module: "Employees" },
   { code: "EMP_DELETE", name: "Delete Employee", module: "Employees" },
   { code: "EMP_VIEW", name: "View Employees", module: "Employees" },
+  { code: "EMP_ORG_TREE_VIEW", name: "View Organization Tree", module: "Employees" },
   { code: "EMP_SELF_VIEW", name: "View Own Profile", module: "Employees" },
 
   // 🏢 Departments

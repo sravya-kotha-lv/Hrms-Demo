@@ -14,6 +14,9 @@ const monthEndDate = (month) => {
   return new Date(Date.UTC(year, monthNum, 0));
 };
 
+const clampAmount = (value, min = 0, max = Number.POSITIVE_INFINITY) =>
+  Math.min(max, Math.max(min, toNumber(value, 0)));
+
 const roundAmount = (value, policy = "nearest_rupee") => {
   const v = toNumber(value, 0);
   if (policy === "floor_rupee") return Math.floor(v);
@@ -31,6 +34,215 @@ const parseJson = (value, fallback = {}) => {
   } catch (_) {
     return fallback;
   }
+};
+
+const getTaxDeclaration = (statutory) => {
+  const metadata = parseJson(statutory?.metadata, {});
+  return parseJson(metadata.taxDeclaration, {});
+};
+
+const getRemainingPayrollMonths = (payMonth) => {
+  const [, month] = String(payMonth || "").split("-").map(Number);
+  if (!Number.isFinite(month) || month < 1 || month > 12) return 12;
+  const fiscalMonthIndex = month >= 4 ? month - 4 : month + 8;
+  return Math.max(1, 12 - fiscalMonthIndex);
+};
+
+const computeProgressiveTax = (income, slabs = []) => {
+  let remaining = Math.max(0, toNumber(income, 0));
+  let previousUpper = 0;
+  let tax = 0;
+
+  for (const slab of slabs) {
+    const upper = slab?.upto == null ? null : toNumber(slab.upto, 0);
+    const rate = toNumber(slab.rate, 0) / 100;
+    const taxableSlice =
+      upper == null
+        ? remaining
+        : Math.max(0, Math.min(remaining, upper - previousUpper));
+
+    tax += taxableSlice * rate;
+    remaining -= taxableSlice;
+    if (upper == null || remaining <= 0) break;
+    previousUpper = upper;
+  }
+
+  return Math.max(0, tax);
+};
+
+const computeAnnualTdsEstimate = ({
+  payMonth,
+  projectedTaxableMonthlyIncome,
+  statutory,
+  payrollProfile,
+  salary,
+  professionalTaxMonthly = 0
+}) => {
+  const declaration = getTaxDeclaration(statutory);
+  const regime = String(
+    statutory?.tax_regime || payrollProfile?.tax_regime || salary?.tax_regime || "new"
+  ).toLowerCase();
+  const annualSalaryIncome = Math.max(0, toNumber(projectedTaxableMonthlyIncome, 0) * 12);
+  const previousEmployerIncome = toNumber(declaration.previousEmployerIncomeAnnual, 0);
+  const otherIncome = toNumber(declaration.otherIncomeAnnual, 0);
+  const hraExemption = clampAmount(declaration.hraExemptionAnnual, 0, annualSalaryIncome);
+  const housingLoanInterest = Math.abs(toNumber(declaration.housingLoanInterestAnnual, 0));
+  const deduction80c = clampAmount(declaration.deduction80cAnnual, 0, 150000);
+  const deduction80ccd1b = clampAmount(declaration.deduction80ccd1bAnnual, 0, 50000);
+  const deduction80d = clampAmount(declaration.deduction80dAnnual, 0, 50000);
+  const deduction80other = clampAmount(declaration.deduction80OtherAnnual, 0);
+  const previousEmployerTds = clampAmount(declaration.previousEmployerTdsAnnual, 0);
+  const oldStandardDeduction = clampAmount(declaration.oldRegimeStandardDeduction, 0, 50000) || 50000;
+  const newStandardDeduction = clampAmount(declaration.newRegimeStandardDeduction, 0, 75000) || 75000;
+  const annualProfessionalTax = Math.max(0, toNumber(professionalTaxMonthly, 0) * 12);
+
+  let taxableIncome = annualSalaryIncome + previousEmployerIncome + otherIncome;
+  if (regime === "old") {
+    taxableIncome -= oldStandardDeduction;
+    taxableIncome -= hraExemption;
+    taxableIncome -= Math.min(housingLoanInterest, 200000);
+    taxableIncome -= annualProfessionalTax;
+    taxableIncome -= deduction80c + deduction80ccd1b + deduction80d + deduction80other;
+  } else {
+    taxableIncome -= newStandardDeduction;
+  }
+
+  taxableIncome = Math.max(0, taxableIncome);
+
+  const slabs =
+    regime === "old"
+      ? [
+          { upto: 250000, rate: 0 },
+          { upto: 500000, rate: 5 },
+          { upto: 1000000, rate: 20 },
+          { upto: null, rate: 30 }
+        ]
+      : [
+          { upto: 400000, rate: 0 },
+          { upto: 800000, rate: 5 },
+          { upto: 1200000, rate: 10 },
+          { upto: 1600000, rate: 15 },
+          { upto: 2000000, rate: 20 },
+          { upto: 2400000, rate: 25 },
+          { upto: null, rate: 30 }
+        ];
+
+  let baseTax = computeProgressiveTax(taxableIncome, slabs);
+  const rebate =
+    regime === "old"
+      ? taxableIncome <= 500000
+        ? Math.min(baseTax, 12500)
+        : 0
+      : taxableIncome <= 1200000
+        ? Math.min(baseTax, 60000)
+        : 0;
+
+  baseTax = Math.max(0, baseTax - rebate);
+  const cess = baseTax * 0.04;
+  const annualTaxLiability = Math.max(0, baseTax + cess - previousEmployerTds);
+  const monthsRemaining = getRemainingPayrollMonths(payMonth);
+
+  return {
+    regime,
+    taxableIncome,
+    annualTaxLiability,
+    monthlyTds: monthsRemaining > 0 ? annualTaxLiability / monthsRemaining : annualTaxLiability,
+    monthsRemaining
+  };
+};
+
+const computeTelanganaProfessionalTax = (monthlyIncome, applicable = true) => {
+  if (!applicable) return 0;
+  const income = Math.max(0, toNumber(monthlyIncome, 0));
+  if (income <= 15000) return 0;
+  if (income <= 20000) return 150;
+  return 200;
+};
+
+const getComponentPayGroupIds = (component) => {
+  const metadata = parseJson(component?.metadata, {});
+  const values = Array.isArray(metadata?.payGroupIds)
+    ? metadata.payGroupIds
+    : Array.isArray(metadata?.applicability?.payGroupIds)
+      ? metadata.applicability.payGroupIds
+      : [];
+
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+};
+
+const getEmployeeComponentOverrides = (salary) => {
+  const salaryMeta = parseJson(salary?.metadata, {});
+  const rules = parseJson(salaryMeta.salaryRules, {});
+  return parseJson(rules.componentOverrides || salaryMeta.componentOverrides, {});
+};
+
+const isComponentEnabledForEmployee = ({ component, payGroupId, salary }) => {
+  const componentMeta = parseJson(component?.metadata, {});
+  const payGroupIds = getComponentPayGroupIds(component);
+  if (payGroupId && payGroupIds.length && !payGroupIds.includes(String(payGroupId))) {
+    return false;
+  }
+
+  const componentCode = String(component?.code || "").trim().toUpperCase();
+  const overrides = getEmployeeComponentOverrides(salary);
+  const override =
+    overrides?.[componentCode] ||
+    overrides?.[`${String(component?.component_scope || "").trim()}:${componentCode}`] ||
+    null;
+
+  if (override?.enabled === false) return false;
+
+  const defaultEnabled = componentMeta.defaultEnabled !== false;
+  return defaultEnabled || override?.enabled === true;
+};
+
+const applyEmployeeComponentOverride = ({ component, salary }) => {
+  const componentCode = String(component?.code || "").trim().toUpperCase();
+  const overrides = getEmployeeComponentOverrides(salary);
+  const override =
+    overrides?.[componentCode] ||
+    overrides?.[`${String(component?.component_scope || "").trim()}:${componentCode}`] ||
+    null;
+
+  if (!override) return component;
+
+  const metadata = {
+    ...parseJson(component?.metadata, {}),
+    ...parseJson(override?.metadata, {})
+  };
+
+  const overrideCalculationMode = override.calculationMode || component.calculation_mode;
+  if (override.amount != null) {
+    if (overrideCalculationMode === "percentage") {
+      metadata.percentage = toNumber(override.amount, 0);
+    } else {
+      metadata.monthlyAmount = toNumber(override.amount, 0);
+    }
+  }
+  if (override.percentage != null) {
+    metadata.percentage = toNumber(override.percentage, 0);
+  }
+  if (override.base) {
+    metadata.base = String(override.base);
+  }
+  if (override.formulaExpression) {
+    metadata.expression = String(override.formulaExpression);
+  }
+  if (Array.isArray(override.slabs)) {
+    metadata.slabs = override.slabs;
+  }
+  if (override.maxAmount != null) {
+    metadata.maxAmount = toNumber(override.maxAmount, 0);
+  }
+
+  return {
+    ...component,
+    name: override.name || component.name,
+    display_name: override.displayName || component.display_name,
+    taxable: typeof override.taxable === "boolean" ? override.taxable : component.taxable,
+    calculation_mode: overrideCalculationMode,
+    metadata
+  };
 };
 
 const computeSalaryContextFromRules = ({ salary }) => {
@@ -63,6 +275,14 @@ const computeSalaryContextFromRules = ({ salary }) => {
   const effectiveBasicPercent =
     basicPercentSource === "employee" ? employeeBasicPercent : payGroupBasicPercent;
   const hraPercentOfBasic = toNumber(rules.hraPercentOfBasic, 50);
+  const pfWageCeiling = toNumber(rules.pfWageCeiling, 15000);
+  const epfEmployeeRate = toNumber(rules.epfEmployeeRate, 12);
+  const epfEmployerRate = toNumber(rules.epfEmployerRate, 12);
+  const esiEligibilityThreshold = toNumber(rules.esiEligibilityThreshold, 21000);
+  const esiEmployeeRate = toNumber(rules.esiEmployeeRate, 0.75);
+  const esiEmployerRate = toNumber(rules.esiEmployerRate, 3.25);
+  const bonusAmount = toNumber(rules.bonusAmount, 0);
+  const tdsAmount = toNumber(rules.tdsAmount, 0);
 
   const computedBasic = monthlyCtc * (effectiveBasicPercent / 100);
   const basicPay = toNumber(salary.basic_pay, 0) || computedBasic;
@@ -70,15 +290,17 @@ const computeSalaryContextFromRules = ({ salary }) => {
   const epfPercentOfBasic = toNumber(rules.epfPercentOfBasic, 12);
   const epfFixedAmount = toNumber(rules.epfFixedAmount, 0);
   const restrictPfWage = rules.restrictPfWage !== false;
-  const pfWageCeiling = toNumber(rules.pfWageCeiling, 15000);
   const epfBase = restrictPfWage ? Math.min(basicPay, pfWageCeiling) : basicPay;
   const employerEpf =
-    epfMode === "fixed" ? epfFixedAmount : (epfBase * epfPercentOfBasic) / 100;
+    epfMode === "fixed" ? epfFixedAmount : (epfBase * epfEmployerRate) / 100;
   const includeEsi = rules.includeEsi === true;
-  const esiAmount = includeEsi ? Math.min((basicPay * 8.33) / 100, 1250) : 0;
+  const esiWages = toNumber(rules.esiWages, 0) || basicPay;
+  const esiCovered = includeEsi && esiWages > 0 && esiWages <= esiEligibilityThreshold;
+  const esiEmployeeAmount = esiCovered ? (esiWages * esiEmployeeRate) / 100 : 0;
+  const esiEmployerAmount = esiCovered ? (esiWages * esiEmployerRate) / 100 : 0;
 
   const monthlyGrossConfigured = toNumber(salary.monthly_gross, 0);
-  const monthlyGrossAuto = monthlyCtc - employerEpf - esiAmount;
+  const monthlyGrossAuto = monthlyCtc - employerEpf - esiEmployerAmount;
   const monthlyGross = monthlyGrossConfigured || monthlyGrossAuto;
   const hraAmount = (basicPay * hraPercentOfBasic) / 100;
   const variablePay = toNumber(salary.variable_pay, monthlyGross - basicPay - hraAmount);
@@ -89,7 +311,16 @@ const computeSalaryContextFromRules = ({ salary }) => {
     basicPay: Math.max(0, basicPay),
     variablePay: Math.max(0, variablePay),
     employerEpf: Math.max(0, employerEpf),
-    esiAmount: Math.max(0, esiAmount),
+    esiEmployeeAmount: Math.max(0, esiEmployeeAmount),
+    esiEmployerAmount: Math.max(0, esiEmployerAmount),
+    pfWageCeiling,
+    epfEmployeeRate,
+    epfEmployerRate,
+    esiEligibilityThreshold,
+    esiEmployeeRate,
+    esiEmployerRate,
+    bonusAmount: Math.max(0, bonusAmount),
+    tdsAmount: Math.max(0, tdsAmount),
     effectiveBasicPercent: Math.max(0, effectiveBasicPercent),
     hraPercentOfBasic: Math.max(0, hraPercentOfBasic)
   };
@@ -385,7 +616,7 @@ exports.computePayrollRun = async (req) => {
 
     const profileResult = await client.query(
       `
-        SELECT id, employee_external_id
+        SELECT id, employee_external_id, pay_group_id, tax_regime
         FROM employee_payroll_profiles
         WHERE tenant_id = $1
           AND employee_external_id = ANY($2::varchar[])
@@ -393,7 +624,7 @@ exports.computePayrollRun = async (req) => {
       [tenantId, employeeExternalIds]
     );
     const profileMap = new Map(
-      profileResult.rows.map((row) => [String(row.employee_external_id), String(row.id)])
+      profileResult.rows.map((row) => [String(row.employee_external_id), row])
     );
 
     const profileIds = profileResult.rows.map((row) => row.id);
@@ -413,6 +644,23 @@ exports.computePayrollRun = async (req) => {
         : { rows: [] };
     const salaryByProfile = new Map(
       salaryResult.rows.map((row) => [String(row.employee_payroll_profile_id), row])
+    );
+    const statutoryResult =
+      profileIds.length > 0
+        ? await client.query(
+            `
+              SELECT DISTINCT ON (employee_payroll_profile_id) *
+              FROM employee_statutory_details
+              WHERE employee_payroll_profile_id = ANY($1::uuid[])
+                AND effective_from <= $2::date
+                AND (effective_to IS NULL OR effective_to >= $2::date)
+              ORDER BY employee_payroll_profile_id, effective_from DESC, version_no DESC
+            `,
+            [profileIds, periodEnd.toISOString().slice(0, 10)]
+          )
+        : { rows: [] };
+    const statutoryByProfile = new Map(
+      statutoryResult.rows.map((row) => [String(row.employee_payroll_profile_id), row])
     );
 
     const [earningsResult, deductionsResult, employerResult, formulasResult] = await Promise.all([
@@ -587,7 +835,7 @@ exports.computePayrollRun = async (req) => {
             tenantId,
             runId,
             employeeExternalId,
-            profileMap.get(employeeExternalId) || null,
+            profileMap.get(employeeExternalId)?.id || null,
             snapshot.id,
             toNumber(snapshot.payable_days, 0),
             toNumber(snapshot.lop_days, 0),
@@ -602,8 +850,11 @@ exports.computePayrollRun = async (req) => {
           [runEmployeeId]
         );
 
-        const profileId = profileMap.get(employeeExternalId);
+        const profile = profileMap.get(employeeExternalId) || null;
+        const profileId = profile?.id || null;
+        const payGroupId = profile?.pay_group_id || null;
         const salary = profileId ? salaryByProfile.get(profileId) : null;
+        const statutory = profileId ? statutoryByProfile.get(profileId) : null;
         if (!salary) {
           throw new Error("Active salary structure not found for employee profile");
         }
@@ -637,7 +888,17 @@ exports.computePayrollRun = async (req) => {
           BASIC_PAY: basicPay,
           VARIABLE_PAY: variablePay,
           EMPLOYER_EPF: salaryContext.employerEpf,
-          ESI_AMOUNT: salaryContext.esiAmount,
+          ESI_EMPLOYEE_AMOUNT: salaryContext.esiEmployeeAmount,
+          ESI_EMPLOYER_AMOUNT: salaryContext.esiEmployerAmount,
+          ESI_AMOUNT: salaryContext.esiEmployeeAmount,
+          BONUS_AMOUNT: salaryContext.bonusAmount,
+          TDS_AMOUNT: salaryContext.tdsAmount,
+          PF_WAGE_LIMIT: salaryContext.pfWageCeiling,
+          EPF_EMPLOYEE_RATE: salaryContext.epfEmployeeRate,
+          EPF_EMPLOYER_RATE: salaryContext.epfEmployerRate,
+          ESI_ELIGIBILITY_THRESHOLD: salaryContext.esiEligibilityThreshold,
+          ESI_EMPLOYEE_RATE: salaryContext.esiEmployeeRate,
+          ESI_EMPLOYER_RATE: salaryContext.esiEmployerRate,
           EFFECTIVE_BASIC_PERCENT: salaryContext.effectiveBasicPercent,
           HRA_PERCENT_OF_BASIC: salaryContext.hraPercentOfBasic,
           PAYABLE_DAYS: payableDays,
@@ -657,10 +918,14 @@ exports.computePayrollRun = async (req) => {
         let regularEarnings = 0;
         let regularDeductions = 0;
         let regularEmployer = 0;
-        let taxableIncome = 0;
+        let projectedTaxableMonthlyIncome = 0;
         let tdsAmount = 0;
 
-        for (const component of earningComponents) {
+        for (const componentRow of earningComponents) {
+          if (!isComponentEnabledForEmployee({ component: componentRow, payGroupId, salary })) {
+            continue;
+          }
+          const component = applyEmployeeComponentOverride({ component: componentRow, salary });
           const amount = resolveComponentAmount({
             component,
             scope: "earning",
@@ -672,7 +937,7 @@ exports.computePayrollRun = async (req) => {
           if (!amount) continue;
 
           regularEarnings += amount;
-          if (component.taxable) taxableIncome += amount;
+          if (component.taxable) projectedTaxableMonthlyIncome += amount;
 
           const key = toVarKey(component.code);
           computedVars[key] = amount;
@@ -719,8 +984,24 @@ exports.computePayrollRun = async (req) => {
         }
 
         computedVars.GROSS_EARNINGS = regularEarnings;
+        const tdsEstimate = computeAnnualTdsEstimate({
+          payMonth: month,
+          projectedTaxableMonthlyIncome,
+          statutory,
+          payrollProfile: profile,
+          salary,
+          professionalTaxMonthly: computeTelanganaProfessionalTax(
+            projectedTaxableMonthlyIncome,
+            statutory?.professional_tax_applicable !== false
+          )
+        });
+        computedVars.TDS_AMOUNT = tdsEstimate.monthlyTds;
 
-        for (const component of deductionComponents) {
+        for (const componentRow of deductionComponents) {
+          if (!isComponentEnabledForEmployee({ component: componentRow, payGroupId, salary })) {
+            continue;
+          }
+          const component = applyEmployeeComponentOverride({ component: componentRow, salary });
           const amount = resolveComponentAmount({
             component,
             scope: "deduction",
@@ -751,11 +1032,23 @@ exports.computePayrollRun = async (req) => {
             taxable: false,
             affects_net_pay: true,
             formula_snapshot: null,
-            metadata: {}
+            metadata:
+              String(component.code || "").toUpperCase() === "TDS"
+                ? {
+                    annualTaxableIncome: roundAmount(tdsEstimate.taxableIncome, "exact"),
+                    annualTaxLiability: roundAmount(tdsEstimate.annualTaxLiability, "exact"),
+                    monthsRemaining: tdsEstimate.monthsRemaining,
+                    taxRegime: tdsEstimate.regime
+                  }
+                : {}
           });
         }
 
-        for (const component of employerComponents) {
+        for (const componentRow of employerComponents) {
+          if (!isComponentEnabledForEmployee({ component: componentRow, payGroupId, salary })) {
+            continue;
+          }
+          const component = applyEmployeeComponentOverride({ component: componentRow, salary });
           const amount = resolveComponentAmount({
             component,
             scope: "employer_contribution",
@@ -1129,6 +1422,15 @@ exports.__test__ = {
   roundAmount,
   toVarKey,
   parseJson,
+  getComponentPayGroupIds,
+  getEmployeeComponentOverrides,
+  isComponentEnabledForEmployee,
+  applyEmployeeComponentOverride,
+  getTaxDeclaration,
+  getRemainingPayrollMonths,
+  computeProgressiveTax,
+  computeAnnualTdsEstimate,
+  computeTelanganaProfessionalTax,
   tokenizeIdentifiers,
   evaluateFormula,
   computeSlabAmount,
