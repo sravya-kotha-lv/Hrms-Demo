@@ -38,6 +38,16 @@ import { Badge } from "@/components/ui/badge";
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const VARIABLE_PAY_RELEASE_OPTIONS = [
+  { label: "Every 3 months", value: "3" },
+  { label: "Every 6 months", value: "6" },
+  { label: "Every 12 months", value: "12" },
+  { label: "Custom", value: "custom" }
+];
+const VARIABLE_PAY_MODE_OPTIONS = [
+  { label: "Fixed amount", value: "fixed" },
+  { label: "% of Annual CTC", value: "percentage" }
+];
 const RELATION_OPTIONS = [
   { label: "Father", value: "father" },
   { label: "Mother", value: "mother" },
@@ -288,6 +298,8 @@ const AddEmployee = () => {
   const [lookingUpIfsc, setLookingUpIfsc] = useState(false);
   const [lookingUpAccount, setLookingUpAccount] = useState(false);
   const [salaryStructures, setSalaryStructures] = useState<SalaryStructureRow[]>([]);
+  const [selectedSalaryStructureId, setSelectedSalaryStructureId] = useState("");
+  const [salaryEditMode, setSalaryEditMode] = useState<"update" | "revision">("update");
   const [salaryAutoCalc, setSalaryAutoCalc] = useState(true);
   const [salaryForm, setSalaryForm] = useState({
     payGroupId: "",
@@ -304,6 +316,10 @@ const AddEmployee = () => {
     pfWageCeiling: "15000",
     includeEsi: true,
     variablePayEnabled: false,
+    variablePayMode: "fixed",
+    variablePayPercentOfCtc: "",
+    variablePayReleaseOption: "12",
+    variablePayReleaseMonths: "12",
     annualCtc: "",
     monthlyGross: "",
     basicPay: "",
@@ -367,6 +383,8 @@ const AddEmployee = () => {
 
   const applySalaryRevisionToForm = (salary: SalaryStructureRow) => {
     const salaryRules = salary?.metadata?.salaryRules || {};
+    setSelectedSalaryStructureId(salary.id || "");
+    setSalaryEditMode("update");
     setComponentOverrides(salaryRules.componentOverrides || {});
     setSalaryForm((prev) => ({
       ...prev,
@@ -399,6 +417,20 @@ const AddEmployee = () => {
       includeEsi:
         typeof salaryRules.includeEsi === "boolean" ? salaryRules.includeEsi : prev.includeEsi,
       variablePayEnabled: Number(salary?.variable_pay || 0) > 0,
+      variablePayMode: salaryRules.variablePayMode || prev.variablePayMode,
+      variablePayPercentOfCtc:
+        salaryRules.variablePayPercentOfCtc !== undefined && salaryRules.variablePayPercentOfCtc !== null
+          ? String(salaryRules.variablePayPercentOfCtc)
+          : prev.variablePayPercentOfCtc,
+      variablePayReleaseOption: ["3", "6", "12"].includes(String(salaryRules.variablePayReleaseMonths || ""))
+        ? String(salaryRules.variablePayReleaseMonths)
+        : salaryRules.variablePayReleaseMonths
+          ? "custom"
+          : prev.variablePayReleaseOption,
+      variablePayReleaseMonths:
+        salaryRules.variablePayReleaseMonths !== undefined && salaryRules.variablePayReleaseMonths !== null
+          ? String(salaryRules.variablePayReleaseMonths)
+          : prev.variablePayReleaseMonths,
       annualCtc: salary?.annual_ctc ? String(salary.annual_ctc) : "",
       monthlyGross: salary?.monthly_gross ? String(salary.monthly_gross) : "",
       basicPay: salary?.basic_pay ? String(salary.basic_pay) : "",
@@ -412,6 +444,8 @@ const AddEmployee = () => {
   };
 
   const startNewSalaryRevision = () => {
+    setSelectedSalaryStructureId("");
+    setSalaryEditMode("revision");
     setSalaryForm((prev) => ({
       ...prev,
       effectiveFrom: new Date().toISOString().slice(0, 10),
@@ -424,10 +458,15 @@ const AddEmployee = () => {
     const monthlyGross = Number(salaryForm.monthlyGross || 0);
     const monthlyCtc = Number((annualCtc / 12).toFixed(2));
     const basicPay = Number(salaryForm.basicPay || 0);
+    const variablePay = salaryForm.variablePayEnabled
+      ? salaryForm.variablePayMode === "percentage"
+        ? Number(((annualCtc * (Number(salaryForm.variablePayPercentOfCtc || 0) / 100)) / 12).toFixed(2))
+        : Number(salaryForm.variablePay || 0)
+      : 0;
     const hraPercent = Math.max(0, Number(salaryForm.hraPercentOfBasic || 0));
     const hraAmount = Number((basicPay * (hraPercent / 100)).toFixed(2));
     const fixedAllowance = Number(
-      (monthlyGross - basicPay - hraAmount).toFixed(2)
+      (monthlyGross - basicPay - hraAmount - variablePay).toFixed(2)
     );
     const epfBase = salaryForm.restrictPfWage
       ? Math.min(basicPay, Number(salaryForm.pfWageCeiling || 15000))
@@ -449,6 +488,7 @@ const AddEmployee = () => {
       monthlyCtc,
       monthlyGross,
       basicPay,
+      variablePay,
       hraAmount,
       fixedAllowance,
       employerEpf,
@@ -459,6 +499,10 @@ const AddEmployee = () => {
     salaryForm.annualCtc,
     salaryForm.monthlyGross,
     salaryForm.basicPay,
+    salaryForm.variablePay,
+    salaryForm.variablePayEnabled,
+    salaryForm.variablePayMode,
+    salaryForm.variablePayPercentOfCtc,
     salaryForm.hraPercentOfBasic,
     salaryForm.epfMode,
     salaryForm.epfPercentOfBasic,
@@ -712,6 +756,8 @@ const AddEmployee = () => {
     const currentBank = bankDetails[0] || null;
     const currentStatutory = statutoryDetails[0] || null;
     setSalaryStructures(salaryStructures);
+    setSelectedSalaryStructureId(currentSalary?.id || "");
+    setSalaryEditMode("update");
     const salaryRules = currentSalary?.metadata?.salaryRules || {};
     const taxDeclaration = currentStatutory?.metadata?.taxDeclaration || {};
     setComponentOverrides(salaryRules.componentOverrides || {});
@@ -751,6 +797,20 @@ const AddEmployee = () => {
       includeEsi:
         typeof salaryRules.includeEsi === "boolean" ? salaryRules.includeEsi : prev.includeEsi,
       variablePayEnabled: Number(currentSalary?.variable_pay || 0) > 0,
+      variablePayMode: salaryRules.variablePayMode || prev.variablePayMode,
+      variablePayPercentOfCtc:
+        salaryRules.variablePayPercentOfCtc !== undefined && salaryRules.variablePayPercentOfCtc !== null
+          ? String(salaryRules.variablePayPercentOfCtc)
+          : prev.variablePayPercentOfCtc,
+      variablePayReleaseOption: ["3", "6", "12"].includes(String(salaryRules.variablePayReleaseMonths || ""))
+        ? String(salaryRules.variablePayReleaseMonths)
+        : salaryRules.variablePayReleaseMonths
+          ? "custom"
+          : prev.variablePayReleaseOption,
+      variablePayReleaseMonths:
+        salaryRules.variablePayReleaseMonths !== undefined && salaryRules.variablePayReleaseMonths !== null
+          ? String(salaryRules.variablePayReleaseMonths)
+          : prev.variablePayReleaseMonths,
       annualCtc: currentSalary?.annual_ctc ? String(currentSalary.annual_ctc) : "",
       monthlyGross: currentSalary?.monthly_gross ? String(currentSalary.monthly_gross) : "",
       basicPay: currentSalary?.basic_pay ? String(currentSalary.basic_pay) : "",
@@ -887,7 +947,9 @@ const AddEmployee = () => {
       : 0;
     const monthlyGross = Number((monthlyCtc - employerEpf - esiEmployerAmount).toFixed(2));
     const variablePay = salaryForm.variablePayEnabled
-      ? Number(Math.max(0, monthlyGross - basicPay - hraAmount).toFixed(2))
+      ? salaryForm.variablePayMode === "percentage"
+        ? Number(((annualCtc * (Number(salaryForm.variablePayPercentOfCtc || 0) / 100)) / 12).toFixed(2))
+        : Number(salaryForm.variablePay || 0)
       : 0;
 
     setSalaryForm((prev) => {
@@ -895,7 +957,10 @@ const AddEmployee = () => {
         ...prev,
         monthlyGross: String(monthlyGross),
         basicPay: String(basicPay),
-        variablePay: salaryForm.variablePayEnabled ? String(variablePay) : ""
+        variablePay:
+          salaryForm.variablePayEnabled && salaryForm.variablePayMode === "percentage"
+            ? String(variablePay)
+            : prev.variablePay
       };
 
       if (
@@ -919,8 +984,21 @@ const AddEmployee = () => {
     salaryForm.pfWageCeiling,
     salaryForm.includeEsi,
     salaryForm.variablePayEnabled,
+    salaryForm.variablePayMode,
+    salaryForm.variablePayPercentOfCtc,
+    salaryForm.variablePay,
     effectiveBasicPercent
   ]);
+
+  const variablePayReleaseMonthsInput = Number(
+    salaryForm.variablePayReleaseMonths || salaryForm.variablePayReleaseOption || 12
+  );
+  const variablePayReleaseMonths = Number.isFinite(variablePayReleaseMonthsInput)
+    ? Math.max(1, variablePayReleaseMonthsInput)
+    : 12;
+  const variablePayReleaseAmount = Number(
+    (salaryBreakdown.variablePay * variablePayReleaseMonths).toFixed(2)
+  );
 
   const shouldShowLastWorkingDay =
     isEdit &&
@@ -1203,8 +1281,12 @@ const AddEmployee = () => {
       toast.error("Annual CTC is required");
       return;
     }
-    const currentEffectiveFrom = (salaryStructures.find((row) => row.is_current)?.effective_from || "").slice(0, 10);
-    if (currentEffectiveFrom && salaryForm.effectiveFrom && salaryForm.effectiveFrom < currentEffectiveFrom) {
+    const currentSalary = salaryStructures.find((row) => row.is_current) || salaryStructures[0] || null;
+    const salaryStructureIdToUpdate = selectedSalaryStructureId || currentSalary?.id || "";
+    const currentEffectiveFrom = (currentSalary?.effective_from || "").slice(0, 10);
+    const shouldCreateRevision = salaryEditMode === "revision" || !salaryStructureIdToUpdate;
+
+    if (shouldCreateRevision && currentEffectiveFrom && salaryForm.effectiveFrom && salaryForm.effectiveFrom < currentEffectiveFrom) {
       toast.error(
         `Create a salary revision from ${currentEffectiveFrom} or later. Older salary rows are kept as history.`
       );
@@ -1253,18 +1335,14 @@ const AddEmployee = () => {
         }
       }
 
-      const saveSalaryRes = await postApiWithToken(
-        `/payroll/employee-profiles/${profileId}/salary-structures`,
-        {
-          structureCode: `SAL-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`,
+      const salaryPayload = {
           structureName: "Standard Structure",
           annualCtc: Number(salaryForm.annualCtc),
           monthlyGross: salaryForm.monthlyGross ? Number(salaryForm.monthlyGross) : null,
           basicPay: salaryForm.basicPay ? Number(salaryForm.basicPay) : null,
-          variablePay: salaryForm.variablePayEnabled && salaryForm.variablePay ? Number(salaryForm.variablePay) : 0,
+          variablePay: salaryForm.variablePayEnabled ? salaryBreakdown.variablePay : 0,
           isCurrent: true,
           revisionReason: salaryForm.revisionReason || "Salary update",
-          effectiveFrom: salaryForm.effectiveFrom,
           metadata: {
             salaryRules: {
               componentOverrides: Object.fromEntries(
@@ -1323,6 +1401,23 @@ const AddEmployee = () => {
               restrictPfWage: salaryForm.restrictPfWage,
               pfWageCeiling: Number(salaryForm.pfWageCeiling || 15000),
               includeEsi: salaryForm.includeEsi,
+              variablePayEnabled: salaryForm.variablePayEnabled,
+              variablePayMode: salaryForm.variablePayEnabled
+                ? salaryForm.variablePayMode
+                : null,
+              variablePayPercentOfCtc:
+                salaryForm.variablePayEnabled && salaryForm.variablePayMode === "percentage"
+                  ? Number(salaryForm.variablePayPercentOfCtc || 0)
+                  : null,
+              variablePayReleaseMonths: salaryForm.variablePayEnabled
+                ? variablePayReleaseMonths
+                : null,
+              variablePayReleasePolicy: salaryForm.variablePayEnabled
+                ? "performance_based"
+                : null,
+              variablePayApprovalPolicy: salaryForm.variablePayEnabled
+                ? "hr_can_approve_partial_or_full"
+                : null,
               epfEmployeeRate: Number(salaryForm.epfPercentOfBasic || 12),
               epfEmployerRate: Number(salaryForm.epfPercentOfBasic || 12),
               esiEmployeeRate: 0.75,
@@ -1330,17 +1425,32 @@ const AddEmployee = () => {
               esiEligibilityThreshold: 21000
             }
           }
-        },
-        null,
-        { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
-      );
+        };
+
+      const saveSalaryRes = shouldCreateRevision
+        ? await postApiWithToken(
+            `/payroll/employee-profiles/${profileId}/salary-structures`,
+            {
+              structureCode: `SAL-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`,
+              ...salaryPayload,
+              effectiveFrom: salaryForm.effectiveFrom
+            },
+            null,
+            { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
+          )
+        : await putApiWithToken(
+            `/payroll/salary-structures/${salaryStructureIdToUpdate}`,
+            salaryPayload,
+            null,
+            { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
+          );
 
       if (!saveSalaryRes?.success) {
         toast.error(saveSalaryRes?.message || "Failed to save salary structure");
         return;
       }
 
-      toast.success("Salary details saved");
+      toast.success(shouldCreateRevision ? "Salary revision created" : "Salary details updated");
       fetchPayrollData();
     } finally {
       setSavingSalary(false);
@@ -2523,18 +2633,26 @@ const AddEmployee = () => {
                       <div>
                         <p className="text-sm font-medium">Salary Revision History</p>
                         <p className="text-xs text-muted-foreground">
-                          Same effective date updates that revision. A new effective date creates the next salary version.
+                          Saving updates the selected salary. Use New Revision only when the pay change needs a new effective period.
                         </p>
                       </div>
-                      <Button type="button" variant="outline" size="sm" onClick={startNewSalaryRevision}>
-                        New Revision
+                      <Button
+                        type="button"
+                        variant={salaryEditMode === "revision" ? "default" : "outline"}
+                        size="sm"
+                        onClick={startNewSalaryRevision}
+                      >
+                        {salaryEditMode === "revision" ? "Creating Revision" : "New Revision"}
                       </Button>
                     </div>
                     <div className="space-y-2">
                       {salaryStructures.map((salary) => {
                         const effectiveFrom = (salary.effective_from || "").slice(0, 10);
                         const effectiveTo = (salary.effective_to || "").slice(0, 10) || "Current";
-                        const isSelected = effectiveFrom && salaryForm.effectiveFrom === effectiveFrom;
+                        const isSelected =
+                          salaryEditMode === "update" &&
+                          Boolean(salary.id) &&
+                          selectedSalaryStructureId === salary.id;
                         return (
                           <button
                             key={salary.id || effectiveFrom}
@@ -2752,7 +2870,7 @@ const AddEmployee = () => {
 
                   <div>
                     <div className="mb-2 flex items-center justify-between gap-3">
-                      <Label>Variable Pay (Monthly)</Label>
+                      <Label>Variable Pay Target (Monthly)</Label>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">Eligible</span>
                         <Switch
@@ -2761,7 +2879,11 @@ const AddEmployee = () => {
                             setSalaryForm((prev) => ({
                               ...prev,
                               variablePayEnabled: checked,
-                              variablePay: checked ? prev.variablePay : ""
+                              variablePay: checked ? prev.variablePay : "",
+                              variablePayMode: checked ? prev.variablePayMode : "fixed",
+                              variablePayPercentOfCtc: checked ? prev.variablePayPercentOfCtc : "",
+                              variablePayReleaseOption: checked ? prev.variablePayReleaseOption : "12",
+                              variablePayReleaseMonths: checked ? prev.variablePayReleaseMonths : "12"
                             }))
                           }
                         />
@@ -2770,16 +2892,121 @@ const AddEmployee = () => {
                     <Input
                       type="number"
                       value={salaryForm.variablePay}
-                      disabled={!salaryForm.variablePayEnabled}
+                      disabled={!salaryForm.variablePayEnabled || salaryForm.variablePayMode === "percentage"}
                       onChange={(e) =>
                         setSalaryForm((prev) => ({ ...prev, variablePay: e.target.value }))
                       }
-                      placeholder={salaryForm.variablePayEnabled ? "Optional monthly variable base" : "Not eligible"}
+                      placeholder={
+                        !salaryForm.variablePayEnabled
+                          ? "Not eligible"
+                          : salaryForm.variablePayMode === "percentage"
+                            ? "Calculated from % of CTC"
+                            : "Monthly target amount"
+                      }
                     />
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Employees receive variable pay only after an approved variable-pay request.
+                      Included in CTC. Release is performance-based using the schedule below.
                     </p>
                   </div>
+
+                  {salaryForm.variablePayEnabled && (
+                    <>
+                      <div>
+                        <Label>Variable Target Type</Label>
+                        <Select
+                          value={salaryForm.variablePayMode}
+                          onValueChange={(value) =>
+                            setSalaryForm((prev) => ({
+                              ...prev,
+                              variablePayMode: value,
+                              variablePayPercentOfCtc:
+                                value === "percentage" ? prev.variablePayPercentOfCtc : ""
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select target type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {VARIABLE_PAY_MODE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {salaryForm.variablePayMode === "percentage" && (
+                        <div>
+                          <Label>Variable % of Annual CTC</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={salaryForm.variablePayPercentOfCtc}
+                            onChange={(e) =>
+                              setSalaryForm((prev) => ({
+                                ...prev,
+                                variablePayPercentOfCtc: e.target.value
+                              }))
+                            }
+                            placeholder="e.g. 10"
+                          />
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Monthly target is calculated from annual CTC and included in the CTC breakup.
+                          </p>
+                        </div>
+                      )}
+
+                      <div>
+                        <Label>Variable Release Schedule</Label>
+                        <Select
+                          value={salaryForm.variablePayReleaseOption}
+                          onValueChange={(value) =>
+                            setSalaryForm((prev) => ({
+                              ...prev,
+                              variablePayReleaseOption: value,
+                              variablePayReleaseMonths: value === "custom" ? prev.variablePayReleaseMonths : value
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select release schedule" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {VARIABLE_PAY_RELEASE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Estimated release: {formatInr(variablePayReleaseAmount)} every {variablePayReleaseMonths} month{variablePayReleaseMonths === 1 ? "" : "s"}.
+                        </p>
+                      </div>
+
+                      {salaryForm.variablePayReleaseOption === "custom" && (
+                        <div>
+                          <Label>Custom Release Months</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={12}
+                            value={salaryForm.variablePayReleaseMonths}
+                            onChange={(e) =>
+                              setSalaryForm((prev) => ({
+                                ...prev,
+                                variablePayReleaseMonths: e.target.value
+                              }))
+                            }
+                            placeholder="e.g. 4"
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
 
                   <div className="rounded-md border p-3 md:col-span-2 space-y-3">
                     <div className="flex items-center justify-between">
@@ -2875,10 +3102,16 @@ const AddEmployee = () => {
                     <Input
                       type="date"
                       value={salaryForm.effectiveFrom}
+                      disabled={salaryEditMode === "update"}
                       onChange={(e) =>
                         setSalaryForm((prev) => ({ ...prev, effectiveFrom: e.target.value }))
                       }
                     />
+                    {salaryEditMode === "update" && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Effective date is locked while updating. Use New Revision to create a new period.
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -3240,6 +3473,9 @@ const AddEmployee = () => {
                           {[
                             ["Basic Salary", salaryBreakdown.basicPay],
                             ["House Rent Allowance", salaryBreakdown.hraAmount],
+                            ...(salaryForm.variablePayEnabled
+                              ? [["Variable Pay", salaryBreakdown.variablePay] as [string, number]]
+                              : []),
                             ["Fixed Allowance", salaryBreakdown.fixedAllowance],
                             ["EPF Employer", salaryBreakdown.employerEpf],
                             ...(salaryForm.includeEsi ? [["ESI Employer", salaryBreakdown.esiEmployerAmount] as [string, number]] : [])
@@ -3289,9 +3525,38 @@ const AddEmployee = () => {
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-muted-foreground">Variable pay</span>
                               <span className="font-medium">
-                                {salaryForm.variablePayEnabled ? formatInr(salaryForm.variablePay || 0) : "Not eligible"}
+                                {salaryForm.variablePayEnabled ? formatInr(salaryBreakdown.variablePay) : "Not eligible"}
                               </span>
                             </div>
+                            {salaryForm.variablePayEnabled && (
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">Variable target type</span>
+                                <span className="font-medium">
+                                  {salaryForm.variablePayMode === "percentage"
+                                    ? `${Number(salaryForm.variablePayPercentOfCtc || 0).toFixed(2)}% of CTC`
+                                    : "Fixed amount"}
+                                </span>
+                              </div>
+                            )}
+                            {salaryForm.variablePayEnabled && (
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">Variable release</span>
+                                <span className="font-medium">
+                                  {variablePayReleaseMonths} month{variablePayReleaseMonths === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                            )}
+                            {salaryForm.variablePayEnabled && (
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">Estimated release amount</span>
+                                <span className="font-medium">{formatInr(variablePayReleaseAmount)}</span>
+                              </div>
+                            )}
+                            {salaryForm.variablePayEnabled && (
+                              <div className="rounded-md bg-secondary/60 p-2 text-xs text-muted-foreground">
+                                HR can approve partial or full release against the target after performance review.
+                              </div>
+                            )}
                           </div>
                         </section>
 
@@ -3309,7 +3574,11 @@ const AddEmployee = () => {
                                       </p>
                                     </div>
                                     <Badge variant="outline" className="rounded-md">
-                                      {override.amount ? formatInr(override.amount) : override.calculationMode}
+                                      {override.amount
+                                        ? override.calculationMode === "percentage"
+                                          ? `${override.amount}%`
+                                          : formatInr(override.amount)
+                                        : override.calculationMode}
                                     </Badge>
                                   </div>
                                 </div>
@@ -3354,8 +3623,7 @@ const AddEmployee = () => {
 
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
-                    Salary configuration is linked to selected pay group and stored as revisioned salary
-                    structure.
+                    Save updates the selected salary details. New revisions are created only after choosing New Revision.
                   </p>
                   {selectedPayGroup && (
                     <p className="text-xs text-muted-foreground">
@@ -3369,12 +3637,12 @@ const AddEmployee = () => {
                     disabled={savingSalary}
                   >
                     {savingSalary
-                      ? payrollProfileId
-                        ? "Updating Salary..."
-                        : "Saving Salary..."
-                      : payrollProfileId
-                        ? "Update Salary"
-                        : "Save Salary"}
+                      ? salaryEditMode === "revision"
+                        ? "Creating Revision..."
+                        : "Updating Salary..."
+                      : salaryEditMode === "revision"
+                        ? "Create Revision"
+                        : "Update Salary"}
                   </Button>
                 </div>
               </>

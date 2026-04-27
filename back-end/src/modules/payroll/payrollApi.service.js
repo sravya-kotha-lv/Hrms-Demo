@@ -1381,6 +1381,7 @@ exports.createSalaryStructure = async (req) => {
     const actorId = String(req.user.userId);
     const profileId = req.params.profileId;
     const p = req.body;
+    const effectiveFrom = p.effectiveFrom;
 
     const versionRes = await client.query(
       `
