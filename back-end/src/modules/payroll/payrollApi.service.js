@@ -840,7 +840,6 @@ exports.createEmployeeProfile = async (req) => {
     });
     const actorId = String(req.user.userId);
     const p = req.body;
-    const effectiveFrom = new Date(p.effectiveFrom).toISOString().slice(0, 10);
 
     const profileResult = await client.query(
       `
