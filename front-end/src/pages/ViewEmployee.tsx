@@ -12,12 +12,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Edit, Eye, EyeOff, Trash2 } from "lucide-react";
+import { ArrowLeft, Edit, Eye, EyeOff, UserCheck, UserX } from "lucide-react";
 import { getApiWithToken, putApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { formatDateInOrgTimeZone } from "@/utils/timezone";
+import { useAuth } from "@/context/useAuth";
 
-const getStatusBadge = (status: string) => {
+const ADMIN_STATUS_ROLE_SLUGS = new Set(["admin", "org-admin", "orgadmin", "super_admin", "superadmin"]);
+
+const isEmployeeInactive = (employee: any) =>
+  Boolean(employee?.isDeleted) ||
+  employee?.status === "resigned" ||
+  employee?.employmentLifecycleStatus === "terminated";
+
+const getStatusBadge = (status: string, isDeleted = false) => {
+  if (isDeleted) {
+    return <Badge className="status-badge status-inactive">Inactive</Badge>;
+  }
   switch (status) {
     case "active":
       return <Badge className="status-badge status-active">Active</Badge>;
@@ -138,6 +149,7 @@ const formatIdCardName = (firstName?: string, lastName?: string) => {
 const ViewEmployee = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { profile, isSuperAdmin, hasAnyPermission } = useAuth();
   const [employee, setEmployee] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -147,6 +159,10 @@ const ViewEmployee = () => {
   const [showWorkSensitive, setShowWorkSensitive] = useState(false);
   const [showPersonalSensitive, setShowPersonalSensitive] = useState(false);
   const idCardRef = useRef<HTMLDivElement | null>(null);
+  const activeRoleSlug = String(profile?.activeRole?.slug || "").toLowerCase();
+  const canManageEmployeeStatus =
+    hasAnyPermission(["EMP_UPDATE"]) &&
+    (isSuperAdmin || ADMIN_STATUS_ROLE_SLUGS.has(activeRoleSlug));
 
   const fetchEmployee = async () => {
     if (!id) return;
@@ -492,13 +508,28 @@ const ViewEmployee = () => {
 
   const confirmStatusChange = async () => {
     if (!employee?._id) return;
-    const nextStatus = employee.status === "resigned" ? "active" : "resigned";
+    if (!canManageEmployeeStatus) {
+      toast.error("Only admin can activate or inactivate employees");
+      return;
+    }
+
+    const nextStatus = isEmployeeInactive(employee) ? "active" : "resigned";
     const res = await putApiWithToken(`/employees/${employee._id}`, {
       status: nextStatus
     });
     if (res?.success) {
       toast.success(nextStatus === "active" ? "Employee marked active" : "Employee marked inactive");
-      setEmployee((prev: any) => (prev ? { ...prev, status: nextStatus } : prev));
+      setEmployee((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              status: nextStatus,
+              isDeleted: false,
+              employmentLifecycleStatus:
+                nextStatus === "active" ? "confirmed" : prev.employmentLifecycleStatus
+            }
+          : prev
+      );
     } else {
       toast.error(res?.message || "Status update failed");
     }
@@ -531,14 +562,20 @@ const ViewEmployee = () => {
             <Edit className="w-4 h-4 mr-2" />
             Edit
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => setDeleteDialogOpen(true)}
-            disabled={!employee}
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            {employee?.status === "resigned" ? "Mark Active" : "Mark Inactive"}
-          </Button>
+          {canManageEmployeeStatus && (
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(true)}
+              disabled={!employee}
+            >
+              {isEmployeeInactive(employee) ? (
+                <UserCheck className="w-4 h-4 mr-2" />
+              ) : (
+                <UserX className="w-4 h-4 mr-2" />
+              )}
+              {isEmployeeInactive(employee) ? "Mark Active" : "Mark Inactive"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -567,7 +604,7 @@ const ViewEmployee = () => {
                 </p>
               </div>
             </div>
-            <div>{getStatusBadge(employee.status)}</div>
+            <div>{getStatusBadge(employee.status, Boolean(employee.isDeleted))}</div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -827,10 +864,10 @@ const ViewEmployee = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {employee?.status === "resigned" ? "Mark Employee Active" : "Mark Employee Inactive"}
+              {isEmployeeInactive(employee) ? "Mark Employee Active" : "Mark Employee Inactive"}
             </DialogTitle>
             <DialogDescription>
-              {employee?.status === "resigned"
+              {isEmployeeInactive(employee)
                 ? "This employee will become active again."
                 : "This employee will be marked inactive instead of being deleted."}
             </DialogDescription>
@@ -840,7 +877,7 @@ const ViewEmployee = () => {
               Cancel
             </Button>
             <Button onClick={confirmStatusChange}>
-              {employee?.status === "resigned" ? "Mark Active" : "Mark Inactive"}
+              {isEmployeeInactive(employee) ? "Mark Active" : "Mark Inactive"}
             </Button>
           </DialogFooter>
         </DialogContent>

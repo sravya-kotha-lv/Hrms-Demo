@@ -10,6 +10,7 @@ test("listEmployeesQuerySchema accepts supported filters", () => {
     sortBy: "firstName",
     sortOrder: "DESC",
     status: "active",
+    employeeState: "inactive",
     employmentType: "full_time",
     managerId: "507f1f77bcf86cd799439011",
     departmentId: "507f1f77bcf86cd799439012",
@@ -19,8 +20,17 @@ test("listEmployeesQuerySchema accepts supported filters", () => {
 
   assert.equal(error, undefined);
   assert.equal(value.sortOrder, "desc");
+  assert.equal(value.employeeState, "inactive");
   assert.equal(value.page, 1);
   assert.equal(value.limit, 25);
+});
+
+test("listEmployeesQuerySchema rejects unsupported employeeState", () => {
+  const { error } = listEmployeesQuerySchema.validate({
+    employeeState: "deleted"
+  });
+
+  assert.ok(error);
 });
 
 test("listEmployeesQuerySchema rejects invalid managerId", () => {

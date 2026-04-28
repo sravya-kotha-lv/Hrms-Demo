@@ -7,11 +7,12 @@ import {
   Plus,
   MoreHorizontal,
   Edit,
-  Trash2,
   Eye,
   ArrowUpDown,
   ChevronDown,
   ChevronUp,
+  UserCheck,
+  UserX,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,23 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 
-const getStatusBadge = (status: string) => {
+const isEmployeeInactive = (employee: any) =>
+  Boolean(employee?.isDeleted) ||
+  employee?.status === "resigned" ||
+  employee?.employmentLifecycleStatus === "terminated";
+
+const matchesEmployeeStateFilter = (employee: any, filter: string) => {
+  if (filter === "active") return !isEmployeeInactive(employee);
+  if (filter === "inactive") return isEmployeeInactive(employee);
+  return true;
+};
+
+const ADMIN_STATUS_ROLE_SLUGS = new Set(["admin", "org-admin", "orgadmin", "super_admin", "superadmin"]);
+
+const getStatusBadge = (status: string, isDeleted = false) => {
+  if (isDeleted) {
+    return <Badge className="status-badge status-inactive">Inactive</Badge>;
+  }
   switch (status) {
     case "active":
       return <Badge className="status-badge status-active">Active</Badge>;
@@ -104,12 +121,13 @@ const mergeEmployeePages = (existing: any[], incoming: any[]) => {
 const Employees = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { hasAnyPermission } = useAuth();
+  const { hasAnyPermission, profile, isSuperAdmin: authIsSuperAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [designationFilter, setDesignationFilter] = useState("all");
   const [managerFilter, setManagerFilter] = useState("all");
+  const [employeeStateFilter, setEmployeeStateFilter] = useState("active");
   const [statusFilter, setStatusFilter] = useState("all");
   const [employmentTypeFilter, setEmploymentTypeFilter] = useState("all");
   const [orgSearch, setOrgSearch] = useState("");
@@ -167,6 +185,9 @@ const Employees = () => {
     dateOfJoining: ""
   });
   const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
+  const activeRoleSlug = String(profile?.activeRole?.slug || "").toLowerCase();
+  const canManageEmployeeStatus =
+    authIsSuperAdmin || isSuperAdmin || ADMIN_STATUS_ROLE_SLUGS.has(activeRoleSlug);
   const canView = hasAnyPermission(["EMP_VIEW"]);
   const canEdit = hasAnyPermission(["EMP_UPDATE"]);
   const canAnyAction = canView || canEdit;
@@ -311,8 +332,9 @@ const Employees = () => {
     if (isSuperAdmin && selectedOrgId) {
       params.set("organizationId", selectedOrgId);
     }
-    const query = params.toString();
-    const res = await getApiWithToken(`/employees${query ? `?${query}` : ""}`, null, {
+    params.set("employeeState", "active");
+    const managerQuery = params.toString();
+    const res = await getApiWithToken(`/employees${managerQuery ? `?${managerQuery}` : ""}`, null, {
       requiredPermissions: ["EMP_VIEW"]
     });
     if (res?.success) {
@@ -350,6 +372,9 @@ const Employees = () => {
       }
       if (managerFilter !== "all") {
         params.set("managerId", managerFilter);
+      }
+      if (employeeStateFilter !== "all") {
+        params.set("employeeState", employeeStateFilter);
       }
       if (statusFilter !== "all") {
         params.set("status", statusFilter);
@@ -398,6 +423,7 @@ const Employees = () => {
     if (departmentFilter !== "all") params.set("departmentId", departmentFilter);
     if (designationFilter !== "all") params.set("designationId", designationFilter);
     if (managerFilter !== "all") params.set("managerId", managerFilter);
+    if (employeeStateFilter !== "all") params.set("employeeState", employeeStateFilter);
     if (statusFilter !== "all") params.set("status", statusFilter);
     if (employmentTypeFilter !== "all") params.set("employmentType", employmentTypeFilter);
     if (isSuperAdmin && selectedOrgId) params.set("organizationId", selectedOrgId);
@@ -671,6 +697,7 @@ const Employees = () => {
     departmentFilter,
     designationFilter,
     managerFilter,
+    employeeStateFilter,
     statusFilter,
     employmentTypeFilter,
     selectedOrgId,
@@ -699,6 +726,7 @@ const Employees = () => {
     departmentFilter,
     designationFilter,
     managerFilter,
+    employeeStateFilter,
     statusFilter,
     employmentTypeFilter,
     selectedOrgId,
@@ -747,17 +775,35 @@ const Employees = () => {
       return;
     }
 
-    const nextStatus = selectedEmployee.status === "resigned" ? "active" : "resigned";
+    if (!canManageEmployeeStatus) {
+      toast.error("Only admin can activate or inactivate employees");
+      return;
+    }
+
+    const nextStatus = isEmployeeInactive(selectedEmployee) ? "active" : "resigned";
     const res = await putApiWithToken(`/employees/${selectedEmployee._id}`, {
       status: nextStatus
     });
     if (res?.success) {
       toast.success(nextStatus === "active" ? "Employee marked active" : "Employee marked inactive");
+      const nextEmployee = {
+        ...selectedEmployee,
+        status: nextStatus,
+        isDeleted: false,
+        employmentLifecycleStatus:
+          nextStatus === "active" ? "confirmed" : selectedEmployee.employmentLifecycleStatus
+      };
+      const shouldRemainVisible = matchesEmployeeStateFilter(nextEmployee, employeeStateFilter);
+
       setEmployees((prev) =>
-        prev.map((emp) =>
-          emp._id === selectedEmployee._id ? { ...emp, status: nextStatus } : emp
-        )
+        shouldRemainVisible
+          ? prev.map((emp) => (emp._id === selectedEmployee._id ? { ...emp, ...nextEmployee } : emp))
+          : prev.filter((emp) => emp._id !== selectedEmployee._id)
       );
+      if (!shouldRemainVisible) {
+        setTotalItems((prev) => Math.max(0, prev - 1));
+        setSelectedEmployeeIds((prev) => prev.filter((id) => id !== selectedEmployee._id));
+      }
     } else {
       toast.error(res?.message || "Status update failed");
     }
@@ -1063,6 +1109,16 @@ const Employees = () => {
               )}
             </SelectContent>
           </Select>
+          <Select value={employeeStateFilter} onValueChange={setEmployeeStateFilter}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Employee View" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active Employees</SelectItem>
+              <SelectItem value="inactive">Inactive Employees</SelectItem>
+              <SelectItem value="all">All Employees</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="Status" />
@@ -1092,6 +1148,7 @@ const Employees = () => {
               setDepartmentFilter("all");
               setDesignationFilter("all");
               setManagerFilter("all");
+              setEmployeeStateFilter("active");
               setStatusFilter("all");
               setEmploymentTypeFilter("all");
               setSortBy("employeeCode");
@@ -1409,7 +1466,7 @@ const Employees = () => {
                 </TableCell>
                 <TableCell>{employee.shiftId?.name || "-"}</TableCell>
                 <TableCell>{employee.employmentType || "-"}</TableCell>
-                <TableCell>{getStatusBadge(employee.status)}</TableCell>
+                <TableCell>{getStatusBadge(employee.status, Boolean(employee.isDeleted))}</TableCell>
                 <TableCell>{getLifecycleBadge(employee.employmentLifecycleStatus)}</TableCell>
                 <TableCell>{employee.benefitsEligible ? "Eligible" : "Not Eligible"}</TableCell>
                 <TableCell>{employee.profileCompleted ? "Completed" : "Pending"}</TableCell>
@@ -1454,12 +1511,18 @@ const Employees = () => {
                             <Edit className="w-4 h-4 mr-2" /> Enable Details Form
                           </DropdownMenuItem>
                         </PermissionGate>
-                        <PermissionGate permissions={["EMP_UPDATE"]}>
-                          <DropdownMenuItem onClick={() => handleStatusAction(employee)}>
-                            <Trash2 className="w-4 h-4 mr-2 text-amber-500" />
-                            {employee.status === "resigned" ? "Mark Active" : "Mark Inactive"}
-                          </DropdownMenuItem>
-                        </PermissionGate>
+                        {canManageEmployeeStatus && (
+                          <PermissionGate permissions={["EMP_UPDATE"]}>
+                            <DropdownMenuItem onClick={() => handleStatusAction(employee)}>
+                              {isEmployeeInactive(employee) ? (
+                                <UserCheck className="w-4 h-4 mr-2 text-emerald-600" />
+                              ) : (
+                                <UserX className="w-4 h-4 mr-2 text-amber-500" />
+                              )}
+                              {isEmployeeInactive(employee) ? "Mark Active" : "Mark Inactive"}
+                            </DropdownMenuItem>
+                          </PermissionGate>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -1507,10 +1570,10 @@ const Employees = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {selectedEmployee?.status === "resigned" ? "Mark Employee Active" : "Mark Employee Inactive"}
+              {isEmployeeInactive(selectedEmployee) ? "Mark Employee Active" : "Mark Employee Inactive"}
             </DialogTitle>
             <DialogDescription>
-              {selectedEmployee?.status === "resigned"
+              {isEmployeeInactive(selectedEmployee)
                 ? "This employee will become active again and appear as active across HR flows."
                 : "This employee will be marked inactive instead of being deleted."}
             </DialogDescription>
@@ -1520,7 +1583,7 @@ const Employees = () => {
               Cancel
             </Button>
             <Button onClick={confirmStatusChange}>
-              {selectedEmployee?.status === "resigned" ? "Mark Active" : "Mark Inactive"}
+              {isEmployeeInactive(selectedEmployee) ? "Mark Active" : "Mark Inactive"}
             </Button>
           </DialogFooter>
         </DialogContent>
