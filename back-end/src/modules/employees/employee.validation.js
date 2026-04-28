@@ -199,6 +199,7 @@ exports.listEmployeesQuerySchema = Joi.object({
   departmentId: objectId.optional(),
   designationId: objectId.optional(),
   status: status.optional(),
+  employeeState: Joi.string().valid("all", "active", "inactive").optional(),
   managerId: objectId.optional(),
   employmentType: employmentType.optional(),
   organizationId: objectId.optional(),

@@ -29,10 +29,55 @@ const LIFECYCLE_ACTION_ROLE_SLUGS = new Set([
   "super_admin",
   "superadmin"
 ]);
+const EMPLOYEE_STATUS_ADMIN_ROLE_SLUGS = new Set([
+  "admin",
+  "org-admin",
+  "orgadmin",
+  "super_admin",
+  "superadmin"
+]);
 
 const normalizeEmployeeCode = (value) => {
   if (value === undefined || value === null) return "";
   return String(value).trim().toUpperCase();
+};
+
+const buildReleasedEmail = ({ email, employeeId }) => {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const [localPart, domainPart] = normalizedEmail.split("@");
+  const suffix = `${employeeId || "employee"}-${Date.now()}`;
+
+  if (!localPart || !domainPart) {
+    return `deleted-${suffix}@deleted.local`;
+  }
+
+  return `${localPart}+deleted-${suffix}@${domainPart}`;
+};
+
+const toObjectId = (value) => {
+  if (!value) return value;
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : value;
+};
+
+const releaseUserEmail = async ({ user, employeeId, organizationId, session }) => {
+  if (!user) return;
+
+  const originalEmail = user.email;
+  user.email = buildReleasedEmail({ email: originalEmail, employeeId });
+  user.status = "inactive";
+  user.softDeleteMeta = {
+    organizationId,
+    originalEmail,
+    deletedAt: new Date()
+  };
+  user.organizationIds = (user.organizationIds || []).filter(
+    (orgId) => String(orgId) !== String(organizationId)
+  );
+  if (String(user.activeOrganizationId || "") === String(organizationId)) {
+    user.activeOrganizationId = user.organizationIds[0] || undefined;
+  }
+  await user.save(session ? { session } : undefined);
 };
 
 const toNameCase = (value) => {
@@ -188,12 +233,31 @@ exports.createByHr = async (req) => {
     const normalizedFirstName = toNameCase(firstName);
     const normalizedLastName = toNameCase(lastName);
 
-    const existingUser = useSession
+    let existingUser = useSession
       ? await User.findOne({ email: normalizedEmail }, null, { session })
       : await User.findOne({ email: normalizedEmail });
 
     if (existingUser) {
-      throw { code: 409, message: "User already exists" };
+      const deletedEmployee = await Employee.collection.findOne(
+        {
+          userId: existingUser._id,
+          organizationId: toObjectId(organizationId),
+          isDeleted: true
+        },
+        useSession ? { session } : undefined
+      );
+
+      if (!deletedEmployee) {
+        throw { code: 409, message: "User already exists" };
+      }
+
+      await releaseUserEmail({
+        user: existingUser,
+        employeeId: deletedEmployee._id,
+        organizationId,
+        session: useSession ? session : undefined
+      });
+      existingUser = null;
     }
 
     const plainPassword = generatePassword();
@@ -632,6 +696,13 @@ const getActorRoleSlug = async (req) => {
   return fallbackRole?.slug || "";
 };
 
+const ensureCanChangeEmployeeActiveState = async (req) => {
+  const roleSlug = String(await getActorRoleSlug(req)).trim().toLowerCase();
+  if (!EMPLOYEE_STATUS_ADMIN_ROLE_SLUGS.has(roleSlug)) {
+    throw { code: 403, message: "Only admin can activate or inactivate employees" };
+  }
+};
+
 const buildEmployeeResponse = async ({ employeeId, organizationId }) => {
   const populatedEmployee = await Employee.findOne({
     _id: employeeId,
@@ -734,6 +805,7 @@ const buildEmployeeListContext = async (req) => {
     departmentId,
     designationId,
     status,
+    employeeState,
     managerId,
     employmentType,
     organizationId: orgIdOverride,
@@ -754,9 +826,12 @@ const buildEmployeeListContext = async (req) => {
     activeRoleSlug = role?.slug || "";
   }
 
+  const includeDeleted =
+    activeRoleSlug !== "employee" &&
+    (employeeState === "inactive" || employeeState === "all");
   const query = {
     organizationId: effectiveOrganizationId,
-    isDeleted: false
+    ...(includeDeleted ? {} : { isDeleted: false })
   };
 
   if (activeRoleSlug === "employee") {
@@ -799,17 +874,43 @@ const buildEmployeeListContext = async (req) => {
   }
 
   if (search) {
+    const matchingUsers = await User.find({
+      email: { $regex: search, $options: "i" }
+    }).select("_id");
+    const matchingUserIds = matchingUsers.map((user) => user._id);
+
     query.$or = [
       { firstName: { $regex: search, $options: "i" } },
       { lastName: { $regex: search, $options: "i" } },
       { employeeCode: { $regex: search, $options: "i" } },
-      { phone: { $regex: search, $options: "i" } }
+      { phone: { $regex: search, $options: "i" } },
+      ...(matchingUserIds.length ? [{ userId: { $in: matchingUserIds } }] : [])
     ];
   }
 
   if (departmentId) query.departmentId = departmentId;
   if (designationId) query.designationId = designationId;
   if (status && activeRoleSlug !== "employee") query.status = status;
+  if (employeeState === "active" && activeRoleSlug !== "employee") {
+    if (status === "resigned") {
+      query._id = { $in: [] };
+    } else if (!status) {
+      query.status = { $ne: "resigned" };
+    }
+    query.employmentLifecycleStatus = { $ne: "terminated" };
+  }
+  if (employeeState === "inactive" && activeRoleSlug !== "employee") {
+    query.$and = [
+      ...(query.$and || []),
+      {
+        $or: [
+          { isDeleted: true },
+          { status: "resigned" },
+          { employmentLifecycleStatus: "terminated" }
+        ]
+      }
+    ];
+  }
   if (managerId) query.managerId = managerId;
   if (employmentType) query.employmentType = employmentType;
 
@@ -821,6 +922,7 @@ const buildEmployeeListContext = async (req) => {
 
   return {
     query,
+    includeDeleted,
     sortField,
     sortDirection,
     effectiveOrganizationId
@@ -941,11 +1043,12 @@ const loadPayrollExportMap = async (organizationId) => {
 exports.listByOrganization = async (req) => {
   const { page, limit, scope } = req.query;
   const isOrganizationTreeScope = scope === "organizationTree";
-  const { query, sortField, sortDirection, effectiveOrganizationId } =
+  const { query, includeDeleted, sortField, sortDirection, effectiveOrganizationId } =
     await buildEmployeeListContext(req);
 
   // Build query
   let employeeQuery = Employee.find(query)
+    .setOptions({ includeDeleted })
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
@@ -1001,11 +1104,12 @@ exports.listByOrganization = async (req) => {
 };
 
 exports.exportCsv = async (req, res) => {
-  const { query, sortField, sortDirection, effectiveOrganizationId } =
+  const { query, includeDeleted, sortField, sortDirection, effectiveOrganizationId } =
     await buildEmployeeListContext(req);
   const payrollMap = await loadPayrollExportMap(effectiveOrganizationId);
 
   const cursor = Employee.find(query)
+    .setOptions({ includeDeleted })
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
@@ -1141,9 +1245,9 @@ exports.getById = async (req) => {
 
   const employee = await Employee.findOne({
     _id: id,
-    organizationId,
-    isDeleted: false
+    organizationId
   })
+    .setOptions({ includeDeleted: true })
     .populate("departmentId", "name")
     .populate("designationId", "name")
     .populate("managerId", "firstName lastName")
@@ -1242,12 +1346,17 @@ exports.getMe = async (req) => {
 exports.updateByHr = async (req) => {
   const { id } = req.params;
   const { organizationId } = req.user;
+  const statusChangeRequested = req.body.status === "active" || req.body.status === "resigned";
+
+  if (statusChangeRequested) {
+    await ensureCanChangeEmployeeActiveState(req);
+  }
 
   const employee = await Employee.findOne({
     _id: id,
     organizationId,
-    isDeleted: false
-  });
+    ...(statusChangeRequested ? {} : { isDeleted: false })
+  }).setOptions({ includeDeleted: statusChangeRequested });
 
   if (!employee) {
     throw { code: 404, message: "Employee not found" };
@@ -1387,6 +1496,31 @@ exports.updateByHr = async (req) => {
 
   if (status === "resigned") {
     applyLifecycleChange(employee, "notice");
+  }
+  if (status === "active") {
+    employee.isDeleted = false;
+    employee.deletedAt = undefined;
+    employee.deletedBy = undefined;
+    if (employee.employmentLifecycleStatus === "terminated" || employee.employmentLifecycleStatus === "notice") {
+      applyLifecycleChange(employee, "confirmed");
+    }
+    const user = await User.findById(employee.userId).select("status organizationIds activeOrganizationId softDeleteMeta email");
+    if (user) {
+      const originalEmail = user.softDeleteMeta?.originalEmail;
+      if (originalEmail && user.email !== originalEmail) {
+        const emailOwner = await User.findOne({
+          email: originalEmail,
+          _id: { $ne: user._id }
+        }).select("_id");
+        if (!emailOwner) user.email = originalEmail;
+      }
+      user.status = "active";
+      if (!user.organizationIds?.some((orgId) => String(orgId) === String(organizationId))) {
+        user.organizationIds = [...(user.organizationIds || []), organizationId];
+      }
+      user.activeOrganizationId = user.activeOrganizationId || organizationId;
+      await user.save();
+    }
   }
 
   if (employee.employmentLifecycleStatus === "terminated") {
@@ -1593,11 +1727,15 @@ exports.bulkUpdate = async (req) => {
     employmentLifecycleStatus
   } = req.body;
 
+  if (status === "active" || status === "resigned") {
+    await ensureCanChangeEmployeeActiveState(req);
+  }
+
   const employees = await Employee.find({
     organizationId,
     _id: { $in: employeeIds },
-    isDeleted: false
-  });
+    ...(status === "active" ? {} : { isDeleted: false })
+  }).setOptions({ includeDeleted: status === "active" });
 
   if (!employees.length) {
     throw { code: 404, message: "No employees found for bulk update" };
@@ -1620,6 +1758,22 @@ exports.bulkUpdate = async (req) => {
       employee.status = status;
       if (status === "resigned") {
         applyLifecycleChange(employee, "notice");
+      } else if (status === "active") {
+        employee.isDeleted = false;
+        employee.deletedAt = undefined;
+        employee.deletedBy = undefined;
+        if (employee.employmentLifecycleStatus === "terminated" || employee.employmentLifecycleStatus === "notice") {
+          applyLifecycleChange(employee, "confirmed");
+        }
+        const user = await User.findById(employee.userId).select("status organizationIds activeOrganizationId");
+        if (user) {
+          user.status = "active";
+          if (!user.organizationIds?.some((orgId) => String(orgId) === String(organizationId))) {
+            user.organizationIds = [...(user.organizationIds || []), organizationId];
+          }
+          user.activeOrganizationId = user.activeOrganizationId || organizationId;
+          await user.save();
+        }
       }
     }
     if (employmentLifecycleStatus !== undefined) {
@@ -1656,24 +1810,10 @@ exports.bulkUpdate = async (req) => {
 /* HR / ADMIN SOFT DELETE EMPLOYEE                                     */
 /* ------------------------------------------------------------------ */
 exports.remove = async (req) => {
-  const { id } = req.params;
-  const { organizationId } = req.user;
-
-  const employee = await Employee.findOne({
-    _id: id,
-    organizationId,
-    isDeleted: false
-  });
-
-  if (!employee) {
-    throw { code: 404, message: "Employee not found" };
-  }
-
-  employee.isDeleted = true;
-  employee.deletedAt = new Date();
-  employee.deletedBy = req.user.userId;
-
-  await employee.save();
+  throw {
+    code: 405,
+    message: "Employee deletion is disabled. Mark the employee inactive instead."
+  };
 };
 
 const isLeapYear = (year) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;

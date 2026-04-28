@@ -230,8 +230,10 @@ employeeSchema.index(
   { unique: true }
 );
 
-// 🔍 Automatically ignore deleted employees
+// 🔍 Automatically ignore deleted employees unless a query explicitly opts in.
 employeeSchema.pre(/^find/, async function () {
+  if (this.getOptions()?.includeDeleted) return;
+  if (Object.prototype.hasOwnProperty.call(this.getQuery(), "isDeleted")) return;
   this.where({ isDeleted: false });
 });
 
