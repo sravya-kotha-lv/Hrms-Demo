@@ -253,6 +253,11 @@ const buildComponentOverrideState = (
   };
 };
 
+const getComponentOverrideErrorKey = (code: string, field: string) =>
+  `componentOverride.${String(code || "").toUpperCase()}.${field}`;
+
+const isBlankValue = (value: unknown) => String(value ?? "").trim() === "";
+
 /* ================= COMPONENT ================= */
 
 const AddEmployee = () => {
@@ -513,9 +518,89 @@ const AddEmployee = () => {
   ]);
 
   const enabledEmployeeComponents = useMemo(
-    () => Object.values(componentOverrides).filter((override) => override?.enabled),
-    [componentOverrides]
+    () =>
+      payrollComponents
+        .map((component) => {
+          const key = String(component.code || "").toUpperCase();
+          return componentOverrides[key] || buildComponentOverrideState(component);
+        })
+        .filter((override) => override?.enabled),
+    [componentOverrides, payrollComponents]
   );
+
+  const getEffectiveComponentOverrideEntries = () => {
+    const componentCodes = new Set<string>();
+    const componentEntries = payrollComponents
+      .map((component) => {
+        const key = String(component.code || "").toUpperCase();
+        if (!key) return null;
+        componentCodes.add(key);
+        return [
+          key,
+          componentOverrides[key] || buildComponentOverrideState(component)
+        ] as const;
+      })
+      .filter(Boolean) as Array<readonly [string, EmployeeComponentOverride]>;
+
+    const storedEntries = Object.entries(componentOverrides).filter(
+      ([code, override]) => !componentCodes.has(code) && Boolean(override?.code)
+    );
+
+    return [...componentEntries, ...storedEntries];
+  };
+
+  const validateEnabledComponentOverrides = () => {
+    const nextErrors: Record<string, string> = {};
+
+    getEffectiveComponentOverrideEntries().forEach(([code, override]) => {
+      if (!override?.enabled) return;
+
+      if (isBlankValue(override.name)) {
+        nextErrors[getComponentOverrideErrorKey(code, "name")] = "Display name is required";
+      }
+
+      if (override.calculationMode === "percentage") {
+        if (isBlankValue(override.amount)) {
+          nextErrors[getComponentOverrideErrorKey(code, "amount")] = "Percentage is required";
+        } else if (!Number.isFinite(Number(override.amount))) {
+          nextErrors[getComponentOverrideErrorKey(code, "amount")] = "Enter a valid percentage";
+        }
+
+        if (isBlankValue(override.base)) {
+          nextErrors[getComponentOverrideErrorKey(code, "base")] = "Base variable is required";
+        }
+      } else if (override.calculationMode === "formula") {
+        if (isBlankValue(override.formulaExpression)) {
+          nextErrors[getComponentOverrideErrorKey(code, "formulaExpression")] = "Custom formula is required";
+        }
+      } else if (isBlankValue(override.amount)) {
+        nextErrors[getComponentOverrideErrorKey(code, "amount")] =
+          override.calculationMode === "slab" ? "Manual amount is required" : "Monthly amount is required";
+      } else if (!Number.isFinite(Number(override.amount))) {
+        nextErrors[getComponentOverrideErrorKey(code, "amount")] = "Enter a valid amount";
+      }
+
+      if (
+        code === "BONUS" &&
+        override.bonusCreditTiming === "manual_date" &&
+        isBlankValue(override.bonusEligibilityDate)
+      ) {
+        nextErrors[getComponentOverrideErrorKey(code, "bonusEligibilityDate")] =
+          "Eligibility date is required";
+      }
+
+      if (
+        code === "BONUS" &&
+        !isBlankValue(override.bonusPayoutMonths) &&
+        !Number.isFinite(Number(override.bonusPayoutMonths))
+      ) {
+        nextErrors[getComponentOverrideErrorKey(code, "bonusPayoutMonths")] =
+          "Enter valid payout months";
+      }
+    });
+
+    return nextErrors;
+  };
 
   /* ================= FETCH MASTER DATA ================= */
 
@@ -1274,11 +1359,21 @@ const AddEmployee = () => {
       return;
     }
     if (!salaryForm.payGroupId) {
-      toast.error("Select a pay group");
+      const nextErrors = { payGroupId: "Pay group is required" };
+      setFieldErrors((prev) => ({ ...prev, ...nextErrors }));
+      showValidationToast(nextErrors);
       return;
     }
     if (!salaryForm.annualCtc) {
-      toast.error("Annual CTC is required");
+      const nextErrors = { annualCtc: "Annual CTC is required" };
+      setFieldErrors((prev) => ({ ...prev, ...nextErrors }));
+      showValidationToast(nextErrors);
+      return;
+    }
+    const componentOverrideErrors = validateEnabledComponentOverrides();
+    if (Object.keys(componentOverrideErrors).length > 0) {
+      setFieldErrors((prev) => ({ ...prev, ...componentOverrideErrors }));
+      showValidationToast(componentOverrideErrors);
       return;
     }
     const currentSalary = salaryStructures.find((row) => row.is_current) || salaryStructures[0] || null;
@@ -1346,7 +1441,7 @@ const AddEmployee = () => {
           metadata: {
             salaryRules: {
               componentOverrides: Object.fromEntries(
-                Object.entries(componentOverrides)
+                getEffectiveComponentOverrideEntries()
                   .filter(([, override]) => Boolean(override?.code))
                   .map(([code, override]) => [
                     code,
@@ -2691,7 +2786,10 @@ const AddEmployee = () => {
                     </Label>
                     <Select
                       value={salaryForm.payGroupId}
-                      onValueChange={(v) => setSalaryForm((prev) => ({ ...prev, payGroupId: v }))}
+                      onValueChange={(v) => {
+                        clearFieldError("payGroupId");
+                        setSalaryForm((prev) => ({ ...prev, payGroupId: v }));
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select pay group" />
@@ -2706,6 +2804,9 @@ const AddEmployee = () => {
                           ))}
                       </SelectContent>
                     </Select>
+                    {getFieldError("payGroupId") && (
+                      <p className="mt-1 text-xs text-red-600">{getFieldError("payGroupId")}</p>
+                    )}
                   </div>
 
                   <div>
@@ -2772,11 +2873,15 @@ const AddEmployee = () => {
                     <Input
                       type="number"
                       value={salaryForm.annualCtc}
-                      onChange={(e) =>
-                        setSalaryForm((prev) => ({ ...prev, annualCtc: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        clearFieldError("annualCtc");
+                        setSalaryForm((prev) => ({ ...prev, annualCtc: e.target.value }));
+                      }}
                       placeholder="e.g. 720000"
                     />
+                    {getFieldError("annualCtc") && (
+                      <p className="mt-1 text-xs text-red-600">{getFieldError("annualCtc")}</p>
+                    )}
                   </div>
 
                   <div>
@@ -3158,6 +3263,10 @@ const AddEmployee = () => {
                         const key = String(component.code || "").toUpperCase();
                         const override =
                           componentOverrides[key] || buildComponentOverrideState(component);
+                        const overrideError = (field: string) =>
+                          getFieldError(getComponentOverrideErrorKey(key, field));
+                        const clearOverrideError = (field: string) =>
+                          clearFieldError(getComponentOverrideErrorKey(key, field));
 
                         return (
                           <div key={`${component.scope}-${component.code}`} className="rounded-md border p-3 space-y-3">
@@ -3172,12 +3281,22 @@ const AddEmployee = () => {
                                 <span className="text-xs text-muted-foreground">Use for this employee</span>
                                 <Switch
                                   checked={override.enabled}
-                                  onCheckedChange={(checked) =>
+                                  onCheckedChange={(checked) => {
+                                    if (!checked) {
+                                      [
+                                        "name",
+                                        "amount",
+                                        "base",
+                                        "formulaExpression",
+                                        "bonusEligibilityDate",
+                                        "bonusPayoutMonths"
+                                      ].forEach(clearOverrideError);
+                                    }
                                     setComponentOverrides((prev) => ({
                                       ...prev,
                                       [key]: { ...override, enabled: checked }
-                                    }))
-                                  }
+                                    }));
+                                  }}
                                 />
                               </div>
                             </div>
@@ -3188,28 +3307,33 @@ const AddEmployee = () => {
                                   <Label>Display Name</Label>
                                   <Input
                                     value={override.name}
-                                    onChange={(e) =>
+                                    onChange={(e) => {
+                                      clearOverrideError("name");
                                       setComponentOverrides((prev) => ({
                                         ...prev,
                                         [key]: { ...override, name: e.target.value }
-                                      }))
-                                    }
+                                      }));
+                                    }}
                                   />
+                                  {overrideError("name") && (
+                                    <p className="mt-1 text-xs text-red-600">{overrideError("name")}</p>
+                                  )}
                                 </div>
 
                                 <div>
                                   <Label>Calculation Mode</Label>
                                   <Select
                                     value={override.calculationMode}
-                                    onValueChange={(value) =>
+                                    onValueChange={(value) => {
                                       setComponentOverrides((prev) => ({
                                         ...prev,
                                         [key]: {
                                           ...override,
                                           calculationMode: value as EmployeeComponentOverride["calculationMode"]
                                         }
-                                      }))
-                                    }
+                                      }));
+                                      ["amount", "base", "formulaExpression"].forEach(clearOverrideError);
+                                    }}
                                   >
                                     <SelectTrigger>
                                       <SelectValue />
@@ -3230,26 +3354,34 @@ const AddEmployee = () => {
                                       <Input
                                         type="number"
                                         value={override.amount}
-                                        onChange={(e) =>
+                                        onChange={(e) => {
+                                          clearOverrideError("amount");
                                           setComponentOverrides((prev) => ({
                                             ...prev,
                                             [key]: { ...override, amount: e.target.value }
-                                          }))
-                                        }
+                                          }));
+                                        }}
                                       />
+                                      {overrideError("amount") && (
+                                        <p className="mt-1 text-xs text-red-600">{overrideError("amount")}</p>
+                                      )}
                                     </div>
                                     <div>
                                       <Label>Base Variable</Label>
                                       <Input
                                         value={override.base}
-                                        onChange={(e) =>
+                                        onChange={(e) => {
+                                          clearOverrideError("base");
                                           setComponentOverrides((prev) => ({
                                             ...prev,
                                             [key]: { ...override, base: e.target.value.toUpperCase() }
-                                          }))
-                                        }
+                                          }));
+                                        }}
                                         placeholder="MONTHLY_GROSS or BASIC_PAY"
                                       />
+                                      {overrideError("base") && (
+                                        <p className="mt-1 text-xs text-red-600">{overrideError("base")}</p>
+                                      )}
                                     </div>
                                   </>
                                 ) : override.calculationMode === "formula" ? (
@@ -3260,6 +3392,7 @@ const AddEmployee = () => {
                                         value={override.formulaTemplate || "custom"}
                                         onValueChange={(value) => {
                                           const preset = FORMULA_PRESETS.find((item) => item.value === value);
+                                          clearOverrideError("formulaExpression");
                                           setComponentOverrides((prev) => ({
                                             ...prev,
                                             [key]: {
@@ -3289,7 +3422,8 @@ const AddEmployee = () => {
                                       <Label>Custom Formula</Label>
                                       <Input
                                         value={override.formulaExpression}
-                                        onChange={(e) =>
+                                        onChange={(e) => {
+                                          clearOverrideError("formulaExpression");
                                           setComponentOverrides((prev) => ({
                                             ...prev,
                                             [key]: {
@@ -3297,10 +3431,15 @@ const AddEmployee = () => {
                                               formulaTemplate: "custom",
                                               formulaExpression: e.target.value
                                             }
-                                          }))
-                                        }
+                                          }));
+                                        }}
                                         placeholder="round(BASIC_PAY * 0.0481)"
                                       />
+                                      {overrideError("formulaExpression") && (
+                                        <p className="mt-1 text-xs text-red-600">
+                                          {overrideError("formulaExpression")}
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
                                 ) : (
@@ -3309,13 +3448,17 @@ const AddEmployee = () => {
                                     <Input
                                       type="number"
                                       value={override.amount}
-                                      onChange={(e) =>
+                                      onChange={(e) => {
+                                        clearOverrideError("amount");
                                         setComponentOverrides((prev) => ({
                                           ...prev,
                                           [key]: { ...override, amount: e.target.value }
-                                        }))
-                                      }
+                                        }));
+                                      }}
                                     />
+                                    {overrideError("amount") && (
+                                      <p className="mt-1 text-xs text-red-600">{overrideError("amount")}</p>
+                                    )}
                                   </div>
                                 )}
 
@@ -3326,7 +3469,8 @@ const AddEmployee = () => {
                                         <Label>Credit Timing</Label>
                                         <Select
                                           value={override.bonusCreditTiming || "after_probation"}
-                                          onValueChange={(value) =>
+                                          onValueChange={(value) => {
+                                            clearOverrideError("bonusEligibilityDate");
                                             setComponentOverrides((prev) => ({
                                               ...prev,
                                               [key]: {
@@ -3337,8 +3481,8 @@ const AddEmployee = () => {
                                                     ? form.confirmedDate || override.bonusEligibilityDate
                                                     : override.bonusEligibilityDate
                                               }
-                                            }))
-                                          }
+                                            }));
+                                          }}
                                         >
                                           <SelectTrigger>
                                             <SelectValue />
@@ -3360,7 +3504,8 @@ const AddEmployee = () => {
                                               : override.bonusEligibilityDate
                                           }
                                           disabled={override.bonusCreditTiming === "immediate"}
-                                          onChange={(e) =>
+                                          onChange={(e) => {
+                                            clearOverrideError("bonusEligibilityDate");
                                             setComponentOverrides((prev) => ({
                                               ...prev,
                                               [key]: {
@@ -3368,20 +3513,26 @@ const AddEmployee = () => {
                                                 bonusCreditTiming: "manual_date",
                                                 bonusEligibilityDate: e.target.value
                                               }
-                                            }))
-                                          }
+                                            }));
+                                          }}
                                         />
+                                        {overrideError("bonusEligibilityDate") && (
+                                          <p className="mt-1 text-xs text-red-600">
+                                            {overrideError("bonusEligibilityDate")}
+                                          </p>
+                                        )}
                                       </div>
                                       <div>
                                         <Label>Pay Over</Label>
                                         <Select
                                           value={override.bonusPayoutMonths || "2"}
-                                          onValueChange={(value) =>
+                                          onValueChange={(value) => {
+                                            clearOverrideError("bonusPayoutMonths");
                                             setComponentOverrides((prev) => ({
                                               ...prev,
                                               [key]: { ...override, bonusPayoutMonths: value }
-                                            }))
-                                          }
+                                            }));
+                                          }}
                                         >
                                           <SelectTrigger>
                                             <SelectValue />
@@ -3392,6 +3543,11 @@ const AddEmployee = () => {
                                             <SelectItem value="3">3 Months</SelectItem>
                                           </SelectContent>
                                         </Select>
+                                        {overrideError("bonusPayoutMonths") && (
+                                          <p className="mt-1 text-xs text-red-600">
+                                            {overrideError("bonusPayoutMonths")}
+                                          </p>
+                                        )}
                                       </div>
                                     </div>
                                     <p className="mt-2 text-xs text-muted-foreground">
