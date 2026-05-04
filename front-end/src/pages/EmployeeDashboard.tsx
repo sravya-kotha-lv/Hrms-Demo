@@ -86,6 +86,9 @@ type CheckInPolicy = {
   attendanceIpEnabled: boolean;
   attendanceSelfieRequired: boolean;
   attendanceGeoFenceEnabled: boolean;
+  attendanceGeoLatitude: number | null;
+  attendanceGeoLongitude: number | null;
+  localGeoFenceFallbackEnabled: boolean;
   attendanceGeoRadiusMeters: number;
 };
 
@@ -361,6 +364,9 @@ const EmployeeDashboard = () => {
     attendanceIpEnabled: false,
     attendanceSelfieRequired: false,
     attendanceGeoFenceEnabled: false,
+    attendanceGeoLatitude: null,
+    attendanceGeoLongitude: null,
+    localGeoFenceFallbackEnabled: false,
     attendanceGeoRadiusMeters: 200
   });
   const hasShownMatrixCompatibilityErrorRef = useRef(false);
@@ -510,6 +516,15 @@ const EmployeeDashboard = () => {
         attendanceIpEnabled: Boolean(checkInPolicyRes.data.attendanceIpEnabled),
         attendanceSelfieRequired: Boolean(checkInPolicyRes.data.attendanceSelfieRequired),
         attendanceGeoFenceEnabled: Boolean(checkInPolicyRes.data.attendanceGeoFenceEnabled),
+        attendanceGeoLatitude:
+          checkInPolicyRes.data.attendanceGeoLatitude === null || checkInPolicyRes.data.attendanceGeoLatitude === undefined
+            ? null
+            : Number(checkInPolicyRes.data.attendanceGeoLatitude),
+        attendanceGeoLongitude:
+          checkInPolicyRes.data.attendanceGeoLongitude === null || checkInPolicyRes.data.attendanceGeoLongitude === undefined
+            ? null
+            : Number(checkInPolicyRes.data.attendanceGeoLongitude),
+        localGeoFenceFallbackEnabled: Boolean(checkInPolicyRes.data.localGeoFenceFallbackEnabled),
         attendanceGeoRadiusMeters: Number(checkInPolicyRes.data.attendanceGeoRadiusMeters || 200)
       });
     }
@@ -679,31 +694,137 @@ const EmployeeDashboard = () => {
     return Number(attendanceToday?.lateByMinutes || 0) > 0;
   }, [attendanceToday]);
 
+  const getCheckInLocation = async () => {
+    if (!navigator.geolocation) {
+      throw new Error("Location is not supported on this browser");
+    }
+    if (!window.isSecureContext) {
+      throw new Error("Location requires HTTPS or localhost. Please open the app on a secure URL.");
+    }
+
+    const readPosition = (options: PositionOptions) =>
+      new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+      });
+
+    const watchPositionOnce = (options: PositionOptions) =>
+      new Promise<GeolocationPosition>((resolve, reject) => {
+        let settled = false;
+        let watchId: number | null = null;
+        const timer = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          if (watchId !== null) {
+            navigator.geolocation.clearWatch(watchId);
+          }
+          reject(new Error("Location lookup timed out"));
+        }, 45000);
+
+        watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timer);
+            if (watchId !== null) {
+              navigator.geolocation.clearWatch(watchId);
+            }
+            resolve(position);
+          },
+          (error) => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timer);
+            if (watchId !== null) {
+              navigator.geolocation.clearWatch(watchId);
+            }
+            reject(error);
+          },
+          options
+        );
+      });
+
+    const buildLocationErrorMessage = (error: GeolocationPositionError) => {
+      if (error.code === error.PERMISSION_DENIED) {
+        return "Location permission is required for check-in";
+      }
+      if (error.code === error.TIMEOUT) {
+        return "Unable to get location. Please turn on device location and try again.";
+      }
+      if (error.code === error.POSITION_UNAVAILABLE) {
+        return "Current location is unavailable. Please turn on device location, disable VPN/location blockers, and try again.";
+      }
+      return error.message || "Unable to get current location for check-in";
+    };
+
+    try {
+      return await readPosition({ enableHighAccuracy: false, timeout: 3000, maximumAge: Infinity });
+    } catch {
+      // Continue to a fresh location lookup when no cached position exists.
+    }
+
+    try {
+      return await readPosition({ enableHighAccuracy: true, timeout: 30000, maximumAge: 0 });
+    } catch (error) {
+      const geoError = error as GeolocationPositionError;
+      if (geoError.code === geoError.PERMISSION_DENIED) {
+        throw new Error("Location permission is required for check-in");
+      }
+      try {
+        return await readPosition({ enableHighAccuracy: false, timeout: 30000, maximumAge: 300000 });
+      } catch (fallbackError) {
+        const fallbackGeoError = fallbackError as GeolocationPositionError;
+        if (fallbackGeoError.code === fallbackGeoError.PERMISSION_DENIED) {
+          throw new Error("Location permission is required for check-in");
+        }
+        try {
+          return await watchPositionOnce({ enableHighAccuracy: false, timeout: 45000, maximumAge: 300000 });
+        } catch (watchError) {
+          const watchGeoError = watchError as GeolocationPositionError;
+          if (watchError instanceof Error && !("code" in watchError)) {
+            throw new Error("Unable to get location. Please keep this page open and try again.");
+          }
+          throw new Error(buildLocationErrorMessage(watchGeoError));
+        }
+      }
+    }
+  };
+
+  const getLocalGeoFenceFallbackLocation = () => {
+    const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+    const latitude = Number(checkInPolicy.attendanceGeoLatitude);
+    const longitude = Number(checkInPolicy.attendanceGeoLongitude);
+    if (
+      !isLocalHost
+      || !checkInPolicy.localGeoFenceFallbackEnabled
+      || !Number.isFinite(latitude)
+      || !Number.isFinite(longitude)
+    ) {
+      return null;
+    }
+    return { latitude, longitude };
+  };
+
   const handleCheckIn = async () => {
     const payload: Record<string, unknown> = {};
 
     if (checkInPolicy.attendanceGeoFenceEnabled) {
-      if (!navigator.geolocation) {
-        toast.error("Location is not supported on this browser");
-        return;
+      let position: GeolocationPosition | null = null;
+      try {
+        position = await getCheckInLocation();
+      } catch (error) {
+        const fallbackLocation = getLocalGeoFenceFallbackLocation();
+        if (!fallbackLocation) {
+          toast.error(error instanceof Error ? error.message : "Unable to get current location for check-in");
+          return;
+        }
+        payload.latitude = fallbackLocation.latitude;
+        payload.longitude = fallbackLocation.longitude;
+        toast.info("Using office geofence location for local testing.");
       }
-      const geo = await new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          (position) =>
-            resolve({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude
-            }),
-          () => resolve(null),
-          { enableHighAccuracy: true, timeout: 10000 }
-        );
-      });
-      if (!geo) {
-        toast.error("Location permission is required for check-in");
-        return;
+      if (position) {
+        payload.latitude = position.coords.latitude;
+        payload.longitude = position.coords.longitude;
       }
-      payload.latitude = geo.latitude;
-      payload.longitude = geo.longitude;
     }
 
     if (checkInPolicy.attendanceSelfieRequired) {

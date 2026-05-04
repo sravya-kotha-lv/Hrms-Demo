@@ -41,7 +41,9 @@ const OrganizationSettings = () => {
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
   const [attendanceAllowedIp, setAttendanceAllowedIp] = useState("");
-  const [attendanceCheckInMode, setAttendanceCheckInMode] = useState<"none" | "ip" | "selfie" | "geofence">("none");
+  const [attendanceIpEnabled, setAttendanceIpEnabled] = useState(false);
+  const [attendanceSelfieRequired, setAttendanceSelfieRequired] = useState(false);
+  const [attendanceGeoFenceEnabled, setAttendanceGeoFenceEnabled] = useState(false);
   const [attendanceGeoLatitude, setAttendanceGeoLatitude] = useState("");
   const [attendanceGeoLongitude, setAttendanceGeoLongitude] = useState("");
   const [attendanceGeoRadiusMeters, setAttendanceGeoRadiusMeters] = useState(200);
@@ -90,15 +92,9 @@ const OrganizationSettings = () => {
         typeof res.data?.minHalfDayHours === "number" ? res.data.minHalfDayHours : 4
       );
       setAttendanceAllowedIp(String(res.data?.attendanceAllowedIp || ""));
-      const resolvedMode =
-        res.data?.attendanceIpEnabled
-          ? "ip"
-          : res.data?.attendanceSelfieRequired
-            ? "selfie"
-            : res.data?.attendanceGeoFenceEnabled
-              ? "geofence"
-              : "none";
-      setAttendanceCheckInMode(resolvedMode);
+      setAttendanceIpEnabled(Boolean(res.data?.attendanceIpEnabled));
+      setAttendanceSelfieRequired(Boolean(res.data?.attendanceSelfieRequired));
+      setAttendanceGeoFenceEnabled(Boolean(res.data?.attendanceGeoFenceEnabled));
       setAttendanceGeoLatitude(
         res.data?.attendanceGeoLatitude === null || res.data?.attendanceGeoLatitude === undefined
           ? ""
@@ -146,10 +142,10 @@ const OrganizationSettings = () => {
         payrollEnabled,
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours),
-        attendanceIpEnabled: attendanceCheckInMode === "ip",
+        attendanceIpEnabled,
         attendanceAllowedIp,
-        attendanceSelfieRequired: attendanceCheckInMode === "selfie",
-        attendanceGeoFenceEnabled: attendanceCheckInMode === "geofence",
+        attendanceSelfieRequired,
+        attendanceGeoFenceEnabled,
         attendanceGeoLatitude: attendanceGeoLatitude === "" ? null : Number(attendanceGeoLatitude),
         attendanceGeoLongitude: attendanceGeoLongitude === "" ? null : Number(attendanceGeoLongitude),
         attendanceGeoRadiusMeters: Number(attendanceGeoRadiusMeters),
@@ -495,22 +491,36 @@ const OrganizationSettings = () => {
           </div>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Restriction Mode</label>
-              <Select
-                value={attendanceCheckInMode}
-                onValueChange={(value: "none" | "ip" | "selfie" | "geofence") => setAttendanceCheckInMode(value)}
-                disabled={!canManage}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select check-in restriction mode" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No restriction</SelectItem>
-                  <SelectItem value="ip">Office IP only</SelectItem>
-                  <SelectItem value="selfie">Selfie required</SelectItem>
-                  <SelectItem value="geofence">Office geofence only</SelectItem>
-                </SelectContent>
-              </Select>
+              <label className="text-sm font-medium">Restriction Options</label>
+              <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={attendanceIpEnabled}
+                    onCheckedChange={(value) => setAttendanceIpEnabled(Boolean(value))}
+                    disabled={!canManage}
+                  />
+                  <span>Office IP only</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={attendanceSelfieRequired}
+                    onCheckedChange={(value) => setAttendanceSelfieRequired(Boolean(value))}
+                    disabled={!canManage}
+                  />
+                  <span>Selfie required</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={attendanceGeoFenceEnabled}
+                    onCheckedChange={(value) => setAttendanceGeoFenceEnabled(Boolean(value))}
+                    disabled={!canManage}
+                  />
+                  <span>Office geofence only</span>
+                </label>
+                {!attendanceIpEnabled && !attendanceSelfieRequired && !attendanceGeoFenceEnabled && (
+                  <p className="text-xs text-muted-foreground">No restriction enabled</p>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2 lg:col-span-2">
@@ -520,7 +530,7 @@ const OrganizationSettings = () => {
                 placeholder="Ex: 103.12.11.20, 27.6.72.42"
                 value={attendanceAllowedIp}
                 onChange={(e) => setAttendanceAllowedIp(e.target.value)}
-                disabled={!canManage || attendanceCheckInMode !== "ip"}
+                disabled={!canManage || !attendanceIpEnabled}
               />
             </div>
 
@@ -532,7 +542,7 @@ const OrganizationSettings = () => {
                 placeholder="Office latitude"
                 value={attendanceGeoLatitude}
                 onChange={(e) => setAttendanceGeoLatitude(e.target.value)}
-                disabled={!canManage || attendanceCheckInMode !== "geofence"}
+                disabled={!canManage || !attendanceGeoFenceEnabled}
               />
             </div>
             <div className="space-y-2">
@@ -543,7 +553,7 @@ const OrganizationSettings = () => {
                 placeholder="Office longitude"
                 value={attendanceGeoLongitude}
                 onChange={(e) => setAttendanceGeoLongitude(e.target.value)}
-                disabled={!canManage || attendanceCheckInMode !== "geofence"}
+                disabled={!canManage || !attendanceGeoFenceEnabled}
               />
             </div>
             <div className="space-y-2">
@@ -555,7 +565,7 @@ const OrganizationSettings = () => {
                 placeholder="Radius"
                 value={attendanceGeoRadiusMeters}
                 onChange={(e) => setAttendanceGeoRadiusMeters(Number(e.target.value || 200))}
-                disabled={!canManage || attendanceCheckInMode !== "geofence"}
+                disabled={!canManage || !attendanceGeoFenceEnabled}
               />
             </div>
           </div>
