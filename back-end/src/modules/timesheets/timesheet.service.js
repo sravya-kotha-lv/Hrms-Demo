@@ -2808,6 +2808,34 @@ exports.getMyAttendanceCellHistory = async (req) => {
   return exports.getAttendanceCellHistory(req);
 };
 
+exports.getAttendanceRequestDefaults = async (req) => {
+  const employee = await getEmployeeFromReq(req);
+  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const dateKey = normalizeAttendanceRequestDateKey(req.query.date, organizationTimeZone);
+  const { shift, scheduledStartAt, scheduledEndAt } = await resolveShiftSchedule(
+    req.user.organizationId,
+    employee._id,
+    dateKey,
+    organizationTimeZone
+  );
+
+  return {
+    date: dateKey,
+    requestType: req.query.requestType || "work_from_home",
+    requestedCheckInTime: shift.startTime,
+    requestedCheckOutTime: shift.endTime,
+    shift: {
+      id: shift._id || null,
+      name: shift.name,
+      code: shift.code,
+      startTime: shift.startTime,
+      endTime: shift.endTime
+    },
+    scheduledStartAt,
+    scheduledEndAt
+  };
+};
+
 exports.raiseAttendanceRequest = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
@@ -2820,14 +2848,28 @@ exports.raiseAttendanceRequest = async (req) => {
   }
 
   let requestType = req.body.requestType;
-  const requestedCheckInTime = req.body.requestedCheckInTime || null;
-  const requestedCheckOutTime = req.body.requestedCheckOutTime || null;
+  let requestedCheckInTime = req.body.requestedCheckInTime || null;
+  let requestedCheckOutTime = req.body.requestedCheckOutTime || null;
+
+  if (requestType === "work_from_home") {
+    const { shift } = await resolveShiftSchedule(
+      req.user.organizationId,
+      employee._id,
+      dateKey,
+      organizationTimeZone
+    );
+    requestedCheckInTime = shift.startTime;
+    requestedCheckOutTime = shift.endTime;
+  }
 
   if (requestType === "missed_checkout" && !requestedCheckOutTime) {
     throw new Error("Requested checkout time is required for missed checkout request");
   }
   if (requestType === "correction" && !requestedCheckInTime && !requestedCheckOutTime) {
     throw new Error("Provide requested check-in or check-out time");
+  }
+  if (requestType === "work_from_home" && (!requestedCheckInTime || !requestedCheckOutTime)) {
+    throw new Error("Shift timings are required for work from home request");
   }
 
   if (requestType === "missed_checkout") {

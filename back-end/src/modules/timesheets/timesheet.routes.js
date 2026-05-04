@@ -14,6 +14,7 @@ const {
   overrideAttendanceSchema,
   bulkOverrideAttendanceSchema,
   lockAttendanceMonthSchema,
+  attendanceRequestDefaultsSchema,
   raiseAttendanceRequestSchema,
   attendanceRequestActionSchema
 } = require("./timesheet.validation");
@@ -107,6 +108,14 @@ router.post(
   authorize("TIMESHEET_VIEW_SELF"),
   validate(raiseAttendanceRequestSchema),
   asyncHandler(controller.raiseAttendanceRequest)
+);
+
+router.get(
+  "/attendance/requests/defaults/my",
+  auth,
+  authorize("TIMESHEET_VIEW_SELF"),
+  validate(attendanceRequestDefaultsSchema, "query"),
+  asyncHandler(controller.attendanceRequestDefaults)
 );
 
 router.get(

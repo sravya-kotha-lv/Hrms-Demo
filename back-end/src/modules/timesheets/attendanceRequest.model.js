@@ -60,7 +60,7 @@ const attendanceRequestSchema = new mongoose.Schema(
     },
     requestType: {
       type: String,
-      enum: ["missed_checkout", "correction"],
+      enum: ["missed_checkout", "correction", "work_from_home"],
       required: true
     },
     requestedCheckInTime: {

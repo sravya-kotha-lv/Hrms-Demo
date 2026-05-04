@@ -452,6 +452,7 @@ const PendingApprovals = () => {
                   <SelectItem value="all">All Types</SelectItem>
                   <SelectItem value="missed_checkout">Missed Checkout</SelectItem>
                   <SelectItem value="correction">Correction</SelectItem>
+                  <SelectItem value="work_from_home">Work From Home</SelectItem>
                 </SelectContent>
               </Select>
 

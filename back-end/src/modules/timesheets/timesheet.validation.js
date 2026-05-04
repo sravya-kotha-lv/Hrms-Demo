@@ -53,9 +53,14 @@ exports.lockAttendanceMonthSchema = Joi.object({
   month: Joi.string().pattern(/^\d{4}-\d{2}$/).required()
 });
 
+exports.attendanceRequestDefaultsSchema = Joi.object({
+  date: localDateSchema.required(),
+  requestType: Joi.string().valid("work_from_home").optional()
+});
+
 exports.raiseAttendanceRequestSchema = Joi.object({
   date: localDateSchema.required(),
-  requestType: Joi.string().valid("missed_checkout", "correction").required(),
+  requestType: Joi.string().valid("missed_checkout", "correction", "work_from_home").required(),
   requestedCheckInTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).allow(null, ""),
   requestedCheckOutTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).allow(null, ""),
   reason: Joi.string().trim().min(3).max(500).required()

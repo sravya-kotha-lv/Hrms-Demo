@@ -115,7 +115,7 @@ type ApprovedLeaveDetail = {
 } | null;
 
 type AttendanceRequestDetail = {
-  requestType?: "missed_checkout" | "correction" | null;
+  requestType?: "missed_checkout" | "correction" | "work_from_home" | null;
   requestedCheckInTime?: string | null;
   requestedCheckOutTime?: string | null;
   reason?: string | null;
@@ -1496,7 +1496,7 @@ const Attendance = () => {
                 <div className="mb-2 pb-2 border-b">
                   <p className="text-xs font-medium mb-1">Attendance Request</p>
                   <p className="text-xs text-muted-foreground">
-                    Type: {selectedAttendanceRequestDetail.requestType === "missed_checkout" ? "Missed Checkout" : "Correction"}
+                    Type: {selectedAttendanceRequestDetail.requestType === "missed_checkout" ? "Missed Checkout" : selectedAttendanceRequestDetail.requestType === "work_from_home" ? "Work From Home" : "Correction"}
                   </p>
                   {selectedAttendanceRequestDetail.requestedCheckInTime && (
                     <p className="text-xs text-muted-foreground">
