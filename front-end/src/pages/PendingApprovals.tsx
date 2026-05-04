@@ -489,8 +489,8 @@ const PendingApprovals = () => {
           </div>
 
           <div className="mb-4 text-sm text-muted-foreground">
-            Showing <span className="font-medium text-foreground">{filteredAttendanceRows.length}</span> of{" "}
-            <span className="font-medium text-foreground">{attendanceRows.length}</span> pending attendance approvals.
+            Showing <span className="font-medium text-foreground">{tableRows.length}</span> of{" "}
+            <span className="font-medium text-foreground">{totalItems || attendanceRows.length}</span> pending attendance approvals.
           </div>
 
           {canAttendanceAction && (
@@ -520,7 +520,7 @@ const PendingApprovals = () => {
               {!loading && (
                 <div className="flex items-center justify-between border-t border-border px-6 py-3 text-xs text-muted-foreground">
                   <span>
-                    Showing {attendanceRows.length} of {totalItems || attendanceRows.length} pending attendance approvals
+                    Showing {tableRows.length} of {totalItems || attendanceRows.length} pending attendance approvals
                   </span>
                   {loadingMore && <span>Loading more...</span>}
                 </div>

@@ -2963,6 +2963,7 @@ exports.getMyAttendanceRequests = async (req) => {
   const page = parsePositiveInt(req.query.page, 1);
   const limit = Math.min(parsePositiveInt(req.query.limit, 20), 100);
   const baseQuery = AttendanceRequest.find(query)
+    .populate("actionBy", "firstName lastName employeeCode")
     .populate("approvalSteps.approverEmployeeId", "firstName lastName employeeCode")
     .populate("approvalSteps.actionBy", "firstName lastName employeeCode")
     .sort({ createdAt: -1 });

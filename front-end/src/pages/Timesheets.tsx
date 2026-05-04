@@ -10,7 +10,16 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  CalendarDays,
+  LogIn,
+  LogOut,
+  User,
+  MessageSquare,
+  AlertTriangle,
+  Home,
+  CheckCircle2,
+  Circle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -180,6 +189,8 @@ type AttendanceRequest = {
   reason: string;
   status: "pending" | "approved" | "rejected";
   rejectionReason?: string | null;
+  actionBy?: { firstName?: string; lastName?: string; employeeCode?: string } | null;
+  actionAt?: string | null;
   employeeId?: { firstName?: string; lastName?: string; employeeCode?: string };
   approvalSteps?: {
     stepNumber: number;
@@ -188,6 +199,8 @@ type AttendanceRequest = {
     approverEmployeeId?: { firstName?: string; lastName?: string; employeeCode?: string } | null;
     status: "queued" | "pending" | "approved" | "rejected";
     actionBy?: { firstName?: string; lastName?: string; employeeCode?: string } | null;
+    actionAt?: string | null;
+    remarks?: string | null;
   }[];
   currentApprovalStep?: number | null;
 };
@@ -218,6 +231,28 @@ const getAttendanceRequestTypeLabel = (requestType: string | null | undefined) =
   String(requestType || "")
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase()) || "-";
+
+const resolveActionedBy = (request: AttendanceRequest) => {
+  if (request.actionBy) return request.actionBy;
+  const approvedSteps = (request.approvalSteps || []).filter(
+    (s) => (s.status === "approved" || s.status === "rejected") && s.actionBy
+  );
+  if (!approvedSteps.length) return null;
+  return approvedSteps.sort(
+    (a, b) => new Date(b.actionAt || 0).getTime() - new Date(a.actionAt || 0).getTime()
+  )[0].actionBy;
+};
+
+const resolveActionedAt = (request: AttendanceRequest) => {
+  if (request.actionAt) return request.actionAt;
+  const actioned = (request.approvalSteps || []).filter(
+    (s) => (s.status === "approved" || s.status === "rejected") && s.actionAt
+  );
+  if (!actioned.length) return null;
+  return actioned.sort(
+    (a, b) => new Date(b.actionAt || 0).getTime() - new Date(a.actionAt || 0).getTime()
+  )[0].actionAt;
+};
 
 const approvalProgressLabel = (request: AttendanceRequest) => {
   const steps = Array.isArray(request.approvalSteps) ? request.approvalSteps : [];
@@ -1045,6 +1080,7 @@ const Timesheets = () => {
                 <TableHead>Type</TableHead>
                 <TableHead>Requested Time</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Actioned By</TableHead>
                 <TableHead>Approval</TableHead>
                 <TableHead>Reason</TableHead>
                 <TableHead>Actions</TableHead>
@@ -1053,19 +1089,32 @@ const Timesheets = () => {
             <TableBody>
               {myAttendanceRequests.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-muted-foreground">No attendance requests</TableCell>
+                  <TableCell colSpan={8} className="text-muted-foreground">No attendance requests</TableCell>
                 </TableRow>
               )}
-              {myAttendanceRequests.map((r) => (
+              {myAttendanceRequests.map((r) => {
+                const actionedBy = resolveActionedBy(r);
+                const actionedAt = resolveActionedAt(r);
+                return (
                 <TableRow key={r._actionId || toIdString(r._id)} className="table-row-hover">
                   <TableCell>{formatDateKeyInOrgCalendar(r.date)}</TableCell>
                   <TableCell>{getAttendanceRequestTypeLabel(r.requestType)}</TableCell>
                   <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
                   <TableCell>{getStatusBadge(getAttendanceRequestStatus(r))}</TableCell>
-                  <TableCell className="max-w-[260px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
+                  <TableCell className="text-xs">
+                    {actionedBy ? (
+                      <div>
+                        <div className="font-medium">{toPersonLabel(actionedBy)}</div>
+                        {actionedAt && (
+                          <div className="text-muted-foreground">{new Date(actionedAt).toLocaleString()}</div>
+                        )}
+                      </div>
+                    ) : "-"}
+                  </TableCell>
+                  <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
                     {approvalProgressLabel(r)}
                   </TableCell>
-                  <TableCell className="max-w-[260px] truncate" title={r.reason}>{r.reason}</TableCell>
+                  <TableCell className="max-w-[200px] truncate" title={r.reason}>{r.reason}</TableCell>
                   <TableCell>
                     <Button size="sm" variant="outline" className="gap-2" onClick={() => openAttendanceRequestDetail(r)}>
                       <Eye className="h-4 w-4" />
@@ -1073,7 +1122,8 @@ const Timesheets = () => {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -1570,44 +1620,199 @@ const Timesheets = () => {
       </Dialog>
 
       <Dialog open={attendanceRequestDetailOpen} onOpenChange={setAttendanceRequestDetailOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Attendance Request Details</DialogTitle>
-          </DialogHeader>
-          {selectedAttendanceRequest && (
-            <div className="space-y-3 text-sm overflow-hidden">
-              <p><span className="font-medium">Date:</span> {formatDateKeyInOrgCalendar(selectedAttendanceRequest.date)}</p>
-              <p><span className="font-medium">Type:</span> {getAttendanceRequestTypeLabel(selectedAttendanceRequest.requestType)}</p>
-              <p><span className="font-medium">Requested Check-in:</span> {selectedAttendanceRequest.requestedCheckInTime || "-"}</p>
-              <p><span className="font-medium">Requested Check-out:</span> {selectedAttendanceRequest.requestedCheckOutTime || "-"}</p>
-              <p><span className="font-medium">Status:</span> {String(selectedAttendanceRequest.status || "pending").replace(/\b\w/g, (char) => char.toUpperCase())}</p>
-              <div className="space-y-1">
-                <p className="font-medium">Reason:</p>
-                <div className="max-h-48 overflow-y-auto rounded-lg border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap break-all">
-                  {selectedAttendanceRequest.reason || "-"}
-                </div>
-              </div>
-              {selectedAttendanceRequest.rejectionReason && (
-                <div className="space-y-1">
-                  <p className="font-medium">Rejection Reason:</p>
-                  <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap break-all">
-                    {selectedAttendanceRequest.rejectionReason}
+        <DialogContent className="max-w-lg p-0 overflow-hidden gap-0">
+          {selectedAttendanceRequest && (() => {
+            const req = selectedAttendanceRequest;
+            const status = getAttendanceRequestStatus(req);
+            const actionedBy = resolveActionedBy(req);
+            const actionedAt = resolveActionedAt(req);
+            const steps = req.approvalSteps || [];
+            const isApproved = status === "approved";
+            const isRejected = status === "rejected";
+            const headerBg = "from-blue-500 to-blue-700";
+            const typeIcon = req.requestType === "work_from_home"
+              ? <Home className="w-5 h-5" />
+              : req.requestType === "missed_checkout"
+              ? <LogOut className="w-5 h-5" />
+              : <LogIn className="w-5 h-5" />;
+            const initials = actionedBy
+              ? `${actionedBy.firstName?.[0] || ""}${actionedBy.lastName?.[0] || ""}`.toUpperCase() || "?"
+              : null;
+
+            return (
+              <>
+                {/* Premium header banner */}
+                <div className={`bg-gradient-to-r ${headerBg} px-6 pt-6 pb-5 text-white`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 rounded-xl p-2.5 backdrop-blur-sm">
+                        {typeIcon}
+                      </div>
+                      <div>
+                        <p className="text-white/70 text-xs font-medium uppercase tracking-wider mb-0.5">Attendance Request</p>
+                        <h2 className="text-lg font-bold leading-tight">{getAttendanceRequestTypeLabel(req.requestType)}</h2>
+                      </div>
+                    </div>
+                    <div className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full backdrop-blur-sm ${
+                      isApproved ? "bg-white/25 text-white" : isRejected ? "bg-white/25 text-white" : "bg-white/25 text-white"
+                    }`}>
+                      {isApproved ? <CheckCircle className="w-3.5 h-3.5" /> : isRejected ? <XCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                      {isApproved ? "Approved" : isRejected ? "Rejected" : "Pending"}
+                    </div>
+                  </div>
+
+                  {/* Date strip */}
+                  <div className="mt-4 flex items-center gap-4 text-sm">
+                    <div className="flex items-center gap-1.5 bg-white/15 rounded-lg px-3 py-1.5">
+                      <CalendarDays className="w-3.5 h-3.5 opacity-80" />
+                      <span className="font-medium">{formatDateKeyInOrgCalendar(req.date)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-white/80 text-xs">
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>{req.requestedCheckInTime || "—"}</span>
+                      <span className="opacity-50">→</span>
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>{req.requestedCheckOutTime || "—"}</span>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-          <DialogFooter className="pt-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setAttendanceRequestDetailOpen(false);
-                setSelectedAttendanceRequest(null);
-              }}
-            >
-              Close
-            </Button>
-          </DialogFooter>
+
+                {/* Body */}
+                <div className="overflow-y-auto max-h-[55vh] px-6 py-5 space-y-5">
+
+                  {/* Actioned by card */}
+                  {actionedBy ? (
+                    <div className="rounded-xl border p-4 flex items-center gap-4 bg-blue-50 border-blue-100">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 bg-blue-600">
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium uppercase tracking-wider mb-0.5 text-blue-600">
+                          {isApproved ? "Approved by" : isRejected ? "Rejected by" : "Actioned by"}
+                        </p>
+                        <p className="font-semibold text-sm truncate">{toPersonLabel(actionedBy)}</p>
+                        {actionedAt && (
+                          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {new Date(actionedAt).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed bg-muted/20 p-4 flex items-center gap-3 text-muted-foreground">
+                      <User className="w-5 h-5 flex-shrink-0" />
+                      <span className="text-sm">Awaiting approval action</span>
+                    </div>
+                  )}
+
+                  {/* Reason */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reason</p>
+                    </div>
+                    <div className="rounded-xl border bg-muted/30 px-4 py-3 text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed">
+                      {req.reason || "—"}
+                    </div>
+                  </div>
+
+                  {/* Rejection reason */}
+                  {req.rejectionReason && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                        <p className="text-xs font-semibold uppercase tracking-wider text-red-500">Rejection Reason</p>
+                      </div>
+                      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-wrap break-words leading-relaxed">
+                        {req.rejectionReason}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Approval timeline */}
+                  {steps.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground" />
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Approval Timeline</p>
+                      </div>
+                      <div className="relative pl-6 space-y-0">
+                        {steps.map((step, idx) => {
+                          const isDone = step.status === "approved" || step.status === "rejected";
+                          const isStepRejected = step.status === "rejected";
+                          const isLast = idx === steps.length - 1;
+                          return (
+                            <div key={step.stepNumber} className="relative">
+                              {/* Vertical line */}
+                              {!isLast && (
+                                <div className={`absolute left-[-16px] top-5 w-0.5 h-full ${isDone ? "bg-emerald-200" : "bg-border"}`} />
+                              )}
+                              {/* Dot */}
+                              <div className={`absolute left-[-20px] top-1.5 w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                                isDone && !isStepRejected ? "bg-emerald-500 border-emerald-500" :
+                                isStepRejected ? "bg-red-500 border-red-500" :
+                                step.status === "pending" ? "bg-amber-400 border-amber-400" :
+                                "bg-background border-border"
+                              }`}>
+                                {isDone && !isStepRejected && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                                {isStepRejected && <XCircle className="w-2.5 h-2.5 text-white" />}
+                                {step.status === "pending" && <Circle className="w-2 h-2 text-white fill-white" />}
+                              </div>
+
+                              <div className={`mb-4 rounded-xl border p-3 ${
+                                isDone && !isStepRejected ? "bg-emerald-50/60 border-emerald-100" :
+                                isStepRejected ? "bg-red-50/60 border-red-100" :
+                                step.status === "pending" ? "bg-amber-50/60 border-amber-100" :
+                                "bg-muted/20 border-border"
+                              }`}>
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                  <span className="text-xs font-semibold">Step {step.stepNumber} · {approverLabel(step)}</span>
+                                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                    isDone && !isStepRejected ? "bg-emerald-100 text-emerald-700" :
+                                    isStepRejected ? "bg-red-100 text-red-700" :
+                                    step.status === "pending" ? "bg-amber-100 text-amber-700" :
+                                    "bg-muted text-muted-foreground"
+                                  }`}>
+                                    {step.status}
+                                  </span>
+                                </div>
+                                {step.actionBy && (
+                                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                                    <User className="w-3 h-3" />
+                                    {toPersonLabel(step.actionBy)}
+                                    {step.actionAt && (
+                                      <> · <Clock className="w-3 h-3" /> {new Date(step.actionAt).toLocaleString()}</>
+                                    )}
+                                  </p>
+                                )}
+                                {step.remarks && (
+                                  <p className="text-xs text-muted-foreground mt-1 italic">"{step.remarks}"</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t bg-muted/20 flex justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setAttendanceRequestDetailOpen(false);
+                      setSelectedAttendanceRequest(null);
+                    }}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </MainLayout>
