@@ -105,15 +105,6 @@ exports.upsert = async (req) => {
   if (!isValidTimeZone(timezone)) {
     throw { code: 400, statusCode: 400, message: "Invalid timezone" };
   }
-  const enabledModesCount = [attendanceIpEnabled, attendanceSelfieRequired, attendanceGeoFenceEnabled]
-    .filter(Boolean).length;
-  if (enabledModesCount > 1) {
-    throw {
-      code: 400,
-      statusCode: 400,
-      message: "Only one attendance check-in restriction can be enabled at a time"
-    };
-  }
   if (attendanceIpEnabled && !(attendanceAllowedIp || "").trim()) {
     throw {
       code: 400,

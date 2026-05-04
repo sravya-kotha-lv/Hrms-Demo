@@ -1743,15 +1743,6 @@ exports.checkIn = async (req) => {
   const checkInLongitude = req.body?.longitude;
   const checkInSelfieImage = req.body?.selfieImage || null;
   const checkInSelfieProvided = Boolean(req.body?.selfieImage);
-  const enabledModesCount = [
-    attendanceSecurity?.attendanceIpEnabled,
-    attendanceSecurity?.attendanceSelfieRequired,
-    attendanceSecurity?.attendanceGeoFenceEnabled
-  ].filter(Boolean).length;
-  if (enabledModesCount > 1) {
-    throwHttpError(400, "Invalid attendance check-in policy: only one restriction mode can be enabled");
-  }
-
   if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceIpEnabled) {
     if (!isAllowedIp(checkInIp, attendanceSecurity.attendanceAllowedIp)) {
       throwHttpError(
@@ -1785,7 +1776,9 @@ exports.checkIn = async (req) => {
     const officeLat = Number(attendanceSecurity.attendanceGeoLatitude);
     const officeLng = Number(attendanceSecurity.attendanceGeoLongitude);
     const radiusMeters = Number(attendanceSecurity.attendanceGeoRadiusMeters || 200);
-    if (!Number.isFinite(checkInLatitude) || !Number.isFinite(checkInLongitude)) {
+    const employeeLat = Number(checkInLatitude);
+    const employeeLng = Number(checkInLongitude);
+    if (!Number.isFinite(employeeLat) || !Number.isFinite(employeeLng)) {
       throwHttpError(403, "Location access is required for check-in");
     }
     if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng)) {
@@ -1794,8 +1787,8 @@ exports.checkIn = async (req) => {
     const distanceMeters = getDistanceMeters(
       officeLat,
       officeLng,
-      Number(checkInLatitude),
-      Number(checkInLongitude)
+      employeeLat,
+      employeeLng
     );
     if (distanceMeters > radiusMeters) {
       throwHttpError(403, `You are outside office geofence. Allowed radius is ${radiusMeters} meters.`);
@@ -1980,13 +1973,17 @@ exports.checkIn = async (req) => {
 exports.getCheckInPolicy = async (req) => {
   const settings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
     .select(
-      "attendanceIpEnabled attendanceSelfieRequired attendanceGeoFenceEnabled attendanceGeoRadiusMeters"
+      "attendanceIpEnabled attendanceSelfieRequired attendanceGeoFenceEnabled attendanceGeoLatitude attendanceGeoLongitude attendanceGeoRadiusMeters"
     );
+  const localGeoFenceFallbackEnabled = process.env.NODE_ENV !== "production";
 
   return {
     attendanceIpEnabled: Boolean(settings?.attendanceIpEnabled),
     attendanceSelfieRequired: Boolean(settings?.attendanceSelfieRequired),
     attendanceGeoFenceEnabled: Boolean(settings?.attendanceGeoFenceEnabled),
+    attendanceGeoLatitude: localGeoFenceFallbackEnabled ? settings?.attendanceGeoLatitude ?? null : null,
+    attendanceGeoLongitude: localGeoFenceFallbackEnabled ? settings?.attendanceGeoLongitude ?? null : null,
+    localGeoFenceFallbackEnabled,
     attendanceGeoRadiusMeters: Number(settings?.attendanceGeoRadiusMeters || 200)
   };
 };
