@@ -110,6 +110,11 @@ exports.raiseAttendanceRequest = async (req, res) => {
   res.status(201).json(buildNormalizedSuccessResponse({ message: "Attendance request raised", data }));
 };
 
+exports.attendanceRequestDefaults = async (req, res) => {
+  const data = await service.getAttendanceRequestDefaults(req);
+  res.status(200).json(buildNormalizedSuccessResponse({ data }));
+};
+
 exports.myAttendanceRequests = async (req, res) => {
   const data = await service.getMyAttendanceRequests(req);
   res.status(200).json(buildNormalizedSuccessResponse({ data }));

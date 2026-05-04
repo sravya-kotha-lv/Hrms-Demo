@@ -174,7 +174,7 @@ type AttendanceRequest = {
   _id: string;
   _actionId?: string;
   date: string;
-  requestType: "missed_checkout" | "correction";
+  requestType: "missed_checkout" | "correction" | "work_from_home";
   requestedCheckInTime?: string | null;
   requestedCheckOutTime?: string | null;
   reason: string;
@@ -211,6 +211,13 @@ const normalizeRoleKey = (value: string | null | undefined) =>
     .toLowerCase()
     .replace(/[_\s]+/g, "-")
     .replace(/-+/g, "-");
+
+type AttendanceRequestType = AttendanceRequest["requestType"];
+
+const getAttendanceRequestTypeLabel = (requestType: string | null | undefined) =>
+  String(requestType || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || "-";
 
 const approvalProgressLabel = (request: AttendanceRequest) => {
   const steps = Array.isArray(request.approvalSteps) ? request.approvalSteps : [];
@@ -356,7 +363,7 @@ const Timesheets = () => {
   const [attendanceRequestLoading, setAttendanceRequestLoading] = useState(false);
   const [attendanceRequestForm, setAttendanceRequestForm] = useState({
     date: toDateKeyInOrgTimeZone(new Date()),
-    requestType: "missed_checkout" as "missed_checkout" | "correction",
+    requestType: "missed_checkout" as AttendanceRequestType,
     requestedCheckInTime: "",
     requestedCheckOutTime: "",
     reason: ""
@@ -651,6 +658,11 @@ const Timesheets = () => {
     loadMyAttendanceRequests(myAttendanceRequestsPage);
   }, [loadMyAttendanceRequests, myAttendanceRequestsPage]);
 
+  useEffect(() => {
+    if (!attendanceRequestOpen || attendanceRequestForm.requestType !== "work_from_home") return;
+    applyWfhShiftDefaults(attendanceRequestForm.date);
+  }, [attendanceRequestOpen, attendanceRequestForm.requestType, attendanceRequestForm.date]);
+
   const handleTeamTimesheetsScroll = () => {
     const viewport = teamTableViewportRef.current;
     if (!viewport || weekLoading || teamLoadingMore || teamLoadingMoreRef.current || !hasMoreTeamTimesheets || viewMode !== "all" || !showTeamTimesheets) {
@@ -695,6 +707,28 @@ const Timesheets = () => {
     });
   };
 
+  const applyWfhShiftDefaults = async (date: string) => {
+    if (!date) return;
+    const res = await getApiWithToken(
+      `/timesheets/attendance/requests/defaults/my?date=${date}&requestType=work_from_home`,
+      null,
+      { requiredPermissions: ["TIMESHEET_VIEW_SELF"] }
+    );
+    if (res?.skipped) return;
+    if (res?.success) {
+      setAttendanceRequestForm((prev) => {
+        if (prev.requestType !== "work_from_home" || prev.date !== date) return prev;
+        return {
+          ...prev,
+          requestedCheckInTime: res.data?.requestedCheckInTime || "",
+          requestedCheckOutTime: res.data?.requestedCheckOutTime || ""
+        };
+      });
+    } else {
+      toast.error(res?.message || "Failed to fetch shift timings");
+    }
+  };
+
   const submitAttendanceRequest = async () => {
     if (!attendanceRequestForm.reason.trim()) {
       toast.error("Reason is required");
@@ -713,6 +747,13 @@ const Timesheets = () => {
       !attendanceRequestForm.requestedCheckOutTime
     ) {
       toast.error("Provide check-in or check-out time");
+      return;
+    }
+    if (
+      attendanceRequestForm.requestType === "work_from_home" &&
+      (!attendanceRequestForm.requestedCheckInTime || !attendanceRequestForm.requestedCheckOutTime)
+    ) {
+      toast.error("Shift check-in and check-out times are required for WFH");
       return;
     }
     setAttendanceRequestLoading(true);
@@ -1018,7 +1059,7 @@ const Timesheets = () => {
               {myAttendanceRequests.map((r) => (
                 <TableRow key={r._actionId || toIdString(r._id)} className="table-row-hover">
                   <TableCell>{formatDateKeyInOrgCalendar(r.date)}</TableCell>
-                  <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
+                  <TableCell>{getAttendanceRequestTypeLabel(r.requestType)}</TableCell>
                   <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
                   <TableCell>{getStatusBadge(getAttendanceRequestStatus(r))}</TableCell>
                   <TableCell className="max-w-[260px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
@@ -1081,7 +1122,7 @@ const Timesheets = () => {
                       : "-"}
                   </TableCell>
                   <TableCell>{formatDateKeyInOrgCalendar(r.date)}</TableCell>
-                  <TableCell className="capitalize">{r.requestType.replace("_", " ")}</TableCell>
+                  <TableCell>{getAttendanceRequestTypeLabel(r.requestType)}</TableCell>
                   <TableCell>{r.requestedCheckInTime || "-"} / {r.requestedCheckOutTime || "-"}</TableCell>
                   <TableCell className="max-w-[240px] truncate text-xs text-muted-foreground" title={approvalProgressLabel(r)}>
                     {approvalProgressLabel(r)}
@@ -1461,17 +1502,19 @@ const Timesheets = () => {
             <select
               className="form-input"
               value={attendanceRequestForm.requestType}
-              onChange={(e) =>
+              onChange={(e) => {
+                const nextType = e.target.value as AttendanceRequestType;
                 setAttendanceRequestForm((prev) => ({
                   ...prev,
-                  requestType: e.target.value as "missed_checkout" | "correction",
-                  requestedCheckInTime:
-                    e.target.value === "missed_checkout" ? "" : prev.requestedCheckInTime
-                }))
-              }
+                  requestType: nextType,
+                  requestedCheckInTime: nextType === "missed_checkout" ? "" : prev.requestedCheckInTime,
+                  requestedCheckOutTime: nextType === "work_from_home" ? "" : prev.requestedCheckOutTime
+                }));
+              }}
             >
               <option value="missed_checkout">Missed Checkout</option>
               <option value="correction">Correction</option>
+              <option value="work_from_home">Work From Home</option>
             </select>
             <Input
               type="time"
@@ -1480,7 +1523,7 @@ const Timesheets = () => {
                 setAttendanceRequestForm((prev) => ({ ...prev, requestedCheckInTime: e.target.value }))
               }
               placeholder="Requested check-in time"
-              disabled={attendanceRequestForm.requestType === "missed_checkout"}
+              disabled={attendanceRequestForm.requestType === "missed_checkout" || attendanceRequestForm.requestType === "work_from_home"}
             />
             <Input
               type="time"
@@ -1489,12 +1532,15 @@ const Timesheets = () => {
                 setAttendanceRequestForm((prev) => ({ ...prev, requestedCheckOutTime: e.target.value }))
               }
               placeholder="Requested check-out time"
+              disabled={attendanceRequestForm.requestType === "work_from_home"}
             />
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             {attendanceRequestForm.requestType === "missed_checkout"
               ? "Provide the missing check-out time. Check-in time is taken from existing attendance."
-              : "Provide one or both times to request correction."}
+              : attendanceRequestForm.requestType === "work_from_home"
+                ? "Shift check-in and check-out are fetched automatically for WFH. Once approved, the day is marked present."
+                : "Provide one or both times to request correction."}
           </p>
           {attendanceRequestForm.requestType === "correction" && attendanceToday?.checkOutAt && (
             <p className="text-xs text-sky-700 mt-1">
@@ -1531,7 +1577,7 @@ const Timesheets = () => {
           {selectedAttendanceRequest && (
             <div className="space-y-3 text-sm overflow-hidden">
               <p><span className="font-medium">Date:</span> {formatDateKeyInOrgCalendar(selectedAttendanceRequest.date)}</p>
-              <p><span className="font-medium">Type:</span> {selectedAttendanceRequest.requestType.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())}</p>
+              <p><span className="font-medium">Type:</span> {getAttendanceRequestTypeLabel(selectedAttendanceRequest.requestType)}</p>
               <p><span className="font-medium">Requested Check-in:</span> {selectedAttendanceRequest.requestedCheckInTime || "-"}</p>
               <p><span className="font-medium">Requested Check-out:</span> {selectedAttendanceRequest.requestedCheckOutTime || "-"}</p>
               <p><span className="font-medium">Status:</span> {String(selectedAttendanceRequest.status || "pending").replace(/\b\w/g, (char) => char.toUpperCase())}</p>
