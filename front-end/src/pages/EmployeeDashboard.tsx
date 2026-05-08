@@ -856,8 +856,24 @@ const EmployeeDashboard = () => {
   };
 
   const handleCheckOut = async () => {
+    const payload: Record<string, unknown> = {};
+
+    if (checkInPolicy.attendanceSelfieRequired) {
+      let selfieImage: string | null = null;
+      try {
+        selfieImage = await captureSelfieFromCamera();
+      } catch {
+        selfieImage = null;
+      }
+      if (!selfieImage) {
+        toast.error("Selfie capture is required for check-out");
+        return;
+      }
+      payload.selfieImage = selfieImage;
+    }
+
     setCheckoutLoading(true);
-    const res = await postApiWithToken("/timesheets/check-out", {}, null, {
+    const res = await postApiWithToken("/timesheets/check-out", payload, null, {
       requiredPermissions: ["TIMESHEET_CHECKOUT_SELF"]
     });
     setCheckoutLoading(false);

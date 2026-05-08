@@ -7,6 +7,7 @@ const asyncHandler = require("../../middlewares/asyncHandler");
 const controller = require("./timesheet.controller");
 const {
   checkInSchema,
+  checkOutSchema,
   createWeeklySchema,
   updateWeeklySchema,
   submitWeeklySchema,
@@ -32,6 +33,7 @@ router.post(
   "/check-out",
   auth,
   authorize("TIMESHEET_CHECKOUT_SELF"),
+  validate(checkOutSchema),
   asyncHandler(controller.checkOut)
 );
 

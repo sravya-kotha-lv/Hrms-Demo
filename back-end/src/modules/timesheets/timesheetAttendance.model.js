@@ -51,6 +51,18 @@ const timesheetAttendanceSchema = new mongoose.Schema(
     },
 
     checkOutAt: Date,
+    checkOutIp: {
+      type: String,
+      default: null
+    },
+    checkOutSelfieProvided: {
+      type: Boolean,
+      default: false
+    },
+    checkOutSelfieImage: {
+      type: String,
+      default: null
+    },
 
     totalMinutes: {
       type: Number,

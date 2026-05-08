@@ -26,7 +26,7 @@ import { useAuth } from "@/context/useAuth";
 import { toast } from "sonner";
 import { formatDateKeyInOrgCalendar, formatDateTimeInOrgTimeZone, formatTimeInOrgTimeZone } from "@/utils/timezone";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowUpDown, CalendarDays } from "lucide-react";
+import { ArrowUpDown, CalendarDays, Camera, Clock, ShieldCheck } from "lucide-react";
 
 type DayCell = {
   status: "present" | "half_day_present" | "full_day_present" | "absent" | "pending_checkout";
@@ -40,7 +40,9 @@ type DayCell = {
   workedMinutes?: number;
   workedDuration?: string;
   checkInIp?: string | null;
+  checkOutIp?: string | null;
   checkInSelfieProvided?: boolean;
+  checkOutSelfieProvided?: boolean;
   isOpenSession?: boolean;
   excludeFromPayroll?: boolean;
   payrollReconciledByLeave?: boolean;
@@ -98,8 +100,11 @@ type AttendanceSnapshot = {
   checkInAt?: string | null;
   checkOutAt?: string | null;
   checkInIp?: string | null;
+  checkOutIp?: string | null;
   checkInSelfieProvided?: boolean;
   checkInSelfieImage?: string | null;
+  checkOutSelfieProvided?: boolean;
+  checkOutSelfieImage?: string | null;
 } | null;
 
 type ApprovedLeaveDetail = {
@@ -140,6 +145,8 @@ type LockAttendanceMeta = {
   reason: string | null;
   snapshotGenerated?: boolean;
 };
+
+type AttendanceOverrideStatus = "present" | "half_day_present" | "absent";
 
 const toEmployeeIdString = (value: unknown): string => {
   if (!value) return "";
@@ -200,7 +207,9 @@ const emptyCell: DayCell = {
   checkInAt: null,
   checkOutAt: null,
   checkInIp: null,
+  checkOutIp: null,
   checkInSelfieProvided: false,
+  checkOutSelfieProvided: false,
   isOpenSession: false,
   excludeFromPayroll: false,
   payrollReconciledByLeave: false,
@@ -219,6 +228,12 @@ const emptyCell: DayCell = {
 
 const isPresentLikeStatus = (status?: string | null) =>
   status === "present" || status === "half_day_present" || status === "full_day_present";
+
+const getAttendanceOverrideLabel = (status: AttendanceOverrideStatus) => {
+  if (status === "half_day_present") return "Half Day";
+  if (status === "present") return "Present";
+  return "Absent";
+};
 
 const formatMinutesAsDuration = (minutes?: number | null) => {
   const totalMinutes = Math.max(0, Number(minutes || 0));
@@ -320,11 +335,11 @@ const Attendance = () => {
   const [open, setOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const [selectedStatus, setSelectedStatus] = useState<"present" | "absent">("present");
+  const [selectedStatus, setSelectedStatus] = useState<AttendanceOverrideStatus>("present");
   const [saving, setSaving] = useState(false);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [bulkDate, setBulkDate] = useState("");
-  const [bulkStatus, setBulkStatus] = useState<"present" | "absent">("present");
+  const [bulkStatus, setBulkStatus] = useState<AttendanceOverrideStatus>("present");
   const [bulkSaving, setBulkSaving] = useState(false);
   const [showBulkControls, setShowBulkControls] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -492,6 +507,9 @@ const Attendance = () => {
     if (selectedStatus === "present") {
       return selectedCell?.displayStatus === "Present";
     }
+    if (selectedStatus === "half_day_present") {
+      return selectedCell?.displayStatus === "Half Day";
+    }
     return false;
   }, [selectedAttendanceSnapshot, selectedCell, selectedStatus]);
   const activityTimeline = useMemo(
@@ -535,7 +553,7 @@ const Attendance = () => {
     if (cell.isFuture || cell.isWeekOff) return;
     setSelectedEmployee(row);
     setSelectedDay(day);
-    setSelectedStatus(cell.isThresholdQualified ? "present" : "absent");
+    setSelectedStatus(cell.status === "half_day_present" ? "half_day_present" : cell.isThresholdQualified ? "present" : "absent");
     setOpen(true);
     setHistory([]);
     setSelectedAttendanceSnapshot(null);
@@ -566,7 +584,7 @@ const Attendance = () => {
   const saveOverride = async () => {
     if (!selectedEmployee || !selectedDay) return;
     if (isNoOpOverride) {
-      toast.info(`Attendance is already marked as ${selectedStatus}`);
+      toast.info(`Attendance is already marked as ${getAttendanceOverrideLabel(selectedStatus)}`);
       return;
     }
     const date = `${month}-${String(selectedDay).padStart(2, "0")}`;
@@ -630,10 +648,16 @@ const Attendance = () => {
       parts.push(`Worked: ${cell.workedDuration}`);
     }
     if (!hideTimings && canViewSelfieData && (cell.checkInAt || cell.checkOutAt)) {
-      parts.push(`Selfie: ${cell.checkInSelfieProvided ? "Yes" : "No"}`);
+      const selfieParts = [];
+      if (cell.checkInAt) selfieParts.push(`In ${cell.checkInSelfieProvided ? "Yes" : "No"}`);
+      if (cell.checkOutAt) selfieParts.push(`Out ${cell.checkOutSelfieProvided ? "Yes" : "No"}`);
+      parts.push(`Selfie: ${selfieParts.join(", ") || "No"}`);
     }
-    if (!hideTimings && canViewSelfieData && cell.checkInIp) {
-      parts.push(`IP: ${cell.checkInIp}`);
+    if (!hideTimings && canViewSelfieData && (cell.checkInIp || cell.checkOutIp)) {
+      const ipParts = [];
+      if (cell.checkInIp) ipParts.push(`In ${cell.checkInIp}`);
+      if (cell.checkOutIp) ipParts.push(`Out ${cell.checkOutIp}`);
+      parts.push(`IP: ${ipParts.join(", ")}`);
     }
     if (cell.shiftName || cell.shiftCode) {
       parts.push(`Shift: ${cell.shiftName || ""}${cell.shiftCode ? ` (${cell.shiftCode})` : ""}`);
@@ -1020,11 +1044,17 @@ const Attendance = () => {
                                     {canViewSelfieData && (
                                       <>
                                         <p className="text-xs text-muted-foreground">
-                                          Selfie: {cell.checkInSelfieProvided ? "Yes" : "No"}
+                                          Selfie: In {cell.checkInSelfieProvided ? "Yes" : "No"}
+                                          {cell.checkOutAt ? ` / Out ${cell.checkOutSelfieProvided ? "Yes" : "No"}` : ""}
                                         </p>
                                         {cell.checkInIp && (
                                           <p className="text-xs text-muted-foreground">
                                             Check-in IP: {cell.checkInIp}
+                                          </p>
+                                        )}
+                                        {cell.checkOutIp && (
+                                          <p className="text-xs text-muted-foreground">
+                                            Check-out IP: {cell.checkOutIp}
                                           </p>
                                         )}
                                       </>
@@ -1140,12 +1170,13 @@ const Attendance = () => {
                           onChange={(e) => setBulkDate(e.target.value)}
                           className="h-12 w-full bg-white/90"
                         />
-                        <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as "present" | "absent")}>
+                        <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as AttendanceOverrideStatus)}>
                           <SelectTrigger className="h-12 w-full bg-white/90">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="present">Present</SelectItem>
+                            <SelectItem value="half_day_present">Half Day</SelectItem>
                             <SelectItem value="absent">Absent</SelectItem>
                           </SelectContent>
                         </Select>
@@ -1414,56 +1445,106 @@ const Attendance = () => {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{canEdit ? "Update Attendance" : "Attendance Details"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
+        <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b bg-white px-6 py-5">
+            <DialogTitle className="text-xl">{canEdit ? "Update Attendance" : "Attendance Details"}</DialogTitle>
+            <p className="pt-1 text-sm text-muted-foreground">
               {selectedEmployee
                 ? `${selectedEmployee.firstName} ${selectedEmployee.lastName} - ${month}-${String(selectedDay || 1).padStart(2, "0")}`
                 : ""}
             </p>
+          </DialogHeader>
+          <div className="max-h-[68vh] space-y-4 overflow-y-auto bg-slate-50/60 px-6 py-5">
             {canEdit && (
-              <Select
-                value={selectedStatus}
-                onValueChange={(v) => setSelectedStatus(v as "present" | "absent")}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="present">Present</SelectItem>
-                  <SelectItem value="absent">Absent</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Attendance Status
+                </label>
+                <Select
+                  value={selectedStatus}
+                  onValueChange={(v) => setSelectedStatus(v as AttendanceOverrideStatus)}
+                >
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="present">Present</SelectItem>
+                    <SelectItem value="half_day_present">Half Day</SelectItem>
+                    <SelectItem value="absent">Absent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             )}
-            <div className="rounded-md border p-3 max-h-40 overflow-auto">
+            <div className="space-y-4">
               {canViewSelfieData && selectedAttendanceSnapshot && (
-                <div className="mb-2 pb-2 border-b">
-                  <p className="text-xs text-muted-foreground">
-                    Selfie captured: {selectedAttendanceSnapshot.checkInSelfieProvided ? "Yes" : "No"}
-                  </p>
-                  {selectedAttendanceSnapshot.checkInIp && (
-                    <p className="text-xs text-muted-foreground">
-                      Check-in IP: {selectedAttendanceSnapshot.checkInIp}
-                    </p>
-                  )}
-                  {selectedAttendanceSnapshot.checkInSelfieImage && (
-                    <div className="mt-2">
-                      <p className="text-xs text-muted-foreground mb-1">Selfie proof:</p>
-                      <img
-                        src={selectedAttendanceSnapshot.checkInSelfieImage}
-                        alt="Selfie proof"
-                        className="max-h-44 rounded border object-contain bg-slate-50"
-                      />
+                <section className="rounded-lg border bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                    <h3 className="text-sm font-semibold text-slate-900">Selfie Verification</h3>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="overflow-hidden rounded-lg border bg-slate-50">
+                      <div className="flex items-center justify-between border-b bg-white px-3 py-2">
+                        <span className="text-sm font-medium text-slate-800">Check-in</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          selectedAttendanceSnapshot.checkInSelfieProvided
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-100 text-slate-600"
+                        }`}>
+                          {selectedAttendanceSnapshot.checkInSelfieProvided ? "Captured" : "Not captured"}
+                        </span>
+                      </div>
+                      {selectedAttendanceSnapshot.checkInSelfieImage ? (
+                        <img
+                          src={selectedAttendanceSnapshot.checkInSelfieImage}
+                          alt="Check-in selfie proof"
+                          className="h-52 w-full object-contain bg-slate-100"
+                        />
+                      ) : (
+                        <div className="flex h-52 items-center justify-center text-slate-400">
+                          <Camera className="h-7 w-7" />
+                        </div>
+                      )}
+                      {(selectedAttendanceSnapshot.checkInIp || selectedAttendanceSnapshot.checkOutIp) && (
+                        <p className="border-t bg-white px-3 py-2 text-xs text-slate-500">
+                          Check-in IP: {selectedAttendanceSnapshot.checkInIp || "-"}
+                        </p>
+                      )}
                     </div>
-                  )}
-                </div>
+                    <div className="overflow-hidden rounded-lg border bg-slate-50">
+                      <div className="flex items-center justify-between border-b bg-white px-3 py-2">
+                        <span className="text-sm font-medium text-slate-800">Check-out</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          selectedAttendanceSnapshot.checkOutSelfieProvided
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-100 text-slate-600"
+                        }`}>
+                          {selectedAttendanceSnapshot.checkOutSelfieProvided ? "Captured" : "Not captured"}
+                        </span>
+                      </div>
+                      {selectedAttendanceSnapshot.checkOutSelfieImage ? (
+                        <img
+                          src={selectedAttendanceSnapshot.checkOutSelfieImage}
+                          alt="Check-out selfie proof"
+                          className="h-52 w-full object-contain bg-slate-100"
+                        />
+                      ) : (
+                        <div className="flex h-52 items-center justify-center text-slate-400">
+                          <Camera className="h-7 w-7" />
+                        </div>
+                      )}
+                      {(selectedAttendanceSnapshot.checkInIp || selectedAttendanceSnapshot.checkOutIp) && (
+                        <p className="border-t bg-white px-3 py-2 text-xs text-slate-500">
+                          Check-out IP: {selectedAttendanceSnapshot.checkOutIp || "-"}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </section>
               )}
               {(selectedLeaveDetail || selectedCell?.isOnLeave) && (
-                <div className="mb-2 pb-2 border-b">
-                  <p className="text-xs font-medium mb-1">Approved Leave</p>
+                <section className="rounded-lg border bg-white p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-slate-900 mb-2">Approved Leave</p>
                   <p className="text-xs text-muted-foreground">
                     Type: {selectedLeaveDetail?.leaveType || selectedCell?.leaveType || "Leave"}
                   </p>
@@ -1490,11 +1571,11 @@ const Attendance = () => {
                       Reason: {selectedLeaveDetail.reason}
                     </p>
                   )}
-                </div>
+                </section>
               )}
               {selectedAttendanceRequestDetail && (
-                <div className="mb-2 pb-2 border-b">
-                  <p className="text-xs font-medium mb-1">Attendance Request</p>
+                <section className="rounded-lg border bg-white p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-slate-900 mb-2">Attendance Request</p>
                   <p className="text-xs text-muted-foreground">
                     Type: {selectedAttendanceRequestDetail.requestType === "missed_checkout" ? "Missed Checkout" : selectedAttendanceRequestDetail.requestType === "work_from_home" ? "Work From Home" : "Correction"}
                   </p>
@@ -1533,11 +1614,15 @@ const Attendance = () => {
                       Rejection reason: {selectedAttendanceRequestDetail.rejectionReason}
                     </p>
                   )}
-                </div>
+                </section>
               )}
               {selectedCell && (
-                <div className="mb-2 pb-2 border-b">
-                  <p className="text-xs font-medium mb-1">Attendance Details</p>
+                <section className="rounded-lg border bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-slate-500" />
+                    <h3 className="text-sm font-semibold text-slate-900">Attendance Details</h3>
+                  </div>
+                  <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
                   {selectedCell.shiftName || selectedCell.shiftCode ? (
                     <p className="text-xs text-muted-foreground">
                       Shift: {selectedCell.shiftName || ""}{selectedCell.shiftCode ? ` (${selectedCell.shiftCode})` : ""}
@@ -1585,21 +1670,24 @@ const Attendance = () => {
                       Overridden at: {formatDateTimeInOrgTimeZone(selectedCell.overriddenAt)}
                     </p>
                   ) : null}
-                </div>
+                  </div>
+                </section>
               )}
-              <p className="text-xs font-medium mb-2">Activity Timeline</p>
-              {historyLoading && <p className="text-xs text-muted-foreground">Loading...</p>}
-              {!historyLoading && activityTimeline.length === 0 && (
-                <p className="text-xs text-muted-foreground">No activity found.</p>
-              )}
-              {!historyLoading && activityTimeline.map((h, idx) => (
-                <p key={`${h.createdAt}-${idx}`} className="text-xs mb-1">
-                  {formatDateTimeInOrgTimeZone(h.createdAt)} - {formatActivityAction(h.action)} by {h.actor}
-                </p>
-              ))}
+              <section className="rounded-lg border bg-white p-4 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900 mb-2">Activity Timeline</p>
+                {historyLoading && <p className="text-xs text-muted-foreground">Loading...</p>}
+                {!historyLoading && activityTimeline.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No activity found.</p>
+                )}
+                {!historyLoading && activityTimeline.map((h, idx) => (
+                  <p key={`${h.createdAt}-${idx}`} className="text-xs mb-1 text-slate-600">
+                    {formatDateTimeInOrgTimeZone(h.createdAt)} - {formatActivityAction(h.action)} by {h.actor}
+                  </p>
+                ))}
+              </section>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="border-t bg-white px-6 py-4">
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>

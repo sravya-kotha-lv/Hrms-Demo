@@ -758,6 +758,7 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
     // Keep last checkout of the day.
     if (currentCheckOut && (!existingCheckOut || currentCheckOut > existingCheckOut)) {
       existing.checkOutAt = source.checkOutAt;
+      existing.checkOutIp = source.checkOutIp || existing.checkOutIp || null;
     }
 
     existing.totalMinutes = Math.max(
@@ -768,6 +769,10 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
       existing.checkInSelfieProvided || source.checkInSelfieProvided
     );
     existing.checkInSelfieImage = existing.checkInSelfieImage || source.checkInSelfieImage || null;
+    existing.checkOutSelfieProvided = Boolean(
+      existing.checkOutSelfieProvided || source.checkOutSelfieProvided
+    );
+    existing.checkOutSelfieImage = existing.checkOutSelfieImage || source.checkOutSelfieImage || null;
     existing.shiftId = existing.shiftId || source.shiftId || null;
     existing.shiftName = existing.shiftName || source.shiftName || null;
     existing.shiftCode = existing.shiftCode || source.shiftCode || null;
@@ -1078,7 +1083,68 @@ const isNoOpAttendanceOverride = ({
     return currentStatus === "present" || currentStatus === "full_day_present";
   }
 
+  if (targetStatus === "half_day_present") {
+    if (!existingAttendance) return false;
+    const currentStatus = resolveAttendanceMatrixStatus(existingAttendance, {
+      minHalfDayHours,
+      minWorkHoursPerDay
+    });
+    return currentStatus === "half_day_present";
+  }
+
   return false;
+};
+
+const formatAttendanceOverrideStatus = (status) => {
+  if (status === "half_day_present") return "Half Day";
+  if (status === "present") return "Present";
+  return "Absent";
+};
+
+const buildAttendanceOverrideUpdate = ({
+  status,
+  actorEmployeeId,
+  shift,
+  scheduledStartAt,
+  scheduledEndAt,
+  shiftMinutes,
+  minHalfDayHours = 4
+}) => {
+  const defaultCheckIn = new Date(scheduledStartAt);
+  const defaultCheckOut = new Date(scheduledEndAt);
+  const halfDayMinutes = Math.max(1, Math.round(Number(minHalfDayHours || 0) * 60));
+  const halfDayCheckOut = new Date(defaultCheckIn.getTime() + halfDayMinutes * 60000);
+  const attendanceMinutes = status === "present"
+    ? shiftMinutes
+    : status === "half_day_present"
+      ? halfDayMinutes
+      : 0;
+
+  return {
+    checkInAt: status === "absent" ? null : defaultCheckIn,
+    checkOutAt: status === "present" ? defaultCheckOut : status === "half_day_present" ? halfDayCheckOut : null,
+    checkOutSelfieProvided: false,
+    checkOutIp: null,
+    checkOutSelfieImage: null,
+    totalMinutes: attendanceMinutes,
+    status: "checked_out",
+    overriddenBy: actorEmployeeId || null,
+    overriddenAt: new Date(),
+    shiftId: shift._id || null,
+    shiftName: shift.name,
+    shiftCode: shift.code,
+    shiftStartTime: shift.startTime,
+    shiftEndTime: shift.endTime,
+    scheduledStartAt,
+    scheduledEndAt,
+    lateByMinutes: 0,
+    earlyLoginByMinutes: 0,
+    earlyCheckoutByMinutes: status === "half_day_present" ? Math.max(0, shiftMinutes - halfDayMinutes) : 0,
+    overtimeMinutes: 0,
+    missedCheckout: false,
+    missedCheckoutMarkedAt: null,
+    missedCheckoutResolvedRequestId: null
+  };
 };
 
 const isThresholdQualifiedAttendance = (status) =>
@@ -1891,6 +1957,9 @@ exports.checkIn = async (req) => {
     checkInLongitude: Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null,
     checkInSelfieProvided,
     checkInSelfieImage,
+    checkOutSelfieProvided: false,
+    checkOutIp: null,
+    checkOutSelfieImage: null,
     status: "checked_in",
     shiftId: effectiveShift._id || null,
     shiftName: effectiveShift.name,
@@ -1942,6 +2011,9 @@ exports.checkIn = async (req) => {
     existing.checkInLongitude = Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null;
     existing.checkInSelfieProvided = checkInSelfieProvided;
     existing.checkInSelfieImage = checkInSelfieImage;
+    existing.checkOutSelfieProvided = false;
+    existing.checkOutIp = null;
+    existing.checkOutSelfieImage = null;
     existing.totalMinutes = 0;
     existing.status = "checked_in";
     existing.overriddenBy = null;
@@ -1991,7 +2063,34 @@ exports.getCheckInPolicy = async (req) => {
 exports.checkOut = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const now = new Date();
+  const checkOutIp = getRequestIp(req);
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const attendanceSecurity = await OrgSettings.findOne({ organizationId: req.user.organizationId })
+    .select("attendanceSelfieRequired attendanceDevBypassEnabled");
+  const shouldBypassPolicyChecks = process.env.NODE_ENV !== "production"
+    && Boolean(attendanceSecurity?.attendanceDevBypassEnabled);
+  const checkOutSelfieImage = req.body?.selfieImage || null;
+  const checkOutSelfieProvided = Boolean(req.body?.selfieImage);
+
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && !checkOutSelfieProvided) {
+    throwHttpError(403, "Selfie is required for check-out");
+  }
+
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && checkOutSelfieProvided) {
+    if (!employee?.profileImage) {
+      throwHttpError(400, "Profile photo is not available. Contact admin before selfie check-out.");
+    }
+    const faceResult = await compareFacesWithFacePP({
+      profileImageUrl: employee.profileImage,
+      selfieImage: checkOutSelfieImage
+    });
+    if (!faceResult.passed) {
+      throwHttpError(
+        403,
+        `Face match failed (confidence ${faceResult.confidence.toFixed(2)}). Check-out denied.`
+      );
+    }
+  }
 
   const openAttendance = await Attendance.findOne({
     organizationId: req.user.organizationId,
@@ -2058,6 +2157,9 @@ exports.checkOut = async (req) => {
   );
 
   attendance.checkOutAt = now;
+  attendance.checkOutIp = checkOutIp || null;
+  attendance.checkOutSelfieProvided = checkOutSelfieProvided;
+  attendance.checkOutSelfieImage = checkOutSelfieImage;
   if (normalizedAttendanceDate) {
     attendance.date = normalizedAttendanceDate;
     attendance.dateKey = normalizedAttendanceDateKey;
@@ -2279,7 +2381,7 @@ exports.getAttendanceMatrix = async (req) => {
         organizationTimeZone
       )
     )
-      .select("employeeId date checkInAt checkOutAt checkInIp checkInSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
+      .select("employeeId date checkInAt checkOutAt checkInIp checkOutIp checkInSelfieProvided checkOutSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
       .populate("overriddenBy", "firstName lastName"),
     Holiday.find({
       organizationId: req.user.organizationId,
@@ -2344,7 +2446,9 @@ exports.getAttendanceMatrix = async (req) => {
       checkInAt: row.checkInAt || null,
       checkOutAt: row.checkOutAt || null,
       checkInIp: canViewSelfie ? (row.checkInIp || null) : null,
+      checkOutIp: canViewSelfie ? (row.checkOutIp || null) : null,
       checkInSelfieProvided: canViewSelfie ? Boolean(row.checkInSelfieProvided) : false,
+      checkOutSelfieProvided: canViewSelfie ? Boolean(row.checkOutSelfieProvided) : false,
       totalMinutes: Number(row.totalMinutes || 0),
       isOpenSession,
       excludeFromPayroll: isOpenSession,
@@ -2422,7 +2526,9 @@ exports.getAttendanceMatrix = async (req) => {
         checkInAt: null,
         checkOutAt: null,
         checkInIp: null,
+        checkOutIp: null,
         checkInSelfieProvided: false,
+        checkOutSelfieProvided: false,
         isOpenSession: false,
         excludeFromPayroll: false,
         payrollReconciledByLeave: false,
@@ -2506,7 +2612,7 @@ exports.getMyAttendanceMatrix = async (req) => {
         organizationTimeZone
       )
     )
-      .select("employeeId date checkInAt checkOutAt checkInIp checkInSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
+      .select("employeeId date checkInAt checkOutAt checkInIp checkOutIp checkInSelfieProvided checkOutSelfieProvided totalMinutes overriddenBy overriddenAt shiftName shiftCode shiftStartTime shiftEndTime lateByMinutes earlyLoginByMinutes earlyCheckoutByMinutes overtimeMinutes missedCheckout missedCheckoutMarkedAt")
       .populate("overriddenBy", "firstName lastName"),
     Holiday.find({
       organizationId: req.user.organizationId,
@@ -2558,7 +2664,9 @@ exports.getMyAttendanceMatrix = async (req) => {
       checkInAt: null,
       checkOutAt: null,
       checkInIp: null,
+      checkOutIp: null,
       checkInSelfieProvided: false,
+      checkOutSelfieProvided: false,
       isOpenSession: false,
       excludeFromPayroll: false,
       payrollReconciledByLeave: false,
@@ -2603,7 +2711,9 @@ exports.getMyAttendanceMatrix = async (req) => {
       checkInAt: row.checkInAt || null,
       checkOutAt: row.checkOutAt || null,
       checkInIp: canViewSelfie ? (row.checkInIp || null) : null,
+      checkOutIp: canViewSelfie ? (row.checkOutIp || null) : null,
       checkInSelfieProvided: canViewSelfie ? Boolean(row.checkInSelfieProvided) : false,
+      checkOutSelfieProvided: canViewSelfie ? Boolean(row.checkOutSelfieProvided) : false,
       totalMinutes: Number(row.totalMinutes || 0),
       isOpenSession,
       excludeFromPayroll: isOpenSession,
@@ -2781,7 +2891,10 @@ exports.getAttendanceCellHistory = async (req) => {
   if (!canViewSelfie) {
     attendanceData.checkInSelfieProvided = false;
     attendanceData.checkInSelfieImage = null;
+    attendanceData.checkOutSelfieProvided = false;
+    attendanceData.checkOutSelfieImage = null;
     attendanceData.checkInIp = null;
+    attendanceData.checkOutIp = null;
   }
 
   const history = await AuditLog.find({
@@ -3405,7 +3518,7 @@ exports.overrideAttendance = async (req) => {
     throw {
       code: 400,
       statusCode: 400,
-      message: `Attendance is already marked as ${status}`
+      message: `Attendance is already marked as ${formatAttendanceOverrideStatus(status)}`
     };
   }
 
@@ -3422,51 +3535,15 @@ exports.overrideAttendance = async (req) => {
     Math.round((defaultCheckOut.getTime() - defaultCheckIn.getTime()) / 60000)
   );
 
-  const update = status === "present"
-    ? {
-      checkInAt: defaultCheckIn,
-      checkOutAt: defaultCheckOut,
-      totalMinutes: shiftMinutes,
-      status: "checked_out",
-      overriddenBy: actorEmployee?._id || null,
-      overriddenAt: new Date(),
-      shiftId: shift._id || null,
-      shiftName: shift.name,
-      shiftCode: shift.code,
-      shiftStartTime: shift.startTime,
-      shiftEndTime: shift.endTime,
-      scheduledStartAt,
-      scheduledEndAt,
-      lateByMinutes: 0,
-      earlyLoginByMinutes: 0,
-      earlyCheckoutByMinutes: 0,
-      overtimeMinutes: 0,
-      missedCheckout: false,
-      missedCheckoutMarkedAt: null,
-      missedCheckoutResolvedRequestId: null
-    }
-    : {
-      checkInAt: null,
-      checkOutAt: null,
-      totalMinutes: 0,
-      status: "checked_out",
-      overriddenBy: actorEmployee?._id || null,
-      overriddenAt: new Date(),
-      shiftId: shift._id || null,
-      shiftName: shift.name,
-      shiftCode: shift.code,
-      shiftStartTime: shift.startTime,
-      shiftEndTime: shift.endTime,
-      scheduledStartAt,
-      scheduledEndAt,
-      lateByMinutes: 0,
-      earlyLoginByMinutes: 0,
-      earlyCheckoutByMinutes: 0,
-      overtimeMinutes: 0,
-      missedCheckout: false,
-      missedCheckoutMarkedAt: null,
-      missedCheckoutResolvedRequestId: null
-    };
+  const update = buildAttendanceOverrideUpdate({
+    status,
+    actorEmployeeId: actorEmployee?._id,
+    shift,
+    scheduledStartAt,
+    scheduledEndAt,
+    shiftMinutes,
+    minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4)
+  });
 
   const attendance = await Attendance.findOneAndUpdate(
     {
@@ -3488,9 +3565,7 @@ exports.overrideAttendance = async (req) => {
     { upsert: true, new: true }
   );
 
-  const hoursWorked = status === "present"
-    ? Number((shiftMinutes / 60).toFixed(2))
-    : 0;
+  const hoursWorked = Number((Number(update.totalMinutes || 0) / 60).toFixed(2));
   await upsertTimesheetHours({
     organizationId: req.user.organizationId,
     employeeId: employee._id,
@@ -3512,7 +3587,7 @@ exports.overrideAttendance = async (req) => {
       toEmail: employeeWithUser.userId.email,
       toName: employeeWithUser.firstName,
       subject: "Attendance Updated",
-      message: `Your attendance for ${date.toDateString()} has been marked as ${status}.`
+      message: `Your attendance for ${date.toDateString()} has been marked as ${formatAttendanceOverrideStatus(status)}.`
     });
   }
   if (employeeWithUser?.userId?._id) {
@@ -3523,8 +3598,8 @@ exports.overrideAttendance = async (req) => {
       actorEmployeeId: actorEmployee?._id || null,
       type: "attendance_override",
       title: "Attendance updated",
-      message: `Your attendance for ${date.toDateString()} was overridden to ${status}.`,
-        meta: {
+      message: `Your attendance for ${date.toDateString()} was overridden to ${formatAttendanceOverrideStatus(status)}.`,
+      meta: {
         date: dateKey,
         status
       }
@@ -3547,6 +3622,8 @@ exports.bulkOverrideAttendance = async (req) => {
 
   const employeeIds = req.body.employeeIds || [];
   let updatedCount = 0;
+  const orgSettings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
+    .select("minHalfDayHours");
 
   for (const rawEmployeeId of employeeIds) {
     const empId = normalizeObjectIdLike(rawEmployeeId);
@@ -3572,51 +3649,15 @@ exports.bulkOverrideAttendance = async (req) => {
       Math.round((defaultCheckOut.getTime() - defaultCheckIn.getTime()) / 60000)
     );
 
-    const update = req.body.status === "present"
-      ? {
-        checkInAt: defaultCheckIn,
-        checkOutAt: defaultCheckOut,
-        totalMinutes: shiftMinutes,
-        status: "checked_out",
-        overriddenBy: actorEmployee?._id || null,
-        overriddenAt: new Date(),
-        shiftId: shift._id || null,
-        shiftName: shift.name,
-        shiftCode: shift.code,
-        shiftStartTime: shift.startTime,
-        shiftEndTime: shift.endTime,
-        scheduledStartAt,
-        scheduledEndAt,
-        lateByMinutes: 0,
-        earlyLoginByMinutes: 0,
-        earlyCheckoutByMinutes: 0,
-        overtimeMinutes: 0,
-        missedCheckout: false,
-        missedCheckoutMarkedAt: null,
-        missedCheckoutResolvedRequestId: null
-      }
-      : {
-        checkInAt: null,
-        checkOutAt: null,
-        totalMinutes: 0,
-        status: "checked_out",
-        overriddenBy: actorEmployee?._id || null,
-        overriddenAt: new Date(),
-        shiftId: shift._id || null,
-        shiftName: shift.name,
-        shiftCode: shift.code,
-        shiftStartTime: shift.startTime,
-        shiftEndTime: shift.endTime,
-        scheduledStartAt,
-        scheduledEndAt,
-        lateByMinutes: 0,
-        earlyLoginByMinutes: 0,
-        earlyCheckoutByMinutes: 0,
-        overtimeMinutes: 0,
-        missedCheckout: false,
-        missedCheckoutMarkedAt: null,
-        missedCheckoutResolvedRequestId: null
-      };
+    const update = buildAttendanceOverrideUpdate({
+      status: req.body.status,
+      actorEmployeeId: actorEmployee?._id,
+      shift,
+      scheduledStartAt,
+      scheduledEndAt,
+      shiftMinutes,
+      minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4)
+    });
 
     const attendance = await Attendance.findOneAndUpdate(
       {
@@ -3638,9 +3679,7 @@ exports.bulkOverrideAttendance = async (req) => {
       { upsert: true, new: true }
     );
 
-    const hoursWorked = req.body.status === "present"
-      ? Number((shiftMinutes / 60).toFixed(2))
-      : 0;
+    const hoursWorked = Number((Number(update.totalMinutes || 0) / 60).toFixed(2));
     await upsertTimesheetHours({
       organizationId: req.user.organizationId,
       employeeId: employee._id,
@@ -3662,7 +3701,7 @@ exports.bulkOverrideAttendance = async (req) => {
         toEmail: employeeWithUser.userId.email,
         toName: employeeWithUser.firstName,
         subject: "Attendance Updated",
-        message: `Your attendance for ${date.toDateString()} has been marked as ${req.body.status}.`
+        message: `Your attendance for ${date.toDateString()} has been marked as ${formatAttendanceOverrideStatus(req.body.status)}.`
       });
     }
     if (employeeWithUser?.userId?._id) {
@@ -3673,7 +3712,7 @@ exports.bulkOverrideAttendance = async (req) => {
         actorEmployeeId: actorEmployee?._id || null,
         type: "attendance_override",
         title: "Attendance updated",
-        message: `Your attendance for ${date.toDateString()} was overridden to ${req.body.status}.`,
+        message: `Your attendance for ${date.toDateString()} was overridden to ${formatAttendanceOverrideStatus(req.body.status)}.`,
         meta: {
           date: dateKey,
           status: req.body.status
@@ -4178,5 +4217,6 @@ exports.__private__ = {
   getAttendanceRowNormalizedDate,
   mergeAttendanceRowsByEmployeeDay,
   isNoOpAttendanceOverride,
+  buildAttendanceOverrideUpdate,
   resolveOvertimeMinutes
 };

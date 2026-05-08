@@ -567,7 +567,7 @@ function EmployeeDashboardScreen() {
   const captureSelfie = async () => {
     const ok = await requestCameraPermission();
     if (!ok) {
-      setPolicyWarning('Camera permission is required for selfie check-in.');
+      setPolicyWarning('Camera permission is required for attendance selfie.');
       return null;
     }
     const result = await launchCamera({
@@ -626,8 +626,17 @@ function EmployeeDashboardScreen() {
     if (!canCheckOut) {
       return;
     }
+    const payload: Record<string, unknown> = {};
+    if (checkInPolicy.attendanceSelfieRequired) {
+      const selfie = await captureSelfie();
+      if (!selfie) {
+        setPolicyWarning('Selfie capture cancelled.');
+        return;
+      }
+      payload.selfieImage = selfie;
+    }
     setCheckoutLoading(true);
-    const res = await postApiWithToken('/timesheets/check-out', {}, token);
+    const res = await postApiWithToken('/timesheets/check-out', payload, token);
     setCheckoutLoading(false);
     if (res?.success) {
       loadDashboard();
