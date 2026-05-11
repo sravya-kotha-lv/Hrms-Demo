@@ -96,6 +96,16 @@ type AttendanceHistoryItem = {
   actor: string;
 };
 
+type AttendanceDayHistoryItem = {
+  action?: "check_in" | "check_out";
+  at?: string;
+  ip?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  selfieProvided?: boolean;
+  source?: string | null;
+};
+
 type AttendanceSnapshot = {
   checkInAt?: string | null;
   checkOutAt?: string | null;
@@ -105,6 +115,7 @@ type AttendanceSnapshot = {
   checkInSelfieImage?: string | null;
   checkOutSelfieProvided?: boolean;
   checkOutSelfieImage?: string | null;
+  dayHistory?: AttendanceDayHistoryItem[];
 } | null;
 
 type ApprovedLeaveDetail = {
@@ -1539,6 +1550,34 @@ const Attendance = () => {
                         </p>
                       )}
                     </div>
+                  </div>
+                </section>
+              )}
+              {selectedAttendanceSnapshot?.dayHistory && selectedAttendanceSnapshot.dayHistory.length > 0 && (
+                <section className="rounded-lg border bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-slate-500" />
+                    <h3 className="text-sm font-semibold text-slate-900">Day History</h3>
+                  </div>
+                  <div className="space-y-2">
+                    {selectedAttendanceSnapshot.dayHistory.map((entry, index) => (
+                      <div key={`${entry.at || "punch"}-${index}`} className="grid gap-1 rounded-md border border-slate-100 bg-slate-50 px-3 py-2 sm:grid-cols-[110px_1fr]">
+                        <p className="text-xs font-semibold text-slate-800">
+                          {entry.action === "check_out" ? "Check-out" : "Check-in"}
+                        </p>
+                        <div className="space-y-0.5 text-xs text-muted-foreground">
+                          <p>{entry.at ? formatDateTimeInOrgTimeZone(entry.at) : "-"}</p>
+                          {canViewSelfieData && (
+                            <p>
+                              IP: {entry.ip || "-"} • Selfie: {entry.selfieProvided ? "Yes" : "No"}
+                            </p>
+                          )}
+                          {(entry.latitude !== null && entry.latitude !== undefined && entry.longitude !== null && entry.longitude !== undefined) && (
+                            <p>Location: {entry.latitude}, {entry.longitude}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </section>
               )}

@@ -76,6 +76,10 @@ const orgSettingsSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    attendanceMultiPunchEnabled: {
+      type: Boolean,
+      default: false
+    },
     attendanceGeoFenceEnabled: {
       type: Boolean,
       default: false

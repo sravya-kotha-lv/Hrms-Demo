@@ -43,6 +43,7 @@ const OrganizationSettings = () => {
   const [attendanceAllowedIp, setAttendanceAllowedIp] = useState("");
   const [attendanceIpEnabled, setAttendanceIpEnabled] = useState(false);
   const [attendanceSelfieRequired, setAttendanceSelfieRequired] = useState(false);
+  const [attendanceMultiPunchEnabled, setAttendanceMultiPunchEnabled] = useState(false);
   const [attendanceGeoFenceEnabled, setAttendanceGeoFenceEnabled] = useState(false);
   const [attendanceGeoLatitude, setAttendanceGeoLatitude] = useState("");
   const [attendanceGeoLongitude, setAttendanceGeoLongitude] = useState("");
@@ -94,6 +95,7 @@ const OrganizationSettings = () => {
       setAttendanceAllowedIp(String(res.data?.attendanceAllowedIp || ""));
       setAttendanceIpEnabled(Boolean(res.data?.attendanceIpEnabled));
       setAttendanceSelfieRequired(Boolean(res.data?.attendanceSelfieRequired));
+      setAttendanceMultiPunchEnabled(Boolean(res.data?.attendanceMultiPunchEnabled));
       setAttendanceGeoFenceEnabled(Boolean(res.data?.attendanceGeoFenceEnabled));
       setAttendanceGeoLatitude(
         res.data?.attendanceGeoLatitude === null || res.data?.attendanceGeoLatitude === undefined
@@ -145,6 +147,7 @@ const OrganizationSettings = () => {
         attendanceIpEnabled,
         attendanceAllowedIp,
         attendanceSelfieRequired,
+        attendanceMultiPunchEnabled,
         attendanceGeoFenceEnabled,
         attendanceGeoLatitude: attendanceGeoLatitude === "" ? null : Number(attendanceGeoLatitude),
         attendanceGeoLongitude: attendanceGeoLongitude === "" ? null : Number(attendanceGeoLongitude),
@@ -511,13 +514,21 @@ const OrganizationSettings = () => {
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <Checkbox
+                    checked={attendanceMultiPunchEnabled}
+                    onCheckedChange={(value) => setAttendanceMultiPunchEnabled(Boolean(value))}
+                    disabled={!canManage}
+                  />
+                  <span>Multi check-in/out</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
                     checked={attendanceGeoFenceEnabled}
                     onCheckedChange={(value) => setAttendanceGeoFenceEnabled(Boolean(value))}
                     disabled={!canManage}
                   />
                   <span>Office geofence only</span>
                 </label>
-                {!attendanceIpEnabled && !attendanceSelfieRequired && !attendanceGeoFenceEnabled && (
+                {!attendanceIpEnabled && !attendanceSelfieRequired && !attendanceMultiPunchEnabled && !attendanceGeoFenceEnabled && (
                   <p className="text-xs text-muted-foreground">No restriction enabled</p>
                 )}
               </div>

@@ -85,6 +85,7 @@ type AttendanceMatrixSummary = {
 type CheckInPolicy = {
   attendanceIpEnabled: boolean;
   attendanceSelfieRequired: boolean;
+  attendanceMultiPunchEnabled: boolean;
   attendanceGeoFenceEnabled: boolean;
   attendanceGeoLatitude: number | null;
   attendanceGeoLongitude: number | null;
@@ -206,6 +207,7 @@ type TimesheetSummary = {
 };
 
 type AttendanceTodayRecord = AttendanceDay & {
+  checkOutSelfieProvided?: boolean;
   lateByMinutes?: number;
   shiftStartTime?: string | null;
   shiftEndTime?: string | null;
@@ -363,6 +365,7 @@ const EmployeeDashboard = () => {
   const [checkInPolicy, setCheckInPolicy] = useState<CheckInPolicy>({
     attendanceIpEnabled: false,
     attendanceSelfieRequired: false,
+    attendanceMultiPunchEnabled: false,
     attendanceGeoFenceEnabled: false,
     attendanceGeoLatitude: null,
     attendanceGeoLongitude: null,
@@ -515,6 +518,7 @@ const EmployeeDashboard = () => {
       setCheckInPolicy({
         attendanceIpEnabled: Boolean(checkInPolicyRes.data.attendanceIpEnabled),
         attendanceSelfieRequired: Boolean(checkInPolicyRes.data.attendanceSelfieRequired),
+        attendanceMultiPunchEnabled: Boolean(checkInPolicyRes.data.attendanceMultiPunchEnabled),
         attendanceGeoFenceEnabled: Boolean(checkInPolicyRes.data.attendanceGeoFenceEnabled),
         attendanceGeoLatitude:
           checkInPolicyRes.data.attendanceGeoLatitude === null || checkInPolicyRes.data.attendanceGeoLatitude === undefined
@@ -642,8 +646,9 @@ const EmployeeDashboard = () => {
   }, [weeklyEntries, matrixDays, weeklyHours]);
 
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
-  const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
-  const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt);
+  const attendanceRuntimeStatus = (attendanceToday as { status?: string } | null)?.status;
+  const isCheckedIn = hasCheckedInToday && (attendanceRuntimeStatus === "checked_in" || !attendanceToday?.checkOutAt);
+  const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt) && !isCheckedIn;
 
   console.log(attendanceToday?.checkInAt,"---------");
   
@@ -827,7 +832,10 @@ const EmployeeDashboard = () => {
       }
     }
 
-    if (checkInPolicy.attendanceSelfieRequired) {
+    const shouldCaptureSelfie = checkInPolicy.attendanceSelfieRequired
+      && (!checkInPolicy.attendanceMultiPunchEnabled || !hasCheckedInToday);
+
+    if (shouldCaptureSelfie) {
       let selfieImage: string | null = null;
       try {
         selfieImage = await captureSelfieFromCamera();
@@ -858,7 +866,10 @@ const EmployeeDashboard = () => {
   const handleCheckOut = async () => {
     const payload: Record<string, unknown> = {};
 
-    if (checkInPolicy.attendanceSelfieRequired) {
+    const shouldCaptureSelfie = checkInPolicy.attendanceSelfieRequired
+      && (!checkInPolicy.attendanceMultiPunchEnabled || !attendanceToday?.checkOutSelfieProvided);
+
+    if (shouldCaptureSelfie) {
       let selfieImage: string | null = null;
       try {
         selfieImage = await captureSelfieFromCamera();
@@ -989,13 +1000,19 @@ const EmployeeDashboard = () => {
             )}
             {isCheckedOut && (
               <p className="text-xs text-emerald-700 mt-1">
-                Check-in is allowed only once today. You can update the checkout time again if needed.
+                {checkInPolicy.attendanceMultiPunchEnabled
+                  ? "You are outside now. Check in again when you return."
+                  : "Check-in is allowed only once today. You can update the checkout time again if needed."}
               </p>
             )}
           </div>
           <div className="flex flex-wrap gap-2">
             <PermissionGate permissions={["TIMESHEET_CHECKIN_SELF"]}>
-              <Button className={primaryHeroButtonClassName} onClick={handleCheckIn} disabled={hasCheckedInToday || checkinLoading}>
+              <Button
+                className={primaryHeroButtonClassName}
+                onClick={handleCheckIn}
+                disabled={(checkInPolicy.attendanceMultiPunchEnabled ? isCheckedIn : hasCheckedInToday) || checkinLoading}
+              >
                 <LogIn className="w-4 h-4 mr-2" /> Check In
               </Button>
             </PermissionGate>
@@ -1004,7 +1021,7 @@ const EmployeeDashboard = () => {
                 variant="outline"
                 className={secondaryHeroButtonClassName}
                 onClick={handleCheckOut}
-                disabled={!hasCheckedInToday || checkoutLoading}
+                disabled={!isCheckedIn || checkoutLoading}
               >
                 <LogOut className="w-4 h-4 mr-2" /> Check Out
               </Button>

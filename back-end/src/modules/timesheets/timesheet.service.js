@@ -773,6 +773,10 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
       existing.checkOutSelfieProvided || source.checkOutSelfieProvided
     );
     existing.checkOutSelfieImage = existing.checkOutSelfieImage || source.checkOutSelfieImage || null;
+    existing.dayHistory = [
+      ...(existing.dayHistory || []),
+      ...(source.dayHistory || [])
+    ].sort((left, right) => new Date(left.at).getTime() - new Date(right.at).getTime());
     existing.shiftId = existing.shiftId || source.shiftId || null;
     existing.shiftName = existing.shiftName || source.shiftName || null;
     existing.shiftCode = existing.shiftCode || source.shiftCode || null;
@@ -1026,10 +1030,62 @@ const resolveWorkedMinutes = (attendanceRow) => {
   return 0;
 };
 
+const isAttendanceOpenSession = (attendanceRow) =>
+  Boolean(attendanceRow?.checkInAt && (attendanceRow.status === "checked_in" || !attendanceRow.checkOutAt));
+
+const buildAttendancePunch = ({
+  action,
+  at,
+  ip = null,
+  latitude = null,
+  longitude = null,
+  selfieProvided = false,
+  selfieImage = null,
+  source = "web"
+}) => ({
+  action,
+  at,
+  ip: ip || null,
+  latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
+  longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
+  selfieProvided: Boolean(selfieProvided),
+  selfieImage: selfieImage || null,
+  source
+});
+
+const sumInsideMinutesFromDayHistory = (dayHistory = []) => {
+  const ordered = [...(dayHistory || [])]
+    .filter((entry) => entry?.action && entry?.at)
+    .sort((left, right) => new Date(left.at).getTime() - new Date(right.at).getTime());
+  let openAt = null;
+  let totalMinutes = 0;
+
+  ordered.forEach((entry) => {
+    if (entry.action === "check_in") {
+      openAt = new Date(entry.at);
+      return;
+    }
+    if (entry.action === "check_out" && openAt) {
+      totalMinutes += Math.max(0, Math.round((new Date(entry.at).getTime() - openAt.getTime()) / 60000));
+      openAt = null;
+    }
+  });
+
+  return totalMinutes;
+};
+
+const sanitizeDayHistoryForSelfieAccess = (dayHistory = [], canViewSelfie = false) =>
+  (dayHistory || []).map((entry) => ({
+    ...entry,
+    selfieImage: canViewSelfie ? (entry.selfieImage || null) : null,
+    selfieProvided: canViewSelfie ? Boolean(entry.selfieProvided) : false,
+    ip: canViewSelfie ? (entry.ip || null) : null
+  }));
+
 const resolveWorkedMinutesForMatrixStatus = (attendanceRow, now = new Date()) => {
   const resolvedMinutes = resolveWorkedMinutes(attendanceRow);
   if (resolvedMinutes > 0) return resolvedMinutes;
-  if (!attendanceRow?.checkInAt || attendanceRow?.checkOutAt) return 0;
+  if (!isAttendanceOpenSession(attendanceRow)) return 0;
 
   const checkInAt = new Date(attendanceRow.checkInAt);
   const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : now;
@@ -1046,7 +1102,7 @@ const resolveOvertimeMinutes = (totalMinutes, minWorkHoursPerDay = 8) => {
 };
 
 const resolveAttendanceMatrixStatus = (attendanceRow, { minHalfDayHours = 4, minWorkHoursPerDay = 8, now = new Date() }) => {
-  const isOpenSession = Boolean(attendanceRow?.checkInAt && !attendanceRow?.checkOutAt);
+  const isOpenSession = isAttendanceOpenSession(attendanceRow);
   const shiftEndAt = attendanceRow?.scheduledEndAt ? new Date(attendanceRow.scheduledEndAt) : null;
   const shiftStillRunning = shiftEndAt && !Number.isNaN(shiftEndAt.getTime()) && now < shiftEndAt;
   if (isOpenSession) return "pending_checkout";
@@ -1384,7 +1440,7 @@ const decorateAttendanceCell = ({
 };
 
 const isActiveOvernightSession = (attendanceRow, organizationTimeZone = "Asia/Kolkata") => {
-  if (!attendanceRow?.checkInAt || attendanceRow?.checkOutAt || !attendanceRow?.scheduledEndAt) {
+  if (!isAttendanceOpenSession(attendanceRow) || !attendanceRow?.scheduledEndAt) {
     return false;
   }
 
@@ -1401,7 +1457,7 @@ const isActiveOvernightSession = (attendanceRow, organizationTimeZone = "Asia/Ko
 
 const canCheckOutAttendance = (attendanceRow, organizationTimeZone = "Asia/Kolkata", now = new Date()) => {
   if (!attendanceRow?.checkInAt) return false;
-  if (attendanceRow?.checkOutAt) return false;
+  if (!isAttendanceOpenSession(attendanceRow)) return false;
 
   if (isActiveOvernightSession(attendanceRow, organizationTimeZone)) {
     return true;
@@ -1800,10 +1856,11 @@ exports.checkIn = async (req) => {
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const attendanceSecurity = await OrgSettings.findOne({ organizationId: req.user.organizationId })
     .select(
-      "attendanceIpEnabled attendanceAllowedIp attendanceSelfieRequired attendanceGeoFenceEnabled attendanceGeoLatitude attendanceGeoLongitude attendanceGeoRadiusMeters attendanceDevBypassEnabled"
+      "attendanceIpEnabled attendanceAllowedIp attendanceSelfieRequired attendanceMultiPunchEnabled attendanceGeoFenceEnabled attendanceGeoLatitude attendanceGeoLongitude attendanceGeoRadiusMeters attendanceDevBypassEnabled"
     );
   const shouldBypassPolicyChecks = process.env.NODE_ENV !== "production"
     && Boolean(attendanceSecurity?.attendanceDevBypassEnabled);
+  const isMultiPunchEnabled = Boolean(attendanceSecurity?.attendanceMultiPunchEnabled);
   const checkInIp = getRequestIp(req);
   const checkInLatitude = req.body?.latitude;
   const checkInLongitude = req.body?.longitude;
@@ -1818,7 +1875,7 @@ exports.checkIn = async (req) => {
     }
   }
 
-  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && !checkInSelfieProvided) {
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && !isMultiPunchEnabled && !checkInSelfieProvided) {
     throwHttpError(403, "Selfie is required for check-in");
   }
 
@@ -1918,7 +1975,10 @@ exports.checkIn = async (req) => {
     organizationId: req.user.organizationId,
     employeeId: employee._id,
     checkInAt: { $ne: null },
-    checkOutAt: null
+    $or: [
+      { status: "checked_in" },
+      { checkOutAt: null }
+    ]
   }).sort({ date: -1, checkInAt: -1 });
 
   if (openAttendance) {
@@ -1960,6 +2020,17 @@ exports.checkIn = async (req) => {
     checkOutSelfieProvided: false,
     checkOutIp: null,
     checkOutSelfieImage: null,
+    dayHistory: [
+      buildAttendancePunch({
+        action: "check_in",
+        at: now,
+        ip: checkInIp,
+        latitude: checkInLatitude,
+        longitude: checkInLongitude,
+        selfieProvided: checkInSelfieProvided,
+        selfieImage: checkInSelfieImage
+      })
+    ],
     status: "checked_in",
     shiftId: effectiveShift._id || null,
     shiftName: effectiveShift.name,
@@ -1978,6 +2049,9 @@ exports.checkIn = async (req) => {
   };
 
   const existing = await Attendance.findOne(attendanceFilter).sort({ date: -1, checkInAt: -1 });
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && isMultiPunchEnabled && !checkInSelfieProvided && !existing?.checkInAt) {
+    throwHttpError(403, "Selfie is required for first check-in");
+  }
   if (!existing) {
     let createdAttendance;
     try {
@@ -1999,8 +2073,54 @@ exports.checkIn = async (req) => {
   }
 
   if (existing?.checkInAt) {
-    // Check-in is allowed only once per attendance date/shift.
-    throw new Error("Already checked in for this shift");
+    if (!isMultiPunchEnabled) {
+      throw new Error("Already checked in for this shift");
+    }
+    if (isAttendanceOpenSession(existing)) {
+      throw new Error("Already checked in");
+    }
+    existing.status = "checked_in";
+    existing.overriddenBy = null;
+    existing.overriddenAt = null;
+    const baseDayHistory = (existing.dayHistory || []).length
+      ? existing.dayHistory
+      : [
+        buildAttendancePunch({
+          action: "check_in",
+          at: existing.checkInAt,
+          ip: existing.checkInIp,
+          latitude: existing.checkInLatitude,
+          longitude: existing.checkInLongitude,
+          selfieProvided: existing.checkInSelfieProvided,
+          selfieImage: existing.checkInSelfieImage
+        }),
+        ...(existing.checkOutAt
+          ? [
+            buildAttendancePunch({
+              action: "check_out",
+              at: existing.checkOutAt,
+              ip: existing.checkOutIp,
+              selfieProvided: existing.checkOutSelfieProvided,
+              selfieImage: existing.checkOutSelfieImage
+            })
+          ]
+          : [])
+      ];
+    existing.dayHistory = [
+      ...baseDayHistory,
+      buildAttendancePunch({
+        action: "check_in",
+        at: now,
+        ip: checkInIp,
+        latitude: checkInLatitude,
+        longitude: checkInLongitude,
+        selfieProvided: checkInSelfieProvided,
+        selfieImage: checkInSelfieImage
+      })
+    ];
+    normalizeAttendanceDocumentDateFields(existing, organizationTimeZone);
+    await existing.save();
+    return existing;
   }
 
   if (!existing.checkInAt) {
@@ -2014,6 +2134,17 @@ exports.checkIn = async (req) => {
     existing.checkOutSelfieProvided = false;
     existing.checkOutIp = null;
     existing.checkOutSelfieImage = null;
+    existing.dayHistory = [
+      buildAttendancePunch({
+        action: "check_in",
+        at: now,
+        ip: checkInIp,
+        latitude: checkInLatitude,
+        longitude: checkInLongitude,
+        selfieProvided: checkInSelfieProvided,
+        selfieImage: checkInSelfieImage
+      })
+    ];
     existing.totalMinutes = 0;
     existing.status = "checked_in";
     existing.overriddenBy = null;
@@ -2045,13 +2176,14 @@ exports.checkIn = async (req) => {
 exports.getCheckInPolicy = async (req) => {
   const settings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
     .select(
-      "attendanceIpEnabled attendanceSelfieRequired attendanceGeoFenceEnabled attendanceGeoLatitude attendanceGeoLongitude attendanceGeoRadiusMeters"
+      "attendanceIpEnabled attendanceSelfieRequired attendanceMultiPunchEnabled attendanceGeoFenceEnabled attendanceGeoLatitude attendanceGeoLongitude attendanceGeoRadiusMeters"
     );
   const localGeoFenceFallbackEnabled = process.env.NODE_ENV !== "production";
 
   return {
     attendanceIpEnabled: Boolean(settings?.attendanceIpEnabled),
     attendanceSelfieRequired: Boolean(settings?.attendanceSelfieRequired),
+    attendanceMultiPunchEnabled: Boolean(settings?.attendanceMultiPunchEnabled),
     attendanceGeoFenceEnabled: Boolean(settings?.attendanceGeoFenceEnabled),
     attendanceGeoLatitude: localGeoFenceFallbackEnabled ? settings?.attendanceGeoLatitude ?? null : null,
     attendanceGeoLongitude: localGeoFenceFallbackEnabled ? settings?.attendanceGeoLongitude ?? null : null,
@@ -2066,13 +2198,14 @@ exports.checkOut = async (req) => {
   const checkOutIp = getRequestIp(req);
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const attendanceSecurity = await OrgSettings.findOne({ organizationId: req.user.organizationId })
-    .select("attendanceSelfieRequired attendanceDevBypassEnabled");
+    .select("attendanceSelfieRequired attendanceMultiPunchEnabled attendanceDevBypassEnabled");
   const shouldBypassPolicyChecks = process.env.NODE_ENV !== "production"
     && Boolean(attendanceSecurity?.attendanceDevBypassEnabled);
+  const isMultiPunchEnabled = Boolean(attendanceSecurity?.attendanceMultiPunchEnabled);
   const checkOutSelfieImage = req.body?.selfieImage || null;
   const checkOutSelfieProvided = Boolean(req.body?.selfieImage);
 
-  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && !checkOutSelfieProvided) {
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && !isMultiPunchEnabled && !checkOutSelfieProvided) {
     throwHttpError(403, "Selfie is required for check-out");
   }
 
@@ -2096,7 +2229,10 @@ exports.checkOut = async (req) => {
     organizationId: req.user.organizationId,
     employeeId: employee._id,
     checkInAt: { $ne: null },
-    checkOutAt: null
+    $or: [
+      { status: "checked_in" },
+      { checkOutAt: null }
+    ]
   }).sort({ date: -1, checkInAt: -1 });
 
   let attendance = canCheckOutAttendance(openAttendance, organizationTimeZone, now)
@@ -2122,16 +2258,44 @@ exports.checkOut = async (req) => {
       throw new Error("You are not checked in");
     }
   }
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && isMultiPunchEnabled && !checkOutSelfieProvided && !attendance.checkOutSelfieProvided) {
+    throwHttpError(403, "Selfie is required for check-out");
+  }
   const previousCheckOutAt = attendance.checkOutAt ? new Date(attendance.checkOutAt) : null;
   const normalizedAttendanceDateKey = getAttendanceRowNormalizedDate(attendance, organizationTimeZone);
   const normalizedAttendanceDate = normalizedAttendanceDateKey
     ? startOfDayInTimeZone(normalizedAttendanceDateKey, organizationTimeZone)
     : startOfDayInTimeZone(getAttendanceStoredDateKey(attendance, organizationTimeZone), organizationTimeZone);
 
-  const totalMinutes = Math.max(
-    0,
-    Math.round((now.getTime() - attendance.checkInAt.getTime()) / 60000)
-  );
+  const baseDayHistory = (attendance.dayHistory || []).length
+    ? attendance.dayHistory
+    : [
+      buildAttendancePunch({
+        action: "check_in",
+        at: attendance.checkInAt,
+        ip: attendance.checkInIp,
+        latitude: attendance.checkInLatitude,
+        longitude: attendance.checkInLongitude,
+        selfieProvided: attendance.checkInSelfieProvided,
+        selfieImage: attendance.checkInSelfieImage
+      })
+    ];
+  const nextDayHistory = [
+    ...baseDayHistory,
+    buildAttendancePunch({
+      action: "check_out",
+      at: now,
+      ip: checkOutIp,
+      selfieProvided: checkOutSelfieProvided,
+      selfieImage: checkOutSelfieImage
+    })
+  ];
+  const totalMinutes = isMultiPunchEnabled
+    ? sumInsideMinutesFromDayHistory(nextDayHistory)
+    : Math.max(
+      0,
+      Math.round((now.getTime() - attendance.checkInAt.getTime()) / 60000)
+    );
 
   if (totalMinutes > 24 * 60) {
     throw new Error("Checkout duration exceeds 24 hours. Please contact admin to resolve the stale attendance record.");
@@ -2158,8 +2322,9 @@ exports.checkOut = async (req) => {
 
   attendance.checkOutAt = now;
   attendance.checkOutIp = checkOutIp || null;
-  attendance.checkOutSelfieProvided = checkOutSelfieProvided;
-  attendance.checkOutSelfieImage = checkOutSelfieImage;
+  attendance.checkOutSelfieProvided = Boolean(attendance.checkOutSelfieProvided || checkOutSelfieProvided);
+  attendance.checkOutSelfieImage = attendance.checkOutSelfieImage || checkOutSelfieImage;
+  attendance.dayHistory = nextDayHistory;
   if (normalizedAttendanceDate) {
     attendance.date = normalizedAttendanceDate;
     attendance.dateKey = normalizedAttendanceDateKey;
@@ -2404,9 +2569,7 @@ exports.getAttendanceMatrix = async (req) => {
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
-  const pendingCheckoutCount = attendanceRows.filter(
-    (row) => Boolean(row.checkInAt && !row.checkOutAt)
-  ).length;
+  const pendingCheckoutCount = attendanceRows.filter((row) => isAttendanceOpenSession(row)).length;
   const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
   const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
   const lockAttendance = buildLockAttendanceActionMeta({
@@ -2432,7 +2595,7 @@ exports.getAttendanceMatrix = async (req) => {
     const overriddenByName = row.overriddenBy
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
       : null;
-    const isOpenSession = Boolean(row.checkInAt && !row.checkOutAt);
+    const isOpenSession = isAttendanceOpenSession(row);
     const status = resolveAttendanceMatrixStatus(row, {
       minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
       minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
@@ -2635,9 +2798,7 @@ exports.getMyAttendanceMatrix = async (req) => {
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
-  const pendingCheckoutCount = attendanceRows.filter(
-    (row) => Boolean(row.checkInAt && !row.checkOutAt)
-  ).length;
+  const pendingCheckoutCount = attendanceRows.filter((row) => isAttendanceOpenSession(row)).length;
   const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
   const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
   const lockAttendance = buildLockAttendanceActionMeta({
@@ -2696,7 +2857,7 @@ exports.getMyAttendanceMatrix = async (req) => {
     const overriddenByName = row.overriddenBy
       ? `${row.overriddenBy.firstName || ""} ${row.overriddenBy.lastName || ""}`.trim()
       : null;
-    const isOpenSession = Boolean(row.checkInAt && !row.checkOutAt);
+    const isOpenSession = isAttendanceOpenSession(row);
     const status = resolveAttendanceMatrixStatus(row, {
       minHalfDayHours: Number(orgSettings?.minHalfDayHours ?? 4),
       minWorkHoursPerDay: Number(orgSettings?.minWorkHoursPerDay ?? 8)
@@ -2888,6 +3049,7 @@ exports.getAttendanceCellHistory = async (req) => {
   }
 
   const attendanceData = attendance.toObject ? attendance.toObject() : attendance;
+  attendanceData.dayHistory = sanitizeDayHistoryForSelfieAccess(attendanceData.dayHistory || [], canViewSelfie);
   if (!canViewSelfie) {
     attendanceData.checkInSelfieProvided = false;
     attendanceData.checkInSelfieImage = null;
@@ -3741,7 +3903,10 @@ exports.lockAttendanceMonth = async (req) => {
     organizationId: req.user.organizationId,
     date: { $gte: start, $lte: end },
     checkInAt: { $ne: null },
-    checkOutAt: null
+    $or: [
+      { status: "checked_in" },
+      { checkOutAt: null }
+    ]
   };
 
   if (Array.isArray(scopedEmployeeIds)) {
@@ -3805,7 +3970,10 @@ exports.getOnline = async (req) => {
   const query = {
     organizationId: req.user.organizationId,
     checkInAt: { $ne: null, $lte: now },
-    checkOutAt: null,
+    $or: [
+      { status: "checked_in" },
+      { checkOutAt: null }
+    ],
     date: { $gte: yesterdayStart }
   };
 

@@ -63,6 +63,46 @@ const timesheetAttendanceSchema = new mongoose.Schema(
       type: String,
       default: null
     },
+    dayHistory: {
+      type: [
+        {
+          action: {
+            type: String,
+            enum: ["check_in", "check_out"],
+            required: true
+          },
+          at: {
+            type: Date,
+            required: true
+          },
+          ip: {
+            type: String,
+            default: null
+          },
+          latitude: {
+            type: Number,
+            default: null
+          },
+          longitude: {
+            type: Number,
+            default: null
+          },
+          selfieProvided: {
+            type: Boolean,
+            default: false
+          },
+          selfieImage: {
+            type: String,
+            default: null
+          },
+          source: {
+            type: String,
+            default: "web"
+          }
+        }
+      ],
+      default: []
+    },
 
     totalMinutes: {
       type: Number,
