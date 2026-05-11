@@ -866,8 +866,7 @@ const EmployeeDashboard = () => {
   const handleCheckOut = async () => {
     const payload: Record<string, unknown> = {};
 
-    const shouldCaptureSelfie = checkInPolicy.attendanceSelfieRequired
-      && (!checkInPolicy.attendanceMultiPunchEnabled || !attendanceToday?.checkOutSelfieProvided);
+    const shouldCaptureSelfie = checkInPolicy.attendanceSelfieRequired;
 
     if (shouldCaptureSelfie) {
       let selfieImage: string | null = null;

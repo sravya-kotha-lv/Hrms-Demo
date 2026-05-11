@@ -2205,7 +2205,7 @@ exports.checkOut = async (req) => {
   const checkOutSelfieImage = req.body?.selfieImage || null;
   const checkOutSelfieProvided = Boolean(req.body?.selfieImage);
 
-  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && !isMultiPunchEnabled && !checkOutSelfieProvided) {
+  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && !checkOutSelfieProvided) {
     throwHttpError(403, "Selfie is required for check-out");
   }
 
@@ -2257,9 +2257,6 @@ exports.checkOut = async (req) => {
     if (!isClosedCheckoutUpdate && !isValidOpenOvernight) {
       throw new Error("You are not checked in");
     }
-  }
-  if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceSelfieRequired && isMultiPunchEnabled && !checkOutSelfieProvided && !attendance.checkOutSelfieProvided) {
-    throwHttpError(403, "Selfie is required for check-out");
   }
   const previousCheckOutAt = attendance.checkOutAt ? new Date(attendance.checkOutAt) : null;
   const normalizedAttendanceDateKey = getAttendanceRowNormalizedDate(attendance, organizationTimeZone);
@@ -2322,8 +2319,8 @@ exports.checkOut = async (req) => {
 
   attendance.checkOutAt = now;
   attendance.checkOutIp = checkOutIp || null;
-  attendance.checkOutSelfieProvided = Boolean(attendance.checkOutSelfieProvided || checkOutSelfieProvided);
-  attendance.checkOutSelfieImage = attendance.checkOutSelfieImage || checkOutSelfieImage;
+  attendance.checkOutSelfieProvided = checkOutSelfieProvided;
+  attendance.checkOutSelfieImage = checkOutSelfieImage;
   attendance.dayHistory = nextDayHistory;
   if (normalizedAttendanceDate) {
     attendance.date = normalizedAttendanceDate;
