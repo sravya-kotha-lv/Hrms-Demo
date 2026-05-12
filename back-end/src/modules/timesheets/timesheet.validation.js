@@ -19,6 +19,10 @@ exports.checkInSchema = Joi.object({
   selfieImage: Joi.string().max(5 * 1024 * 1024).allow("").optional()
 });
 
+exports.checkOutSchema = Joi.object({
+  selfieImage: Joi.string().max(5 * 1024 * 1024).allow("").optional()
+});
+
 exports.updateWeeklySchema = Joi.object({
   entries: Joi.array().items(entrySchema).required(),
   weekStart: Joi.date().optional()
@@ -40,12 +44,12 @@ exports.actionWeeklySchema = Joi.object({
 
 exports.overrideAttendanceSchema = Joi.object({
   date: Joi.date().required(),
-  status: Joi.string().valid("present", "absent").required()
+  status: Joi.string().valid("present", "half_day_present", "absent").required()
 });
 
 exports.bulkOverrideAttendanceSchema = Joi.object({
   date: Joi.date().required(),
-  status: Joi.string().valid("present", "absent").required(),
+  status: Joi.string().valid("present", "half_day_present", "absent").required(),
   employeeIds: Joi.array().items(Joi.string().required()).min(1).required()
 });
 

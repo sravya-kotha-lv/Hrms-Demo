@@ -205,7 +205,8 @@ const buildDashboardStats = ({
       && !Number.isNaN(scheduledEndAt.getTime())
       && now >= scheduledEndAt
     );
-    const isPendingCheckout = Boolean(attendance?.checkInAt && !attendance?.checkOutAt && isShiftCompleted);
+    const isOpenSession = Boolean(attendance?.checkInAt && (attendance.status === "checked_in" || !attendance.checkOutAt));
+    const isPendingCheckout = Boolean(isOpenSession && isShiftCompleted);
     const countAsAbsent = !holidayName
       && !isWeekOff
       && !isOnLeave

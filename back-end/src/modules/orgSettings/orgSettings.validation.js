@@ -17,6 +17,7 @@ exports.upsertOrgSettingsSchema = Joi.object({
   attendanceIpEnabled: Joi.boolean().default(false),
   attendanceAllowedIp: Joi.string().trim().allow("").default(""),
   attendanceSelfieRequired: Joi.boolean().default(false),
+  attendanceMultiPunchEnabled: Joi.boolean().default(false),
   attendanceGeoFenceEnabled: Joi.boolean().default(false),
   attendanceGeoLatitude: Joi.number().min(-90).max(90).allow(null),
   attendanceGeoLongitude: Joi.number().min(-180).max(180).allow(null),
