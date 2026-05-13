@@ -18,8 +18,11 @@ import {
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { getAdminUserId, getProfile } from "@/utils/auth";
 
 type OrgLifecycleAction = "soft_delete" | "restore" | "hard_delete";
+
+const getCurrentAdminUserId = () => getAdminUserId() || ((getProfile() as any)?.userId ?? "");
 
 const SuperAdminDashboard = () => {
   const [organizations, setOrganizations] = useState<any[]>([]);
@@ -28,7 +31,7 @@ const SuperAdminDashboard = () => {
   const [designations, setDesignations] = useState<any[]>([]);
   const [managers, setManagers] = useState<any[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<string>("");
-  const [adminUserId] = useState<string>(localStorage.getItem("adminUserId") || "");
+  const [adminUserId] = useState<string>(getCurrentAdminUserId());
 
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [showCreateUser, setShowCreateUser] = useState(false);
@@ -42,7 +45,7 @@ const SuperAdminDashboard = () => {
     code: "",
     timezone: "Asia/Kolkata",
     currency: "INR",
-    adminUserId: localStorage.getItem("adminUserId") || ""
+    adminUserId: getCurrentAdminUserId()
   });
 
   const [createUserForm, setCreateUserForm] = useState({
@@ -108,11 +111,15 @@ const SuperAdminDashboard = () => {
   };
 
   const handleCreateOrganization = async () => {
-    if (!createOrgForm.adminUserId) {
+    const effectiveAdminUserId = createOrgForm.adminUserId || adminUserId;
+    if (!effectiveAdminUserId) {
       toast.error("Admin user ID is required");
       return;
     }
-    const res = await postApiWithToken("/organizations", createOrgForm);
+    const res = await postApiWithToken("/organizations", {
+      ...createOrgForm,
+      adminUserId: effectiveAdminUserId
+    });
     if (res?.success) {
       toast.success("Organization created");
       setShowCreateOrg(false);
@@ -320,11 +327,6 @@ const SuperAdminDashboard = () => {
               placeholder="Currency"
               value={createOrgForm.currency}
               onChange={(e) => setCreateOrgForm({ ...createOrgForm, currency: e.target.value })}
-            />
-            <Input
-              placeholder="Admin User ID"
-              value={createOrgForm.adminUserId}
-              onChange={(e) => setCreateOrgForm({ ...createOrgForm, adminUserId: e.target.value })}
             />
             <Button onClick={handleCreateOrganization} className="w-full">Create</Button>
           </div>

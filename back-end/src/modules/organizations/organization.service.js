@@ -211,7 +211,7 @@ async function isUserSuperAdmin(userId) {
   const memberships = await OrgUser.find({ userId }).populate("roleIds");
 
   return memberships.some(m =>
-    m.roleIds.some(r => r.slug === "superadmin")
+    m.roleIds.some(r => ["superadmin", "super_admin"].includes(r.slug))
   );
 }
 

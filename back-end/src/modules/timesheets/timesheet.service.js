@@ -255,6 +255,41 @@ const compareFacesWithFacePP = async ({ profileImageUrl, selfieImage }) => {
   return { passed, confidence };
 };
 
+const buildAttendanceMatrixEmployeeQuery = ({ organizationId, monthStart, scopedEmployeeIds, search }) => {
+  const employeeQuery = {
+    organizationId,
+    $and: [
+      {
+        $or: [
+          { status: "active" },
+          {
+            status: "resigned",
+            lastWorkingDay: { $ne: null, $gte: monthStart }
+          }
+        ]
+      }
+    ]
+  };
+
+  const trimmedSearch = String(search || "").trim();
+  if (trimmedSearch) {
+    const searchRegex = new RegExp(escapeRegex(trimmedSearch), "i");
+    employeeQuery.$and.push({
+      $or: [
+        { firstName: searchRegex },
+        { lastName: searchRegex },
+        { employeeCode: searchRegex }
+      ]
+    });
+  }
+
+  if (Array.isArray(scopedEmployeeIds)) {
+    employeeQuery._id = { $in: scopedEmployeeIds };
+  }
+
+  return employeeQuery;
+};
+
 const buildScheduledDateTime = (dateValue, minutesFromMidnight) => {
   const d = startOfDay(dateValue);
   d.setMinutes(minutesFromMidnight);
@@ -2479,24 +2514,14 @@ exports.getAttendanceMatrix = async (req) => {
   const sortBy = String(req.query.sortBy || "employeeCode");
   const sortOrder = String(req.query.sortOrder || "asc").toLowerCase() === "desc" ? -1 : 1;
 
-  const employeeQuery = {
-    organizationId: req.user.organizationId,
-    status: "active"
-  };
   const search = String(req.query.search || "").trim();
-  if (search) {
-    const searchRegex = new RegExp(escapeRegex(search), "i");
-    employeeQuery.$or = [
-      { firstName: searchRegex },
-      { lastName: searchRegex },
-      { employeeCode: searchRegex }
-    ];
-  }
-
   const scopedEmployeeIds = await getScopedEmployeeIdsForViewer(req);
-  if (Array.isArray(scopedEmployeeIds)) {
-    employeeQuery._id = { $in: scopedEmployeeIds };
-  }
+  const employeeQuery = buildAttendanceMatrixEmployeeQuery({
+    organizationId: req.user.organizationId,
+    monthStart: start,
+    scopedEmployeeIds,
+    search
+  });
 
   const totalEmployees = await Employee.countDocuments(employeeQuery);
 
@@ -4383,5 +4408,6 @@ exports.__private__ = {
   mergeAttendanceRowsByEmployeeDay,
   isNoOpAttendanceOverride,
   buildAttendanceOverrideUpdate,
+  buildAttendanceMatrixEmployeeQuery,
   resolveOvertimeMinutes
 };

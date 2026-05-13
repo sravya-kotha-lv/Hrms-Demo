@@ -29,6 +29,31 @@ const getMaxActiveLoginsPerUser = async (organizationId) => {
   return getDefaultMaxActiveLoginsPerUser();
 };
 
+const SUPERADMIN_ROLE_SLUGS = new Set(["superadmin", "super_admin"]);
+
+const isSuperAdminSwitchContext = async ({ user, dbUser, targetOrganizationId }) => {
+  if (!user?.userId || !targetOrganizationId) return false;
+
+  const currentOrgId = user.organizationId ? String(user.organizationId) : "";
+  const isSystemOrgSwitch =
+    currentOrgId &&
+    currentOrgId !== String(targetOrganizationId) &&
+    process.env.SYSTEM_ORG_ID &&
+    currentOrgId === String(process.env.SYSTEM_ORG_ID);
+
+  if (isSystemOrgSwitch) return true;
+
+  const memberships = await OrgUser.find({ userId: dbUser._id })
+    .populate("roleIds", "slug isSystemRole")
+    .lean();
+
+  return memberships.some((membership) =>
+    (membership.roleIds || []).some((role) =>
+      SUPERADMIN_ROLE_SLUGS.has(String(role?.slug || ""))
+    )
+  );
+};
+
 const extractBase64Payload = (value = "") => {
   if (!value || typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -551,30 +576,18 @@ exports.switchOrgAndRole = async ({
   organizationId,
   roleId
 }) => {
-  /**
-   * 1️⃣ Load full user
-   */
   const dbUser = await User.findById(user.userId);
   if (!dbUser) {
     throw { code: 401, message: "User not found" };
   }
 
-  /**
-   * 2️⃣ Detect SuperAdmin
-   * Rule: coming from SYSTEM org
-   */
-  const isSuperAdmin =
-    user.organizationId &&
-    user.organizationId.toString() !== organizationId &&
-    user.organizationId.toString() === process.env.SYSTEM_ORG_ID;
+  const isSuperAdmin = await isSuperAdminSwitchContext({
+    user,
+    dbUser,
+    targetOrganizationId: organizationId
+  });
 
-  /**
-   * 🔥 SUPERADMIN FLOW
-   */
   if (isSuperAdmin) {
-    /**
-     * 3️⃣ Resolve OrgAdmin role
-     */
     let activeRole;
 
     if (roleId) {
@@ -596,44 +609,35 @@ exports.switchOrgAndRole = async ({
       };
     }
 
-    /**
-     * 4️⃣ Ensure OrgUser membership exists
-     */
     let membership = await OrgUser.findOne({
-      userId: user._id,
+      userId: dbUser._id,
       organizationId
     });
 
     if (!membership) {
       membership = await OrgUser.create({
-        userId: user._id,
+        userId: dbUser._id,
         organizationId,
         roleIds: [activeRole._id]
       });
+    } else if (!membership.roleIds.some((assignedRoleId) => String(assignedRoleId) === String(activeRole._id))) {
+      membership.roleIds.push(activeRole._id);
+      await membership.save();
     }
 
-    /**
-     * 5️⃣ Issue new JWT
-     */
     const token = createJwtToken({
-      _id: user._id,
-      email: user.email,
+      userId: dbUser._id,
       organizationId,
       roleIds: [activeRole._id],
       activeRoleId: activeRole._id,
     });
 
-    /**
-     * 6️⃣ Persist active org
-     */
-    await User.findByIdAndUpdate(user._id, {
-      activeOrganizationId: organizationId
+    await User.findByIdAndUpdate(dbUser._id, {
+      activeOrganizationId: organizationId,
+      lastActiveRoleId: activeRole._id
     });
 
-    /**
-     * 7️⃣ Rotate token
-     */
-    await rotateUserToken(User, user._id, token, {
+    await rotateUserToken(User, dbUser._id, token, {
       organizationId,
       maxActiveLoginsPerUser: await getMaxActiveLoginsPerUser(organizationId)
     });
