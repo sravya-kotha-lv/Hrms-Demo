@@ -39,6 +39,38 @@ const STARTER_COMPONENTS = {
       priority: 20
     },
     {
+      code: "FOOD_COUPONS",
+      name: "Food Coupons",
+      display_name: "Food Coupons",
+      calculation_mode: "fixed",
+      taxable: false,
+      pf_applicable: false,
+      esi_applicable: false,
+      prorate_with_attendance: false,
+      rounding_policy: "nearest_rupee",
+      priority: 25,
+      metadata: {
+        defaultEnabled: false,
+        monthlyAmount: 2200
+      }
+    },
+    {
+      code: "CHILDREN_EDU_ALLOW",
+      name: "Children Education Allowance",
+      display_name: "Children Edu. Allow.",
+      calculation_mode: "fixed",
+      taxable: false,
+      pf_applicable: false,
+      esi_applicable: false,
+      prorate_with_attendance: false,
+      rounding_policy: "nearest_rupee",
+      priority: 27,
+      metadata: {
+        defaultEnabled: false,
+        monthlyAmount: 200
+      }
+    },
+    {
       code: "VARIABLE",
       name: "Variable Pay",
       display_name: "Variable",
@@ -153,6 +185,21 @@ const STARTER_COMPONENTS = {
       priority: 140,
       metadata: {
         defaultEnabled: false
+      }
+    },
+    {
+      code: "PARENTS_MEDICAL_PREM",
+      name: "Parents Medical Premium",
+      display_name: "Parents Medical Prem",
+      calculation_mode: "fixed",
+      taxable: false,
+      is_statutory: false,
+      employee_share_only: true,
+      rounding_policy: "nearest_rupee",
+      priority: 145,
+      metadata: {
+        defaultEnabled: false,
+        monthlyAmount: 7859
       }
     }
   ],

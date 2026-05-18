@@ -19,6 +19,7 @@ type ComponentDraft = {
   scope: "earning" | "deduction" | "employer_contribution";
   code: string;
   name: string;
+  effectiveFrom?: string;
   calculationMode: "fixed" | "percentage" | "formula" | "slab";
   taxable: boolean;
   amount: string;
@@ -47,6 +48,7 @@ type PayrollTemplate = {
     lopCalculationMethod: "calendar_days" | "working_days";
     defaultWorkingDays: string;
     enableProration: boolean;
+    enableAutoOvertime: boolean;
   };
 };
 
@@ -87,6 +89,7 @@ type SalaryComponentPayload = {
   calculation_mode?: ComponentDraft["calculationMode"];
   taxable?: boolean;
   effectiveFrom?: string;
+  effective_from?: string;
   metadata?: Record<string, any>;
 };
 
@@ -199,6 +202,28 @@ const TELANGANA_DEFAULT_TEMPLATE: PayrollTemplate = {
     },
     {
       scope: "earning",
+      code: "FOOD_COUPONS",
+      name: "Food Coupons",
+      calculationMode: "fixed",
+      taxable: false,
+      amount: "2200",
+      percentageOf: "MONTHLY_GROSS",
+      formulaTemplate: "custom",
+      formulaExpression: ""
+    },
+    {
+      scope: "earning",
+      code: "CHILDREN_EDU_ALLOW",
+      name: "Children Education Allowance",
+      calculationMode: "fixed",
+      taxable: false,
+      amount: "200",
+      percentageOf: "MONTHLY_GROSS",
+      formulaTemplate: "custom",
+      formulaExpression: ""
+    },
+    {
+      scope: "earning",
       code: "OTHER_ALLOWANCE",
       name: "Other Allowance",
       calculationMode: "formula",
@@ -242,6 +267,28 @@ const TELANGANA_DEFAULT_TEMPLATE: PayrollTemplate = {
       formulaExpression: ""
     },
     {
+      scope: "deduction",
+      code: "TDS",
+      name: "Tax Deducted at Source",
+      calculationMode: "formula",
+      taxable: false,
+      amount: "",
+      percentageOf: "MONTHLY_GROSS",
+      formulaTemplate: "custom",
+      formulaExpression: "round(TDS_AMOUNT)"
+    },
+    {
+      scope: "deduction",
+      code: "PARENTS_MEDICAL_PREM",
+      name: "Parents Medical Premium",
+      calculationMode: "fixed",
+      taxable: false,
+      amount: "7859",
+      percentageOf: "MONTHLY_GROSS",
+      formulaTemplate: "custom",
+      formulaExpression: ""
+    },
+    {
       scope: "employer_contribution",
       code: "EMPLOYER_EPF",
       name: "Employer Provident Fund",
@@ -267,7 +314,8 @@ const TELANGANA_DEFAULT_TEMPLATE: PayrollTemplate = {
     attendanceLockAfterDays: "7",
     lopCalculationMethod: "working_days",
     defaultWorkingDays: "30",
-    enableProration: true
+    enableProration: true,
+    enableAutoOvertime: true
   }
 };
 
@@ -483,7 +531,11 @@ const buildAttendanceRulesState = (settings?: PayrollSettingsPayload) => ({
     | "working_days",
   defaultWorkingDays: String(settings?.default_working_days || 30),
   enableProration:
-    typeof settings?.enable_proration === "boolean" ? settings.enable_proration : true
+    typeof settings?.enable_proration === "boolean" ? settings.enable_proration : true,
+  enableAutoOvertime:
+    typeof settings?.metadata?.attendance?.enableAutoOvertime === "boolean"
+      ? settings.metadata.attendance.enableAutoOvertime
+      : true
 });
 
 const getComponentPayGroupIds = (component?: SalaryComponentPayload) => {
@@ -512,6 +564,7 @@ const mapComponentToDraft = (component: SalaryComponentPayload): ComponentDraft 
     scope: component.scope,
     code,
     name: String(component?.name || ""),
+    effectiveFrom: String(component?.effectiveFrom || component?.effective_from || "").slice(0, 10) || TODAY,
     calculationMode: (component?.calculation_mode || "fixed") as ComponentDraft["calculationMode"],
     taxable: Boolean(component?.taxable),
     amount: String(
@@ -522,6 +575,21 @@ const mapComponentToDraft = (component: SalaryComponentPayload): ComponentDraft 
       FORMULA_PRESETS.find((preset) => preset.expression === formulaExpression)?.id || "custom",
     formulaExpression
   };
+};
+
+const mergeTemplateComponents = (
+  existingComponents: ComponentDraft[],
+  templateComponents: ComponentDraft[]
+) => {
+  const existingKeys = new Set(
+    existingComponents.map((component) => `${component.scope}:${component.code.trim().toUpperCase()}`)
+  );
+
+  const missingTemplateComponents = templateComponents
+    .filter((component) => !existingKeys.has(`${component.scope}:${component.code.trim().toUpperCase()}`))
+    .map((component) => ({ ...component }));
+
+  return [...existingComponents, ...missingTemplateComponents];
 };
 
 export const PayrollSetupWizard = ({
@@ -684,7 +752,12 @@ export const PayrollSetupWizard = ({
         if (applicableComponents.length) {
           setStatutory(buildStatutoryState(nextSettings));
           setAttendanceRules(buildAttendanceRulesState(nextSettings));
-          setComponents(applicableComponents.map(mapComponentToDraft));
+          setComponents(
+            mergeTemplateComponents(
+              applicableComponents.map(mapComponentToDraft),
+              TELANGANA_DEFAULT_TEMPLATE.components
+            )
+          );
           setLoadedComponentIds(
             applicableComponents
               .map((component) => String(component.id || ""))
@@ -768,7 +841,10 @@ export const PayrollSetupWizard = ({
             salaryPayDay: Number(payGroup.salaryPayDay || 30),
             attendanceCutoffDay: Number(payrollCutoffDay || 25)
           },
-          statutory
+          statutory,
+          attendance: {
+            enableAutoOvertime: attendanceRules.enableAutoOvertime
+          }
         }
       };
 
@@ -825,7 +901,7 @@ export const PayrollSetupWizard = ({
         const updatePayload: SalaryComponentUpdatePayload = {
           name: component.name.trim(),
           calculationMode: component.calculationMode,
-          effectiveFrom: TODAY,
+          effectiveFrom: component.effectiveFrom || TODAY,
           metadata: componentMetadata,
           ...(component.scope !== "employer_contribution" ? { taxable: component.taxable } : {})
         };
@@ -1607,6 +1683,21 @@ export const PayrollSetupWizard = ({
                 checked={attendanceRules.enableProration}
                 onCheckedChange={(checked) =>
                   setAttendanceRules((prev) => ({ ...prev, enableProration: checked }))
+                }
+              />
+            </div>
+
+            <div className="flex items-center justify-between border rounded p-3">
+              <div>
+                <p className="font-medium text-sm">Enable Auto OT Component</p>
+                <p className="text-xs text-muted-foreground">
+                  Adds `OT_AUTO` from attendance overtime minutes during payroll compute.
+                </p>
+              </div>
+              <Switch
+                checked={attendanceRules.enableAutoOvertime}
+                onCheckedChange={(checked) =>
+                  setAttendanceRules((prev) => ({ ...prev, enableAutoOvertime: checked }))
                 }
               />
             </div>

@@ -451,6 +451,7 @@ const PayrollRuns = () => {
   const payslipEmployerContributions = Array.isArray(payslipJson?.employerContributions)
     ? payslipJson.employerContributions
     : [];
+  const payslipWarnings = normalizeWarnings(payslipJson?.warnings);
 
   const renderPayslipLineItems = (title: string, items: any[], emptyLabel: string) => (
     <div className="rounded-lg border">
@@ -705,13 +706,30 @@ const PayrollRuns = () => {
                             <TableCell className="text-right font-semibold">{formatCurrency(Number(row.net_pay || 0))}</TableCell>
                             <TableCell>
                               {row.error_message ? (
-                                <Badge className="bg-red-600 text-white gap-1">
-                                  <AlertTriangle className="h-3 w-3" /> Error
-                                </Badge>
+                                <div className="space-y-2">
+                                  <Badge className="bg-red-600 text-white gap-1">
+                                    <AlertTriangle className="h-3 w-3" /> Error
+                                  </Badge>
+                                  <p className="max-w-xs text-xs text-red-700">{row.error_message}</p>
+                                </div>
                               ) : warnings.length ? (
-                                <Badge className="bg-amber-600 text-white gap-1">
-                                  <Clock3 className="h-3 w-3" /> {warnings.length} warning
-                                </Badge>
+                                <div className="space-y-2">
+                                  <Badge className="bg-amber-600 text-white gap-1">
+                                    <Clock3 className="h-3 w-3" /> {warnings.length} warning
+                                  </Badge>
+                                  <div className="space-y-1">
+                                    {warnings.slice(0, 2).map((warning, index) => (
+                                      <p key={`${row.id}-warning-${index}`} className="max-w-xs text-xs text-amber-700">
+                                        {index + 1}. {warning}
+                                      </p>
+                                    ))}
+                                    {warnings.length > 2 && (
+                                      <p className="text-xs text-muted-foreground">
+                                        +{warnings.length - 2} more warning{warnings.length - 2 > 1 ? "s" : ""}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
                               ) : (
                                 <Badge className="bg-green-600 text-white gap-1">
                                   <CheckCircle2 className="h-3 w-3" /> OK
@@ -788,12 +806,27 @@ const PayrollRuns = () => {
                 </div>
               </div>
 
+              {!!payslipWarnings.length && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50">
+                  <div className="border-b border-amber-200 px-4 py-3">
+                    <p className="font-medium text-amber-900">Warnings</p>
+                  </div>
+                  <div className="space-y-2 px-4 py-3">
+                    {payslipWarnings.map((warning, index) => (
+                      <p key={`preview-warning-${index}`} className="text-sm text-amber-900">
+                        {index + 1}. {warning}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {payslipAttendance && (
                 <div className="rounded-lg border">
                   <div className="border-b px-4 py-3">
                     <p className="font-medium">Attendance Basis</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 px-4 py-3 md:grid-cols-5">
+                  <div className="grid grid-cols-2 gap-3 px-4 py-3 md:grid-cols-6">
                     <div>
                       <p className="text-xs text-muted-foreground">Payable Days</p>
                       <p className="font-semibold">{Number(payslipAttendance.payableDays || 0).toFixed(2)}</p>
@@ -804,7 +837,16 @@ const PayrollRuns = () => {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Present</p>
-                      <p className="font-semibold">{Number(payslipAttendance.presentDays || 0).toFixed(2)}</p>
+                      <p className="font-semibold">
+                        {(
+                          Number(payslipAttendance.presentDays || 0) +
+                          Number(payslipAttendance.halfDays || 0)
+                        ).toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Half Day</p>
+                      <p className="font-semibold">{Number(payslipAttendance.halfDays || 0).toFixed(2)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Paid Leave</p>

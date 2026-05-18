@@ -251,6 +251,7 @@ const buildPayslipPayload = ({
         payableDays: toNumber(attendance.payable_days, 0),
         lopDays: toNumber(attendance.lop_days, 0),
         presentDays: toNumber(attendance.present_days, 0),
+        halfDays: toNumber(attendance.half_days, 0),
         paidLeaveDays: toNumber(attendance.paid_leave_days, 0),
         unpaidLeaveDays: toNumber(attendance.unpaid_leave_days, 0),
         holidayDays: toNumber(attendance.holiday_days, 0),

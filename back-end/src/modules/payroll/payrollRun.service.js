@@ -748,6 +748,11 @@ exports.computePayrollRun = async (req) => {
       [tenantId]
     );
     const settings = settingsResult.rows[0] || {};
+    const settingsMetadata = parseJson(settings.metadata, {});
+    const autoOvertimeEnabled =
+      typeof settingsMetadata?.attendance?.enableAutoOvertime === "boolean"
+        ? settingsMetadata.attendance.enableAutoOvertime
+        : true;
 
     const month = run.pay_month;
     const periodEnd = monthEndDate(month);
@@ -1134,7 +1139,11 @@ exports.computePayrollRun = async (req) => {
           });
         }
 
-        if (overtimeAmountAuto > 0 && !componentRows.some((row) => row.component_code === "OT")) {
+        if (
+          autoOvertimeEnabled &&
+          overtimeAmountAuto > 0 &&
+          !componentRows.some((row) => row.component_code === "OT")
+        ) {
           regularEarnings += overtimeAmountAuto;
           projectedTaxableMonthlyIncome += overtimeAmountAuto;
           computedVars.OT = overtimeAmountAuto;
