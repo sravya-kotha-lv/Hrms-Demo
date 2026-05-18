@@ -489,10 +489,13 @@ const evaluateFormula = (expression, context = {}) => {
 
   const mergedContext = { ...helpers, ...context };
   const identifiers = tokenizeIdentifiers(expr);
-  const allowedNames = new Set(Object.keys(mergedContext));
 
   for (const token of identifiers) {
-    if (!allowedNames.has(token)) {
+    if (!(token in mergedContext)) {
+      if (/^[A-Z][A-Z0-9_]*$/.test(token)) {
+        mergedContext[token] = 0;
+        continue;
+      }
       throw new Error(`Unknown variable in formula: ${token}`);
     }
   }
@@ -1081,6 +1084,12 @@ exports.computePayrollRun = async (req) => {
 
         const componentRows = [];
         const computedVars = { ...baseContext };
+        for (const componentRow of [...earningComponents, ...deductionComponents, ...employerComponents]) {
+          const key = toVarKey(componentRow.code);
+          if (!(key in computedVars)) {
+            computedVars[key] = 0;
+          }
+        }
         let regularEarnings = 0;
         let regularDeductions = 0;
         let regularEmployer = 0;
@@ -1127,7 +1136,7 @@ exports.computePayrollRun = async (req) => {
 
         if (overtimeAmountAuto > 0 && !componentRows.some((row) => row.component_code === "OT")) {
           regularEarnings += overtimeAmountAuto;
-          taxableIncome += overtimeAmountAuto;
+          projectedTaxableMonthlyIncome += overtimeAmountAuto;
           computedVars.OT = overtimeAmountAuto;
           componentRows.push({
             tenant_id: tenantId,
@@ -1408,7 +1417,7 @@ exports.computePayrollRun = async (req) => {
             grossEarnings,
             totalDeductions,
             roundAmount(regularEmployer, settings.rounding_policy),
-            roundAmount(taxableIncome, settings.rounding_policy),
+            roundAmount(tdsEstimate.taxableIncome, settings.rounding_policy),
             roundAmount(tdsAmount, settings.rounding_policy),
             netPay,
             JSON.stringify(runEmployeeWarnings),

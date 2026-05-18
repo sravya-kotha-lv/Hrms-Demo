@@ -60,6 +60,8 @@ type DayCell = {
   overtimeMinutes?: number;
   isOnLeave: boolean;
   leaveType: string | null;
+  leaveCode?: string | null;
+  isPaidLeave?: boolean;
   leaveDuration?: "full_day" | "half_day" | null;
   leaveHalfDaySession?: "first_half" | "second_half" | null;
   leaveUnits?: number;
@@ -82,6 +84,8 @@ type EmployeeRow = {
     pendingCheckoutDays: number;
     absentDays: number;
     onLeaveDays: number;
+    paidLeaveDays: number;
+    unpaidLeaveDays: number;
     weekOffDays: number;
     holidayDays: number;
     selfieDays: number;
@@ -232,6 +236,8 @@ const emptyCell: DayCell = {
   holidayName: null,
   isOnLeave: false,
   leaveType: "",
+  leaveCode: "",
+  isPaidLeave: false,
   leaveDuration: null,
   leaveHalfDaySession: null,
   leaveUnits: 0
@@ -895,7 +901,7 @@ const Attendance = () => {
     (_, idx) => (idx < firstDayOffset ? null : idx - firstDayOffset + 1)
   );
   const weekDayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const summaryColumnCount = canViewSelfieData ? 8 : 7;
+  const summaryColumnCount = canViewSelfieData ? 10 : 9;
   const loadingRowCount = 6;
 
   const renderMonthSelector = (tone: "soft" | "bright" = "soft") => {
@@ -1315,6 +1321,12 @@ const Attendance = () => {
                         On Leave
                       </th>
                       <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
+                        Paid Leave
+                      </th>
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[100px]">
+                        Unpaid Leave
+                      </th>
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                         Week Off
                       </th>
                       <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
@@ -1395,6 +1407,8 @@ const Attendance = () => {
                             pendingCheckoutDays: 0,
                             absentDays: 0,
                             onLeaveDays: 0,
+                            paidLeaveDays: 0,
+                            unpaidLeaveDays: 0,
                             weekOffDays: 0,
                             holidayDays: 0,
                             selfieDays: 0,
@@ -1413,7 +1427,13 @@ const Attendance = () => {
                                 {totals.absentDays.toFixed(1)}
                               </td>
                               <td className="text-center text-sm font-medium text-violet-700">
-                                {totals.onLeaveDays}
+                                {totals.onLeaveDays.toFixed(1)}
+                              </td>
+                              <td className="text-center text-sm font-medium text-emerald-700">
+                                {totals.paidLeaveDays.toFixed(1)}
+                              </td>
+                              <td className="text-center text-sm font-medium text-amber-700">
+                                {totals.unpaidLeaveDays.toFixed(1)}
                               </td>
                               <td className="text-center text-sm font-medium text-sky-700">
                                 {totals.weekOffDays}

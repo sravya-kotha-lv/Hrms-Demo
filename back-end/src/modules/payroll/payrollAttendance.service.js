@@ -9,6 +9,7 @@ const OrgSettings = require("../orgSettings/orgSettings.model");
 const Organization = require("../organizations/organization.model");
 const { getPayrollPgPool } = require("../../config/payrollDb");
 const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
+const { analyzeLeaveDateKeys } = require("../leaves/leavePolicy.util");
 const {
   parseMonthRangeInTimeZone,
   toDateKeyInTimeZone,
@@ -53,6 +54,64 @@ const buildAttendanceMap = (rows, timeZone) => {
   return map;
 };
 
+const mergeAttendanceRowsByEmployeeDay = (rows = [], timeZone = "Asia/Kolkata") => {
+  const grouped = new Map();
+
+  for (const row of rows || []) {
+    if (!row?.employeeId || !row?.date) continue;
+    const employeeId = String(row.employeeId);
+    const dayKey = toDateKeyInTimeZone(row.date, timeZone);
+    const key = `${employeeId}:${dayKey}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, { ...row, employeeId, date: dayKey });
+      continue;
+    }
+
+    const existing = grouped.get(key);
+    existing.totalMinutes = Math.max(
+      Number(existing.totalMinutes || 0),
+      Number(row.totalMinutes || 0)
+    );
+    existing.overtimeMinutes = Math.max(
+      Number(existing.overtimeMinutes || 0),
+      Number(row.overtimeMinutes || 0)
+    );
+    existing.lateByMinutes = Math.max(
+      Number(existing.lateByMinutes || 0),
+      Number(row.lateByMinutes || 0)
+    );
+    existing.earlyCheckoutByMinutes = Math.max(
+      Number(existing.earlyCheckoutByMinutes || 0),
+      Number(row.earlyCheckoutByMinutes || 0)
+    );
+
+    if (row.checkInAt && (!existing.checkInAt || new Date(row.checkInAt) < new Date(existing.checkInAt))) {
+      existing.checkInAt = row.checkInAt;
+    }
+    if (row.checkOutAt && (!existing.checkOutAt || new Date(row.checkOutAt) > new Date(existing.checkOutAt))) {
+      existing.checkOutAt = row.checkOutAt;
+    }
+
+    grouped.set(key, existing);
+  }
+
+  return Array.from(grouped.values()).map((row) => {
+    const hasCheckIn = Boolean(row.checkInAt);
+    const hasCheckOut = Boolean(row.checkOutAt);
+    if (hasCheckIn && hasCheckOut) {
+      row.totalMinutes = Math.max(
+        Number(row.totalMinutes || 0),
+        Math.max(0, Math.round((new Date(row.checkOutAt).getTime() - new Date(row.checkInAt).getTime()) / 60000))
+      );
+      row.status = "checked_out";
+    } else if (hasCheckIn) {
+      row.status = "checked_in";
+    }
+    return row;
+  });
+};
+
 const buildHolidayMap = (rows, timeZone) => {
   const map = new Map();
   for (const row of rows) {
@@ -62,7 +121,45 @@ const buildHolidayMap = (rows, timeZone) => {
   return map;
 };
 
-const buildLeaveIndex = (rows, leaveTypeCodeById, unpaidCodes, timeZone, startKey, endKey) => {
+const getLeaveDateKeysForPayroll = ({ leave, holidayKeySet, weekOffDays, timeZone }) => {
+  const fromDateKey = toDateKeyInTimeZone(leave.fromDate, timeZone);
+  if (leave.duration === "half_day") return [fromDateKey];
+
+  const workingAnalysis = analyzeLeaveDateKeys({
+    fromDate: leave.fromDate,
+    toDate: leave.toDate,
+    weekOffDays,
+    holidaySet: holidayKeySet,
+    effectiveDateKeys: leave?.effectiveDateKeys,
+    sandwichRuleEnabled: false,
+    timeZone
+  });
+
+  if (Array.isArray(leave?.effectiveDateKeys) && leave.effectiveDateKeys.length) {
+    return workingAnalysis.effectiveDateKeys;
+  }
+
+  const sandwichAnalysis = analyzeLeaveDateKeys({
+    fromDate: leave.fromDate,
+    toDate: leave.toDate,
+    weekOffDays,
+    holidaySet: holidayKeySet,
+    sandwichRuleEnabled: true,
+    timeZone
+  });
+
+  if (
+    Number.isFinite(Number(leave?.totalDays || 0))
+    && Number(leave.totalDays || 0) > workingAnalysis.workingDateKeys.length
+    && sandwichAnalysis.sandwichDeductedDateKeys.length
+  ) {
+    return sandwichAnalysis.effectiveDateKeys;
+  }
+
+  return workingAnalysis.effectiveDateKeys;
+};
+
+const buildLeaveIndex = (rows, leaveTypeCodeById, unpaidCodes, timeZone, holidayKeySet, weekOffDays) => {
   const map = new Map();
 
   for (const leave of rows) {
@@ -71,19 +168,20 @@ const buildLeaveIndex = (rows, leaveTypeCodeById, unpaidCodes, timeZone, startKe
     const unit = leave.duration === "half_day" ? 0.5 : 1;
     const isPaid = !isUnpaid;
 
-    let cursor = toDateKeyInTimeZone(leave.fromDate, timeZone);
-    const end = toDateKeyInTimeZone(leave.toDate, timeZone);
+    const effectiveDateKeys = getLeaveDateKeysForPayroll({
+      leave,
+      holidayKeySet,
+      weekOffDays,
+      timeZone
+    });
 
-    while (cursor <= end) {
-      if (cursor >= startKey && cursor <= endKey) {
-        map.set(`${String(leave.employeeId)}:${cursor}`, {
-          leaveId: String(leave._id),
-          isPaid,
-          units: unit,
-          leaveTypeCode
-        });
-      }
-      cursor = addDaysToDateKey(cursor, 1);
+    for (const dateKey of effectiveDateKeys) {
+      map.set(dateKey, {
+        leaveId: String(leave._id),
+        isPaid,
+        units: unit,
+        leaveTypeCode
+      });
     }
   }
 
@@ -349,15 +447,19 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
   const employeeIdList = employees.map((employee) => employee._id);
   const employeeIdStrings = employees.map((employee) => String(employee._id));
 
-  const [attendanceRows, leaveRows, leaveTypes, holidayRows, weekOffRows, orgSettings] =
+  const [attendanceRowsRaw, leaveRows, leaveTypes, holidayRows, weekOffRows, orgSettings] =
     await Promise.all([
       Attendance.find({
         organizationId,
         employeeId: { $in: employeeIdList },
-        date: { $gte: monthRange.start, $lte: monthRange.end }
+        $or: [
+          { date: { $gte: monthRange.start, $lte: monthRange.end } },
+          { checkInAt: { $gte: monthRange.start, $lte: monthRange.end } },
+          { checkOutAt: { $gte: monthRange.start, $lte: monthRange.end } }
+        ]
       })
         .select(
-          "_id employeeId date totalMinutes overtimeMinutes lateByMinutes earlyCheckoutByMinutes"
+          "_id employeeId date checkInAt checkOutAt status totalMinutes overtimeMinutes lateByMinutes earlyCheckoutByMinutes"
         )
         .lean(),
       Leave.find({
@@ -367,7 +469,7 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
         fromDate: { $lte: monthRange.end },
         toDate: { $gte: monthRange.start }
       })
-        .select("_id employeeId leaveTypeId fromDate toDate duration")
+        .select("_id employeeId leaveTypeId fromDate toDate duration totalDays effectiveDateKeys")
         .lean(),
       LeaveType.find({ organizationId }).select("_id code").lean(),
       Holiday.find({
@@ -389,19 +491,15 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
     Math.round(toSafeNumber(orgSettings?.minHalfDayHours, 4) * 60)
   );
 
+  const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, timeZone);
   const leaveTypeCodeById = new Map(
     leaveTypes.map((item) => [String(item._id), String(item.code || "").toUpperCase()])
   );
   const attendanceMap = buildAttendanceMap(attendanceRows, timeZone);
-  const leaveMap = buildLeaveIndex(
-    leaveRows,
-    leaveTypeCodeById,
-    unpaidCodes,
-    timeZone,
-    monthRange.startKey,
-    monthRange.endKey
-  );
   const holidayMap = buildHolidayMap(holidayRows, timeZone);
+  const holidayKeySet = new Set(
+    holidayRows.map((holiday) => toDateKeyInTimeZone(holiday.date, timeZone))
+  );
   const resolveWeekOffDays = buildWeekOffResolver(weekOffRows);
 
   const client = await pool.connect();
@@ -430,6 +528,15 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
     for (const employee of employees) {
       const employeeExternalId = String(employee._id);
       const weekOffDays = resolveWeekOffDays(employee.shiftId ? String(employee.shiftId) : null);
+      const employeeLeaveRows = leaveRows.filter((leave) => String(leave.employeeId) === employeeExternalId);
+      const employeeLeaveMap = buildLeaveIndex(
+        employeeLeaveRows,
+        leaveTypeCodeById,
+        unpaidCodes,
+        timeZone,
+        holidayKeySet,
+        weekOffDays
+      );
 
       const totals = {
         calendarDays: monthRange.daysInMonth,
@@ -454,7 +561,7 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
       for (const dayKey of dateKeys) {
         const weekday = getWeekdayForDateKey(dayKey, timeZone);
         const attendance = attendanceMap.get(`${employeeExternalId}:${dayKey}`);
-        const leave = leaveMap.get(`${employeeExternalId}:${dayKey}`);
+        const leave = employeeLeaveMap.get(dayKey);
         const holiday = holidayMap.get(dayKey);
         const isHoliday = Boolean(holiday);
         const isWeekOff = weekOffDays.includes(weekday);
@@ -476,7 +583,44 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
         totals.lateByMinutes += lateByMinutes;
         totals.earlyCheckoutMinutes += earlyCheckoutMinutes;
 
-        if (attendance) {
+        if (leave && leave.units === 1) {
+          if (leave.isPaid) {
+            dayStatus = "paid_leave";
+            payableUnits = 1;
+            totals.paidLeaveDays += 1;
+          } else {
+            dayStatus = "unpaid_leave";
+            lopUnits = 1;
+            totals.unpaidLeaveDays += 1;
+            totals.lopDays += 1;
+          }
+        } else if (leave && leave.units === 0.5) {
+          const qualifiesHalfDayAttendance = attendance && attendanceMinutes >= minHalfDayMinutes;
+          if (qualifiesHalfDayAttendance) {
+            dayStatus = leave.isPaid ? "present_paid_leave_half" : "present_unpaid_leave_half";
+            payableUnits = leave.isPaid ? 1 : 0.5;
+            totals.halfDays += 0.5;
+            if (leave.isPaid) {
+              totals.paidLeaveDays += 0.5;
+            } else {
+              totals.unpaidLeaveDays += 0.5;
+              totals.lopDays += 0.5;
+            }
+          } else if (leave.isPaid) {
+            dayStatus = "paid_leave_half";
+            payableUnits = 0.5;
+            lopUnits = isWorkingDay ? 0.5 : 0;
+            totals.paidLeaveDays += 0.5;
+            if (isWorkingDay) {
+              totals.lopDays += 0.5;
+            }
+          } else {
+            dayStatus = "unpaid_leave_half";
+            lopUnits = 0.5;
+            totals.unpaidLeaveDays += 0.5;
+            totals.lopDays += 0.5;
+          }
+        } else if (attendance) {
           if (isHoliday) {
             dayStatus = "holiday_worked";
             payableUnits = 1;
@@ -500,22 +644,6 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
             lopUnits = 1;
             totals.absentDays += 1;
             totals.lopDays += 1;
-          }
-        } else if (leave) {
-          const leaveUnits = leave.units === 0.5 ? 0.5 : 1;
-          if (leave.isPaid) {
-            dayStatus = leaveUnits === 0.5 ? "paid_leave_half" : "paid_leave";
-            payableUnits = leaveUnits;
-            totals.paidLeaveDays += leaveUnits;
-            if (leaveUnits === 0.5 && isWorkingDay) {
-              lopUnits = 0.5;
-              totals.lopDays += 0.5;
-            }
-          } else {
-            dayStatus = leaveUnits === 0.5 ? "unpaid_leave_half" : "unpaid_leave";
-            lopUnits = leaveUnits;
-            totals.unpaidLeaveDays += leaveUnits;
-            totals.lopDays += leaveUnits;
           }
         } else if (isHoliday) {
           dayStatus = "holiday";

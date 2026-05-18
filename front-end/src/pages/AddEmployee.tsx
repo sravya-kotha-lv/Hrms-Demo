@@ -553,6 +553,7 @@ const AddEmployee = () => {
   const [payrollProfileId, setPayrollProfileId] = useState<string>("");
   const [savingSalary, setSavingSalary] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
+  const [hasSavedBankDetails, setHasSavedBankDetails] = useState(false);
   const [lookingUpIfsc, setLookingUpIfsc] = useState(false);
   const [lookingUpAccount, setLookingUpAccount] = useState(false);
   const [salaryStructures, setSalaryStructures] = useState<SalaryStructureRow[]>([]);
@@ -1307,6 +1308,7 @@ const AddEmployee = () => {
         detail?.date_of_joining?.slice(0, 10) ||
         prev.effectiveFrom
     }));
+    setHasSavedBankDetails(Boolean(currentBank));
 
     setStatutoryForm((prev) => ({
       ...prev,
@@ -1932,7 +1934,10 @@ const AddEmployee = () => {
           )
         : await putApiWithToken(
             `/payroll/salary-structures/${salaryStructureIdToUpdate}`,
-            salaryPayload,
+            {
+              ...salaryPayload,
+              effectiveFrom: salaryForm.effectiveFrom
+            },
             null,
             { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
           );
@@ -1953,6 +1958,10 @@ const AddEmployee = () => {
   const handleSaveBank = async () => {
     if (!isEdit || !id) {
       toast.error("Create employee first, then configure bank details");
+      return;
+    }
+    if (isSectionReadOnly("bank")) {
+      toast.error("Click Edit in Bank Details before saving");
       return;
     }
     if (!canManagePayroll) {
@@ -2186,8 +2195,8 @@ const AddEmployee = () => {
       setBankForm((prev) => ({
         ...prev,
         ifscCode: ifsc,
-        bankName: bankName || prev.bankName,
-        branchName: branchName || prev.branchName
+        bankName: prev.bankName || bankName,
+        branchName: prev.branchName || branchName
       }));
       toast.success("Bank and branch details fetched from IFSC");
     } finally {
@@ -4802,8 +4811,13 @@ const AddEmployee = () => {
               <p className="text-sm text-muted-foreground">
                 You need `PAYROLL_CONFIG_MANAGE` permission to configure bank details.
               </p>
-            ) : (
+        ) : (
               <>
+                {isSectionReadOnly("bank") && !hasSavedBankDetails && (
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+                    No bank details are saved yet for this employee. Click <span className="font-medium text-foreground">Edit</span>, enter the bank details, and then use <span className="font-medium text-foreground">Save Bank Details</span>.
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>
@@ -4981,7 +4995,7 @@ const AddEmployee = () => {
                 </p>
 
                 <div className="flex justify-end">
-                  <Button onClick={handleSaveBank} disabled={savingBank}>
+                  <Button onClick={handleSaveBank} disabled={savingBank || isSectionReadOnly("bank")}>
                     {savingBank ? "Saving Bank Details..." : "Save Bank Details"}
                   </Button>
                 </div>

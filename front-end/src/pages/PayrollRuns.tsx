@@ -443,6 +443,41 @@ const PayrollRuns = () => {
   const validationRows = runEmployees.filter(
     (row) => String(row.payroll_status) === "error" || !!row.error_message
   );
+  const payslipJson = payslipData?.payslipJson || null;
+  const payslipAttendance = payslipJson?.attendanceSummary || null;
+  const payslipEarnings = Array.isArray(payslipJson?.earnings) ? payslipJson.earnings : [];
+  const payslipDeductions = Array.isArray(payslipJson?.deductions) ? payslipJson.deductions : [];
+  const payslipReimbursements = Array.isArray(payslipJson?.reimbursements) ? payslipJson.reimbursements : [];
+  const payslipEmployerContributions = Array.isArray(payslipJson?.employerContributions)
+    ? payslipJson.employerContributions
+    : [];
+
+  const renderPayslipLineItems = (title: string, items: any[], emptyLabel: string) => (
+    <div className="rounded-lg border">
+      <div className="border-b px-4 py-3">
+        <p className="font-medium">{title}</p>
+      </div>
+      {!items.length ? (
+        <p className="px-4 py-3 text-sm text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <div className="divide-y">
+          {items.map((item, index) => (
+            <div key={`${title}-${item.code || item.name || index}`} className="flex items-center justify-between gap-4 px-4 py-3">
+              <div>
+                <p className="font-medium">{item.name || item.code || "-"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {item.code || "-"}
+                  {item.sourceType ? ` • ${item.sourceType}` : ""}
+                  {typeof item.taxable === "boolean" ? ` • ${item.taxable ? "Taxable" : "Non-taxable"}` : ""}
+                </p>
+              </div>
+              <p className="font-semibold">{formatCurrency(Number(item.amount || 0))}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <MainLayout
@@ -708,10 +743,10 @@ const PayrollRuns = () => {
       </div>
 
       <Dialog open={payslipOpen} onOpenChange={setPayslipOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5" /> Payslip Preview
+              <ShieldCheck className="h-5 w-5" /> Employee Payroll Review
             </DialogTitle>
           </DialogHeader>
           {!payslipData ? (
@@ -721,17 +756,79 @@ const PayrollRuns = () => {
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded border p-3">
                   <p className="text-xs text-muted-foreground">Employee</p>
-                  <p className="font-medium">{payslipData?.payslipJson?.employee?.name || "-"}</p>
-                  <p className="text-xs text-muted-foreground">{payslipData?.payslipJson?.employee?.employeeCode || "-"}</p>
+                  <p className="font-medium">{payslipJson?.employee?.name || "-"}</p>
+                  <p className="text-xs text-muted-foreground">{payslipJson?.employee?.employeeCode || "-"}</p>
                 </div>
                 <div className="rounded border p-3">
                   <p className="text-xs text-muted-foreground">Month</p>
-                  <p className="font-medium">{payslipData?.payslipJson?.payMonth || "-"}</p>
+                  <p className="font-medium">{payslipJson?.payMonth || "-"}</p>
                 </div>
                 <div className="rounded border p-3">
                   <p className="text-xs text-muted-foreground">Net Pay</p>
-                  <p className="font-semibold text-green-600">{formatCurrency(Number(payslipData?.payslipJson?.totals?.netPay || 0))}</p>
+                  <p className="font-semibold text-green-600">{formatCurrency(Number(payslipJson?.totals?.netPay || 0))}</p>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                <div className="rounded border p-3">
+                  <p className="text-xs text-muted-foreground">Gross Earnings</p>
+                  <p className="font-semibold">{formatCurrency(Number(payslipJson?.totals?.grossEarnings || 0))}</p>
+                </div>
+                <div className="rounded border p-3">
+                  <p className="text-xs text-muted-foreground">Total Deductions</p>
+                  <p className="font-semibold">{formatCurrency(Number(payslipJson?.totals?.totalDeductions || 0))}</p>
+                </div>
+                <div className="rounded border p-3">
+                  <p className="text-xs text-muted-foreground">Employer Contributions</p>
+                  <p className="font-semibold">{formatCurrency(Number(payslipJson?.totals?.employerContributions || 0))}</p>
+                </div>
+                <div className="rounded border p-3">
+                  <p className="text-xs text-muted-foreground">Taxable Income</p>
+                  <p className="font-semibold">{formatCurrency(Number(payslipJson?.totals?.taxableIncome || 0))}</p>
+                </div>
+              </div>
+
+              {payslipAttendance && (
+                <div className="rounded-lg border">
+                  <div className="border-b px-4 py-3">
+                    <p className="font-medium">Attendance Basis</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 px-4 py-3 md:grid-cols-5">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Payable Days</p>
+                      <p className="font-semibold">{Number(payslipAttendance.payableDays || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">LOP Days</p>
+                      <p className="font-semibold text-red-600">{Number(payslipAttendance.lopDays || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Present</p>
+                      <p className="font-semibold">{Number(payslipAttendance.presentDays || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Paid Leave</p>
+                      <p className="font-semibold">{Number(payslipAttendance.paidLeaveDays || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Week Off + Holiday</p>
+                      <p className="font-semibold">
+                        {(Number(payslipAttendance.weekOffDays || 0) + Number(payslipAttendance.holidayDays || 0)).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {renderPayslipLineItems("Earnings", payslipEarnings, "No earning components in this run.")}
+                {renderPayslipLineItems("Deductions", payslipDeductions, "No deduction components in this run.")}
+                {renderPayslipLineItems("Reimbursements", payslipReimbursements, "No reimbursements in this run.")}
+                {renderPayslipLineItems(
+                  "Employer Contributions",
+                  payslipEmployerContributions,
+                  "No employer contribution components in this run."
+                )}
               </div>
             </div>
           )}

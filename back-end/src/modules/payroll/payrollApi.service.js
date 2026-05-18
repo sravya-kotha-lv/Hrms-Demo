@@ -860,6 +860,19 @@ exports.createEmployeeProfile = async (req) => {
           updated_by
         )
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$13)
+        ON CONFLICT (tenant_id, employee_external_id)
+        DO UPDATE SET
+          employee_code = COALESCE(EXCLUDED.employee_code, employee_payroll_profiles.employee_code),
+          pay_group_id = COALESCE(EXCLUDED.pay_group_id, employee_payroll_profiles.pay_group_id),
+          payroll_status = COALESCE(EXCLUDED.payroll_status, employee_payroll_profiles.payroll_status),
+          default_payment_mode = COALESCE(EXCLUDED.default_payment_mode, employee_payroll_profiles.default_payment_mode),
+          tax_regime = COALESCE(EXCLUDED.tax_regime, employee_payroll_profiles.tax_regime),
+          date_of_joining = COALESCE(EXCLUDED.date_of_joining, employee_payroll_profiles.date_of_joining),
+          date_of_exit = COALESCE(EXCLUDED.date_of_exit, employee_payroll_profiles.date_of_exit),
+          cost_center_code = COALESCE(EXCLUDED.cost_center_code, employee_payroll_profiles.cost_center_code),
+          location_code = COALESCE(EXCLUDED.location_code, employee_payroll_profiles.location_code),
+          metadata = employee_payroll_profiles.metadata || EXCLUDED.metadata,
+          updated_by = EXCLUDED.updated_by
         RETURNING *
       `,
       [
@@ -1224,7 +1237,11 @@ exports.upsertBankDetail = async (req) => {
         actorId
       ]
     );
+    await client.query("COMMIT");
     return result.rows[0];
+  } catch (error) {
+    await safeRollback(client);
+    throw error;
   } finally {
     client.release();
   }
