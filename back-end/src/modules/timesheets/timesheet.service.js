@@ -1192,6 +1192,8 @@ const formatAttendanceOverrideStatus = (status) => {
   return "Absent";
 };
 
+const DEFAULT_UNPAID_LEAVE_CODES = new Set(["LOP", "LWP", "LWOP", "ULOP", "UNPAID"]);
+
 const buildAttendanceOverrideUpdate = ({
   status,
   actorEmployeeId,
@@ -1379,6 +1381,8 @@ const buildAttendanceSummary = (days, daysInMonth) => {
     pendingCheckoutDays: 0,
     absentDays: 0,
     onLeaveDays: 0,
+    paidLeaveDays: 0,
+    unpaidLeaveDays: 0,
     weekOffDays: 0,
     holidayDays: 0,
     selfieDays: 0,
@@ -1408,15 +1412,21 @@ const buildAttendanceSummary = (days, daysInMonth) => {
     if (cell.displayStatus === "Present + Leave") {
       summary.presentDays += 0.5;
       summary.onLeaveDays += 0.5;
+      if (cell.isPaidLeave) summary.paidLeaveDays += 0.5;
+      else summary.unpaidLeaveDays += 0.5;
       continue;
     }
     if (cell.displayStatus === "Absent + Leave") {
       summary.absentDays += 0.5;
       summary.onLeaveDays += 0.5;
+      if (cell.isPaidLeave) summary.paidLeaveDays += 0.5;
+      else summary.unpaidLeaveDays += 0.5;
       continue;
     }
     if (cell.displayStatus === "Leave") {
       summary.onLeaveDays += 1;
+      if (cell.isPaidLeave) summary.paidLeaveDays += 1;
+      else summary.unpaidLeaveDays += 1;
       continue;
     }
     if (cell.displayStatus === "Week Off") {
@@ -1861,6 +1871,26 @@ const buildLockAttendanceActionMeta = ({
     reason: null,
     snapshotGenerated
   };
+};
+
+const countPendingCheckoutForMonth = async ({
+  organizationId,
+  start,
+  end,
+  scopedEmployeeIds
+}) => {
+  const attendanceQuery = {
+    organizationId,
+    date: { $gte: start, $lte: end },
+    checkInAt: { $ne: null },
+    $or: [{ status: "checked_in" }, { checkOutAt: null }]
+  };
+
+  if (Array.isArray(scopedEmployeeIds)) {
+    attendanceQuery.employeeId = { $in: scopedEmployeeIds };
+  }
+
+  return Attendance.countDocuments(attendanceQuery);
 };
 
 const hasPayrollSnapshotForMonth = async (req, month) => {
@@ -2581,7 +2611,7 @@ exports.getAttendanceMatrix = async (req) => {
       status: "approved",
       fromDate: { $lte: end },
       toDate: { $gte: start }
-    }).populate("leaveTypeId", "name"),
+    }).populate("leaveTypeId", "name code"),
     WeekOffService.resolveWeekOffMapForEmployees({
       organizationId: req.user.organizationId,
       employees
@@ -2591,7 +2621,12 @@ exports.getAttendanceMatrix = async (req) => {
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
-  const pendingCheckoutCount = attendanceRows.filter((row) => isAttendanceOpenSession(row)).length;
+  const pendingCheckoutCount = await countPendingCheckoutForMonth({
+    organizationId: req.user.organizationId,
+    start,
+    end,
+    scopedEmployeeIds
+  });
   const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
   const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
   const lockAttendance = buildLockAttendanceActionMeta({
@@ -2682,6 +2717,8 @@ exports.getAttendanceMatrix = async (req) => {
       leaveMap.set(key, {
         isOnLeave: true,
         leaveType: leave.leaveTypeId?.name || "Leave",
+        leaveCode: leave.leaveTypeId?.code || "",
+        isPaidLeave: !DEFAULT_UNPAID_LEAVE_CODES.has(String(leave.leaveTypeId?.code || "").toUpperCase()),
         leaveDuration: leave.duration || "full_day",
         leaveHalfDaySession: leave.halfDaySession || null,
         leaveUnits: leave.duration === "half_day" ? 0.5 : 1
@@ -2697,6 +2734,8 @@ exports.getAttendanceMatrix = async (req) => {
       const leaveInfo = leaveMap.get(key) || {
         isOnLeave: false,
         leaveType: null,
+        leaveCode: "",
+        isPaidLeave: false,
         leaveDuration: null,
         leaveHalfDaySession: null,
         leaveUnits: 0
@@ -2732,6 +2771,8 @@ exports.getAttendanceMatrix = async (req) => {
       };
       days[day].isOnLeave = leaveInfo.isOnLeave;
       days[day].leaveType = leaveInfo.leaveType;
+      days[day].leaveCode = leaveInfo.leaveCode;
+      days[day].isPaidLeave = leaveInfo.isPaidLeave;
       days[day].leaveDuration = leaveInfo.leaveDuration;
       days[day].leaveHalfDaySession = leaveInfo.leaveHalfDaySession;
       days[day].leaveUnits = leaveInfo.leaveUnits;
@@ -2810,7 +2851,7 @@ exports.getMyAttendanceMatrix = async (req) => {
       status: "approved",
       fromDate: { $lte: end },
       toDate: { $gte: start }
-    }).populate("leaveTypeId", "name"),
+    }).populate("leaveTypeId", "name code"),
     WeekOffService.resolveWeekOffDays({
       organizationId: req.user.organizationId,
       shiftId: employee.shiftId
@@ -2820,7 +2861,12 @@ exports.getMyAttendanceMatrix = async (req) => {
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
-  const pendingCheckoutCount = attendanceRows.filter((row) => isAttendanceOpenSession(row)).length;
+  const pendingCheckoutCount = await countPendingCheckoutForMonth({
+    organizationId: req.user.organizationId,
+    start,
+    end,
+    scopedEmployeeIds: [employee._id]
+  });
   const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
   const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
   const lockAttendance = buildLockAttendanceActionMeta({
@@ -2944,6 +2990,8 @@ exports.getMyAttendanceMatrix = async (req) => {
         ...days[day],
         isOnLeave: true,
         leaveType: leave.leaveTypeId?.name || "Leave",
+        leaveCode: leave.leaveTypeId?.code || "",
+        isPaidLeave: !DEFAULT_UNPAID_LEAVE_CODES.has(String(leave.leaveTypeId?.code || "").toUpperCase()),
         leaveDuration: leave.duration || "full_day",
         leaveHalfDaySession: leave.halfDaySession || null,
         leaveUnits: leave.duration === "half_day" ? 0.5 : 1

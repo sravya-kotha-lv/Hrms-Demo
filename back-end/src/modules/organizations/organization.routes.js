@@ -8,7 +8,8 @@ const controller = require("./organization.controller");
 const {
   createOrganizationSchema,
   updateOrganizationSchema,
-  organizationLifecycleSchema
+  organizationLifecycleSchema,
+  organizationPayrollClearSchema
 } = require("./organization.validation");
 
 /**
@@ -74,6 +75,14 @@ router.post(
   authorize("ORG_MANAGE"),
   validate(organizationLifecycleSchema),
   asyncHandler(controller.lifecycleAction)
+);
+
+router.post(
+  "/:id/payroll-clear",
+  auth,
+  authorize("ORG_MANAGE"),
+  validate(organizationPayrollClearSchema),
+  asyncHandler(controller.clearPayrollData)
 );
 
 module.exports = router;

@@ -22,3 +22,8 @@ exports.organizationLifecycleSchema = Joi.object({
   action: Joi.string().valid("soft_delete", "restore", "hard_delete").required(),
   confirmationCode: Joi.string().trim().required()
 });
+
+exports.organizationPayrollClearSchema = Joi.object({
+  mode: Joi.string().valid("generated", "all").default("generated"),
+  confirmationCode: Joi.string().trim().required()
+});

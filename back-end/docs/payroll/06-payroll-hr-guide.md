@@ -22,25 +22,231 @@ Complete these checks first:
 - `Payable Days`: Days eligible for salary in the period.
 - `LOP`: Loss of Pay for unpaid absences.
 
-## 3. Recommended Payroll Process (Monthly Cycle)
+## 3. First-Time Payroll Setup Flow
 
-1. Open `Payroll Setup Wizard`.
-2. Review default Telangana components/formulas.
-3. Edit if company-specific policy differs.
-4. Save Pay Group.
-5. For each employee, set salary details:
-   - Enter annual CTC.
-   - Confirm pay group.
-   - Review auto-calculated components.
-   - Override component percent/amount if required.
-6. Add/verify employee bank and statutory details.
-7. Generate attendance snapshot for the month.
-8. Create payroll run.
-9. Preview and validate errors/warnings.
-10. Recompute after fixes (if any).
-11. Submit for approval (maker-checker flow).
-12. Approve and lock run.
-13. Generate payslips and bank transfer export.
+Follow this order when a client is setting up payroll for the first time.
+
+### Step 1: Create the Pay Group
+
+A Pay Group is the salary cycle and rule set for a group of employees.
+
+Examples:
+- `Monthly Staff`
+- `Weekly Workers`
+- `Consultants`
+- `Factory Staff`
+
+Open `Payroll > Setup`, then click `Add Pay Group`.
+
+Fill these fields:
+- `Code`: Short internal code, such as `MONTHLY`, `WEEKLY`, or `CONTRACT`.
+- `Name`: Clear name that HR can recognize.
+- `Pay Frequency`: Usually `Monthly` for regular employees.
+- `Salary Pay Day`: The day salary is normally released, such as `30`.
+- `Work Week Days`: Usually `5` or `6`, based on company policy.
+- `Default Basic %`: Default Basic salary percentage used when employees follow the pay group rule.
+
+Save the pay group.
+
+### Step 2: Open Setup Wizard For That Pay Group
+
+After the pay group is created, open `Setup Wizard` for that pay group.
+
+The wizard connects salary components to the pay group. This is important because employees assigned to the pay group will receive salary packages based on these components.
+
+### Step 3: Add Or Review Salary Components
+
+Salary components are the rows that make up salary and payslips.
+
+Component types:
+- `Earnings`: Paid to employee. Example: Basic, HRA, Other Allowance, Bonus, Variable Pay.
+- `Deductions`: Reduced from employee take-home salary. Example: PF, ESI, PT, TDS, loan recovery.
+- `Employer Contributions`: Company-paid cost. Example: Employer PF. These are part of CTC but are not deducted from employee net pay.
+
+Calculation types:
+- `Fixed Amount`: Same value every month.
+- `Percentage`: A percentage of another value. Example: HRA as 40% or 50% of Basic.
+- `Formula`: Calculated using salary variables. Example: PF based on Basic with wage ceiling.
+- `Slab`: Amount changes by salary range. Example: Professional Tax.
+
+Use the default Telangana components if they match the client policy. Edit names, amounts, percentages, or formulas only when the client policy requires it.
+
+Save the wizard after reviewing all components.
+
+### Step 4: Assign Pay Group To Employees
+
+Open `Employees`, edit the employee, and go to the `Salary` tab.
+
+Fill these fields:
+- `Pay Group`: Select the pay group created in Payroll Setup.
+- `Annual CTC`: Enter yearly company cost for the employee.
+- `Payroll Status`: Usually `active`.
+- `Payment Mode`: Usually `bank_transfer`.
+- `Tax Regime`: Select old or new regime based on employee declaration.
+
+With auto-calculate enabled, the system calculates:
+- Monthly Gross
+- Basic Pay
+- HRA
+- Variable Pay
+- Employer PF
+- Employee deductions
+- Estimated take-home salary
+
+Save salary details.
+
+### Step 5: Enable Or Disable Employee-Level Components
+
+Use employee-level component customization only for approved exceptions.
+
+Examples:
+- Disable bonus for one employee.
+- Enable a special allowance for one employee.
+- Change the percentage for a specific employee.
+- Disable a deduction when it does not apply.
+
+Normal employees should use the pay group default. Employee overrides should be reviewed carefully because they change salary output only for that employee.
+
+### Step 6: Add Bank And Statutory Details
+
+In the employee payroll area, save:
+- Bank account holder name
+- Account number
+- IFSC code
+- Bank and branch details
+- PAN
+- UAN
+- ESI number, if applicable
+- PF/ESI/PT applicability
+- Tax declaration details, if applicable
+
+The employee should now appear in `Payroll > Employees` under the selected pay group.
+
+### Step 7: Run Monthly Payroll
+
+After pay groups, components, employee salary, bank, and statutory details are complete:
+
+1. Finalize attendance and leave approvals for the month.
+2. Lock the attendance month when checks are complete. This lock also generates the payroll attendance snapshot for that month.
+3. Open `Payroll > Employees` and confirm employees are assigned to the correct pay group.
+4. If needed, refresh or regenerate the attendance snapshot for the month or selected pay group.
+5. Create payroll run for the pay group and month.
+6. Preview salary values.
+7. Resolve validation errors or warnings.
+8. Recompute payroll after fixes.
+9. Submit for approval.
+10. Approve and lock the run.
+11. Generate payslips and bank transfer export.
+
+Important: Do not lock payroll until salary setup, attendance, leave approvals, bank details, and statutory details have all been checked.
+
+## 3A. How Attendance Snapshot Moves Into Payroll
+
+This is one of the most important concepts for clients to understand.
+
+Payroll does not calculate salary directly from raw daily attendance punches. It first creates a monthly attendance snapshot for the payroll month.
+
+That snapshot acts as the bridge between `Attendance` and `Payroll`.
+
+### What the snapshot reads
+
+When snapshot is generated, the system checks:
+
+- Attendance punches for the month
+- Approved leave records
+- Holiday calendar
+- Weekly off rules
+- Full-day and half-day minimum work hours
+
+### What the snapshot stores
+
+For each employee, the snapshot stores payroll-ready monthly totals such as:
+
+- `Calendar Days`
+- `Working Days`
+- `Present Days`
+- `Paid Leave Days`
+- `Unpaid Leave Days`
+- `Holiday Days`
+- `Week Off Days`
+- `Payable Days`
+- `LOP Days`
+- `Overtime Minutes`
+
+### What Payable Days and LOP mean
+
+- `Payable Days`: Days for which salary should be paid in that payroll month.
+- `LOP Days`: Loss Of Pay days that reduce salary for that payroll month.
+
+Typical understanding:
+
+- `Present` increases payable days
+- `Paid Leave` increases payable days
+- `Holiday` and `Week Off` usually increase payable days
+- `Unpaid Leave` increases LOP
+- `Absent` increases LOP
+- `Half Day` usually counts as half payable and half LOP
+
+### How payroll uses the snapshot
+
+When payroll run is computed, the system reads the attendance snapshot totals and calculates a proration factor.
+
+Example:
+
+- Monthly denominator = `30` days
+- Payable days = `27`
+- LOP days = `3`
+
+Then:
+
+- `Proration Factor = 27 / 30 = 0.90`
+
+Salary components that are marked to follow attendance are paid at `90%` for that month.
+
+This usually affects:
+
+- Basic
+- HRA
+- Variable Pay
+- Other Allowance
+
+Some components may not reduce with attendance if the company keeps them as non-prorated, such as:
+
+- Bonus
+- ESOP or Share benefit
+- Special one-time employee benefits
+
+### How overtime works
+
+If overtime is captured in attendance, the overtime minutes are also carried into the snapshot.
+
+During payroll compute, the system can add overtime as a separate earning component based on payroll rules.
+
+### Recommended monthly client flow
+
+Use this order every month:
+
+1. Complete attendance for the month.
+2. Approve all leave for that payroll month.
+3. Lock attendance month.
+4. Confirm payroll attendance snapshot is generated.
+5. Create payroll run.
+6. Compute payroll.
+7. Validate and review employee salary output.
+8. Approve and lock payroll.
+
+### When to regenerate the snapshot
+
+Regenerate attendance snapshot and recompute payroll if:
+
+- An attendance correction is approved after snapshot generation
+- A leave request is approved, rejected, or changed after snapshot generation
+- A holiday or weekly off setup is corrected for that month
+- Payroll team wants to refresh only one pay group or selected employees
+
+Important:
+
+If attendance data changes after snapshot generation and snapshot is not rebuilt, payroll will continue using old attendance totals.
 
 ## 4. Telangana Defaults (Implemented Guidance)
 

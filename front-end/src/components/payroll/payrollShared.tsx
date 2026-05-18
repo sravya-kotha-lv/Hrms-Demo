@@ -97,6 +97,13 @@ export type AttendanceSnapshotRow = {
   employee_external_id: string;
   payable_days: number;
   lop_days: number;
+  present_days?: number;
+  paid_leave_days?: number;
+  unpaid_leave_days?: number;
+  week_off_days?: number;
+  holiday_days?: number;
+  absent_days?: number;
+  half_days?: number;
   generation_status?: string;
   generated_at?: string;
 };

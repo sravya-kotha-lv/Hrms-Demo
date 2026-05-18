@@ -1433,7 +1433,7 @@ const Employees = () => {
                     <button
                       type="button"
                       className="flex items-center gap-3 text-left"
-                      onClick={() => navigate(`/employees/${employee._id}`)}
+                      onClick={() => navigate(`/employees/edit/${employee._id}`)}
                     >
                       <Avatar>
                         <AvatarImage src={employee.profileImage || ""} />
@@ -1485,13 +1485,13 @@ const Employees = () => {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <PermissionGate permissions={["EMP_VIEW"]}>
-                          <DropdownMenuItem onClick={() => navigate(`/employees/${employee._id}`)}>
+                          <DropdownMenuItem onClick={() => navigate(`/employees/edit/${employee._id}`)}>
                             <Eye className="w-4 h-4 mr-2" /> View
                           </DropdownMenuItem>
                         </PermissionGate>
                         <PermissionGate permissions={["EMP_UPDATE"]}>
                           <DropdownMenuItem
-                            onClick={() => startEditForm(employee)}
+                            onClick={() => navigate(`/employees/edit/${employee._id}?edit=true`)}
                           >
                             <Edit className="w-4 h-4 mr-2" /> Edit
                           </DropdownMenuItem>

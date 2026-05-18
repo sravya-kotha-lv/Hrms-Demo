@@ -21,7 +21,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Calculator, ChevronDown, History, Info, Landmark, ListChecks } from "lucide-react";
+import { ArrowLeft, Calculator, ChevronDown, History, Info, Landmark, ListChecks, Pencil } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -34,6 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { hasAnyPermission } from "@/utils/auth";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { EmployeeIdCard } from "@/components/employees/EmployeeIdCard";
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -68,6 +69,151 @@ const formatInr = (value: number | string | null | undefined) =>
     currency: "INR",
     maximumFractionDigits: 0
   }).format(Number(value || 0));
+
+const toDateInputValue = (date: Date) => date.toISOString().slice(0, 10);
+
+const addDaysToDateValue = (dateValue: string, days: number) => {
+  const date = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return toDateInputValue(new Date());
+  date.setDate(date.getDate() + days);
+  return toDateInputValue(date);
+};
+
+const getDefaultSalaryRevisionDate = (salaryStructures: SalaryStructureRow[]) => {
+  const today = toDateInputValue(new Date());
+  const latestEffectiveFrom = salaryStructures
+    .map((row) => String(row.effective_from || "").slice(0, 10))
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
+  if (!latestEffectiveFrom) return today;
+  return today > latestEffectiveFrom ? today : addDaysToDateValue(latestEffectiveFrom, 1);
+};
+
+const getOpenSalaryRevision = (salaryStructures: SalaryStructureRow[]) =>
+  [...salaryStructures]
+    .filter((row) => !row.effective_to)
+    .sort((a, b) =>
+      String(b.effective_from || "").localeCompare(String(a.effective_from || ""))
+    )[0] ||
+  [...salaryStructures].sort((a, b) =>
+    String(b.effective_from || "").localeCompare(String(a.effective_from || ""))
+  )[0] ||
+  null;
+
+const roundPayrollAmount = (value: number) => Number(value.toFixed(2));
+
+const computeEmployerEpfAmount = ({
+  basicPay,
+  epfMode,
+  epfFixedAmount,
+  epfPercentOfBasic,
+  restrictPfWage,
+  pfWageCeiling
+}: {
+  basicPay: number;
+  epfMode: string;
+  epfFixedAmount: number;
+  epfPercentOfBasic: number;
+  restrictPfWage: boolean;
+  pfWageCeiling: number;
+}) => {
+  const epfBase = restrictPfWage ? Math.min(basicPay, pfWageCeiling) : basicPay;
+  return epfMode === "fixed"
+    ? epfFixedAmount
+    : roundPayrollAmount(epfBase * (epfPercentOfBasic / 100));
+};
+
+const computeEmployerEsiAmount = ({
+  monthlyGross,
+  includeEsi,
+  esiEligibilityThreshold = 21000,
+  esiEmployerRate = 3.25
+}: {
+  monthlyGross: number;
+  includeEsi: boolean;
+  esiEligibilityThreshold?: number;
+  esiEmployerRate?: number;
+}) =>
+  includeEsi && monthlyGross > 0 && monthlyGross <= esiEligibilityThreshold
+    ? roundPayrollAmount(monthlyGross * (esiEmployerRate / 100))
+    : 0;
+
+const deriveGrossFromMonthlyCtc = ({
+  monthlyCtc,
+  basicPercent,
+  epfMode,
+  epfFixedAmount,
+  epfPercentOfBasic,
+  restrictPfWage,
+  pfWageCeiling,
+  includeEsi,
+  fixedBasicPay
+}: {
+  monthlyCtc: number;
+  basicPercent: number;
+  epfMode: string;
+  epfFixedAmount: number;
+  epfPercentOfBasic: number;
+  restrictPfWage: boolean;
+  pfWageCeiling: number;
+  includeEsi: boolean;
+  fixedBasicPay?: number;
+}) => {
+  let monthlyGross = Math.max(0, monthlyCtc);
+
+  for (let index = 0; index < 25; index += 1) {
+    const basicPay = fixedBasicPay && fixedBasicPay > 0
+      ? fixedBasicPay
+      : roundPayrollAmount(monthlyGross * (basicPercent / 100));
+    const employerEpf = computeEmployerEpfAmount({
+      basicPay,
+      epfMode,
+      epfFixedAmount,
+      epfPercentOfBasic,
+      restrictPfWage,
+      pfWageCeiling
+    });
+    const employerEsi = computeEmployerEsiAmount({
+      monthlyGross,
+      includeEsi
+    });
+    const nextGross = roundPayrollAmount(
+      Math.max(0, monthlyCtc - employerEpf - employerEsi)
+    );
+
+    if (Math.abs(nextGross - monthlyGross) < 0.01) {
+      monthlyGross = nextGross;
+      break;
+    }
+
+    monthlyGross = nextGross;
+  }
+
+  const basicPay = fixedBasicPay && fixedBasicPay > 0
+    ? fixedBasicPay
+    : roundPayrollAmount(monthlyGross * (basicPercent / 100));
+  const employerEpf = computeEmployerEpfAmount({
+    basicPay,
+    epfMode,
+    epfFixedAmount,
+    epfPercentOfBasic,
+    restrictPfWage,
+    pfWageCeiling
+  });
+  const employerEsiAmount = computeEmployerEsiAmount({
+    monthlyGross,
+    includeEsi
+  });
+
+  return {
+    monthlyGross,
+    basicPay,
+    employerEpf,
+    employerEsiAmount
+  };
+};
 
 /* ================= TYPES ================= */
 
@@ -135,6 +281,18 @@ type EmployeeComponentOverride = {
   metadata?: Record<string, any>;
 };
 
+type EmployeeOverridePreset = {
+  code: string;
+  name: string;
+  description: string;
+  scope: PayrollComponent["scope"];
+  calculationMode: PayrollComponent["calculation_mode"];
+  taxable: boolean;
+  amount?: string;
+  base?: string;
+  metadata?: Record<string, any>;
+};
+
 const FORMULA_PRESETS = [
   {
     value: "custom",
@@ -171,6 +329,58 @@ const ADVANCED_COMPONENT_EXCLUDE = new Set([
   "ESI",
   "EMPLOYER_EPF"
 ]);
+
+const EMPLOYEE_OVERRIDE_PRESETS: EmployeeOverridePreset[] = [
+  {
+    code: "BONUS",
+    name: "Annual Bonus",
+    description: "Set a specific annual or milestone bonus for this employee.",
+    scope: "earning",
+    calculationMode: "fixed",
+    taxable: true,
+    amount: "",
+    metadata: {
+      unitLabel: "currency"
+    }
+  },
+  {
+    code: "JOINING_BONUS",
+    name: "Joining Bonus",
+    description: "Use when the employee receives a one-time joining payout.",
+    scope: "earning",
+    calculationMode: "fixed",
+    taxable: true,
+    amount: "",
+    metadata: {
+      unitLabel: "currency"
+    }
+  },
+  {
+    code: "RETENTION_BONUS",
+    name: "Retention Bonus",
+    description: "Use for retention-based payouts linked to tenure or milestones.",
+    scope: "earning",
+    calculationMode: "fixed",
+    taxable: true,
+    amount: "",
+    metadata: {
+      unitLabel: "currency"
+    }
+  },
+  {
+    code: "STOCK_GRANT",
+    name: "Stock / Share Grant",
+    description: "Some companies allocate ESOP, RSU, or share units to selected employees.",
+    scope: "employer_contribution",
+    calculationMode: "fixed",
+    taxable: false,
+    amount: "",
+    metadata: {
+      unitLabel: "shares",
+      placeholder: "e.g. 0.2 or 0.3 shares"
+    }
+  }
+];
 
 const emptyForm = {
   email: "",
@@ -249,8 +459,47 @@ const buildComponentOverrideState = (
       existingOverride?.metadata?.bonusRule?.payoutMonths ||
       metadata.bonusRule?.payoutMonths ||
       "2"
-    )
+    ),
+    metadata: {
+      ...metadata,
+      ...(existingOverride?.metadata || {})
+    }
   };
+};
+
+const buildPresetOverrideState = (
+  preset: EmployeeOverridePreset,
+  existingOverride?: Partial<EmployeeComponentOverride> | null
+): EmployeeComponentOverride =>
+  buildComponentOverrideState(
+    {
+      id: preset.code,
+      scope: preset.scope,
+      code: preset.code,
+      name: preset.name,
+      calculation_mode: preset.calculationMode,
+      taxable: preset.taxable,
+      metadata: {
+        defaultEnabled: false,
+        monthlyAmount: preset.amount || "",
+        base: preset.base || "MONTHLY_GROSS",
+        ...(preset.metadata || {})
+      }
+    },
+    existingOverride
+  );
+
+const formatOverrideValue = (override: EmployeeComponentOverride) => {
+  if (override.calculationMode === "percentage") {
+    return `${override.amount || 0}%`;
+  }
+  if (override.metadata?.unitLabel === "shares") {
+    return `${override.amount || 0} shares`;
+  }
+  if (override.amount) {
+    return formatInr(override.amount);
+  }
+  return override.calculationMode;
 };
 
 const getComponentOverrideErrorKey = (code: string, field: string) =>
@@ -266,6 +515,7 @@ const AddEmployee = () => {
   const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
   const requestedTab = searchParams.get("tab");
+  const requestedEditMode = searchParams.get("edit") === "true";
   const requestedPayGroupId = searchParams.get("payGroupId") || "";
 
   const [form, setForm] = useState(emptyForm);
@@ -293,13 +543,17 @@ const AddEmployee = () => {
   const [originalLifecycleStatus, setOriginalLifecycleStatus] = useState("confirmed");
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState(
-    requestedTab === "salary" && isEdit ? "salary" : "employee"
+    ["salary", "bank", "statutory", "idcard"].includes(String(requestedTab)) && isEdit
+      ? String(requestedTab)
+      : "employee"
   );
+  const [editableSections, setEditableSections] = useState<Record<string, boolean>>({});
   const [payGroups, setPayGroups] = useState<PayGroup[]>([]);
   const [payrollComponents, setPayrollComponents] = useState<PayrollComponent[]>([]);
   const [payrollProfileId, setPayrollProfileId] = useState<string>("");
   const [savingSalary, setSavingSalary] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
+  const [hasSavedBankDetails, setHasSavedBankDetails] = useState(false);
   const [lookingUpIfsc, setLookingUpIfsc] = useState(false);
   const [lookingUpAccount, setLookingUpAccount] = useState(false);
   const [salaryStructures, setSalaryStructures] = useState<SalaryStructureRow[]>([]);
@@ -369,10 +623,73 @@ const AddEmployee = () => {
   });
   const [savingStatutory, setSavingStatutory] = useState(false);
   const [componentOverrides, setComponentOverrides] = useState<Record<string, EmployeeComponentOverride>>({});
+  const canEditEmployeeDetails = hasAnyPermission(["EMP_UPDATE"]);
   const canManagePayroll = hasAnyPermission(["PAYROLL_CONFIG_MANAGE"]);
+  const sectionLabels: Record<string, string> = {
+    employee: "Personal & Employee Details",
+    salary: "Salary Details",
+    bank: "Bank Details",
+    statutory: "Tax & Statutory",
+    idcard: "ID Card"
+  };
+  const activeSectionLabel = sectionLabels[activeTab] || "Details";
+  const canEditActiveSection =
+    activeTab === "employee" ? canEditEmployeeDetails : activeTab === "idcard" ? false : canManagePayroll;
+  const isSectionReadOnly = (section: string) => isEdit && !editableSections[section];
+  const activeSectionReadOnly = isSectionReadOnly(activeTab);
+  const enableActiveSectionEdit = () => {
+    setEditableSections((prev) => ({ ...prev, [activeTab]: true }));
+  };
+  const cancelActiveSectionEdit = () => {
+    setEditableSections((prev) => ({ ...prev, [activeTab]: false }));
+    if (activeTab === "employee") {
+      fetchEmployee();
+      return;
+    }
+    if (activeTab === "salary" || activeTab === "bank" || activeTab === "statutory") {
+      fetchPayrollData();
+    }
+  };
   const selectedPayGroup = useMemo(
     () => payGroups.find((row) => row.id === salaryForm.payGroupId) || null,
     [payGroups, salaryForm.payGroupId]
+  );
+  const openSalaryRevision = useMemo(
+    () => getOpenSalaryRevision(salaryStructures),
+    [salaryStructures]
+  );
+  const selectedSalaryRevision = useMemo(
+    () => salaryStructures.find((row) => row.id === selectedSalaryStructureId) || null,
+    [salaryStructures, selectedSalaryStructureId]
+  );
+  const selectedSalaryRevisionIsClosed =
+    salaryEditMode === "update" &&
+    Boolean(selectedSalaryRevision?.effective_to) &&
+    selectedSalaryRevision?.id !== openSalaryRevision?.id;
+  const employeeIdCardData = useMemo(
+    () => ({
+      firstName: form.firstName,
+      lastName: form.lastName,
+      employeeCode: form.employeeCode,
+      phone: form.phone,
+      bloodGroup: form.bloodGroup,
+      profileImage: profileImageUrl,
+      designationId: {
+        name: designations.find((designation) => designation._id === form.designationId)?.name || ""
+      },
+      emergencyContacts: form.emergencyContacts
+    }),
+    [
+      designations,
+      form.bloodGroup,
+      form.designationId,
+      form.employeeCode,
+      form.emergencyContacts,
+      form.firstName,
+      form.lastName,
+      form.phone,
+      profileImageUrl
+    ]
   );
 
   const payGroupBasicPercent = Number(
@@ -449,20 +766,37 @@ const AddEmployee = () => {
   };
 
   const startNewSalaryRevision = () => {
+    const nextEffectiveFrom = getDefaultSalaryRevisionDate(salaryStructures);
     setSelectedSalaryStructureId("");
     setSalaryEditMode("revision");
     setSalaryForm((prev) => ({
       ...prev,
-      effectiveFrom: new Date().toISOString().slice(0, 10),
-      revisionReason: "Salary revision"
+      effectiveFrom: nextEffectiveFrom,
+      revisionReason: "Salary revision / hike"
     }));
   };
 
   const salaryBreakdown = useMemo(() => {
     const annualCtc = Number(salaryForm.annualCtc || 0);
-    const monthlyGross = Number(salaryForm.monthlyGross || 0);
     const monthlyCtc = Number((annualCtc / 12).toFixed(2));
-    const basicPay = Number(salaryForm.basicPay || 0);
+    const derivedSalary = salaryAutoCalc && annualCtc > 0 && salaryForm.payGroupId
+      ? deriveGrossFromMonthlyCtc({
+          monthlyCtc,
+          basicPercent: Math.max(1, Math.min(100, Number(effectiveBasicPercent || 50))),
+          epfMode: salaryForm.epfMode,
+          epfFixedAmount: Number(salaryForm.epfFixedAmount || 0),
+          epfPercentOfBasic: Number(salaryForm.epfPercentOfBasic || 12),
+          restrictPfWage: salaryForm.restrictPfWage,
+          pfWageCeiling: Number(salaryForm.pfWageCeiling || 15000),
+          includeEsi: salaryForm.includeEsi
+        })
+      : null;
+    const monthlyGross = derivedSalary
+      ? derivedSalary.monthlyGross
+      : Number(salaryForm.monthlyGross || 0);
+    const basicPay = derivedSalary
+      ? derivedSalary.basicPay
+      : Number(salaryForm.basicPay || 0);
     const variablePay = salaryForm.variablePayEnabled
       ? salaryForm.variablePayMode === "percentage"
         ? Number(((annualCtc * (Number(salaryForm.variablePayPercentOfCtc || 0) / 100)) / 12).toFixed(2))
@@ -473,20 +807,26 @@ const AddEmployee = () => {
     const fixedAllowance = Number(
       (monthlyGross - basicPay - hraAmount - variablePay).toFixed(2)
     );
-    const epfBase = salaryForm.restrictPfWage
-      ? Math.min(basicPay, Number(salaryForm.pfWageCeiling || 15000))
-      : basicPay;
-    const employerEpf =
-      salaryForm.epfMode === "fixed"
-        ? Number(salaryForm.epfFixedAmount || 0)
-        : Number((epfBase * (Number(salaryForm.epfPercentOfBasic || 12) / 100)).toFixed(2));
+    const employerEpf = derivedSalary
+      ? derivedSalary.employerEpf
+      : computeEmployerEpfAmount({
+          basicPay,
+          epfMode: salaryForm.epfMode,
+          epfFixedAmount: Number(salaryForm.epfFixedAmount || 0),
+          epfPercentOfBasic: Number(salaryForm.epfPercentOfBasic || 12),
+          restrictPfWage: salaryForm.restrictPfWage,
+          pfWageCeiling: Number(salaryForm.pfWageCeiling || 15000)
+        });
     const esiWages = monthlyGross > 0 ? monthlyGross : basicPay;
     const esiEmployeeAmount = salaryForm.includeEsi && esiWages <= 21000
       ? Number((esiWages * 0.0075).toFixed(2))
       : 0;
-    const esiEmployerAmount = salaryForm.includeEsi && esiWages <= 21000
-      ? Number((esiWages * 0.0325).toFixed(2))
-      : 0;
+    const esiEmployerAmount = derivedSalary
+      ? derivedSalary.employerEsiAmount
+      : computeEmployerEsiAmount({
+          monthlyGross: esiWages,
+          includeEsi: salaryForm.includeEsi
+        });
 
     return {
       annualCtc,
@@ -514,17 +854,52 @@ const AddEmployee = () => {
     salaryForm.epfFixedAmount,
     salaryForm.restrictPfWage,
     salaryForm.pfWageCeiling,
-    salaryForm.includeEsi
+    salaryForm.includeEsi,
+    salaryAutoCalc,
+    salaryForm.payGroupId,
+    effectiveBasicPercent
   ]);
 
   const enabledEmployeeComponents = useMemo(
+    () => {
+      const componentCodes = new Set<string>();
+      const componentEntries = payrollComponents.map((component) => {
+        const key = String(component.code || "").toUpperCase();
+        componentCodes.add(key);
+        return componentOverrides[key] || buildComponentOverrideState(component);
+      });
+
+      const presetEntries = EMPLOYEE_OVERRIDE_PRESETS
+        .filter((preset) => !componentCodes.has(preset.code))
+        .map((preset) => componentOverrides[preset.code] || buildPresetOverrideState(preset));
+
+      const storedEntries = Object.entries(componentOverrides)
+        .filter(([code, override]) => !componentCodes.has(code) && !EMPLOYEE_OVERRIDE_PRESETS.some((preset) => preset.code === code) && Boolean(override?.code))
+        .map(([, override]) => override);
+
+      return [...componentEntries, ...presetEntries, ...storedEntries].filter((override) => override?.enabled);
+    },
+    [componentOverrides, payrollComponents]
+  );
+  const employeeOverrideSettings = useMemo(
     () =>
-      payrollComponents
-        .map((component) => {
-          const key = String(component.code || "").toUpperCase();
-          return componentOverrides[key] || buildComponentOverrideState(component);
-        })
-        .filter((override) => override?.enabled),
+      EMPLOYEE_OVERRIDE_PRESETS.map((preset) => {
+        const matchingComponent = payrollComponents.find(
+          (component) => String(component.code || "").toUpperCase() === preset.code
+        );
+        if (matchingComponent) {
+          const key = preset.code;
+          return {
+            preset,
+            override:
+              componentOverrides[key] || buildComponentOverrideState(matchingComponent)
+          };
+        }
+        return {
+          preset,
+          override: componentOverrides[preset.code] || buildPresetOverrideState(preset)
+        };
+      }),
     [componentOverrides, payrollComponents]
   );
 
@@ -629,6 +1004,14 @@ const AddEmployee = () => {
       setActiveTab("salary");
     }
   }, [isEdit, requestedTab]);
+
+  useEffect(() => {
+    if (!isEdit) return;
+    const initialTab = ["salary", "bank", "statutory", "idcard"].includes(String(requestedTab))
+      ? String(requestedTab)
+      : "employee";
+    setEditableSections(requestedEditMode ? { [initialTab]: true } : {});
+  }, [id, isEdit, requestedEditMode, requestedTab]);
 
   useEffect(() => {
     if (!canManagePayroll || !salaryForm.payGroupId) return;
@@ -836,8 +1219,7 @@ const AddEmployee = () => {
     const salaryStructures = Array.isArray(detail.salaryStructures) ? detail.salaryStructures : [];
     const bankDetails = Array.isArray(detail.bankDetails) ? detail.bankDetails : [];
     const statutoryDetails = Array.isArray(detail.statutoryDetails) ? detail.statutoryDetails : [];
-    const currentSalary =
-      salaryStructures.find((row: any) => row.is_current) || salaryStructures[0] || null;
+    const currentSalary = getOpenSalaryRevision(salaryStructures);
     const currentBank = bankDetails[0] || null;
     const currentStatutory = statutoryDetails[0] || null;
     setSalaryStructures(salaryStructures);
@@ -926,6 +1308,7 @@ const AddEmployee = () => {
         detail?.date_of_joining?.slice(0, 10) ||
         prev.effectiveFrom
     }));
+    setHasSavedBankDetails(Boolean(currentBank));
 
     setStatutoryForm((prev) => ({
       ...prev,
@@ -1015,22 +1398,17 @@ const AddEmployee = () => {
     if (!annualCtc || annualCtc <= 0) return;
     if (!salaryForm.payGroupId) return;
     const basicPercent = Math.max(1, Math.min(100, Number(effectiveBasicPercent || 50)));
-    const hraPercent = Math.max(0, Number(salaryForm.hraPercentOfBasic || 0));
     const monthlyCtc = Number((annualCtc / 12).toFixed(2));
-    const basicPay = Number((monthlyCtc * (basicPercent / 100)).toFixed(2));
-    const hraAmount = Number((basicPay * (hraPercent / 100)).toFixed(2));
-    const epfBase = salaryForm.restrictPfWage
-      ? Math.min(basicPay, Number(salaryForm.pfWageCeiling || 15000))
-      : basicPay;
-    const employerEpf =
-      salaryForm.epfMode === "fixed"
-        ? Number(salaryForm.epfFixedAmount || 0)
-        : Number((epfBase * (Number(salaryForm.epfPercentOfBasic || 12) / 100)).toFixed(2));
-    const projectedGross = Number((monthlyCtc - employerEpf).toFixed(2));
-    const esiEmployerAmount = salaryForm.includeEsi && projectedGross <= 21000
-      ? Number((projectedGross * 0.0325).toFixed(2))
-      : 0;
-    const monthlyGross = Number((monthlyCtc - employerEpf - esiEmployerAmount).toFixed(2));
+    const derivedSalary = deriveGrossFromMonthlyCtc({
+      monthlyCtc,
+      basicPercent,
+      epfMode: salaryForm.epfMode,
+      epfFixedAmount: Number(salaryForm.epfFixedAmount || 0),
+      epfPercentOfBasic: Number(salaryForm.epfPercentOfBasic || 12),
+      restrictPfWage: salaryForm.restrictPfWage,
+      pfWageCeiling: Number(salaryForm.pfWageCeiling || 15000),
+      includeEsi: salaryForm.includeEsi
+    });
     const variablePay = salaryForm.variablePayEnabled
       ? salaryForm.variablePayMode === "percentage"
         ? Number(((annualCtc * (Number(salaryForm.variablePayPercentOfCtc || 0) / 100)) / 12).toFixed(2))
@@ -1040,8 +1418,8 @@ const AddEmployee = () => {
     setSalaryForm((prev) => {
       const next = {
         ...prev,
-        monthlyGross: String(monthlyGross),
-        basicPay: String(basicPay),
+        monthlyGross: String(derivedSalary.monthlyGross),
+        basicPay: String(derivedSalary.basicPay),
         variablePay:
           salaryForm.variablePayEnabled && salaryForm.variablePayMode === "percentage"
             ? String(variablePay)
@@ -1335,6 +1713,10 @@ const AddEmployee = () => {
       toast.success(isEdit ? "Employee updated" : "Employee created & onboarding email sent");
       if (isEdit && res?.data?._id) {
         sessionStorage.setItem("employees:last-updated", JSON.stringify(res.data));
+        setEditableSections((prev) => ({ ...prev, employee: false }));
+        setProfileImageUpload(null);
+        fetchEmployee();
+        return;
       }
       navigate("/employees");
     } else {
@@ -1376,15 +1758,28 @@ const AddEmployee = () => {
       showValidationToast(componentOverrideErrors);
       return;
     }
-    const currentSalary = salaryStructures.find((row) => row.is_current) || salaryStructures[0] || null;
+    const currentSalary = getOpenSalaryRevision(salaryStructures);
+    const selectedSalaryStructure =
+      salaryStructures.find((row) => row.id === selectedSalaryStructureId) || currentSalary;
     const salaryStructureIdToUpdate = selectedSalaryStructureId || currentSalary?.id || "";
     const currentEffectiveFrom = (currentSalary?.effective_from || "").slice(0, 10);
     const shouldCreateRevision = salaryEditMode === "revision" || !salaryStructureIdToUpdate;
 
-    if (shouldCreateRevision && currentEffectiveFrom && salaryForm.effectiveFrom && salaryForm.effectiveFrom < currentEffectiveFrom) {
+    if (shouldCreateRevision && currentEffectiveFrom && salaryForm.effectiveFrom && salaryForm.effectiveFrom <= currentEffectiveFrom) {
       toast.error(
-        `Create a salary revision from ${currentEffectiveFrom} or later. Older salary rows are kept as history.`
+        `Choose a date after ${currentEffectiveFrom} to create a new salary revision and keep the old CTC in history.`
       );
+      return;
+    }
+    if (
+      shouldCreateRevision &&
+      salaryStructures.some((row) => String(row.effective_from || "").slice(0, 10) === salaryForm.effectiveFrom)
+    ) {
+      toast.error("A salary revision already exists for this effective date. Choose a different date.");
+      return;
+    }
+    if (!shouldCreateRevision && selectedSalaryRevisionIsClosed) {
+      toast.error("Can't switch to older revision. Older completed revisions are view-only. Create a new revision for salary changes.");
       return;
     }
     setSavingSalary(true);
@@ -1436,7 +1831,9 @@ const AddEmployee = () => {
           monthlyGross: salaryForm.monthlyGross ? Number(salaryForm.monthlyGross) : null,
           basicPay: salaryForm.basicPay ? Number(salaryForm.basicPay) : null,
           variablePay: salaryForm.variablePayEnabled ? salaryBreakdown.variablePay : 0,
-          isCurrent: true,
+          isCurrent:
+            shouldCreateRevision ||
+            Boolean(selectedSalaryStructure?.id && selectedSalaryStructure.id === openSalaryRevision?.id),
           revisionReason: salaryForm.revisionReason || "Salary update",
           metadata: {
             salaryRules: {
@@ -1458,6 +1855,7 @@ const AddEmployee = () => {
                       base: override.base || null,
                       formulaTemplate: override.formulaTemplate || "custom",
                       formulaExpression: override.formulaExpression || null,
+                      metadata: override.metadata || null,
                       ...(String(code).toUpperCase() === "BONUS"
                         ? {
                             bonusCreditTiming: override.bonusCreditTiming || "after_probation",
@@ -1467,6 +1865,7 @@ const AddEmployee = () => {
                                 : override.bonusEligibilityDate || null,
                             bonusPayoutMonths: Number(override.bonusPayoutMonths || 1),
                             metadata: {
+                              ...(override.metadata || {}),
                               bonusRule: {
                                 creditTiming: override.bonusCreditTiming || "after_probation",
                                 eligibilityDate:
@@ -1535,7 +1934,10 @@ const AddEmployee = () => {
           )
         : await putApiWithToken(
             `/payroll/salary-structures/${salaryStructureIdToUpdate}`,
-            salaryPayload,
+            {
+              ...salaryPayload,
+              effectiveFrom: salaryForm.effectiveFrom
+            },
             null,
             { requiredPermissions: ["PAYROLL_CONFIG_MANAGE"] }
           );
@@ -1546,6 +1948,7 @@ const AddEmployee = () => {
       }
 
       toast.success(shouldCreateRevision ? "Salary revision created" : "Salary details updated");
+      setEditableSections((prev) => ({ ...prev, salary: false }));
       fetchPayrollData();
     } finally {
       setSavingSalary(false);
@@ -1555,6 +1958,10 @@ const AddEmployee = () => {
   const handleSaveBank = async () => {
     if (!isEdit || !id) {
       toast.error("Create employee first, then configure bank details");
+      return;
+    }
+    if (isSectionReadOnly("bank")) {
+      toast.error("Click Edit in Bank Details before saving");
       return;
     }
     if (!canManagePayroll) {
@@ -1646,6 +2053,7 @@ const AddEmployee = () => {
       }
 
       toast.success("Bank details saved");
+      setEditableSections((prev) => ({ ...prev, bank: false }));
       fetchPayrollData();
     } finally {
       setSavingBank(false);
@@ -1759,6 +2167,7 @@ const AddEmployee = () => {
       }
 
       toast.success("Tax and statutory details saved");
+      setEditableSections((prev) => ({ ...prev, statutory: false }));
       fetchPayrollData();
     } finally {
       setSavingStatutory(false);
@@ -1786,8 +2195,8 @@ const AddEmployee = () => {
       setBankForm((prev) => ({
         ...prev,
         ifscCode: ifsc,
-        bankName: bankName || prev.bankName,
-        branchName: branchName || prev.branchName
+        bankName: prev.bankName || bankName,
+        branchName: prev.branchName || branchName
       }));
       toast.success("Bank and branch details fetched from IFSC");
     } finally {
@@ -1856,48 +2265,78 @@ const AddEmployee = () => {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <button
-          onClick={() => navigate("/employees")}
-          className="flex items-center gap-2 text-muted-foreground"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </button>
-
-      </div>
-
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-4 h-auto rounded-lg border bg-muted/40 p-1">
-          <TabsTrigger
-            value="employee"
-            className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-          >
-            Employee Details
-          </TabsTrigger>
-          <TabsTrigger
-            value="salary"
-            className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-          >
-            Salary Details
-          </TabsTrigger>
-          <TabsTrigger
-            value="bank"
-            className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-          >
-            Bank Details
-          </TabsTrigger>
-          <TabsTrigger
-            value="statutory"
-            className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-          >
-            Tax & Statutory
-          </TabsTrigger>
-        </TabsList>
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => navigate("/employees")}
+              className="flex items-center gap-2 whitespace-nowrap text-muted-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+            <TabsList className="h-auto rounded-lg border bg-muted/40 p-1">
+              <TabsTrigger
+                value="employee"
+                className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              >
+                Personal & Employee Details
+              </TabsTrigger>
+              <TabsTrigger
+                value="salary"
+                className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              >
+                Salary Details
+              </TabsTrigger>
+              <TabsTrigger
+                value="bank"
+                className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              >
+                Bank Details
+              </TabsTrigger>
+              <TabsTrigger
+                value="statutory"
+                className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              >
+                Tax & Statutory
+              </TabsTrigger>
+              {isEdit && (
+                <TabsTrigger
+                  value="idcard"
+                  className="rounded-md px-4 py-2 font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+                >
+                  ID Card
+                </TabsTrigger>
+              )}
+            </TabsList>
+          </div>
+
+          {activeTab !== "salary" && isEdit && canEditActiveSection && (
+            <div className="flex items-center gap-2 self-start xl:self-auto">
+              {activeSectionReadOnly ? (
+                <Button type="button" size="sm" className="gap-2" onClick={enableActiveSectionEdit}>
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </Button>
+              ) : (
+                <>
+                  <Button type="button" size="sm" variant="outline" onClick={cancelActiveSectionEdit}>
+                    Cancel
+                  </Button>
+                  <Badge variant="secondary" className="rounded-md px-3 py-2">
+                    Editing {activeSectionLabel}
+                  </Badge>
+                </>
+              )}
+            </div>
+          )}
+        </div>
 
         <TabsContent value="employee">
-          <div className="stat-card grid grid-cols-1 md:grid-cols-2 gap-4">
+          <fieldset
+            disabled={isSectionReadOnly("employee")}
+            className="stat-card grid grid-cols-1 md:grid-cols-2 gap-4 disabled:opacity-100"
+          >
         {isEdit && (
           <div className="md:col-span-2 flex items-center gap-3 rounded-md border bg-muted/40 px-3 py-2">
             <Avatar className="h-12 w-12">
@@ -2656,11 +3095,15 @@ const AddEmployee = () => {
             </div>
           </div>
         )}
-          </div>
+          </fieldset>
           <div className="mt-4 flex justify-end">
             <Button
               onClick={handleSubmit}
-              disabled={loading || (!isEdit && (departments.length === 0 || designations.length === 0))}
+              disabled={
+                loading ||
+                isSectionReadOnly("employee") ||
+                (!isEdit && (departments.length === 0 || designations.length === 0))
+              }
             >
               {loading
                 ? isEdit
@@ -2674,7 +3117,7 @@ const AddEmployee = () => {
         </TabsContent>
 
         <TabsContent value="salary">
-          <div className="stat-card space-y-4">
+          <div className={`stat-card space-y-4 ${isSectionReadOnly("salary") ? "profile-section-readonly" : ""}`}>
             {!isEdit ? (
               <p className="text-sm text-muted-foreground">
                 Save employee first. Then open this tab to configure payroll and salary details.
@@ -2685,7 +3128,7 @@ const AddEmployee = () => {
               </p>
             ) : (
               <>
-                <div className="flex flex-col gap-3 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
+                <div className="flex flex-col gap-3 border-b pb-5 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-primary">Compensation workspace</p>
                     <h2 className="mt-1 text-2xl font-semibold text-foreground">Salary Details</h2>
@@ -2693,15 +3136,47 @@ const AddEmployee = () => {
                       Add payroll, salary rules, statutory contributions, and employee-specific components in one flow.
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary" className="rounded-md px-3 py-1">
-                      {salaryForm.payrollStatus.replaceAll("_", " ")}
-                    </Badge>
-                    {selectedPayGroup && (
-                      <Badge variant="outline" className="rounded-md px-3 py-1">
-                        {selectedPayGroup.code}
-                      </Badge>
+                  <div className="flex flex-col items-start gap-2 lg:items-end">
+                    {isEdit && canEditActiveSection && (
+                      activeSectionReadOnly ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="gap-2"
+                          data-readonly-action="true"
+                          onClick={enableActiveSectionEdit}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            data-readonly-action="true"
+                            onClick={cancelActiveSectionEdit}
+                          >
+                            Cancel
+                          </Button>
+                          <Badge variant="secondary" className="rounded-md px-3 py-2">
+                            Editing {activeSectionLabel}
+                          </Badge>
+                        </div>
+                      )
                     )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary" className="rounded-md px-3 py-1">
+                        {salaryForm.payrollStatus.replaceAll("_", " ")}
+                      </Badge>
+                      {selectedPayGroup && (
+                        <Badge variant="outline" className="rounded-md px-3 py-1">
+                          {selectedPayGroup.code}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -2728,7 +3203,7 @@ const AddEmployee = () => {
                       <div>
                         <p className="text-sm font-medium">Salary Revision History</p>
                         <p className="text-xs text-muted-foreground">
-                          Saving updates the selected salary. Use New Revision only when the pay change needs a new effective period.
+                          Use New Revision for hikes or CTC changes. Payroll picks the revision whose effective period covers the payroll month.
                         </p>
                       </div>
                       <Button
@@ -2737,13 +3212,16 @@ const AddEmployee = () => {
                         size="sm"
                         onClick={startNewSalaryRevision}
                       >
-                        {salaryEditMode === "revision" ? "Creating Revision" : "New Revision"}
+                        {salaryEditMode === "revision" ? "Creating New Revision" : "New Revision"}
                       </Button>
                     </div>
                     <div className="space-y-2">
                       {salaryStructures.map((salary) => {
                         const effectiveFrom = (salary.effective_from || "").slice(0, 10);
-                        const effectiveTo = (salary.effective_to || "").slice(0, 10) || "Current";
+                        const isCurrentRevision = Boolean(openSalaryRevision?.id && salary.id === openSalaryRevision.id);
+                        const effectiveTo = isCurrentRevision
+                          ? "Current"
+                          : (salary.effective_to || "").slice(0, 10) || "-";
                         const isSelected =
                           salaryEditMode === "update" &&
                           Boolean(salary.id) &&
@@ -2752,6 +3230,7 @@ const AddEmployee = () => {
                           <button
                             key={salary.id || effectiveFrom}
                             type="button"
+                            data-readonly-action="true"
                             onClick={() => applySalaryRevisionToForm(salary)}
                             className={`w-full rounded-md border p-3 text-left transition-colors ${
                               isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/40"
@@ -2761,7 +3240,7 @@ const AddEmployee = () => {
                               <div>
                                 <p className="text-sm font-medium">
                                   {formatInr(salary.annual_ctc)} CTC
-                                  {salary.is_current ? " - Current" : ""}
+                                  {isCurrentRevision ? " - Current" : ""}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
                                   {effectiveFrom || "-"} to {effectiveTo}
@@ -2866,10 +3345,32 @@ const AddEmployee = () => {
                     </Select>
                   </div>
 
-                  <div>
-                    <Label>
-                      Annual CTC <span className="text-red-600">*</span>
-                    </Label>
+                  <div className="md:col-span-2">
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1">
+                        <Label>
+                          Annual CTC <span className="text-red-600">*</span>
+                        </Label>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3.5 w-3.5 cursor-help text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Annual CTC includes employer contributions. Pay group percentages are applied on gross, and employer PF is treated as round(employee PF).
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      {Number(salaryBreakdown.annualCtc || 0) > 0 && (
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="rounded-md border bg-muted/40 px-2 py-1">
+                            Gross {formatInr(salaryBreakdown.monthlyGross)} / month
+                          </span>
+                          <span className="rounded-md border bg-muted/40 px-2 py-1">
+                            Employer PF {formatInr(salaryBreakdown.employerEpf)} / month = round(employee PF)
+                          </span>
+                        </div>
+                      )}
+                    </div>
                     <Input
                       type="number"
                       value={salaryForm.annualCtc}
@@ -2882,6 +3383,9 @@ const AddEmployee = () => {
                     {getFieldError("annualCtc") && (
                       <p className="mt-1 text-xs text-red-600">{getFieldError("annualCtc")}</p>
                     )}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      CTC includes employer contributions. Monthly gross is derived first, then Basic and HRA are calculated from gross. Employer PF is applied as round(employee PF).
+                    </p>
                   </div>
 
                   <div>
@@ -2935,6 +3439,9 @@ const AddEmployee = () => {
                         }))
                       }
                     />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      HRA is calculated from Basic, and Basic is derived from monthly gross.
+                    </p>
                   </div>
 
                   <div>
@@ -2949,7 +3456,7 @@ const AddEmployee = () => {
                     />
                     {salaryAutoCalc && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Auto-balanced from Annual CTC after EPF/ESI employer contributions.
+                        Gross is auto-balanced from Annual CTC after employer PF/ESI. Basic, HRA, and PF calculations use this gross value.
                       </p>
                     )}
                   </div>
@@ -3207,14 +3714,29 @@ const AddEmployee = () => {
                     <Input
                       type="date"
                       value={salaryForm.effectiveFrom}
-                      disabled={salaryEditMode === "update"}
+                      disabled={selectedSalaryRevisionIsClosed}
                       onChange={(e) =>
                         setSalaryForm((prev) => ({ ...prev, effectiveFrom: e.target.value }))
                       }
                     />
-                    {salaryEditMode === "update" && (
+                    {salaryEditMode === "update" && !selectedSalaryRevisionIsClosed && (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Effective date is locked while updating. Use New Revision to create a new period.
+                        You can backdate the current salary revision here when payroll should start from an earlier month. Use New Revision for hikes or structure changes that must keep separate history.
+                      </p>
+                    )}
+                    {salaryEditMode === "update" && selectedSalaryRevisionIsClosed && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Effective date is locked while updating this historical row. Use New Revision for hikes or CTC changes.
+                      </p>
+                    )}
+                    {selectedSalaryRevisionIsClosed && (
+                      <p className="mt-1 text-xs text-amber-700">
+                        This older revision is view-only. You can't switch back to an older completed salary period.
+                      </p>
+                    )}
+                    {salaryEditMode === "revision" && salaryStructures.length > 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Pick a date that does not already exist in history. The previous salary will close one day before this date.
                       </p>
                     )}
                   </div>
@@ -3730,11 +4252,7 @@ const AddEmployee = () => {
                                       </p>
                                     </div>
                                     <Badge variant="outline" className="rounded-md">
-                                      {override.amount
-                                        ? override.calculationMode === "percentage"
-                                          ? `${override.amount}%`
-                                          : formatInr(override.amount)
-                                        : override.calculationMode}
+                                      {formatOverrideValue(override)}
                                     </Badge>
                                   </div>
                                 </div>
@@ -3746,6 +4264,7 @@ const AddEmployee = () => {
                             </p>
                           )}
                         </section>
+
                       </div>
                     </div>
 
@@ -3758,17 +4277,30 @@ const AddEmployee = () => {
                         <div className="space-y-2">
                           {salaryStructures.slice(0, 4).map((salary) => {
                             const effectiveFrom = (salary.effective_from || "").slice(0, 10);
-                            const effectiveTo = (salary.effective_to || "").slice(0, 10) || "Current";
+                            const isCurrentRevision = Boolean(openSalaryRevision?.id && salary.id === openSalaryRevision.id);
+                            const effectiveTo = isCurrentRevision
+                              ? "Current"
+                              : (salary.effective_to || "").slice(0, 10) || "-";
                             return (
-                              <div key={`review-${salary.id || effectiveFrom}`} className="rounded-md border px-3 py-2">
+                              <button
+                                key={`review-${salary.id || effectiveFrom}`}
+                                type="button"
+                                data-readonly-action="true"
+                                onClick={() => applySalaryRevisionToForm(salary)}
+                                className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
+                                  selectedSalaryStructureId === salary.id
+                                    ? "border-primary bg-primary/5"
+                                    : "hover:bg-muted/40"
+                                }`}
+                              >
                                 <div className="flex items-center justify-between gap-3">
                                   <span className="text-sm font-medium">{formatInr(salary.annual_ctc)}</span>
-                                  {salary.is_current && <Badge className="rounded-md">Current</Badge>}
+                                  {isCurrentRevision && <Badge className="rounded-md">Current</Badge>}
                                 </div>
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {effectiveFrom || "-"} to {effectiveTo}
                                 </p>
-                              </div>
+                              </button>
                             );
                           })}
                         </div>
@@ -3776,6 +4308,268 @@ const AddEmployee = () => {
                     )}
                   </aside>
                 </div>
+
+                <section className="rounded-lg border bg-card p-5 shadow-sm">
+                  <div className="mb-4">
+                    <h3 className="text-base font-semibold">Employee Overrides</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Enable only the employee-specific settings this person needs, such as special bonuses, retention payouts, or stock/share grants.
+                    </p>
+                  </div>
+                  <div className="space-y-4">
+                    {employeeOverrideSettings.map(({ preset, override }) => {
+                      const key = preset.code;
+                      const overrideError = (field: string) =>
+                        getFieldError(getComponentOverrideErrorKey(key, field));
+                      const clearOverrideError = (field: string) =>
+                        clearFieldError(getComponentOverrideErrorKey(key, field));
+
+                      return (
+                        <div key={key} className="rounded-lg border bg-background p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                              <div className="flex items-center gap-3">
+                                <p className="text-sm font-medium">{override.name}</p>
+                                <Switch
+                                  checked={override.enabled}
+                                  onCheckedChange={(checked) => {
+                                    setComponentOverrides((prev) => ({
+                                      ...prev,
+                                      [key]: { ...override, enabled: checked }
+                                    }));
+                                  }}
+                                />
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">{preset.description}</p>
+                            </div>
+                            {override.enabled && (
+                              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                                <Badge variant="outline" className="rounded-md">
+                                  {formatOverrideValue(override)}
+                                </Badge>
+                                {override.taxable && (
+                                  <Badge variant="secondary" className="rounded-md">Taxable</Badge>
+                                )}
+                                {override.base && override.calculationMode === "percentage" && (
+                                  <Badge variant="secondary" className="rounded-md">Base {override.base}</Badge>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {override.enabled && (
+                            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <div>
+                                <Label>Display Name</Label>
+                                <Input
+                                  value={override.name}
+                                  onChange={(e) =>
+                                    setComponentOverrides((prev) => ({
+                                      ...prev,
+                                      [key]: { ...override, name: e.target.value }
+                                    }))
+                                  }
+                                />
+                              </div>
+
+                              <div>
+                                <Label>Calculation Mode</Label>
+                                <Select
+                                  value={override.calculationMode}
+                                  onValueChange={(value) =>
+                                    setComponentOverrides((prev) => ({
+                                      ...prev,
+                                      [key]: {
+                                        ...override,
+                                        calculationMode: value as EmployeeComponentOverride["calculationMode"]
+                                      }
+                                    }))
+                                  }
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="fixed">Fixed Amount</SelectItem>
+                                    <SelectItem value="percentage">Percentage</SelectItem>
+                                    <SelectItem value="formula">Formula</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              {override.calculationMode === "percentage" ? (
+                                <>
+                                  <div>
+                                    <Label>Percentage</Label>
+                                    <Input
+                                      type="number"
+                                      value={override.amount}
+                                      onChange={(e) => {
+                                        clearOverrideError("amount");
+                                        setComponentOverrides((prev) => ({
+                                          ...prev,
+                                          [key]: { ...override, amount: e.target.value }
+                                        }));
+                                      }}
+                                    />
+                                    {overrideError("amount") && (
+                                      <p className="mt-1 text-xs text-red-600">{overrideError("amount")}</p>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <Label>Base Variable</Label>
+                                    <Input
+                                      value={override.base}
+                                      onChange={(e) => {
+                                        clearOverrideError("base");
+                                        setComponentOverrides((prev) => ({
+                                          ...prev,
+                                          [key]: { ...override, base: e.target.value.toUpperCase() }
+                                        }));
+                                      }}
+                                      placeholder="MONTHLY_GROSS or BASIC_PAY"
+                                    />
+                                    {overrideError("base") && (
+                                      <p className="mt-1 text-xs text-red-600">{overrideError("base")}</p>
+                                    )}
+                                  </div>
+                                </>
+                              ) : override.calculationMode === "formula" ? (
+                                <div className="md:col-span-2">
+                                  <Label>Formula</Label>
+                                  <Input
+                                    value={override.formulaExpression}
+                                    onChange={(e) => {
+                                      clearOverrideError("formulaExpression");
+                                      setComponentOverrides((prev) => ({
+                                        ...prev,
+                                        [key]: {
+                                          ...override,
+                                          formulaTemplate: "custom",
+                                          formulaExpression: e.target.value
+                                        }
+                                      }));
+                                    }}
+                                    placeholder="round(BASIC_PAY * 0.12)"
+                                  />
+                                  {overrideError("formulaExpression") && (
+                                    <p className="mt-1 text-xs text-red-600">{overrideError("formulaExpression")}</p>
+                                  )}
+                                </div>
+                              ) : (
+                                <div>
+                                  <Label>
+                                    {override.metadata?.unitLabel === "shares" ? "Share / Stock Units" : "Amount"}
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    step={override.metadata?.unitLabel === "shares" ? "0.1" : "1"}
+                                    value={override.amount}
+                                    onChange={(e) => {
+                                      clearOverrideError("amount");
+                                      setComponentOverrides((prev) => ({
+                                        ...prev,
+                                        [key]: { ...override, amount: e.target.value }
+                                      }));
+                                    }}
+                                    placeholder={override.metadata?.placeholder || "Enter amount"}
+                                  />
+                                  {overrideError("amount") && (
+                                    <p className="mt-1 text-xs text-red-600">{overrideError("amount")}</p>
+                                  )}
+                                </div>
+                              )}
+
+                              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                                <span className="text-sm">Taxable</span>
+                                <Switch
+                                  checked={override.taxable}
+                                  onCheckedChange={(checked) =>
+                                    setComponentOverrides((prev) => ({
+                                      ...prev,
+                                      [key]: { ...override, taxable: checked }
+                                    }))
+                                  }
+                                />
+                              </div>
+
+                              {key === "BONUS" && (
+                                <>
+                                  <div>
+                                    <Label>Credit Timing</Label>
+                                    <Select
+                                      value={override.bonusCreditTiming || "after_probation"}
+                                      onValueChange={(value) =>
+                                        setComponentOverrides((prev) => ({
+                                          ...prev,
+                                          [key]: {
+                                            ...override,
+                                            bonusCreditTiming: value as EmployeeComponentOverride["bonusCreditTiming"]
+                                          }
+                                        }))
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="after_probation">After Probation</SelectItem>
+                                        <SelectItem value="manual_date">Custom Date</SelectItem>
+                                        <SelectItem value="immediate">Immediate</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <Label>Eligibility Date</Label>
+                                    <Input
+                                      type="date"
+                                      value={override.bonusEligibilityDate}
+                                      onChange={(e) => {
+                                        clearOverrideError("bonusEligibilityDate");
+                                        setComponentOverrides((prev) => ({
+                                          ...prev,
+                                          [key]: {
+                                            ...override,
+                                            bonusEligibilityDate: e.target.value
+                                          }
+                                        }));
+                                      }}
+                                    />
+                                    {overrideError("bonusEligibilityDate") && (
+                                      <p className="mt-1 text-xs text-red-600">{overrideError("bonusEligibilityDate")}</p>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <Label>Pay Over</Label>
+                                    <Select
+                                      value={override.bonusPayoutMonths || "1"}
+                                      onValueChange={(value) =>
+                                        setComponentOverrides((prev) => ({
+                                          ...prev,
+                                          [key]: { ...override, bonusPayoutMonths: value }
+                                        }))
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="1">1 Month</SelectItem>
+                                        <SelectItem value="2">2 Months</SelectItem>
+                                        <SelectItem value="3">3 Months</SelectItem>
+                                        <SelectItem value="6">6 Months</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
 
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
@@ -3790,9 +4584,11 @@ const AddEmployee = () => {
                 <div className="flex justify-end">
                   <Button
                     onClick={handleSaveSalary}
-                    disabled={savingSalary}
+                    disabled={savingSalary || isSectionReadOnly("salary")}
                   >
-                    {savingSalary
+                    {selectedSalaryRevisionIsClosed
+                      ? "View Only - Cannot Update"
+                      : savingSalary
                       ? salaryEditMode === "revision"
                         ? "Creating Revision..."
                         : "Updating Salary..."
@@ -3807,7 +4603,10 @@ const AddEmployee = () => {
         </TabsContent>
 
         <TabsContent value="statutory">
-          <div className="stat-card space-y-4">
+          <fieldset
+            disabled={isSectionReadOnly("statutory")}
+            className="stat-card space-y-4 disabled:opacity-100"
+          >
             {!isEdit ? (
               <p className="text-sm text-muted-foreground">
                 Save employee first. Then open this tab to configure tax and statutory details.
@@ -3996,11 +4795,14 @@ const AddEmployee = () => {
                 </div>
               </>
             )}
-          </div>
+          </fieldset>
         </TabsContent>
 
         <TabsContent value="bank">
-          <div className="stat-card space-y-4">
+          <fieldset
+            disabled={isSectionReadOnly("bank")}
+            className="stat-card space-y-4 disabled:opacity-100"
+          >
             {!isEdit ? (
               <p className="text-sm text-muted-foreground">
                 Save employee first. Then open this tab to configure bank details.
@@ -4009,8 +4811,13 @@ const AddEmployee = () => {
               <p className="text-sm text-muted-foreground">
                 You need `PAYROLL_CONFIG_MANAGE` permission to configure bank details.
               </p>
-            ) : (
+        ) : (
               <>
+                {isSectionReadOnly("bank") && !hasSavedBankDetails && (
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+                    No bank details are saved yet for this employee. Click <span className="font-medium text-foreground">Edit</span>, enter the bank details, and then use <span className="font-medium text-foreground">Save Bank Details</span>.
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>
@@ -4188,14 +4995,20 @@ const AddEmployee = () => {
                 </p>
 
                 <div className="flex justify-end">
-                  <Button onClick={handleSaveBank} disabled={savingBank}>
+                  <Button onClick={handleSaveBank} disabled={savingBank || isSectionReadOnly("bank")}>
                     {savingBank ? "Saving Bank Details..." : "Save Bank Details"}
                   </Button>
                 </div>
               </>
             )}
-          </div>
+          </fieldset>
         </TabsContent>
+
+        {isEdit && (
+          <TabsContent value="idcard">
+            <EmployeeIdCard employee={employeeIdCardData} />
+          </TabsContent>
+        )}
       </Tabs>
     </MainLayout>
   );

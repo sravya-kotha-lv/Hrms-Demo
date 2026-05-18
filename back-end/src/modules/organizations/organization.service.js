@@ -479,6 +479,169 @@ const deletePayrollTenantData = async (organizationId) => {
   }
 };
 
+const PAYROLL_GENERATED_CLEAR_TABLES = [
+  "payroll_run_components",
+  "payroll_run_employees",
+  "payroll_run_audit_entries",
+  "payroll_runs",
+  "payroll_adjustments",
+  "payroll_arrears",
+  "payroll_loans",
+  "payroll_reimbursements",
+  "payroll_attendance_snapshot_days",
+  "payroll_attendance_snapshots",
+  "payroll_action_idempotency"
+];
+
+const PAYROLL_SETUP_CLEAR_TABLES = [
+  "employee_payroll_revision_history",
+  "employee_bank_details",
+  "employee_statutory_details",
+  "employee_salary_structures",
+  "employee_payroll_profiles",
+  "component_formulas",
+  "earning_components",
+  "deduction_components",
+  "employer_contribution_components",
+  "payroll_settings",
+  "pay_periods",
+  "pay_groups"
+];
+
+const quoteIdent = (value) => `"${String(value).replace(/"/g, "\"\"")}"`;
+
+const getExistingPayrollTables = async (client, tableNames) => {
+  const result = await client.query(
+    `
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = ANY($1::text[])
+    `,
+    [tableNames]
+  );
+
+  return new Set(result.rows.map((row) => String(row.table_name)));
+};
+
+const clearTenantScopedPayrollTables = async ({ client, tenantId, tableNames }) => {
+  const existingTables = await getExistingPayrollTables(client, tableNames);
+  const summary = {};
+
+  for (const tableName of tableNames) {
+    if (!existingTables.has(tableName)) {
+      summary[tableName] = 0;
+      continue;
+    }
+    const result = await client.query(
+      `DELETE FROM ${quoteIdent(tableName)} WHERE tenant_id = $1`,
+      [tenantId]
+    );
+    summary[tableName] = Number(result.rowCount || 0);
+  }
+
+  return summary;
+};
+
+exports.clearOrganizationPayrollData = async ({
+  organizationId,
+  mode = "generated",
+  confirmationCode,
+  actorUserId
+}) => {
+  if (!["generated", "all"].includes(String(mode))) {
+    throw { code: 400, message: "Invalid payroll clear mode. Use generated or all." };
+  }
+
+  await assertLifecyclePermissions({ actorUserId });
+  const organization = await getOrganizationForLifecycle(organizationId);
+  assertLifecycleConfirmation(organization, confirmationCode);
+
+  if (!isPayrollDbEnabled()) {
+    return {
+      action: "clear_payroll",
+      organizationId: String(organization._id),
+      mode,
+      payrollEnabled: false,
+      payrollTenantFound: false,
+      tenantId: null,
+      clearedTables: {},
+      clearedRowCount: 0
+    };
+  }
+
+  const pool = await getPayrollPgPool();
+  if (!pool) {
+    throw { code: 500, message: "Payroll Postgres pool unavailable" };
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const tenantResult = await client.query(
+      `
+        SELECT id
+        FROM payroll_tenants
+        WHERE organization_id = $1
+        LIMIT 1
+      `,
+      [String(organization._id)]
+    );
+    const tenantId = String(tenantResult.rows[0]?.id || "").trim();
+
+    if (!tenantId) {
+      await client.query("COMMIT");
+      return {
+        action: "clear_payroll",
+        organizationId: String(organization._id),
+        mode,
+        payrollEnabled: true,
+        payrollTenantFound: false,
+        tenantId: null,
+        clearedTables: {},
+        clearedRowCount: 0
+      };
+    }
+
+    const tablesToClear = mode === "all"
+      ? [...PAYROLL_GENERATED_CLEAR_TABLES, ...PAYROLL_SETUP_CLEAR_TABLES]
+      : PAYROLL_GENERATED_CLEAR_TABLES;
+
+    const clearedTables = await clearTenantScopedPayrollTables({
+      client,
+      tenantId,
+      tableNames: tablesToClear
+    });
+
+    await client.query("COMMIT");
+
+    return {
+      action: "clear_payroll",
+      organizationId: String(organization._id),
+      organizationCode: String(organization.code || ""),
+      mode,
+      payrollEnabled: true,
+      payrollTenantFound: true,
+      tenantId,
+      clearedTables,
+      clearedRowCount: Object.values(clearedTables).reduce(
+        (sum, count) => sum + Number(count || 0),
+        0
+      )
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw {
+      code: 500,
+      message: "Failed to clear organization payroll data",
+      error: error?.message || error
+    };
+  } finally {
+    client.release();
+  }
+};
+
 const deleteOrganizationScopedMongoData = async (organizationId) => {
   const deletedByModel = {};
   const modelNames = mongoose.modelNames();

@@ -24,6 +24,7 @@ import { hasAnyPermission } from "@/utils/auth";
 import { toast } from "sonner";
 import PayrollSectionNav from "@/components/payroll/PayrollSectionNav";
 import {
+  buildMonthOptions,
   formatCurrency,
   getEmployeeBasicRuleLabel,
   getInitials,
@@ -38,6 +39,7 @@ import {
 
 const PayrollEmployees = () => {
   const navigate = useNavigate();
+  const monthOptions = useMemo(() => buildMonthOptions(), []);
   const canManageConfig = hasAnyPermission(["PAYROLL_CONFIG_MANAGE"]);
   const canCreateRun = hasAnyPermission(["PAYROLL_RUN_CREATE"]);
   const canViewReports = hasAnyPermission(["PAYROLL_REPORT_VIEW"]);
@@ -52,7 +54,7 @@ const PayrollEmployees = () => {
   const [employeeNameMap, setEmployeeNameMap] = useState<Record<string, string>>({});
   const [employeeCodeMap, setEmployeeCodeMap] = useState<Record<string, string>>({});
   const [employeeProfileImageMap, setEmployeeProfileImageMap] = useState<Record<string, string>>({});
-  const monthFilter = new Date().toISOString().slice(0, 7);
+  const [monthFilter, setMonthFilter] = useState(monthOptions[0]);
 
   const selectedPayGroup = useMemo(
     () => payGroups.find((group) => group.id === selectedPayGroupId) || null,
@@ -218,6 +220,22 @@ const PayrollEmployees = () => {
     return attendanceSnapshots.filter((row) => employeeIdSet.has(String(row.employee_external_id || "")));
   }, [attendanceSnapshots, selectedPayGroupEmployeeIds]);
 
+  const getAttendanceSyncBreakdown = (snapshot: AttendanceSnapshotRow) => {
+    const presentDays = Number(snapshot.present_days || 0);
+    const halfDays = Number(snapshot.half_days || 0);
+    const paidLeaveDays = Number(snapshot.paid_leave_days || 0);
+    const weekOffDays = Number(snapshot.week_off_days || 0);
+    const holidayDays = Number(snapshot.holiday_days || 0);
+
+    return [
+      presentDays > 0 ? `Present ${presentDays.toFixed(2)}` : null,
+      halfDays > 0 ? `Half Day ${halfDays.toFixed(2)}` : null,
+      paidLeaveDays > 0 ? `Paid Leave ${paidLeaveDays.toFixed(2)}` : null,
+      weekOffDays > 0 ? `Week Off ${weekOffDays.toFixed(2)}` : null,
+      holidayDays > 0 ? `Holiday ${holidayDays.toFixed(2)}` : null
+    ].filter(Boolean).join(" + ");
+  };
+
   const employeeCustomizationCount = useMemo(
     () =>
       employeeProfiles.filter((profile) => {
@@ -266,6 +284,18 @@ const PayrollEmployees = () => {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Select value={monthFilter} onValueChange={setMonthFilter}>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="Select month" />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((month) => (
+                  <SelectItem key={month} value={month}>
+                    {month}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select
               value={selectedPayGroupId || "__none"}
               onValueChange={(value) => setSelectedPayGroupId(value === "__none" ? "" : value)}
@@ -317,7 +347,9 @@ const PayrollEmployees = () => {
         <div className="border-b p-4">
           <p className="font-semibold">Employees In Selected Pay Group</p>
           <p className="text-sm text-muted-foreground">
-            Use `Manage Salary` to customize Basic %, HRA %, variable pay, benefits, and payroll profile details.
+            Attendance sync below is shown for {monthFilter}. Payroll payable days come from the attendance
+            snapshot: Present + Paid Leave + Week Off + Holiday. Use `Manage Salary` to customize Basic %,
+            HRA %, variable pay, benefits, and payroll profile details.
           </p>
         </div>
         <div className="max-h-[560px] overflow-auto p-4">
@@ -329,7 +361,7 @@ const PayrollEmployees = () => {
                 <TableHead className="text-right">Monthly Gross</TableHead>
                 <TableHead className="text-right">Basic Rule</TableHead>
                 <TableHead className="text-right">Variable Pay</TableHead>
-                <TableHead className="text-right">Attendance Sync</TableHead>
+                <TableHead className="text-right">Attendance Sync ({monthFilter})</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -391,9 +423,14 @@ const PayrollEmployees = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         {snapshot ? (
-                          <span className="text-sm text-green-600">
-                            {Number(snapshot.payable_days || 0).toFixed(2)} payable days
-                          </span>
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-green-600">
+                              {Number(snapshot.payable_days || 0).toFixed(2)} payroll payable days
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {getAttendanceSyncBreakdown(snapshot) || "No payable attendance found in snapshot"}
+                            </p>
+                          </div>
                         ) : loadingAttendanceSnapshots ? (
                           <span className="text-sm text-muted-foreground">Checking...</span>
                         ) : (
