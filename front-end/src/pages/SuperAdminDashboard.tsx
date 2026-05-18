@@ -21,6 +21,7 @@ import { useNavigate } from "react-router-dom";
 import { getAdminUserId, getProfile } from "@/utils/auth";
 
 type OrgLifecycleAction = "soft_delete" | "restore" | "hard_delete";
+type PayrollClearMode = "generated" | "all";
 
 const getCurrentAdminUserId = () => getAdminUserId() || ((getProfile() as any)?.userId ?? "");
 
@@ -36,9 +37,13 @@ const SuperAdminDashboard = () => {
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [showLifecycleDialog, setShowLifecycleDialog] = useState(false);
+  const [showPayrollClearDialog, setShowPayrollClearDialog] = useState(false);
   const [lifecycleAction, setLifecycleAction] = useState<OrgLifecycleAction>("soft_delete");
+  const [payrollClearMode, setPayrollClearMode] = useState<PayrollClearMode>("generated");
   const [confirmationCode, setConfirmationCode] = useState("");
+  const [payrollClearConfirmationCode, setPayrollClearConfirmationCode] = useState("");
   const [lifecycleLoading, setLifecycleLoading] = useState(false);
+  const [payrollClearLoading, setPayrollClearLoading] = useState(false);
 
   const [createOrgForm, setCreateOrgForm] = useState({
     name: "",
@@ -209,6 +214,37 @@ const SuperAdminDashboard = () => {
     await fetchOrganizations();
   };
 
+  const handlePayrollClearAction = async () => {
+    if (!selectedOrg || !selectedOrgDetails) {
+      toast.error("Select an organization first");
+      return;
+    }
+    if (!payrollClearConfirmationCode.trim()) {
+      toast.error("Enter organization code for confirmation");
+      return;
+    }
+
+    setPayrollClearLoading(true);
+    const res = await postApiWithToken(`/organizations/${selectedOrg}/payroll-clear`, {
+      mode: payrollClearMode,
+      confirmationCode: payrollClearConfirmationCode.trim()
+    });
+    setPayrollClearLoading(false);
+
+    if (!res?.success) {
+      toast.error(res?.message || "Organization payroll clear failed");
+      return;
+    }
+
+    toast.success(
+      payrollClearMode === "all"
+        ? "Full payroll reset completed for selected organization"
+        : "Generated payroll data cleared for selected organization"
+    );
+    setShowPayrollClearDialog(false);
+    setPayrollClearConfirmationCode("");
+  };
+
   useEffect(() => {
     fetchOrganizations();
   }, []);
@@ -284,6 +320,17 @@ const SuperAdminDashboard = () => {
               disabled={!selectedOrg}
             >
               View Employees
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPayrollClearMode("generated");
+                setPayrollClearConfirmationCode("");
+                setShowPayrollClearDialog(true);
+              }}
+              disabled={!selectedOrg}
+            >
+              Clear Payroll Data
             </Button>
             <Button
               variant="destructive"
@@ -513,6 +560,57 @@ const SuperAdminDashboard = () => {
                   : lifecycleAction === "restore"
                     ? "Confirm Restore"
                     : "Confirm Soft Delete"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPayrollClearDialog} onOpenChange={setShowPayrollClearDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear Organization Payroll Data</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <div className="font-medium">{selectedOrgDetails?.name || "-"}</div>
+              <div className="text-muted-foreground">
+                Code: {selectedOrgDetails?.code || "-"}
+              </div>
+              <div className="text-muted-foreground">
+                Generated Data Only clears attendance snapshots, payroll runs, run rows, and payroll transactions for the selected organization. Full Payroll Reset also clears pay groups, components, payroll employee setup, salary, bank, and statutory payroll records for that organization.
+              </div>
+            </div>
+
+            <Select
+              value={payrollClearMode}
+              onValueChange={(value) => setPayrollClearMode(value as PayrollClearMode)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select payroll clear mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="generated">Generated Data Only</SelectItem>
+                <SelectItem value="all">Full Payroll Reset</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Input
+              placeholder={`Type org code (${selectedOrgDetails?.code || ""}) to confirm`}
+              value={payrollClearConfirmationCode}
+              onChange={(e) => setPayrollClearConfirmationCode(e.target.value)}
+            />
+
+            <Button
+              className="w-full"
+              variant="destructive"
+              onClick={handlePayrollClearAction}
+              disabled={payrollClearLoading || !selectedOrg}
+            >
+              {payrollClearLoading
+                ? "Processing..."
+                : payrollClearMode === "all"
+                  ? "Confirm Full Payroll Reset"
+                  : "Confirm Generated Payroll Clear"}
             </Button>
           </div>
         </DialogContent>

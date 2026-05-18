@@ -44,19 +44,110 @@ const administratorSections: DocSection[] = [
   {
     id: "administrator-payroll-quick-start",
     category: "Payroll",
-    title: "Payroll Quick Start (HR)",
+    title: "Payroll Setup Guide For Clients",
+    description:
+      "Use this sequence when payroll is being configured for the first time. Complete the steps in order so the salary package shown on each employee matches the selected pay group and components.",
     points: [
-      "Open Payroll Setup Wizard and review Telangana default components.",
-      "Create or review pay groups before assigning salary details to employees.",
-      "Enter annual CTC and pay group in employee salary details; component values auto-calculate.",
-      "Override component values only for approved exceptions, then save with reason.",
-      "Generate attendance snapshot, create payroll run, validate, submit, approve, and lock."
+      "Start in Payroll > Setup. A Pay Group is the salary cycle for a set of employees. Example: Monthly Staff, Consultants, Weekly Workers, or Factory Staff.",
+      "Click Add Pay Group and enter a clear code and name. Use short codes such as MONTHLY, WEEKLY, or CONTRACT. Select salary frequency, salary pay day, work week days, and default Basic percentage.",
+      "After creating the pay group, open Setup Wizard for that pay group. The wizard loads the salary components that will be used for employees in that pay group.",
+      "In the Salary Components step, review earnings, deductions, and employer contributions. Earnings increase salary, deductions reduce take-home salary, and employer contributions are company-paid costs.",
+      "Keep the default Telangana components if they match your company policy. Edit the component name, calculation type, percentage, amount, or formula only when the company salary policy requires it.",
+      "Save the wizard. This connects the selected components to the pay group, so employees assigned to that pay group can receive salary packages from those components.",
+      "Open Employees, edit an employee, and go to the Salary tab. Select the correct Pay Group, enter Annual CTC, and review the auto-calculated Monthly Gross, Basic Pay, Variable Pay, HRA, PF, ESI, and other component values.",
+      "Use employee-level component enable or disable only for approved exceptions. Example: disable a bonus component for one employee, enable a special allowance, or change an employee-specific percentage.",
+      "Save salary details, bank details, and statutory details for the employee. The Payroll Employees page will then show the employee under the selected pay group.",
+      "After employee salary setup is complete, generate attendance snapshots, create payroll run, validate, submit for approval, approve, lock, and generate payslips.",
+      "Attendance snapshot is the bridge between Attendance and Payroll. The snapshot freezes the payroll month into payable days, LOP days, holidays, week offs, paid or unpaid leave, and overtime before payroll is computed.",
+      "Preferred monthly flow: finalize attendance, approve leave, lock the attendance month, confirm the snapshot is generated, then create and compute payroll for that month.",
+      "If attendance corrections or leave changes happen after snapshot generation, regenerate the attendance snapshot for that month and recompute the payroll run so payroll uses the latest attendance totals."
     ],
     checklist: [
+      "Payroll is enabled in Organization Settings",
+      "At least one pay group is created in Payroll > Setup",
+      "Setup Wizard is saved for the pay group with all required salary components",
+      "Each payroll employee has a pay group selected in the employee Salary tab",
+      "Annual CTC is entered for each payroll employee",
+      "Employee-specific component overrides are reviewed and used only where needed",
       "Bank details are saved for all payroll employees",
-      "PAN/UAN/ESI fields are complete where applicable",
-      "Attendance and leave approvals are finalized for the month",
-      "No validation errors remain before final approval"
+      "PAN, UAN, ESI, PF, and tax details are complete where applicable",
+      "Attendance and leave approvals are finalized for the payroll month",
+      "Payroll validation errors are resolved before final approval and lock"
+    ],
+    warnings: [
+      "Do not lock a payroll run until salary setup, attendance, leave approvals, bank details, and statutory details have all been checked. Locked payroll should be treated as final."
+    ]
+  },
+  {
+    id: "administrator-payroll-components",
+    category: "Payroll",
+    title: "Understanding Pay Groups And Components",
+    points: [
+      "Pay Group: A payroll cycle and rule set. Employees in the same pay group share the same payroll frequency, pay day, attendance cutoff, and default salary component setup.",
+      "Annual CTC: The yearly company cost for the employee. When entered in the Salary tab, the system uses the selected pay group rules to calculate salary values.",
+      "Monthly Gross: The monthly earnings before employee deductions. This is calculated from CTC and company contribution rules.",
+      "Basic Pay: The base salary amount. It usually drives HRA, PF, gratuity, and other formula-based components.",
+      "Earnings: Components paid to the employee, such as Basic, HRA, Other Allowance, Bonus, and Variable Pay.",
+      "Deductions: Components deducted from salary, such as PF, ESI, PT, TDS, loans, or recoveries.",
+      "Employer Contributions: Company-paid amounts such as Employer PF. These are part of company cost but not deducted from employee take-home pay.",
+      "Fixed Amount: Use when the component value is the same every month.",
+      "Percentage: Use when the component is a percentage of another value, such as HRA as a percentage of Basic.",
+      "Formula: Use when a component depends on one or more salary variables, such as PF based on Basic with a wage ceiling.",
+      "Slab: Use when the amount depends on salary ranges, such as Professional Tax slabs."
+    ],
+    warnings: [
+      "Component formulas directly affect salary output. Confirm company policy and statutory rules before changing formulas for a live pay group."
+    ]
+  },
+  {
+    id: "administrator-payroll-employee-setup",
+    category: "Payroll",
+    title: "Employee Salary Setup",
+    points: [
+      "Open Employees and choose the employee whose payroll needs to be configured.",
+      "Go to the Salary tab. This tab is where the pay group is assigned to the employee.",
+      "Select the Pay Group. The selected pay group decides which salary components are available for that employee.",
+      "Enter Annual CTC. With auto-calculate enabled, the system calculates monthly salary values based on the pay group Basic percentage and salary rules.",
+      "Review the salary preview before saving. Check Annual CTC, Monthly Gross, Basic Pay, HRA, Variable Pay, employer contribution, deductions, and estimated net salary.",
+      "Use Pay Group default for normal employees. Use Employee override only when HR or Admin has approved a different component rule for that employee.",
+      "Enable or disable custom components in the employee component section. Disabled components will not be considered for that employee salary package.",
+      "Save salary details. Then save Bank Details and Statutory Details from the same employee payroll area.",
+      "Open Payroll > Employees and select the pay group to confirm the employee appears in the assigned employee list."
+    ],
+    checklist: [
+      "Correct pay group selected",
+      "Annual CTC entered",
+      "Basic percentage source reviewed: Pay Group default or Employee override",
+      "Custom components enabled or disabled correctly",
+      "Bank account and IFSC saved",
+      "PAN, UAN, ESI, PF, and tax regime saved where applicable"
+    ]
+  },
+  {
+    id: "administrator-payroll-attendance-snapshot",
+    category: "Payroll",
+    title: "How Attendance Moves Into Payroll",
+    description:
+      "Use this section to explain to clients how attendance becomes payroll days before salary is calculated.",
+    points: [
+      "Payroll does not directly calculate salary from raw daily punches. First, the system creates a monthly attendance snapshot for the selected payroll month.",
+      "The attendance snapshot reads attendance punches, approved leave, holidays, week offs, and minimum full-day or half-day work hours to decide each day's payroll status.",
+      "For each employee, the snapshot stores totals such as calendar days, working days, present days, paid leave days, unpaid leave days, holiday days, week off days, payable days, LOP days, and overtime minutes.",
+      "Payable Days means the days eligible for salary in that month. LOP Days means Loss Of Pay days that reduce salary for the month.",
+      "In a normal case, Present, Paid Leave, Holiday, and Week Off add to payable days. Unpaid Leave and Absence increase LOP. Half day usually counts as half payable and half LOP.",
+      "After the snapshot is ready, Payroll uses those totals to calculate proration. Example: if payable days are 27 out of 30, attendance-based earning components are paid at 90% for that month.",
+      "Overtime, if captured in attendance, is also carried into payroll through the snapshot and can be added as a separate earning during payroll computation."
+    ],
+    checklist: [
+      "Attendance is finalized for the payroll month",
+      "Leave approvals are completed before snapshot generation",
+      "Attendance month is locked or manually refreshed before payroll compute",
+      "Attendance snapshot exists for the same payroll month being processed",
+      "Payroll is recomputed after any attendance or leave correction"
+    ],
+    warnings: [
+      "If attendance or leave is changed after snapshot generation, payroll will still use the old snapshot until it is regenerated.",
+      "Do not approve or lock final payroll until attendance snapshot, leave approvals, and payable days have been verified."
     ]
   },
   {

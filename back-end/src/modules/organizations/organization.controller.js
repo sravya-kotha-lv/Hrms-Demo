@@ -165,3 +165,30 @@ exports.lifecycleAction = async (req, res) => {
     );
   }
 };
+
+exports.clearPayrollData = async (req, res) => {
+  try {
+    const result = await organizationService.clearOrganizationPayrollData({
+      organizationId: req.params.id,
+      mode: req.body.mode,
+      confirmationCode: req.body.confirmationCode,
+      actorUserId: req.user.userId
+    });
+
+    return res.status(200).json(
+      buildSuccessResponse({
+        code: 200,
+        message: "Organization payroll data cleared successfully",
+        data: result
+      })
+    );
+  } catch (err) {
+    return res.status(err.code || 500).json(
+      buildFailureResponse({
+        code: err.code || 500,
+        message: err.message || "Organization payroll clear failed",
+        error: err.error || null
+      })
+    );
+  }
+};

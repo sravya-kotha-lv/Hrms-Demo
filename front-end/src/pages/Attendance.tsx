@@ -442,10 +442,16 @@ const Attendance = () => {
         return;
       }
 
-      renderRowsProgressively(nextRows, Boolean(canViewAll && currentPage > 1));
+      const isPaginatedAppend = Boolean(canViewAll && currentPage > 1);
+
+      renderRowsProgressively(nextRows, isPaginatedAppend);
       setDaysInMonth(res.data?.daysInMonth || 31);
       setPagination(res.data?.pagination || null);
-      setLockAttendanceMeta(res.data?.lockAttendance || null);
+      setLockAttendanceMeta((prev) => {
+        const nextLockMeta = res.data?.lockAttendance || null;
+        if (nextLockMeta) return nextLockMeta;
+        return isPaginatedAppend ? prev : null;
+      });
       if (currentPage === 1) {
         setSelectedEmployeeIds((prev) => {
           const validIds = new Set(nextRows.map((e: EmployeeRow) => e.employeeId));
@@ -505,6 +511,26 @@ const Attendance = () => {
 
   const filteredRows = useMemo(() => rows || [], [rows]);
   const visibleRows = filteredRows;
+  const lockAttendanceButtonLabel = useMemo(() => {
+    if (lockingAttendance) return "Processing...";
+    if (!lockAttendanceMeta) return "Generate Snapshot";
+    const countSuffix = lockAttendanceMeta.pendingCheckoutCount
+      ? ` (${lockAttendanceMeta.pendingCheckoutCount})`
+      : "";
+    return lockAttendanceMeta.snapshotGenerated
+      ? `Refresh Snapshot${countSuffix}`
+      : `Generate Snapshot${countSuffix}`;
+  }, [lockAttendanceMeta, lockingAttendance]);
+  const lockAttendanceHelperText = useMemo(() => {
+    if (!lockAttendanceMeta) return null;
+    if (!lockAttendanceMeta.enabled) {
+      return lockAttendanceMeta.reason || "Payroll snapshot action is not available yet.";
+    }
+    if (lockAttendanceMeta.snapshotGenerated) {
+      return `A payroll attendance snapshot already exists for ${month}. Open-session attendance row(s): ${lockAttendanceMeta.pendingCheckoutCount}. These rows appear as absent in the table after snapshot generation and will stay absent in payroll until attendance is corrected and the snapshot is refreshed.`;
+    }
+    return `Attendance cutoff is available for ${month}. You can now generate the payroll attendance snapshot. Pending checkout day(s): ${lockAttendanceMeta.pendingCheckoutCount}.`;
+  }, [lockAttendanceMeta, month]);
 
   const hasMoreRows = Boolean(canViewAll && pagination && pagination.page < pagination.totalPages);
   const selectedCell = useMemo(() => {
@@ -774,8 +800,11 @@ const Attendance = () => {
 
   const runLockAttendance = async () => {
     if (!canEdit || !lockAttendanceMeta?.enabled || lockingAttendance) return;
+    const isRefresh = Boolean(lockAttendanceMeta?.snapshotGenerated);
     const confirmed = window.confirm(
-      `Lock attendance for ${month} and generate the payroll snapshot now? Pending checkout day(s) will be treated as absent inside payroll calculations until attendance is corrected and the snapshot is regenerated.`
+      isRefresh
+        ? `Refresh the payroll snapshot for ${month} now? Open-session attendance row(s) will continue to be treated as absent in payroll until attendance is corrected and the snapshot is refreshed again.`
+        : `Generate the payroll snapshot for ${month} now? Pending checkout day(s) will be treated as absent inside payroll calculations until attendance is corrected and the snapshot is refreshed.`
     );
     if (!confirmed) return;
 
@@ -789,10 +818,14 @@ const Attendance = () => {
       );
       if (res?.skipped) return;
       if (!res?.success) {
-        toast.error(res?.message || "Failed to lock attendance");
+        toast.error(res?.message || "Failed to process payroll snapshot");
         return;
       }
-      toast.success(`Payroll attendance snapshot generated for ${month}.`);
+      toast.success(
+        isRefresh
+          ? `Payroll attendance snapshot refreshed for ${month}.`
+          : `Payroll attendance snapshot generated for ${month}.`
+      );
       await refreshMatrixLatest();
     } finally {
       setLockingAttendance(false);
@@ -1145,9 +1178,7 @@ const Attendance = () => {
                           disabled={!lockAttendanceMeta?.enabled || lockingAttendance}
                           title={lockAttendanceMeta?.reason || undefined}
                         >
-                          {lockingAttendance
-                            ? "Locking..."
-                            : `Lock Attendance${lockAttendanceMeta?.pendingCheckoutCount ? ` (${lockAttendanceMeta.pendingCheckoutCount})` : ""}`}
+                          {lockAttendanceButtonLabel}
                         </Button>
                       )}
                       <Button variant="outline" className="h-12 bg-white/90" onClick={downloadCsv}>
@@ -1158,9 +1189,7 @@ const Attendance = () => {
                 </div>
                 {canEdit && lockAttendanceMeta && (
                   <div className="mt-3 text-xs text-slate-600">
-                    {lockAttendanceMeta.enabled
-                      ? `Lock date crossed. You can generate the payroll attendance snapshot for ${month}. Pending checkout day(s): ${lockAttendanceMeta.pendingCheckoutCount}.`
-                      : (lockAttendanceMeta.reason || "Attendance lock action is not available yet.")}
+                    {lockAttendanceHelperText}
                   </div>
                 )}
 

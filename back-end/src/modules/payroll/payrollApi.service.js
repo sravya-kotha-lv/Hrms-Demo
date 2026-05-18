@@ -1374,6 +1374,7 @@ exports.createSalaryStructure = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
+    await client.query("BEGIN");
     const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
       actorId: req.user.userId
     });
@@ -1382,13 +1383,33 @@ exports.createSalaryStructure = async (req) => {
     const p = req.body;
     const effectiveFrom = p.effectiveFrom;
 
+    const existingEffectiveStart = await client.query(
+      `
+        SELECT id
+        FROM employee_salary_structures
+        WHERE tenant_id = $1
+          AND employee_payroll_profile_id = $2
+          AND effective_from = $3::date
+        LIMIT 1
+      `,
+      [tenantId, profileId, effectiveFrom]
+    );
+    if (existingEffectiveStart.rows[0]) {
+      throw {
+        code: 409,
+        message:
+          "A salary revision already exists for this effective date. Choose a later effective date to keep salary history."
+      };
+    }
+
     const versionRes = await client.query(
       `
         SELECT COALESCE(MAX(version_no), 0) + 1 AS next_version
         FROM employee_salary_structures
-        WHERE employee_payroll_profile_id = $1
+        WHERE tenant_id = $1
+          AND employee_payroll_profile_id = $2
       `,
-      [profileId]
+      [tenantId, profileId]
     );
     const nextVersion = Number(versionRes.rows[0]?.next_version || 1);
 
@@ -1401,10 +1422,11 @@ exports.createSalaryStructure = async (req) => {
             effective_to = ($2::date - INTERVAL '1 day')::date,
             updated_by = $3
           WHERE employee_payroll_profile_id = $1 AND is_current = true
+            AND tenant_id = $4
             AND effective_from <> $2::date
             AND effective_from < $2::date
         `,
-        [profileId, effectiveFrom, actorId]
+        [profileId, effectiveFrom, actorId, tenantId]
       );
     }
 
@@ -1431,23 +1453,6 @@ exports.createSalaryStructure = async (req) => {
           updated_by
         )
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,$14,$15::jsonb,$16,$16)
-        ON CONFLICT ON CONSTRAINT uq_employee_salary_structure_effective_start
-        DO UPDATE SET
-          structure_code = EXCLUDED.structure_code,
-          structure_name = EXCLUDED.structure_name,
-          annual_ctc = EXCLUDED.annual_ctc,
-          monthly_gross = EXCLUDED.monthly_gross,
-          basic_pay = EXCLUDED.basic_pay,
-          variable_pay = EXCLUDED.variable_pay,
-          is_current = EXCLUDED.is_current,
-          revision_reason = EXCLUDED.revision_reason,
-          approved_by = EXCLUDED.approved_by,
-          approved_at = NOW(),
-          effective_to = EXCLUDED.effective_to,
-          metadata = EXCLUDED.metadata,
-          updated_by = EXCLUDED.updated_by,
-          updated_at = NOW(),
-          version = employee_salary_structures.version + 1
         RETURNING *
       `,
       [
@@ -1483,8 +1488,75 @@ exports.updateSalaryStructure = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
+    await client.query("BEGIN");
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const p = req.body;
+    const targetRes = await client.query(
+      `
+        SELECT employee_payroll_profile_id, effective_from, effective_to
+        FROM employee_salary_structures
+        WHERE id = $1 AND tenant_id = $2
+      `,
+      [req.params.salaryStructureId, tenantId]
+    );
+    const targetSalary = targetRes.rows[0];
+    if (!targetSalary) throw { code: 404, message: "Salary structure not found" };
+    const {
+      employee_payroll_profile_id: profileId,
+      effective_from: targetEffectiveFrom
+    } = targetSalary;
+    const laterRevisionRes = await client.query(
+      `
+        SELECT id
+        FROM employee_salary_structures
+        WHERE tenant_id = $1
+          AND employee_payroll_profile_id = $2
+          AND id <> $3
+          AND effective_from > $4::date
+        LIMIT 1
+      `,
+      [tenantId, profileId, req.params.salaryStructureId, targetEffectiveFrom]
+    );
+    if (targetSalary.effective_to && laterRevisionRes.rows[0]) {
+      throw {
+        code: 409,
+        message:
+          "Can't switch to older revision. Older completed salary revisions are view-only. Create a new revision for salary changes."
+      };
+    }
+
+    if (p.isCurrent) {
+        if (laterRevisionRes.rows[0]) {
+          throw {
+            code: 409,
+            message:
+          "Historical salary revisions cannot be reopened after a later revision exists. Create a new revision from the old values instead."
+          };
+        }
+        await client.query(
+          `
+            UPDATE employee_salary_structures
+            SET
+              is_current = false,
+              effective_to = LEAST(COALESCE(effective_to, ($3::date - INTERVAL '1 day')::date), ($3::date - INTERVAL '1 day')::date),
+              updated_by = $2
+            WHERE employee_payroll_profile_id = $1
+              AND tenant_id = $4
+              AND id <> $5
+              AND is_current = true
+              AND effective_from < $3::date
+          `,
+          [profileId, actorId, targetEffectiveFrom, tenantId, req.params.salaryStructureId]
+        );
+        await client.query(
+          `UPDATE employee_salary_structures SET effective_to = NULL, is_current = true WHERE id = $1 AND tenant_id = $2`,
+          [req.params.salaryStructureId, tenantId]
+        );
+    }
+
     const result = await client.query(
       `
         UPDATE employee_salary_structures
@@ -1497,13 +1569,13 @@ exports.updateSalaryStructure = async (req) => {
           is_current = COALESCE($7, is_current),
           revision_reason = COALESCE($8, revision_reason),
           effective_from = COALESCE($9, effective_from),
-          effective_to = COALESCE($10, effective_to),
           metadata = CASE
-            WHEN $11::jsonb = '{}'::jsonb THEN metadata
-            ELSE metadata || $11::jsonb
+            WHEN $10::jsonb = '{}'::jsonb THEN metadata
+            ELSE metadata || $10::jsonb
           END,
-          updated_by = $12
+          updated_by = $11
         WHERE id = $1
+          AND tenant_id = $12
         RETURNING *
       `,
       [
@@ -1516,13 +1588,17 @@ exports.updateSalaryStructure = async (req) => {
         p.isCurrent ?? null,
         p.revisionReason ?? null,
         p.effectiveFrom ?? null,
-        p.effectiveTo ?? null,
         JSON.stringify(p.metadata || {}),
-        actorId
+        actorId,
+        tenantId
       ]
     );
     if (!result.rows[0]) throw { code: 404, message: "Salary structure not found" };
+    await client.query("COMMIT");
     return result.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
   }
@@ -1532,15 +1608,19 @@ exports.deleteSalaryStructure = async (req) => {
   const pool = await ensurePool();
   const client = await pool.connect();
   try {
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
     const actorId = String(req.user.userId);
     const result = await client.query(
       `
         UPDATE employee_salary_structures
         SET is_current = false, effective_to = COALESCE(effective_to, NOW()::date), updated_by = $2
         WHERE id = $1
+          AND tenant_id = $3
         RETURNING id, is_current, effective_to
       `,
-      [req.params.salaryStructureId, actorId]
+      [req.params.salaryStructureId, actorId, tenantId]
     );
     if (!result.rows[0]) throw { code: 404, message: "Salary structure not found" };
     return result.rows[0];

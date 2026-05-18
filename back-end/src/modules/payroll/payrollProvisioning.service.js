@@ -227,7 +227,7 @@ const STARTER_FORMULAS = [
     componentCode: "OTHER_ALLOWANCE",
     formulaCode: "OTHER_ALLOWANCE_AUTO",
     formulaName: "Other Allowance Balancing Figure",
-    expression: "round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE + BONUS), 0))",
+    expression: "round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE), 0))",
     executionOrder: 40
   },
   {

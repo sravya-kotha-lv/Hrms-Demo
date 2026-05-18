@@ -12,7 +12,8 @@ const {
   isComponentEnabledForEmployee,
   applyEmployeeComponentOverride,
   computeAnnualTdsEstimate,
-  computeTelanganaProfessionalTax
+  computeTelanganaProfessionalTax,
+  computeSalaryContextFromRules
 } = __test__;
 
 test("evaluateFormula supports math helpers and context variables", () => {
@@ -206,4 +207,36 @@ test("computeAnnualTdsEstimate calculates monthly TDS for new regime with declar
   assert.ok(estimate.annualTaxLiability > 0);
   assert.equal(estimate.monthsRemaining, 12);
   assert.ok(estimate.monthlyTds > 0);
+});
+
+test("computeSalaryContextFromRules derives gross first and applies basic percent on gross", () => {
+  const salaryContext = computeSalaryContextFromRules({
+    salary: {
+      annual_ctc: 1199999,
+      monthly_gross: null,
+      basic_pay: null,
+      variable_pay: 9999.99,
+      metadata: {
+        salaryRules: {
+          payGroupBasicPercent: 50,
+          basicPercentSource: "pay_group",
+          hraPercentOfBasic: 50,
+          epfMode: "percentage",
+          epfPercentOfBasic: 12,
+          epfEmployerRate: 12,
+          restrictPfWage: true,
+          pfWageCeiling: 15000,
+          includeEsi: true,
+          esiEligibilityThreshold: 21000,
+          esiEmployerRate: 3.25,
+          esiEmployeeRate: 0.75
+        }
+      }
+    }
+  });
+
+  assert.equal(salaryContext.monthlyGross, 98199.92);
+  assert.equal(salaryContext.basicPay, 49099.96);
+  assert.equal(salaryContext.employerEpf, 1800);
+  assert.equal(salaryContext.effectiveBasicPercent, 50);
 });

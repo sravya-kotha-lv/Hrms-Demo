@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FocusEvent, type MouseEvent, useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -110,6 +111,10 @@ type Props = {
 const TODAY = new Date().toISOString().slice(0, 10);
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LEGACY_OTHER_ALLOWANCE_FORMULA =
+  "round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE + BONUS), 0))";
+const OTHER_ALLOWANCE_FORMULA =
+  "round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE), 0))";
 
 const steps = [
   "Salary Cycle",
@@ -147,9 +152,9 @@ const FORMULA_PRESETS = [
   },
   {
     id: "taxable_allowance_basic_minus_hra",
-    label: "Other Allowance = Basic - HRA",
-    expression: "BASIC - HRA",
-    help: "Useful when Other Allowance is derived from Basic and HRA."
+    label: "Other Allowance = Gross - Basic - HRA - Variable",
+    expression: OTHER_ALLOWANCE_FORMULA,
+    help: "Balances Monthly Gross after Basic, HRA, and Variable Pay. Bonus is not included."
   }
 ] as const;
 
@@ -157,7 +162,7 @@ const STARTER_FORMULA_BY_CODE: Record<string, string> = {
   BASIC: "BASIC_PAY",
   HRA: "round(BASIC_PAY * HRA_PERCENT_OF_BASIC / 100)",
   VARIABLE: "VARIABLE_PAY",
-  OTHER_ALLOWANCE: "round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE + BONUS), 0))",
+  OTHER_ALLOWANCE: OTHER_ALLOWANCE_FORMULA,
   EPF: "round(min(BASIC_PAY, 15000) * 0.12)",
   ESI: "round(ESI_EMPLOYEE_AMOUNT)",
   TDS: "round(TDS_AMOUNT)",
@@ -201,7 +206,7 @@ const TELANGANA_DEFAULT_TEMPLATE: PayrollTemplate = {
       amount: "",
       percentageOf: "MONTHLY_GROSS",
       formulaTemplate: "taxable_allowance_basic_minus_hra",
-      formulaExpression: "round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE + BONUS), 0))"
+      formulaExpression: OTHER_ALLOWANCE_FORMULA
     },
     {
       scope: "deduction",
@@ -395,6 +400,40 @@ const getCalculationModeLabel = (mode: ComponentDraft["calculationMode"]) => {
   return "Slab";
 };
 
+const scrollTextToEnd = (element: HTMLElement | null) => {
+  if (!element) return;
+  window.setTimeout(() => {
+    element.scrollTo({ left: element.scrollWidth, behavior: "smooth" });
+  }, 120);
+};
+
+const resetTextScroll = (element: HTMLElement | null) => {
+  if (!element) return;
+  element.scrollTo({ left: 0, behavior: "smooth" });
+};
+
+const scrollInputProps = (value: string) => ({
+  title: value,
+  onMouseEnter: (event: MouseEvent<HTMLInputElement>) => scrollTextToEnd(event.currentTarget),
+  onMouseLeave: (event: MouseEvent<HTMLInputElement>) => resetTextScroll(event.currentTarget),
+  onFocus: (event: FocusEvent<HTMLInputElement>) => scrollTextToEnd(event.currentTarget),
+  onBlur: (event: FocusEvent<HTMLInputElement>) => resetTextScroll(event.currentTarget)
+});
+
+const scrollSelectTextProps = (value: string) => ({
+  title: value,
+  className:
+    "[&>span]:block [&>span]:max-w-[calc(100%-1.5rem)] [&>span]:overflow-x-auto [&>span]:whitespace-nowrap [&>span]:line-clamp-none [&>span]:scrollbar-none",
+  onMouseEnter: (event: MouseEvent<HTMLButtonElement>) =>
+    scrollTextToEnd(event.currentTarget.querySelector("span")),
+  onMouseLeave: (event: MouseEvent<HTMLButtonElement>) =>
+    resetTextScroll(event.currentTarget.querySelector("span")),
+  onFocus: (event: FocusEvent<HTMLButtonElement>) =>
+    scrollTextToEnd(event.currentTarget.querySelector("span")),
+  onBlur: (event: FocusEvent<HTMLButtonElement>) =>
+    resetTextScroll(event.currentTarget.querySelector("span"))
+});
+
 const buildPayGroupState = (
   settings?: PayrollSettingsPayload,
   preferredPayGroupId?: string,
@@ -461,9 +500,13 @@ const getComponentPayGroupIds = (component?: SalaryComponentPayload) => {
 const mapComponentToDraft = (component: SalaryComponentPayload): ComponentDraft => {
   const metadata = component?.metadata || {};
   const code = String(component?.code || "").toUpperCase();
-  const formulaExpression = String(
+  const storedFormulaExpression = String(
     metadata.expression || STARTER_FORMULA_BY_CODE[code] || ""
   );
+  const formulaExpression =
+    code === "OTHER_ALLOWANCE" && storedFormulaExpression === LEGACY_OTHER_ALLOWANCE_FORMULA
+      ? OTHER_ALLOWANCE_FORMULA
+      : storedFormulaExpression;
   return {
     id: component?.id,
     scope: component.scope,
@@ -1143,7 +1186,7 @@ export const PayrollSetupWizard = ({
                       updateComponent(index, { scope: value as ComponentDraft["scope"] })
                     }
                   >
-                    <SelectTrigger>
+                    <SelectTrigger {...scrollSelectTextProps(getScopeLabel(component.scope))}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1155,11 +1198,13 @@ export const PayrollSetupWizard = ({
                   <Input
                     placeholder="Code (BASIC)"
                     value={component.code}
+                    {...scrollInputProps(component.code || "Code (BASIC)")}
                     onChange={(e) => updateComponent(index, { code: e.target.value })}
                   />
                   <Input
                     placeholder="Name (Basic Pay)"
                     value={component.name}
+                    {...scrollInputProps(component.name || "Name (Basic Pay)")}
                     onChange={(e) => updateComponent(index, { name: e.target.value })}
                   />
                   <Select
@@ -1170,7 +1215,7 @@ export const PayrollSetupWizard = ({
                       })
                     }
                   >
-                    <SelectTrigger>
+                    <SelectTrigger {...scrollSelectTextProps(getCalculationModeLabel(component.calculationMode))}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1181,7 +1226,11 @@ export const PayrollSetupWizard = ({
                     </SelectContent>
                   </Select>
                   {component.calculationMode === "formula" ? (
-                    <Input value="Use formula setup below" readOnly />
+                    <Input
+                      value="Use formula setup below"
+                      readOnly
+                      {...scrollInputProps("Use formula setup below")}
+                    />
                   ) : (
                     <Input
                       type="number"
@@ -1191,6 +1240,12 @@ export const PayrollSetupWizard = ({
                           : "Monthly amount"
                       }
                       value={component.amount}
+                      {...scrollInputProps(
+                        component.amount ||
+                          (component.calculationMode === "percentage"
+                            ? "Percentage (e.g. 50)"
+                            : "Monthly amount")
+                      )}
                       onChange={(e) => updateComponent(index, { amount: e.target.value })}
                     />
                   )}
@@ -1203,7 +1258,7 @@ export const PayrollSetupWizard = ({
                         value={component.percentageOf}
                         onValueChange={(value) => updateComponent(index, { percentageOf: value })}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger {...scrollSelectTextProps(component.percentageOf)}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1278,7 +1333,12 @@ export const PayrollSetupWizard = ({
                         value={component.formulaTemplate}
                         onValueChange={(value) => applyFormulaTemplate(index, value)}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger
+                          {...scrollSelectTextProps(
+                            FORMULA_PRESETS.find((preset) => preset.id === component.formulaTemplate)
+                              ?.label || "Custom Formula"
+                          )}
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1298,9 +1358,10 @@ export const PayrollSetupWizard = ({
                     </div>
                     <div>
                       <label className="text-xs font-medium">Formula Expression</label>
-                      <Input
-                        placeholder="BASIC - HRA"
+                      <Textarea
+                        placeholder="round(max(MONTHLY_GROSS - (BASIC + HRA + VARIABLE), 0))"
                         value={component.formulaExpression}
+                        className="min-h-[72px] font-mono text-xs"
                         onChange={(e) =>
                           updateComponent(index, {
                             formulaTemplate: "custom",

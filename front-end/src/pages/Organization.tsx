@@ -21,7 +21,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Trash2, Plus, FilePenLine } from "lucide-react";
+import { Trash2, Plus, FilePenLine, Eraser } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,11 +52,16 @@ const emptyOrg: Organization = {
 };
 
 const OrganizationPage = () => {
-  const { hasAnyPermission } = useAuth();
+  const { hasAnyPermission, isSuperAdmin } = useAuth();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [open, setOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<Organization>(emptyOrg);
+  const [payrollClearOpen, setPayrollClearOpen] = useState(false);
+  const [selectedOrgForPayrollClear, setSelectedOrgForPayrollClear] = useState<Organization | null>(null);
+  const [payrollClearMode, setPayrollClearMode] = useState<"generated" | "all">("generated");
+  const [payrollClearConfirmationCode, setPayrollClearConfirmationCode] = useState("");
+  const [payrollClearLoading, setPayrollClearLoading] = useState(false);
   const canView = hasAnyPermission(["ORG_VIEW"]);
   const canManage = hasAnyPermission(["ORG_MANAGE"]);
 
@@ -134,6 +139,48 @@ const OrganizationPage = () => {
       fetchOrganizations();
     } else {
       toast.error(res?.message || "Operation failed");
+    }
+  };
+
+  const openPayrollClearDialog = (org: Organization) => {
+    setSelectedOrgForPayrollClear(org);
+    setPayrollClearMode("generated");
+    setPayrollClearConfirmationCode("");
+    setPayrollClearOpen(true);
+  };
+
+  const handlePayrollClear = async () => {
+    if (!selectedOrgForPayrollClear?._id) return;
+    if (!isSuperAdmin) {
+      toast.error("Only SuperAdmin can clear payroll data");
+      return;
+    }
+    try {
+      setPayrollClearLoading(true);
+      const res = await postApiWithToken(
+        `/organizations/${selectedOrgForPayrollClear._id}/payroll-clear`,
+        {
+          mode: payrollClearMode,
+          confirmationCode: payrollClearConfirmationCode
+        },
+        null,
+        { requiredPermissions: ["ORG_MANAGE"] }
+      );
+      if (res?.skipped) return;
+      if (!res?.success) {
+        toast.error(res?.message || "Failed to clear payroll data");
+        return;
+      }
+      toast.success(
+        payrollClearMode === "all"
+          ? "Full payroll reset completed for organization"
+          : "Generated payroll data cleared for organization"
+      );
+      setPayrollClearOpen(false);
+      setSelectedOrgForPayrollClear(null);
+      setPayrollClearConfirmationCode("");
+    } finally {
+      setPayrollClearLoading(false);
     }
   };
 
@@ -232,6 +279,40 @@ const OrganizationPage = () => {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+
+            {isSuperAdmin && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={`
+                        group
+                        ${isInactive
+                          ? "text-gray-400 cursor-not-allowed"
+                          : "text-amber-600 hover:text-amber-700 cursor-pointer"
+                        }
+                      `}
+                      onClick={() => {
+                        if (isInactive) return;
+                        openPayrollClearDialog(org);
+                      }}
+                    >
+                      <Eraser
+                        className={`
+                          w-4 h-4 transition-transform duration-200
+                          ${isInactive ? "" : "group-hover:scale-110"}
+                        `}
+                      />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {isInactive
+                      ? "Inactive organizations cannot clear payroll data"
+                      : "Clear payroll data for this organization"}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
           </PermissionGate>
         );
@@ -350,6 +431,57 @@ const OrganizationPage = () => {
             </Select>
             <Button onClick={handleSubmit} className="w-full">
               {isEdit ? "Update Organization" : "Create Organization"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={payrollClearOpen} onOpenChange={setPayrollClearOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear Organization Payroll Data</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <div className="font-medium">{selectedOrgForPayrollClear?.name || "-"}</div>
+              <div className="text-muted-foreground">
+                Code: {selectedOrgForPayrollClear?.code || "-"}
+              </div>
+              <div className="text-muted-foreground">
+                Generated Data Only clears payroll runs, snapshots, payroll transactions, and attendance sync data for this organization. Full Payroll Reset also removes pay groups, components, payroll employee setup, salary, bank, and statutory payroll records for this organization.
+              </div>
+            </div>
+
+            <Select
+              value={payrollClearMode}
+              onValueChange={(value) => setPayrollClearMode(value as "generated" | "all")}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select payroll clear mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="generated">Generated Data Only</SelectItem>
+                <SelectItem value="all">Full Payroll Reset</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Input
+              placeholder={`Type org code (${selectedOrgForPayrollClear?.code || ""}) to confirm`}
+              value={payrollClearConfirmationCode}
+              onChange={(e) => setPayrollClearConfirmationCode(e.target.value)}
+            />
+
+            <Button
+              className="w-full"
+              variant="destructive"
+              onClick={handlePayrollClear}
+              disabled={payrollClearLoading || !selectedOrgForPayrollClear}
+            >
+              {payrollClearLoading
+                ? "Processing..."
+                : payrollClearMode === "all"
+                  ? "Confirm Full Payroll Reset"
+                  : "Confirm Generated Payroll Clear"}
             </Button>
           </div>
         </DialogContent>

@@ -1863,6 +1863,26 @@ const buildLockAttendanceActionMeta = ({
   };
 };
 
+const countPendingCheckoutForMonth = async ({
+  organizationId,
+  start,
+  end,
+  scopedEmployeeIds
+}) => {
+  const attendanceQuery = {
+    organizationId,
+    date: { $gte: start, $lte: end },
+    checkInAt: { $ne: null },
+    $or: [{ status: "checked_in" }, { checkOutAt: null }]
+  };
+
+  if (Array.isArray(scopedEmployeeIds)) {
+    attendanceQuery.employeeId = { $in: scopedEmployeeIds };
+  }
+
+  return Attendance.countDocuments(attendanceQuery);
+};
+
 const hasPayrollSnapshotForMonth = async (req, month) => {
   try {
     const snapshotData = await payrollAttendanceService.listMonthlyAttendanceSnapshots({
@@ -2591,7 +2611,12 @@ exports.getAttendanceMatrix = async (req) => {
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
-  const pendingCheckoutCount = attendanceRows.filter((row) => isAttendanceOpenSession(row)).length;
+  const pendingCheckoutCount = await countPendingCheckoutForMonth({
+    organizationId: req.user.organizationId,
+    start,
+    end,
+    scopedEmployeeIds
+  });
   const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
   const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
   const lockAttendance = buildLockAttendanceActionMeta({
@@ -2820,7 +2845,12 @@ exports.getMyAttendanceMatrix = async (req) => {
   ]);
 
   const attendanceRows = mergeAttendanceRowsByEmployeeDay(attendanceRowsRaw, organizationTimeZone);
-  const pendingCheckoutCount = attendanceRows.filter((row) => isAttendanceOpenSession(row)).length;
+  const pendingCheckoutCount = await countPendingCheckoutForMonth({
+    organizationId: req.user.organizationId,
+    start,
+    end,
+    scopedEmployeeIds: [employee._id]
+  });
   const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
   const snapshotGenerated = await hasPayrollSnapshotForMonth(req, `${year}-${String(month).padStart(2, "0")}`);
   const lockAttendance = buildLockAttendanceActionMeta({

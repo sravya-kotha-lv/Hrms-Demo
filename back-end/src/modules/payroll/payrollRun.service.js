@@ -306,6 +306,79 @@ const computeSalaryContextFromRules = ({ salary }) => {
     };
   }
 
+  const roundPayrollAmount = (value) => Number(toNumber(value, 0).toFixed(2));
+  const computeEmployerEpfAmount = ({
+    basicPay,
+    epfMode,
+    epfFixedAmount,
+    epfEmployerRate,
+    restrictPfWage,
+    pfWageCeiling
+  }) => {
+    const epfBase = restrictPfWage ? Math.min(basicPay, pfWageCeiling) : basicPay;
+    return epfMode === "fixed"
+      ? epfFixedAmount
+      : roundPayrollAmount((epfBase * epfEmployerRate) / 100);
+  };
+  const computeEmployerEsiAmount = ({ monthlyGross, includeEsi, esiEligibilityThreshold, esiEmployerRate }) =>
+    includeEsi && monthlyGross > 0 && monthlyGross <= esiEligibilityThreshold
+      ? roundPayrollAmount((monthlyGross * esiEmployerRate) / 100)
+      : 0;
+  const deriveGrossFromMonthlyCtc = ({ fixedBasicPay }) => {
+    let monthlyGross = Math.max(0, monthlyCtc);
+
+    for (let index = 0; index < 25; index += 1) {
+      const basicPay = fixedBasicPay > 0
+        ? fixedBasicPay
+        : roundPayrollAmount(monthlyGross * (effectiveBasicPercent / 100));
+      const employerEpf = computeEmployerEpfAmount({
+        basicPay,
+        epfMode,
+        epfFixedAmount,
+        epfEmployerRate,
+        restrictPfWage,
+        pfWageCeiling
+      });
+      const employerEsiAmount = computeEmployerEsiAmount({
+        monthlyGross,
+        includeEsi,
+        esiEligibilityThreshold,
+        esiEmployerRate
+      });
+      const nextGross = roundPayrollAmount(Math.max(0, monthlyCtc - employerEpf - employerEsiAmount));
+      if (Math.abs(nextGross - monthlyGross) < 0.01) {
+        monthlyGross = nextGross;
+        break;
+      }
+      monthlyGross = nextGross;
+    }
+
+    const basicPay = fixedBasicPay > 0
+      ? fixedBasicPay
+      : roundPayrollAmount(monthlyGross * (effectiveBasicPercent / 100));
+    const employerEpf = computeEmployerEpfAmount({
+      basicPay,
+      epfMode,
+      epfFixedAmount,
+      epfEmployerRate,
+      restrictPfWage,
+      pfWageCeiling
+    });
+    const employerEsiAmount = computeEmployerEsiAmount({
+      monthlyGross,
+      includeEsi,
+      esiEligibilityThreshold,
+      esiEmployerRate
+    });
+
+    return {
+      monthlyGross,
+      basicPay,
+      employerEpf,
+      employerEsiAmount
+    };
+  };
+
   const payGroupBasicPercent = toNumber(rules.payGroupBasicPercent, 50);
   const basicPercentSource = String(rules.basicPercentSource || "pay_group");
   const employeeBasicPercent = toNumber(rules.employeeBasicPercent, payGroupBasicPercent);
@@ -321,24 +394,46 @@ const computeSalaryContextFromRules = ({ salary }) => {
   const bonusAmount = toNumber(rules.bonusAmount, 0);
   const tdsAmount = toNumber(rules.tdsAmount, 0);
 
-  const computedBasic = monthlyCtc * (effectiveBasicPercent / 100);
-  const basicPay = toNumber(salary.basic_pay, 0) || computedBasic;
   const epfMode = String(rules.epfMode || "percentage");
   const epfPercentOfBasic = toNumber(rules.epfPercentOfBasic, 12);
   const epfFixedAmount = toNumber(rules.epfFixedAmount, 0);
   const restrictPfWage = rules.restrictPfWage !== false;
-  const epfBase = restrictPfWage ? Math.min(basicPay, pfWageCeiling) : basicPay;
-  const employerEpf =
-    epfMode === "fixed" ? epfFixedAmount : (epfBase * epfEmployerRate) / 100;
   const includeEsi = rules.includeEsi === true;
-  const esiWages = toNumber(rules.esiWages, 0) || basicPay;
+  const monthlyGrossConfigured = toNumber(salary.monthly_gross, 0);
+  const storedBasicPay = toNumber(salary.basic_pay, 0);
+  const derivedSalary = monthlyGrossConfigured > 0
+    ? {
+        monthlyGross: monthlyGrossConfigured,
+        basicPay: storedBasicPay > 0
+          ? storedBasicPay
+          : roundPayrollAmount(monthlyGrossConfigured * (effectiveBasicPercent / 100)),
+        employerEpf: 0,
+        employerEsiAmount: 0
+      }
+    : deriveGrossFromMonthlyCtc({ fixedBasicPay: storedBasicPay });
+  const basicPay = derivedSalary.basicPay;
+  const employerEpf = monthlyGrossConfigured > 0
+    ? computeEmployerEpfAmount({
+        basicPay,
+        epfMode,
+        epfFixedAmount,
+        epfEmployerRate,
+        restrictPfWage,
+        pfWageCeiling
+      })
+    : derivedSalary.employerEpf;
+  const monthlyGross = derivedSalary.monthlyGross;
+  const esiWages = toNumber(rules.esiWages, 0) || monthlyGross;
   const esiCovered = includeEsi && esiWages > 0 && esiWages <= esiEligibilityThreshold;
   const esiEmployeeAmount = esiCovered ? (esiWages * esiEmployeeRate) / 100 : 0;
-  const esiEmployerAmount = esiCovered ? (esiWages * esiEmployerRate) / 100 : 0;
-
-  const monthlyGrossConfigured = toNumber(salary.monthly_gross, 0);
-  const monthlyGrossAuto = monthlyCtc - employerEpf - esiEmployerAmount;
-  const monthlyGross = monthlyGrossConfigured || monthlyGrossAuto;
+  const esiEmployerAmount = monthlyGrossConfigured > 0
+    ? computeEmployerEsiAmount({
+        monthlyGross: esiWages,
+        includeEsi,
+        esiEligibilityThreshold,
+        esiEmployerRate
+      })
+    : derivedSalary.employerEsiAmount;
   const hraAmount = (basicPay * hraPercentOfBasic) / 100;
   const variablePay = toNumber(salary.variable_pay, monthlyGross - basicPay - hraAmount);
 
@@ -653,7 +748,20 @@ exports.computePayrollRun = async (req) => {
 
     const month = run.pay_month;
     const periodEnd = monthEndDate(month);
-    const filterByEmployees = employeeIds.length > 0;
+    const existingRunEmployeesResult = await client.query(
+      `
+        SELECT employee_external_id
+        FROM payroll_run_employees
+        WHERE payroll_run_id = $1
+          AND tenant_id = $2
+      `,
+      [runId, tenantId]
+    );
+    const runScopedEmployeeIds = existingRunEmployeesResult.rows
+      .map((row) => String(row.employee_external_id || "").trim())
+      .filter(Boolean);
+    const effectiveEmployeeIds = employeeIds.length > 0 ? employeeIds : runScopedEmployeeIds;
+    const filterByEmployees = effectiveEmployeeIds.length > 0;
 
     const snapshotsResult = await client.query(
       `
@@ -663,7 +771,7 @@ exports.computePayrollRun = async (req) => {
           AND pay_month = $2
           ${filterByEmployees ? "AND employee_external_id = ANY($3::varchar[])" : ""}
       `,
-      filterByEmployees ? [tenantId, month, employeeIds] : [tenantId, month]
+      filterByEmployees ? [tenantId, month, effectiveEmployeeIds] : [tenantId, month]
     );
     const snapshots = snapshotsResult.rows;
     if (!snapshots.length) {
@@ -1492,6 +1600,7 @@ exports.__test__ = {
   computeProgressiveTax,
   computeAnnualTdsEstimate,
   computeTelanganaProfessionalTax,
+  computeSalaryContextFromRules,
   tokenizeIdentifiers,
   evaluateFormula,
   computeSlabAmount,
