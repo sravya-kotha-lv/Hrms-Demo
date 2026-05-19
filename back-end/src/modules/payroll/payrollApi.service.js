@@ -1658,10 +1658,43 @@ exports.createPayrollRun = async (req) => {
     });
     const actorId = String(req.user.userId);
     payload = req.body;
+    const hasSelectedEmployees = Array.isArray(payload.employeeIds) && payload.employeeIds.length > 0;
+    let resolvedRunType = payload.runType || "regular";
+    if (resolvedRunType === "regular" && hasSelectedEmployees) {
+      const regularExistsResult = await client.query(
+        `
+          SELECT id
+          FROM payroll_runs
+          WHERE tenant_id = $1
+            AND pay_group_id = $2
+            AND pay_month = $3
+            AND run_type = 'regular'
+          LIMIT 1
+        `,
+        [tenantId, payload.payGroupId, payload.payMonth]
+      );
+      if (regularExistsResult.rows[0]) {
+        resolvedRunType = "supplementary";
+      }
+    }
+    const versionResult = await client.query(
+      `
+        SELECT COALESCE(MAX(version), 0) + 1 AS next_version
+        FROM payroll_runs
+        WHERE tenant_id = $1
+          AND pay_group_id = $2
+          AND pay_month = $3
+          AND run_type = $4
+      `,
+      [tenantId, payload.payGroupId, payload.payMonth, resolvedRunType]
+    );
+    const nextVersion = Number(versionResult.rows[0]?.next_version || 1);
     const runCode =
       payload.runCode ||
       `PR-${payload.payMonth.replace("-", "")}-${Date.now().toString().slice(-6)}`;
-    const runName = payload.runName || `Payroll ${payload.payMonth} (${payload.runType})`;
+    const runName =
+      payload.runName ||
+      `Payroll ${payload.payMonth} (${resolvedRunType}${nextVersion > 1 ? ` v${nextVersion}` : ""})`;
 
     const runResult = await client.query(
       `
@@ -1673,6 +1706,7 @@ exports.createPayrollRun = async (req) => {
           run_name,
           pay_month,
           run_type,
+          version,
           status,
           attendance_snapshot_status,
           idempotency_key,
@@ -1680,7 +1714,7 @@ exports.createPayrollRun = async (req) => {
           created_by,
           updated_by
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,'draft','pending',$8,$9::jsonb,$10,$10)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'draft','pending',$9,$10::jsonb,$11,$11)
         RETURNING *
       `,
       [
@@ -1690,9 +1724,15 @@ exports.createPayrollRun = async (req) => {
         runCode,
         runName,
         payload.payMonth,
-        payload.runType || "regular",
+        resolvedRunType,
+        nextVersion,
         req.idempotencyKey || null,
-        JSON.stringify(payload.metadata || {}),
+        JSON.stringify({
+          ...(payload.metadata || {}),
+          requestedRunType: payload.runType || "regular",
+          autoResolvedRunType: resolvedRunType,
+          employeeSelectionMode: hasSelectedEmployees ? "selected_employees" : "all_assigned_employees"
+        }),
         actorId
       ]
     );
@@ -1718,6 +1758,27 @@ exports.createPayrollRun = async (req) => {
     const snapshotEmployeeIds = snapshots
       .map((row) => String(row.employee_external_id || "").trim())
       .filter(Boolean);
+    const coveredEmployeesResult = snapshotEmployeeIds.length
+      ? await client.query(
+          `
+            SELECT DISTINCT pre.employee_external_id
+            FROM payroll_run_employees pre
+            INNER JOIN payroll_runs pr
+              ON pr.id = pre.payroll_run_id
+            WHERE pr.tenant_id = $1
+              AND pr.pay_group_id = $2
+              AND pr.pay_month = $3
+              AND pr.status NOT IN ('rejected', 'cancelled')
+              AND pre.employee_external_id = ANY($4::varchar[])
+          `,
+          [tenantId, payload.payGroupId, payload.payMonth, snapshotEmployeeIds]
+        )
+      : { rows: [] };
+    const coveredEmployeeIds = new Set(
+      coveredEmployeesResult.rows
+        .map((row) => String(row.employee_external_id || "").trim())
+        .filter(Boolean)
+    );
 
     const eligibleEmployeeIds = snapshotEmployeeIds.length
       ? new Set(
@@ -1754,9 +1815,19 @@ exports.createPayrollRun = async (req) => {
     const eligibleSnapshots = snapshots.filter((row) => {
       const employeeId = String(row.employee_external_id || "").trim();
       if (!employeeId) return false;
+      if (coveredEmployeeIds.has(employeeId)) return false;
       if (!eligibleEmployeeIds.has(employeeId)) return false;
       return activeProfileEmployeeIds.size === 0 || activeProfileEmployeeIds.has(employeeId);
     });
+
+    if (!eligibleSnapshots.length) {
+      throw {
+        code: 409,
+        message: hasSelectedEmployees
+          ? `Selected employees are already included in another payroll run for ${payload.payMonth}.`
+          : `All eligible employees are already included in another payroll run for ${payload.payMonth}.`
+      };
+    }
 
     if (eligibleSnapshots.length) {
       const values = [];
