@@ -78,6 +78,7 @@ const PayrollRuns = () => {
   const [employeePickerSearch, setEmployeePickerSearch] = useState("");
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [loadingEmployeePicker, setLoadingEmployeePicker] = useState(false);
+  const [coveredEmployeeCount, setCoveredEmployeeCount] = useState(0);
 
   const canManageConfig = hasAnyPermission(["PAYROLL_CONFIG_MANAGE"]);
   const canCreateRun = hasAnyPermission(["PAYROLL_RUN_CREATE"]);
@@ -329,13 +330,14 @@ const PayrollRuns = () => {
       toast.error("Select a pay group before creating a payroll run");
       return;
     }
+    const hasSelectedEmployees = employeeIds.length > 0;
     await executeAction(
-      "Create run",
+      hasSelectedEmployees ? "Create supplementary run" : "Create run",
       () =>
         postApiWithToken("/payroll/runs", {
           payGroupId,
           payMonth: monthFilter,
-          runType: "regular",
+          runType: hasSelectedEmployees ? "supplementary" : "regular",
           ...(employeeIds.length ? { employeeIds } : {})
         }),
       async () => {
@@ -353,14 +355,38 @@ const PayrollRuns = () => {
   const openCreateRunDialog = async () => {
     setCreateRunDialogOpen(true);
     setLoadingEmployeePicker(true);
+    setSelectedEmployeeIds([]);
+    setEmployeePickerSearch("");
     try {
       if (!selectedPayGroupId) {
         toast.error("Select a pay group first");
         setEligibleEmployees([]);
+        setCoveredEmployeeCount(0);
         return;
       }
+      const existingRunsRes = await getApiWithToken(
+        `/payroll/runs?payMonth=${monthFilter}&payGroupId=${selectedPayGroupId}`
+      );
+      const existingRuns: PayrollRun[] =
+        existingRunsRes?.success && Array.isArray(existingRunsRes.data) ? existingRunsRes.data : [];
+      const activeExistingRuns = existingRuns.filter(
+        (run) => !["rejected", "cancelled"].includes(String(run.status || "").toLowerCase())
+      );
+      const existingRunDetails = await Promise.all(
+        activeExistingRuns.map((run) => getApiWithToken(`/payroll/runs/${run.id}`))
+      );
+      const coveredEmployeeIds = new Set(
+        existingRunDetails.flatMap((res) =>
+          res?.success && Array.isArray(res.data?.employees)
+            ? res.data.employees
+                .map((row: PayrollRunEmployee) => String(row.employee_external_id || "").trim())
+                .filter(Boolean)
+            : []
+        )
+      );
       const assignedEmployees = employeeProfiles
         .filter((profile) => String(profile.payroll_status || "active") !== "exited")
+        .filter((profile) => !coveredEmployeeIds.has(String(profile.employee_external_id || "").trim()))
         .map((profile) => ({
           _id: String(profile.employee_external_id),
           firstName: profile.employee_name || employeeNameMap[profile.employee_external_id] || "",
@@ -368,6 +394,7 @@ const PayrollRuns = () => {
           employeeCode: profile.employee_code || employeeCodeMap[profile.employee_external_id] || ""
         }));
       setEligibleEmployees(assignedEmployees);
+      setCoveredEmployeeCount(coveredEmployeeIds.size);
     } finally {
       setLoadingEmployeePicker(false);
     }
@@ -886,6 +913,11 @@ const PayrollRuns = () => {
             <p className="text-sm text-muted-foreground">
               Choose employees from the selected pay group. If none are selected, the run will include every assigned active employee in that pay group.
             </p>
+            {coveredEmployeeCount > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {coveredEmployeeCount} employee{coveredEmployeeCount === 1 ? "" : "s"} already included in another run for {monthFilter} are hidden here to avoid duplicate payroll processing.
+              </p>
+            )}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input className="pl-9" value={employeePickerSearch} onChange={(e) => setEmployeePickerSearch(e.target.value)} placeholder="Search name / employee code / id" />
