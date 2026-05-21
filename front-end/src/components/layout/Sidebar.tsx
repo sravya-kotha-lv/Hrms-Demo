@@ -144,6 +144,25 @@ const NavItem = ({ icon, label, to, collapsed, children, onNavigate }: NavItemPr
 const menuItems = (dashboardPath: string): MenuItem[] => [
   { icon: <LayoutDashboard size={20} />, label: "Dashboard", to: dashboardPath },
   {
+    icon: <Building size={20} />,
+    label: "Organization",
+    to: "/organization",
+    permissions: ["ORG_VIEW", "ROLE_VIEW", "PERMISSION_VIEW", "DEPT_VIEW", "DESIG_VIEW", "LEAVE_TYPE_VIEW", "ORG_DOCUMENT_VIEW"],
+    children: [
+      { icon: <Shield size={18} />, label: "Roles", to: "/roles", permissions: ["ROLE_VIEW"] },
+      { icon: <Shield size={18} />, label: "Permissions", to: "/permissions", permissions: ["PERMISSION_VIEW"] },
+      { icon: <Building2 size={18} />, label: "Departments", to: "/departments", permissions: ["DEPT_VIEW"] },
+      { icon: <Briefcase size={18} />, label: "Designations", to: "/designations", permissions: ["DESIG_VIEW"] },
+      { icon: <CalendarDays size={18} />, label: "Shifts", to: "/shifts", permissions: ["SHIFT_VIEW"] },
+      { icon: <CalendarOff size={18} />, label: "Week Offs", to: "/week-offs", permissions: ["WEEK_OFF_VIEW"] },
+      { icon: <FileText size={18} />, label: "Leave Types", to: "/leave-types", permissions: ["LEAVE_TYPE_VIEW"] },
+      { icon: <ClipboardCheck size={18} />, label: "Approval Flows", to: "/approval-flows", permissions: ["APPROVAL_FLOW_VIEW"] },
+      { icon: <DollarSign size={18} />, label: "Expenses", to: "/expenses", permissions: ["EXPENSE_VIEW", "EXPENSE_MANAGE"] },
+      { icon: <Settings size={18} />, label: "Settings", to: "/organization/settings", permissions: ["ORG_SETTINGS_VIEW"] },
+      { icon: <FileText size={18} />, label: "Documents", to: "/organization/documents", permissions: ["ORG_DOCUMENT_VIEW", "ORG_SETTINGS_VIEW", "PAYROLL_REPORT_VIEW"] },
+    ]
+  },
+  {
     icon: <Users size={20} />,
     label: "Employees",
     to: "/employees",
@@ -156,24 +175,6 @@ const menuItems = (dashboardPath: string): MenuItem[] => [
       { icon: <Shield size={18} />, label: "Approvals", to: "/approvals", permissions: ["LEAVE_ACTION", "ATTENDANCE_MANAGE"] },
       { icon: <CalendarDays size={20} />, label: "Holidays", to: "/holidays", permissions: ["HOLIDAY_VIEW"] },
       { icon: <Network size={18} />, label: "Organization Tree", to: "/employee-tree", permissions: ["EMP_VIEW", "EMP_ORG_TREE_VIEW"] }
-    ]
-  },
-  {
-    icon: <Building size={20} />,
-    label: "Organization",
-    to: "/organization",
-    permissions: ["ORG_VIEW", "ROLE_VIEW", "PERMISSION_VIEW", "DEPT_VIEW", "DESIG_VIEW", "LEAVE_TYPE_VIEW"],
-    children: [
-      { icon: <Shield size={18} />, label: "Roles", to: "/roles", permissions: ["ROLE_VIEW"] },
-      { icon: <Shield size={18} />, label: "Permissions", to: "/permissions", permissions: ["PERMISSION_VIEW"] },
-      { icon: <Building2 size={18} />, label: "Departments", to: "/departments", permissions: ["DEPT_VIEW"] },
-      { icon: <Briefcase size={18} />, label: "Designations", to: "/designations", permissions: ["DESIG_VIEW"] },
-      { icon: <CalendarDays size={18} />, label: "Shifts", to: "/shifts", permissions: ["SHIFT_VIEW"] },
-      { icon: <CalendarOff size={18} />, label: "Week Offs", to: "/week-offs", permissions: ["WEEK_OFF_VIEW"] },
-      { icon: <FileText size={18} />, label: "Leave Types", to: "/leave-types", permissions: ["LEAVE_TYPE_VIEW"] },
-      { icon: <ClipboardCheck size={18} />, label: "Approval Flows", to: "/approval-flows", permissions: ["APPROVAL_FLOW_VIEW"] },
-      { icon: <DollarSign size={18} />, label: "Expenses", to: "/expenses", permissions: ["EXPENSE_VIEW", "EXPENSE_MANAGE"] },
-      { icon: <Settings size={18} />, label: "Settings", to: "/organization/settings", permissions: ["ORG_SETTINGS_VIEW"] },
     ]
   },
   {

@@ -38,6 +38,7 @@ const ProfilePage = lazyWithRetry(() => import("./pages/ProfilePage"), "ProfileP
 const Organization = lazyWithRetry(() => import("./pages/Organization"), "Organization");
 const AddOrganization = lazyWithRetry(() => import("./pages/AddOrganization"), "AddOrganization");
 const OrganizationSettings = lazyWithRetry(() => import("./pages/OrganizationSettings"), "OrganizationSettings");
+const OrganizationDocuments = lazyWithRetry(() => import("./pages/OrganizationDocuments"), "OrganizationDocuments");
 const NotFound = lazyWithRetry(() => import("./pages/NotFound"), "NotFound");
 const Roles = lazyWithRetry(() => import("./pages/Roles"), "Roles");
 const AddRole = lazyWithRetry(() => import("./pages/AddRole"), "AddRole");
@@ -376,6 +377,16 @@ const App = () => (
                 <RequireAuth permissions={["ORG_SETTINGS_VIEW"]}>
                   <RequireProfile>
                     <OrganizationSettings />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/organization/documents"
+              element={
+                <RequireAuth permissions={["ORG_DOCUMENT_VIEW", "ORG_SETTINGS_VIEW", "PAYROLL_REPORT_VIEW"]}>
+                  <RequireProfile>
+                    <OrganizationDocuments />
                   </RequireProfile>
                 </RequireAuth>
               }

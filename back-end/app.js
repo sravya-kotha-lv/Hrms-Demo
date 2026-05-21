@@ -35,9 +35,9 @@ const shouldExposeMetrics = process.env.ENABLE_HTTP_METRICS === "true" || proces
 /*                               MIDDLEWARES                                  */
 /* -------------------------------------------------------------------------- */
 
-// Parse JSON
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+// Parse JSON. Document uploads are sent as base64 JSON, which is larger than the original file.
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 require("./src/integrations/fcm").mount(app);
 
 const defaultAllowedOrigins = [
@@ -164,6 +164,7 @@ app.use("/api/approval-flows", require("./src/modules/approvalFlows/approvalFlow
 app.use("/api/leave-balances", require("./src/modules/leaveBalances/leaveBalance.routes"));
 app.use("/api/timesheets", require("./src/modules/timesheets/timesheet.routes"));
 app.use("/api/org-settings", require("./src/modules/orgSettings/orgSettings.routes"));
+app.use("/api/organization-documents", require("./src/modules/organizationDocuments/organizationDocuments.routes"));
 app.use("/api/notifications", require("./src/modules/notifications/notification.routes"));
 app.use("/api/expenses", require("./src/modules/expenses/expense.routes"));
 app.use("/api/projects", require("./src/modules/projects/project.routes"));

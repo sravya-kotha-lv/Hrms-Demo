@@ -34,6 +34,7 @@ const notificationSchema = new mongoose.Schema(
         "attendance_override",
         "probation_completed",
         "employee_lifecycle",
+        "organization_document_expiry",
         "general"
       ],
       default: "general"

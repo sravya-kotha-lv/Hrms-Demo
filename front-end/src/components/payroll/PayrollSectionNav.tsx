@@ -1,9 +1,10 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { ListChecks, ReceiptText, Settings2, UsersRound } from "lucide-react";
+import { FileArchive, ListChecks, ReceiptText, Settings2, UsersRound } from "lucide-react";
 
 const items = [
   { label: "Setup", to: "/payroll/setup", icon: Settings2 },
+  { label: "Documents", to: "/organization/documents", icon: FileArchive },
   { label: "Employees", to: "/payroll/employees", icon: UsersRound },
   { label: "Runs", to: "/payroll/runs", icon: ListChecks },
   { label: "Breakdown", to: "/payroll/employee-breakdown", icon: ReceiptText }
