@@ -4,6 +4,7 @@ const JOBS = {
   LEAVE_CREDIT_DAILY: "leave-credit-daily",
   LEAVE_CARRY_FORWARD_DAILY: "leave-carry-forward-daily",
   PROBATION_COMPLETION_DAILY: "probation-completion-daily",
+  ORGANIZATION_DOCUMENT_EXPIRY_DAILY: "organization-document-expiry-daily",
   PAYROLL_RUN_COMPUTE: "payroll-run-compute"
 };
 

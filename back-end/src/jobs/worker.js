@@ -4,6 +4,7 @@ const Organization = require("../modules/organizations/organization.model");
 const { applyLeaveCreditsForOrg } = require("../modules/leaveBalances/leaveCredit.service");
 const { runCarryForwardForOrg } = require("../modules/leaveCarryForward/leaveCarryForward.service");
 const { notifyProbationCompleted } = require("../modules/employees/employeeLifecycle.service");
+const { notifyExpiringDocuments } = require("../modules/organizationDocuments/organizationDocuments.service");
 const { getQueueConnection } = require("./queue");
 const { JOB_QUEUE_NAME, JOBS } = require("./queue.constants");
 const { processPayrollRunComputeJob } = require("../modules/payroll/payrollJob.service");
@@ -33,6 +34,12 @@ const processProbationCompletion = async () => {
   console.log(`✅ Worker: probation completion job completed (${count} employee(s))`);
 };
 
+const processOrganizationDocumentExpiry = async () => {
+  console.log("🟢 Worker: organization document expiry job started");
+  const count = await notifyExpiringDocuments();
+  console.log(`✅ Worker: organization document expiry job completed (${count} notification(s))`);
+};
+
 const processJob = async (job) => {
   switch (job.name) {
     case JOBS.LEAVE_CREDIT_DAILY:
@@ -41,6 +48,8 @@ const processJob = async (job) => {
       return processCarryForward();
     case JOBS.PROBATION_COMPLETION_DAILY:
       return processProbationCompletion();
+    case JOBS.ORGANIZATION_DOCUMENT_EXPIRY_DAILY:
+      return processOrganizationDocumentExpiry();
     case JOBS.PAYROLL_RUN_COMPUTE:
       return processPayrollRunComputeJob(job);
     default:

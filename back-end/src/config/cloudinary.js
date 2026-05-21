@@ -34,8 +34,31 @@ const uploadDataUri = async (dataUri, options = {}) => {
   });
 };
 
+const buildAuthenticatedUrl = (publicId, options = {}) => {
+  ensureCloudinaryConfigured();
+  const expiresAt = Math.floor(Date.now() / 1000) + Number(options.expiresInSeconds || 600);
+  return cloudinary.url(publicId, {
+    resource_type: options.resourceType || "auto",
+    type: "authenticated",
+    secure: true,
+    sign_url: true,
+    expires_at: expiresAt,
+    flags: options.flags
+  });
+};
+
+const deleteAsset = async (publicId, options = {}) => {
+  ensureCloudinaryConfigured();
+  return cloudinary.uploader.destroy(publicId, {
+    resource_type: options.resourceType || "auto",
+    type: options.type || "authenticated"
+  });
+};
+
 module.exports = {
   hasCloudinaryCredentials,
   ensureCloudinaryConfigured,
-  uploadDataUri
+  uploadDataUri,
+  buildAuthenticatedUrl,
+  deleteAsset
 };

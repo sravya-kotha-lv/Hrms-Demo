@@ -54,6 +54,12 @@ const PERMISSIONS = [
   { code: "PAYROLL_PAYSLIP_VIEW", name: "View Payslips", module: "Payroll" },
   { code: "PAYROLL_REPORT_VIEW", name: "View Payroll Reports", module: "Payroll" },
 
+  // 📁 Organization Documents
+  { code: "ORG_DOCUMENT_VIEW", name: "View Organization Documents", module: "Organization Documents" },
+  { code: "ORG_DOCUMENT_UPLOAD", name: "Upload Organization Documents", module: "Organization Documents" },
+  { code: "ORG_DOCUMENT_DELETE", name: "Delete Organization Documents", module: "Organization Documents" },
+  { code: "ORG_DOCUMENT_REPORT_VIEW", name: "View Organization Document Reports", module: "Organization Documents" },
+
 ];
 
 exports.seedPermissions = async (organizationId) => {

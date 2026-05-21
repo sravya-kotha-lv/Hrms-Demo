@@ -13,6 +13,10 @@ const repeatableJobs = [
   {
     name: JOBS.PROBATION_COMPLETION_DAILY,
     cron: process.env.JOB_CRON_PROBATION_COMPLETION || "0 0 * * *"
+  },
+  {
+    name: JOBS.ORGANIZATION_DOCUMENT_EXPIRY_DAILY,
+    cron: process.env.JOB_CRON_ORGANIZATION_DOCUMENT_EXPIRY || "30 8 * * *"
   }
 ];
 
