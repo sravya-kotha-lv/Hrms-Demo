@@ -190,6 +190,22 @@ const PayrollSetup = () => {
     await loadPayGroups();
   };
 
+  const activatePayGroup = async (group: PayGroup) => {
+    const confirmed = window.confirm(`Activate pay group "${group.name}" again?`);
+    if (!confirmed) return;
+
+    const res = await putApiWithToken(`/payroll/pay-groups/${group.id}`, { isActive: true }, null, {
+      requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+    });
+    if (!res?.success) {
+      toast.error(res?.message || "Failed to activate pay group");
+      return;
+    }
+    toast.success("Pay group activated");
+    await loadPayGroups();
+    setSelectedPayGroupId(group.id);
+  };
+
   return (
     <MainLayout
       title="Payroll Setup"
@@ -333,7 +349,7 @@ const PayrollSetup = () => {
                       >
                         Edit
                       </Button>
-                      {group.is_active && (
+                      {group.is_active ? (
                         <Button
                           size="sm"
                           variant="destructive"
@@ -343,6 +359,16 @@ const PayrollSetup = () => {
                           }}
                         >
                           Archive
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            activatePayGroup(group);
+                          }}
+                        >
+                          Activate
                         </Button>
                       )}
                     </TableCell>
