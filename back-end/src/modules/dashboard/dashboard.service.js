@@ -382,7 +382,7 @@ exports.getSummary = async (req) => {
     attendanceLast7,
     attendanceLast30,
     leaveList,
-    weeklyList,
+    weeklyPayload,
     holidays,
     orgSettings,
     notificationsData
@@ -403,8 +403,12 @@ exports.getSummary = async (req) => {
       ? LeaveService.getAllLeaves(req)
       : Promise.resolve([]),
     canViewWeekly
-      ? TimesheetService.getAllWeekly(req)
-      : Promise.resolve([]),
+      // NOTE: TimesheetService.getAllWeekly returns *all* weekly entries when
+      // page/limit are not provided. For dashboard we only need a recent slice
+      // to compute basic compliance counters and pending approvals. Limiting
+      // here prevents the dashboard from hanging for large organizations.
+      ? TimesheetService.getAllWeekly(withQuery(req, { page: 1, limit: 50, month }))
+      : Promise.resolve({ items: [] }),
     canViewHolidays
       ? Holiday.find({
         organizationId: req.user.organizationId,
@@ -419,6 +423,10 @@ exports.getSummary = async (req) => {
       ? NotificationService.getMyNotifications(withQuery(req, { limit: 6 }))
       : Promise.resolve({ items: [] })
   ]);
+
+  const weeklyList = Array.isArray(weeklyPayload)
+    ? weeklyPayload
+    : (weeklyPayload?.items || []);
 
   const activeEmployees = (employeesData?.items || []).filter(isActiveEmployee);
   const weekOffMap = canViewWeekOffs || canViewAttendance

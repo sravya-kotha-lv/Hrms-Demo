@@ -129,6 +129,26 @@ exports.createOrganization = async ({
     throw { code: 403, message: "Only SuperAdmin can create organizations" };
   }
 
+  if (creator?.userId && adminUserId && String(creator.userId) === String(adminUserId)) {
+    throw {
+      code: 400,
+      message: "SuperAdmin cannot be assigned as an organization admin"
+    };
+  }
+
+  const admin = await User.findById(adminUserId);
+  if (!admin) {
+    throw { code: 404, message: "Admin user not found" };
+  }
+
+  const adminIsSuperAdmin = await isUserSuperAdmin(admin._id);
+  if (adminIsSuperAdmin) {
+    throw {
+      code: 400,
+      message: "SuperAdmin cannot be assigned as an organization admin"
+    };
+  }
+
   const org = await Organization.create({
     name,
     code,
@@ -155,11 +175,6 @@ exports.createOrganization = async ({
 
   if (!adminRole) {
     throw { code: 400, message: "Admin role not found for organization" };
-  }
-
-  const admin = await User.findById(adminUserId);
-  if (!admin) {
-    throw { code: 404, message: "Admin user not found" };
   }
 
   if (!admin.organizationIds.includes(org._id)) {
