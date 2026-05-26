@@ -55,7 +55,7 @@ const registerDeviceToken = async (token: string, authToken: string) => {
     console.log(`FCM token register failed (attempt ${attempt}/3):`, lastError);
 
     if (attempt < 3) {
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 1000 * attempt));
     }
   }
 
