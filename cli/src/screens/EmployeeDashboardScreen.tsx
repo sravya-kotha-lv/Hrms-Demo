@@ -235,6 +235,32 @@ function EmployeeDashboardScreen() {
       active = false;
     };
   }, [token, refreshPermissions]);
+
+  const applyCheckInPolicy = (policyData?: Partial<CheckInPolicy> | null) => {
+    const nextPolicy: CheckInPolicy = {
+      attendanceIpEnabled: Boolean(policyData?.attendanceIpEnabled),
+      attendanceSelfieRequired: Boolean(policyData?.attendanceSelfieRequired),
+      attendanceGeoFenceEnabled: Boolean(policyData?.attendanceGeoFenceEnabled),
+      attendanceGeoRadiusMeters: Number(policyData?.attendanceGeoRadiusMeters || 200),
+    };
+
+    setCheckInPolicy(nextPolicy);
+
+    return nextPolicy;
+  };
+
+  const loadLatestCheckInPolicy = async () => {
+    if (!token || (!canCheckIn && !canCheckOut)) {
+      return applyCheckInPolicy(null);
+    }
+
+    const response = await getApiWithToken<any>('/timesheets/checkin-policy', token);
+    if (response?.success && response?.data) {
+      return applyCheckInPolicy(response.data);
+    }
+
+    return applyCheckInPolicy(null);
+  };
   
   const loadDashboard = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -275,7 +301,7 @@ function EmployeeDashboardScreen() {
         getApiWithToken<any>('/employees/me', token),
         organizationId ? getApiWithToken<any>(`/organizations/${organizationId}`, token) : Promise.resolve(null),
         canViewUpcomingEvents ? getApiWithToken<any>('/employees/upcoming-events?days=7', token) : Promise.resolve(null),
-        canCheckIn ? getApiWithToken<any>('/timesheets/checkin-policy', token) : Promise.resolve(null),
+        canCheckIn || canCheckOut ? getApiWithToken<any>('/timesheets/checkin-policy', token) : Promise.resolve(null),
       ]);
 
     if (weeklyRes?.success && weeklyRes?.data) {
@@ -344,20 +370,7 @@ function EmployeeDashboardScreen() {
     }
     setOrganizationProfile(nextOrganizationProfile);
 
-    if (checkInPolicyRes?.success && checkInPolicyRes?.data) {
-      const nextPolicy = {
-        attendanceIpEnabled: Boolean(checkInPolicyRes.data.attendanceIpEnabled),
-        attendanceSelfieRequired: Boolean(checkInPolicyRes.data.attendanceSelfieRequired),
-        attendanceGeoFenceEnabled: Boolean(checkInPolicyRes.data.attendanceGeoFenceEnabled),
-        attendanceGeoRadiusMeters: Number(checkInPolicyRes.data.attendanceGeoRadiusMeters || 200),
-      };
-      setCheckInPolicy(nextPolicy);
-      if (nextPolicy.attendanceSelfieRequired || nextPolicy.attendanceGeoFenceEnabled) {
-        setPolicyWarning('Check-in requires selfie or location permission.');
-      } else {
-        setPolicyWarning('');
-      }
-    }
+    applyCheckInPolicy(checkInPolicyRes?.success ? checkInPolicyRes.data : null);
 
     } catch (error) {
       console.warn('Dashboard load failed', error);
@@ -587,8 +600,9 @@ function EmployeeDashboardScreen() {
     if (!canCheckIn) {
       return;
     }
+    const latestPolicy = await loadLatestCheckInPolicy();
     const payload: Record<string, unknown> = {};
-    if (checkInPolicy.attendanceGeoFenceEnabled) {
+    if (latestPolicy.attendanceGeoFenceEnabled) {
       const ok = await requestLocationPermission();
       if (!ok) {
         setPolicyWarning('Location permission is required for check-in.');
@@ -603,7 +617,7 @@ function EmployeeDashboardScreen() {
         return;
       }
     }
-    if (checkInPolicy.attendanceSelfieRequired) {
+    if (latestPolicy.attendanceSelfieRequired) {
       const selfie = await captureSelfie();
       if (!selfie) {
         setPolicyWarning('Selfie capture cancelled.');
@@ -618,6 +632,7 @@ function EmployeeDashboardScreen() {
       loadDashboard();
       setPolicyWarning('');
     } else if (res?.message) {
+      await loadDashboard(true);
       setPolicyWarning(res.message);
     }
   };
@@ -626,8 +641,9 @@ function EmployeeDashboardScreen() {
     if (!canCheckOut) {
       return;
     }
+    const latestPolicy = await loadLatestCheckInPolicy();
     const payload: Record<string, unknown> = {};
-    if (checkInPolicy.attendanceSelfieRequired) {
+    if (latestPolicy.attendanceSelfieRequired) {
       const selfie = await captureSelfie();
       if (!selfie) {
         setPolicyWarning('Selfie capture cancelled.');
@@ -640,6 +656,10 @@ function EmployeeDashboardScreen() {
     setCheckoutLoading(false);
     if (res?.success) {
       loadDashboard();
+      setPolicyWarning('');
+    } else if (res?.message) {
+      await loadDashboard(true);
+      setPolicyWarning(res.message);
     }
   };
 
