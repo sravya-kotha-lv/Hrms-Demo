@@ -2525,8 +2525,7 @@ exports.getAttendance = async (req) => {
       organizationTimeZone
     )
   )
-    .populate("employeeId", "firstName lastName employeeCode")
-    .sort({ date: -1, checkInAt: -1 });
+    .populate("employeeId", "firstName lastName employeeCode");
   return mergeAttendanceRowsByEmployeeDay(rows, organizationTimeZone);
 };
 

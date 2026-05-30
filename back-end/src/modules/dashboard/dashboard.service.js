@@ -1,9 +1,10 @@
 const EmployeeService = require("../employees/employee.service");
-const TimesheetService = require("../timesheets/timesheet.service");
-const LeaveService = require("../leaves/leave.service");
 const OrgSettingsService = require("../orgSettings/orgSettings.service");
 const NotificationService = require("../notifications/notification.service");
 const Holiday = require("../holidays/holiday.model");
+const Leave = require("../leaves/leave.model");
+const Timesheet = require("../timesheets/timesheet.model");
+const Attendance = require("../timesheets/timesheetAttendance.model");
 const WeekOffService = require("../weekOffs/weekOff.service");
 const Organization = require("../organizations/organization.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
@@ -260,13 +261,14 @@ const buildDashboardStats = ({
   };
 
   const groupedDepartments = {};
+  const todayStatusByEmployeeId = new Map(todayStatusList.map((item) => [String(item.employeeId), item]));
   (employees || []).forEach((employee) => {
     const dept = employee.departmentId?.name || "Unassigned";
     if (!groupedDepartments[dept]) {
       groupedDepartments[dept] = { name: dept, employees: 0, present: 0, onLeave: 0, absent: 0 };
     }
     groupedDepartments[dept].employees += 1;
-    const status = todayStatusList.find((item) => item.employeeId === String(employee._id));
+    const status = todayStatusByEmployeeId.get(String(employee._id));
     if (!status) return;
     if (status.countedOnLeave) groupedDepartments[dept].onLeave += 1;
     else if (status.countedPresent) groupedDepartments[dept].present += 1;
@@ -366,6 +368,11 @@ exports.getSummary = async (req) => {
   const timeZone = await getOrganizationTimeZone(req.user.organizationId);
   const todayKey = toDateKeyInTimeZone(new Date(), timeZone);
   const start7Key = addDaysToDateKey(todayKey, -6);
+  const start30Key = addDaysToDateKey(todayKey, -29);
+  const monthYear = Number(String(month).slice(0, 4));
+  const monthNumber = Number(String(month).slice(5, 7));
+  const monthStartDateUtc = new Date(Date.UTC(monthYear, Math.max(0, monthNumber - 1), 1, 0, 0, 0, 0));
+  const monthEndDateUtc = new Date(Date.UTC(monthYear, Math.max(0, monthNumber), 0, 23, 59, 59, 999));
 
   const canViewEmployees = hasAnyPermission(permissionCodes, ["EMP_VIEW"]);
   const canViewAttendance = hasAnyPermission(permissionCodes, ["TIMESHEET_VIEW_ALL"]);
@@ -376,57 +383,42 @@ exports.getSummary = async (req) => {
   const canViewOrgSettings = hasAnyPermission(permissionCodes, ["ORG_SETTINGS_VIEW"]);
   const canViewNotifications = hasAnyPermission(permissionCodes, ["NOTIFICATION_VIEW_SELF"]);
 
+  const withDashboardFallback = async (key, fn, fallback) => {
+    try {
+      return await fn();
+    } catch (error) {
+      console.error(`[dashboard.summary] ${key} failed`, {
+        organizationId: req.user?.organizationId,
+        userId: req.user?.userId,
+        message: error?.message || error
+      });
+      return fallback;
+    }
+  };
+
   const [
     employeesData,
-    attendanceToday,
-    attendanceLast7,
-    attendanceLast30,
-    leaveList,
-    weeklyPayload,
     holidays,
     orgSettings,
     notificationsData
   ] = await Promise.all([
     canViewEmployees
-      ? EmployeeService.listByOrganization(req)
+      ? withDashboardFallback("employees", () => EmployeeService.listByOrganization(withQuery(req, { compact: "true" })), { items: [], pagination: null })
       : Promise.resolve({ items: [], pagination: null }),
-    canViewAttendance
-      ? TimesheetService.getAttendance(withQuery(req, { startDate: todayKey, endDate: todayKey }))
-      : Promise.resolve([]),
-    canViewAttendance
-      ? TimesheetService.getAttendance(withQuery(req, { startDate: start7Key, endDate: todayKey }))
-      : Promise.resolve([]),
-    canViewAttendance
-      ? TimesheetService.getAttendance(withQuery(req, { startDate: addDaysToDateKey(todayKey, -29), endDate: todayKey }))
-      : Promise.resolve([]),
-    canViewLeaves
-      ? LeaveService.getAllLeaves(req)
-      : Promise.resolve([]),
-    canViewWeekly
-      // NOTE: TimesheetService.getAllWeekly returns *all* weekly entries when
-      // page/limit are not provided. For dashboard we only need a recent slice
-      // to compute basic compliance counters and pending approvals. Limiting
-      // here prevents the dashboard from hanging for large organizations.
-      ? TimesheetService.getAllWeekly(withQuery(req, { page: 1, limit: 50, month }))
-      : Promise.resolve({ items: [] }),
     canViewHolidays
-      ? Holiday.find({
+      ? withDashboardFallback("holidays", () => Holiday.find({
         organizationId: req.user.organizationId,
         year,
         status: "active"
-      }).sort({ date: 1 })
+      }).lean(), [])
       : Promise.resolve([]),
     canViewOrgSettings
-      ? OrgSettingsService.get(req)
+      ? withDashboardFallback("orgSettings", () => OrgSettingsService.get(req), null)
       : Promise.resolve(null),
     canViewNotifications
-      ? NotificationService.getMyNotifications(withQuery(req, { limit: 6 }))
+      ? withDashboardFallback("notifications", () => NotificationService.getMyNotifications(withQuery(req, { limit: 6 })), { items: [] })
       : Promise.resolve({ items: [] })
   ]);
-
-  const weeklyList = Array.isArray(weeklyPayload)
-    ? weeklyPayload
-    : (weeklyPayload?.items || []);
 
   const activeEmployees = (employeesData?.items || []).filter(isActiveEmployee);
   const weekOffMap = canViewWeekOffs || canViewAttendance
@@ -437,24 +429,75 @@ exports.getSummary = async (req) => {
     : { defaultDays: [], employeeMap: new Map() };
   const activeEmployeeIds = new Set(activeEmployees.map((employee) => String(employee._id)));
 
+  const activeEmployeeObjectIds = activeEmployees
+    .map((employee) => employee?._id)
+    .filter(Boolean);
+
+  const [attendanceLast30, leaveListRaw, weeklyRaw] = await Promise.all([
+    canViewAttendance && activeEmployeeObjectIds.length
+      ? withDashboardFallback(
+        "attendanceLast30",
+        () => Attendance.find({
+          organizationId: req.user.organizationId,
+          employeeId: { $in: activeEmployeeObjectIds },
+          dateKey: { $gte: start30Key, $lte: todayKey }
+        })
+          .select("employeeId date dateKey checkInAt checkOutAt scheduledEndAt shiftStartTime lateByMinutes overriddenBy overriddenAt status")
+          .lean(),
+        []
+      )
+      : Promise.resolve([]),
+    canViewLeaves && activeEmployeeObjectIds.length
+      ? withDashboardFallback(
+        "leaves",
+        () => Leave.find({
+          organizationId: req.user.organizationId,
+          employeeId: { $in: activeEmployeeObjectIds },
+          status: "approved",
+          fromDate: { $lte: monthEndDateUtc },
+          toDate: { $gte: monthStartDateUtc }
+        })
+          .select("employeeId leaveTypeId status fromDate toDate createdAt")
+          .populate("leaveTypeId", "name")
+          .lean(),
+        []
+      )
+      : Promise.resolve([]),
+    canViewWeekly && activeEmployeeObjectIds.length
+      ? withDashboardFallback(
+        "weekly",
+        () => Timesheet.find({
+          organizationId: req.user.organizationId,
+          employeeId: { $in: activeEmployeeObjectIds },
+          weekStart: { $gte: monthStartDateUtc, $lte: monthEndDateUtc }
+        })
+          .select("employeeId status weekStart createdAt submittedAt")
+          .limit(50)
+          .lean(),
+        []
+      )
+      : Promise.resolve([])
+  ]);
+
   const activeAttendanceToday = buildDashboardTodayAttendance({
-    rows: [...(attendanceToday || []), ...(attendanceLast7 || [])],
+    rows: attendanceLast30 || [],
     activeEmployeeIds,
     timeZone,
     todayKey
   });
 
-  const activeAttendanceLast7 = (attendanceLast7 || []).filter((row) => {
+  const activeAttendanceLast7 = (attendanceLast30 || []).filter((row) => {
+    const dayKey = toDateKeyInTimeZone(row?.checkInAt || row?.checkOutAt || row?.date, timeZone);
+    const employeeId = getEmployeeExternalId(row?.employeeId);
+    return Boolean(employeeId && activeEmployeeIds.has(employeeId) && dayKey >= start7Key && dayKey <= todayKey);
+  });
+
+  const activeLeaves = (leaveListRaw || []).filter((row) => {
     const employeeId = getEmployeeExternalId(row?.employeeId);
     return Boolean(employeeId && activeEmployeeIds.has(employeeId));
   });
 
-  const activeLeaves = (leaveList || []).filter((row) => {
-    const employeeId = getEmployeeExternalId(row?.employeeId);
-    return Boolean(employeeId && activeEmployeeIds.has(employeeId));
-  });
-
-  const activeWeekly = (weeklyList || []).filter((row) => {
+  const activeWeekly = (weeklyRaw || []).filter((row) => {
     const employeeId = getEmployeeExternalId(row?.employeeId);
     return Boolean(employeeId && activeEmployeeIds.has(employeeId));
   });
@@ -474,18 +517,84 @@ exports.getSummary = async (req) => {
     todayKey
   });
 
+  const compactEmployeeList = (activeEmployees || []).map((employee) => ({
+    _id: employee?._id,
+    firstName: employee?.firstName || "",
+    lastName: employee?.lastName || "",
+    employeeCode: employee?.employeeCode || "",
+    dateOfJoining: employee?.dateOfJoining || null,
+    status: employee?.status || null,
+    departmentId: employee?.departmentId
+      ? { _id: employee.departmentId?._id, name: employee.departmentId?.name || "" }
+      : null,
+    designationId: employee?.designationId
+      ? { _id: employee.designationId?._id, name: employee.designationId?.name || "" }
+      : null
+  }));
+
+  const compactLeaveList = (activeLeaves || []).map((leave) => ({
+    _id: leave?._id,
+    status: leave?.status || null,
+    fromDate: leave?.fromDate || null,
+    toDate: leave?.toDate || null,
+    createdAt: leave?.createdAt || null,
+    employeeId: leave?.employeeId || null,
+    leaveTypeId: leave?.leaveTypeId
+      ? { _id: leave.leaveTypeId?._id, name: leave.leaveTypeId?.name || "" }
+      : null
+  }));
+
+  const compactWeeklyList = (activeWeekly || []).map((item) => ({
+    _id: item?._id,
+    status: item?.status || null,
+    weekStart: item?.weekStart || null,
+    createdAt: item?.createdAt || null,
+    submittedAt: item?.submittedAt || null,
+    employeeId: item?.employeeId || null
+  }));
+
+  const compactNotifications = (notificationsData?.items || []).map((item) => ({
+    _id: item?._id,
+    title: item?.title || "",
+    message: item?.message || "",
+    createdAt: item?.createdAt || null
+  }));
+
+  const compactHolidays = (holidays || []).map((holiday) => ({
+    _id: holiday?._id,
+    date: holiday?.date || null,
+    name: holiday?.name || ""
+  }));
+
+  const compactOrgSettings = orgSettings
+    ? {
+      timezone: orgSettings?.timezone || null,
+      sandwichRuleEnabled: Boolean(orgSettings?.sandwichRuleEnabled),
+      attendanceLockEnabled: Boolean(orgSettings?.attendanceLockEnabled),
+      leaveTypeCreditMode: orgSettings?.leaveTypeCreditMode || null
+    }
+    : null;
+
   return {
-    employeeList: activeEmployees,
-    attendanceToday: activeAttendanceToday,
-    attendanceLast7: activeAttendanceLast7,
+    employeeList: compactEmployeeList,
+    attendanceToday: (activeAttendanceToday || []).map((row) => ({
+      employeeId: row?.employeeId,
+      checkInAt: row?.checkInAt || null,
+      checkOutAt: row?.checkOutAt || null
+    })),
+    attendanceLast7: (activeAttendanceLast7 || []).map((row) => ({
+      employeeId: row?.employeeId,
+      checkInAt: row?.checkInAt || null,
+      checkOutAt: row?.checkOutAt || null
+    })),
     attendanceMatrix: [],
-    leaveList: activeLeaves,
-    weeklyList: activeWeekly,
-    holidays: holidays || [],
+    leaveList: compactLeaveList,
+    weeklyList: compactWeeklyList,
+    holidays: compactHolidays,
     weekOffDays: weekOffMap?.defaultDays || [],
     todayStatusList,
     dashboardStats,
-    orgSettings: orgSettings || null,
-    notifications: notificationsData?.items || []
+    orgSettings: compactOrgSettings,
+    notifications: compactNotifications
   };
 };
