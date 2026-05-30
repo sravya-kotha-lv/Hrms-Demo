@@ -1,5 +1,34 @@
 const mongoose = require("mongoose");
 
+const ensureCriticalIndexes = async () => {
+  const modelLoaders = [
+    () => require("../modules/employees/employee.model"),
+    () => require("../modules/timesheets/timesheetAttendance.model"),
+    () => require("../modules/leaves/leave.model"),
+    () => require("../modules/timesheets/timesheet.model"),
+    () => require("../modules/notifications/notification.model"),
+    () => require("../modules/holidays/holiday.model")
+  ];
+
+  const models = modelLoaders.map((load) => load());
+  const results = await Promise.allSettled(
+    models.map((model) => model.createIndexes())
+  );
+
+  const failed = results
+    .map((result, index) => ({ result, modelName: models[index]?.modelName || `model_${index}` }))
+    .filter((item) => item.result.status === "rejected");
+
+  if (failed.length) {
+    failed.forEach((item) => {
+      console.error(`❌ Index ensure failed for ${item.modelName}:`, item.result.reason?.message || item.result.reason);
+    });
+    throw new Error("One or more critical index creations failed");
+  }
+
+  console.log(`✅ Critical Mongo indexes ensured for ${models.length} models`);
+};
+
 const connectDB = async () => {
   try {
     const mongoUri = process.env.MONGO_URI;
@@ -26,6 +55,12 @@ const connectDB = async () => {
     });
 
     console.log("✅ MongoDB connected");
+
+    const shouldEnsureIndexes = String(process.env.MONGO_ENSURE_INDEXES_ON_BOOT || "true")
+      .toLowerCase() !== "false";
+    if (shouldEnsureIndexes) {
+      await ensureCriticalIndexes();
+    }
   } catch (err) {
     console.error("❌ MongoDB connection failed");
     console.error(err);
