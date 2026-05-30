@@ -410,7 +410,7 @@ exports.getSummary = async (req) => {
         organizationId: req.user.organizationId,
         year,
         status: "active"
-      }).sort({ date: 1 }), [])
+      }).lean(), [])
       : Promise.resolve([]),
     canViewOrgSettings
       ? withDashboardFallback("orgSettings", () => OrgSettingsService.get(req), null)
@@ -472,7 +472,6 @@ exports.getSummary = async (req) => {
           weekStart: { $gte: monthStartDateUtc, $lte: monthEndDateUtc }
         })
           .select("employeeId status weekStart createdAt submittedAt")
-          .sort({ weekStart: -1 })
           .limit(50)
           .lean(),
         []

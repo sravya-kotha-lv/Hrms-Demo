@@ -1054,8 +1054,7 @@ exports.listByOrganization = async (req) => {
       .select("_id firstName lastName employeeCode dateOfJoining status employmentLifecycleStatus departmentId designationId shiftId")
       .populate("departmentId", "name")
       .populate("designationId", "name")
-      .populate("shiftId", "startTime")
-      .sort({ employeeCode: 1, createdAt: -1 });
+      .populate("shiftId", "startTime");
   } else {
     employeeQuery = employeeQuery
       .populate("departmentId", "name")

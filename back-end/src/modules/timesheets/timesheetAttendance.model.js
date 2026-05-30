@@ -187,7 +187,13 @@ const timesheetAttendanceSchema = new mongoose.Schema(
 
 timesheetAttendanceSchema.index(
   { organizationId: 1, employeeId: 1, dateKey: 1 },
-  { unique: true }
+  {
+    unique: true,
+    name: "uniq_org_employee_dateKey_non_null",
+    partialFilterExpression: {
+      dateKey: { $type: "string" }
+    }
+  }
 );
 timesheetAttendanceSchema.index({ organizationId: 1, dateKey: 1 });
 

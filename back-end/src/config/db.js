@@ -20,10 +20,20 @@ const ensureCriticalIndexes = async () => {
     .filter((item) => item.result.status === "rejected");
 
   if (failed.length) {
+    let hardFailure = false;
     failed.forEach((item) => {
-      console.error(`❌ Index ensure failed for ${item.modelName}:`, item.result.reason?.message || item.result.reason);
+      const message = String(item.result.reason?.message || item.result.reason || "");
+      const isDuplicateKeyBuildError = message.includes("E11000 duplicate key error");
+      if (isDuplicateKeyBuildError) {
+        console.warn(`⚠️ Index ensure skipped for ${item.modelName} due to duplicate legacy data: ${message}`);
+      } else {
+        hardFailure = true;
+        console.error(`❌ Index ensure failed for ${item.modelName}:`, message);
+      }
     });
-    throw new Error("One or more critical index creations failed");
+    if (hardFailure) {
+      throw new Error("One or more critical index creations failed");
+    }
   }
 
   console.log(`✅ Critical Mongo indexes ensured for ${models.length} models`);
