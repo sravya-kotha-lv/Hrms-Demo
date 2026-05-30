@@ -1041,30 +1041,40 @@ const loadPayrollExportMap = async (organizationId) => {
 };
 
 exports.listByOrganization = async (req) => {
-  const { page, limit, scope } = req.query;
+  const { page, limit, scope, compact } = req.query;
+  const isCompactMode = String(compact || "false").toLowerCase() === "true";
   const isOrganizationTreeScope = scope === "organizationTree";
   const { query, includeDeleted, sortField, sortDirection, effectiveOrganizationId } =
     await buildEmployeeListContext(req);
 
   // Build query
-  let employeeQuery = Employee.find(query)
-    .setOptions({ includeDeleted })
-    .populate("departmentId", "name")
-    .populate("designationId", "name")
-    .populate("managerId", "firstName lastName")
-    .populate("leaveApprovalFlowId", "name moduleKey")
-    .populate("attendanceApprovalFlowId", "name moduleKey")
-    .populate("shiftId", "name code startTime endTime graceMinutes status")
-    .populate("userId", "email")
-    .sort({ [sortField]: sortDirection, createdAt: -1 });
-
-  let total = await Employee.countDocuments(query);
+  let employeeQuery = Employee.find(query).setOptions({ includeDeleted });
+  if (isCompactMode) {
+    employeeQuery = employeeQuery
+      .select("_id firstName lastName employeeCode dateOfJoining status employmentLifecycleStatus departmentId designationId shiftId")
+      .populate("departmentId", "name")
+      .populate("designationId", "name")
+      .populate("shiftId", "startTime")
+      .sort({ employeeCode: 1, createdAt: -1 });
+  } else {
+    employeeQuery = employeeQuery
+      .populate("departmentId", "name")
+      .populate("designationId", "name")
+      .populate("managerId", "firstName lastName")
+      .populate("leaveApprovalFlowId", "name moduleKey")
+      .populate("attendanceApprovalFlowId", "name moduleKey")
+      .populate("shiftId", "name code startTime endTime graceMinutes status")
+      .populate("userId", "email")
+      .sort({ [sortField]: sortDirection, createdAt: -1 });
+  }
 
   let pagination = null;
+  let total = null;
 
   // Apply pagination only for normal list views. The org tree needs the full
   // scoped employee set so managers can be attached to their reports.
   if (!isOrganizationTreeScope && page && limit) {
+    total = await Employee.countDocuments(query);
     const pageNum = Number(page);
     const limitNum = Number(limit);
     const skip = (pageNum - 1) * limitNum;
@@ -1080,22 +1090,34 @@ exports.listByOrganization = async (req) => {
   }
 
   const employees = await employeeQuery;
-  const userIds = employees
-    .map((employee) => employee.userId?._id || employee.userId)
-    .filter(Boolean);
-  const roleMap = await buildRoleMapByUserIds({
-    organizationId: effectiveOrganizationId,
-    userIds
-  });
-  const items = employees.map((employee) => {
-    const obj = employee.toObject();
-    return {
-      ...obj,
-      firstName: toNameCase(obj.firstName),
-      lastName: toNameCase(obj.lastName),
-      roleIds: roleMap.get(String(employee.userId?._id || employee.userId)) || []
-    };
-  });
+  let items = [];
+  if (isCompactMode) {
+    items = employees.map((employee) => {
+      const obj = employee.toObject();
+      return {
+        ...obj,
+        firstName: toNameCase(obj.firstName),
+        lastName: toNameCase(obj.lastName)
+      };
+    });
+  } else {
+    const userIds = employees
+      .map((employee) => employee.userId?._id || employee.userId)
+      .filter(Boolean);
+    const roleMap = await buildRoleMapByUserIds({
+      organizationId: effectiveOrganizationId,
+      userIds
+    });
+    items = employees.map((employee) => {
+      const obj = employee.toObject();
+      return {
+        ...obj,
+        firstName: toNameCase(obj.firstName),
+        lastName: toNameCase(obj.lastName),
+        roleIds: roleMap.get(String(employee.userId?._id || employee.userId)) || []
+      };
+    });
+  }
 
   return {
     items,

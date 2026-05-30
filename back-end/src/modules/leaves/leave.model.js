@@ -210,4 +210,8 @@ leaveSchema.pre(/^find/, function () {
   this.where({ isDeleted: false });
 });
 
+leaveSchema.index({ organizationId: 1, isDeleted: 1, createdAt: -1 });
+leaveSchema.index({ organizationId: 1, employeeId: 1, createdAt: -1 });
+leaveSchema.index({ organizationId: 1, employeeId: 1, status: 1, fromDate: 1, toDate: 1, isDeleted: 1 });
+
 module.exports = mongoose.model("leaves", leaveSchema);
