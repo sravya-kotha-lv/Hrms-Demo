@@ -189,5 +189,6 @@ timesheetAttendanceSchema.index(
   { organizationId: 1, employeeId: 1, dateKey: 1 },
   { unique: true }
 );
+timesheetAttendanceSchema.index({ organizationId: 1, dateKey: 1 });
 
 module.exports = mongoose.model("timesheet_attendance", timesheetAttendanceSchema);
