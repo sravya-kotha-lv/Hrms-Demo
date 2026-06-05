@@ -16,6 +16,104 @@ const getTenantId = async (client, organizationId) => {
   return result.rows[0]?.id || null;
 };
 
+const getEmployeeExternalIdCandidatesForUser = async (req) => {
+  const employees = await Employee.find({
+    userId: req.user.userId,
+    organizationId: req.user.organizationId
+  })
+    .select("_id employeeCode")
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .lean();
+
+  if (!Array.isArray(employees) || employees.length === 0) {
+    throw { code: 404, message: "Employee profile not found for current user" };
+  }
+
+  const byId = employees
+    .map((row) => String(row?._id || "").trim())
+    .filter(Boolean);
+
+  const primaryCode = String(employees[0]?.employeeCode || "").trim();
+  if (!primaryCode) return [...new Set(byId)];
+
+  const sameCodeEmployees = await Employee.find({
+    organizationId: req.user.organizationId,
+    employeeCode: primaryCode
+  })
+    .select("_id")
+    .lean();
+
+  const byCode = sameCodeEmployees
+    .map((row) => String(row?._id || "").trim())
+    .filter(Boolean);
+
+  return [...new Set([...byId, ...byCode])];
+};
+
+const findRunByEmployeeCodeForMonth = async ({ req, month, employeeCode }) => {
+  if (!employeeCode) return null;
+  const pool = await getPayrollPgPool();
+  if (!pool) return null;
+
+  const client = await pool.connect();
+  try {
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
+
+    const result = await client.query(
+      `
+        SELECT r.id AS run_id, re.employee_external_id
+        FROM payroll_runs r
+        INNER JOIN payroll_run_employees re ON re.payroll_run_id = r.id
+        INNER JOIN employee_payroll_profiles epp ON epp.id = re.employee_payroll_profile_id
+        WHERE r.tenant_id = $1
+          AND r.pay_month = $2
+          AND epp.employee_code = $3
+          AND r.status IN ('ready_for_approval', 'approved', 'locked', 'paid')
+        ORDER BY
+          CASE r.status
+            WHEN 'paid' THEN 1
+            WHEN 'locked' THEN 2
+            WHEN 'approved' THEN 3
+            ELSE 4
+          END,
+          r.updated_at DESC
+        LIMIT 1
+      `,
+      [tenantId, month, String(employeeCode).trim()]
+    );
+
+    return result.rows[0] || null;
+  } finally {
+    client.release();
+  }
+};
+
+const getRunMatchForEmployee = async ({ client, tenantId, runId, employeeExternalIds }) => {
+  const result = await client.query(
+    `
+      SELECT re.employee_external_id
+      FROM payroll_run_employees re
+      INNER JOIN payroll_runs r ON r.id = re.payroll_run_id
+      WHERE r.id = $1
+        AND r.tenant_id = $2
+        AND re.employee_external_id = ANY($3::varchar[])
+      ORDER BY
+        CASE re.payroll_status
+          WHEN 'processed' THEN 1
+          WHEN 'pending' THEN 2
+          WHEN 'held' THEN 3
+          ELSE 4
+        END,
+        re.updated_at DESC
+      LIMIT 1
+    `,
+    [runId, tenantId, employeeExternalIds]
+  );
+  return result.rows[0]?.employee_external_id || null;
+};
+
 const parseMonth = (month) => {
   const [year, monthNum] = String(month).split("-").map(Number);
   return { year, monthNum };
@@ -432,6 +530,183 @@ exports.getPayslipByMonth = async (req) => {
       runId,
       employeeExternalId
     };
+    return exports.getPayslipByRun(req);
+  } finally {
+    client.release();
+  }
+};
+
+exports.getMyPayslipByMonth = async (req) => {
+  const myEmployee = await Employee.findOne({
+    userId: req.user.userId,
+    organizationId: req.user.organizationId
+  })
+    .select("_id employeeCode")
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .lean();
+
+  const employeeExternalIds = await getEmployeeExternalIdCandidatesForUser(req);
+  const employeeExternalId = employeeExternalIds[0];
+
+  req.query = {
+    ...req.query,
+    employeeExternalId
+  };
+  try {
+    return await exports.getPayslipByMonth(req);
+  } catch (error) {
+    if (error?.code !== 404 || employeeExternalIds.length <= 1) throw error;
+
+    for (const candidate of employeeExternalIds.slice(1)) {
+      try {
+        req.query = {
+          ...req.query,
+          employeeExternalId: candidate
+        };
+        return await exports.getPayslipByMonth(req);
+      } catch (innerError) {
+        if (innerError?.code !== 404) throw innerError;
+      }
+    }
+    const matchedRun = await findRunByEmployeeCodeForMonth({
+      req,
+      month: req.query?.month,
+      employeeCode: myEmployee?.employeeCode
+    });
+    if (matchedRun?.run_id && matchedRun?.employee_external_id) {
+      req.params = {
+        ...req.params,
+        runId: matchedRun.run_id,
+        employeeExternalId: String(matchedRun.employee_external_id)
+      };
+      return exports.getPayslipByRun(req);
+    }
+
+    throw error;
+  }
+};
+
+exports.listMyPayslipMonths = async (req) => {
+  const pool = await getPayrollPgPool();
+  if (!pool) throw { code: 400, message: "Payroll Postgres is not enabled" };
+
+  const employeeExternalIds = await getEmployeeExternalIdCandidatesForUser(req);
+  const client = await pool.connect();
+  try {
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
+
+    const result = await client.query(
+      `
+        SELECT DISTINCT r.pay_month
+        FROM payroll_runs r
+        INNER JOIN payroll_run_employees re ON re.payroll_run_id = r.id
+        WHERE r.tenant_id = $1
+          AND re.employee_external_id = ANY($2::varchar[])
+          AND r.status IN ('ready_for_approval', 'approved', 'locked', 'paid')
+        ORDER BY r.pay_month DESC
+      `,
+      [tenantId, employeeExternalIds]
+    );
+
+    return result.rows.map((row) => row.pay_month).filter(Boolean);
+  } finally {
+    client.release();
+  }
+};
+
+exports.listMyPayslipRuns = async (req) => {
+  const pool = await getPayrollPgPool();
+  if (!pool) throw { code: 400, message: "Payroll Postgres is not enabled" };
+
+  const employeeExternalIds = await getEmployeeExternalIdCandidatesForUser(req);
+  const client = await pool.connect();
+  try {
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
+
+    const result = await client.query(
+      `
+        WITH candidate_runs AS (
+          SELECT
+            r.id AS run_id,
+            r.run_code,
+            r.pay_month,
+            r.status,
+            re.employee_external_id,
+            CASE r.status
+              WHEN 'paid' THEN 1
+              WHEN 'locked' THEN 2
+              WHEN 'approved' THEN 3
+              ELSE 4
+            END AS status_rank,
+            row_number() OVER (
+              PARTITION BY r.pay_month
+              ORDER BY
+                CASE r.status
+                  WHEN 'paid' THEN 1
+                  WHEN 'locked' THEN 2
+                  WHEN 'approved' THEN 3
+                  ELSE 4
+                END,
+                r.updated_at DESC
+            ) AS month_rank
+          FROM payroll_runs r
+          INNER JOIN payroll_run_employees re ON re.payroll_run_id = r.id
+          WHERE r.tenant_id = $1
+            AND re.employee_external_id = ANY($2::varchar[])
+            AND r.status IN ('ready_for_approval', 'approved', 'locked', 'paid')
+        )
+        SELECT run_id, run_code, pay_month, status, employee_external_id
+        FROM candidate_runs
+        WHERE month_rank = 1
+        ORDER BY pay_month DESC
+      `,
+      [tenantId, employeeExternalIds]
+    );
+
+    return result.rows.map((row) => ({
+      runId: row.run_id,
+      runCode: row.run_code,
+      month: row.pay_month,
+      status: row.status,
+      employeeExternalId: row.employee_external_id
+    }));
+  } finally {
+    client.release();
+  }
+};
+
+exports.getMyPayslipByRun = async (req) => {
+  const pool = await getPayrollPgPool();
+  if (!pool) throw { code: 400, message: "Payroll Postgres is not enabled" };
+
+  const employeeExternalIds = await getEmployeeExternalIdCandidatesForUser(req);
+  const client = await pool.connect();
+  try {
+    const tenantId = await getTenantIdForOrganization(client, req.user.organizationId, {
+      actorId: req.user.userId
+    });
+
+    const { runId } = req.params;
+    const employeeExternalId = await getRunMatchForEmployee({
+      client,
+      tenantId,
+      runId,
+      employeeExternalIds
+    });
+
+    if (!employeeExternalId) {
+      throw { code: 404, message: "Payslip not found for the selected payroll run" };
+    }
+
+    req.params = {
+      ...req.params,
+      employeeExternalId
+    };
+
     return exports.getPayslipByRun(req);
   } finally {
     client.release();

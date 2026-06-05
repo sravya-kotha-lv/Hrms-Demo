@@ -23,6 +23,7 @@ const EmployeeOverviewDetails = lazyWithRetry(() => import("./pages/EmployeeOver
 const DashboardGraphDetails = lazyWithRetry(() => import("./pages/DashboardGraphDetails"), "DashboardGraphDetails");
 const Attendance = lazyWithRetry(() => import("./pages/Attendance"), "Attendance");
 const EmployeeDashboard = lazyWithRetry(() => import("./pages/EmployeeDashboard"), "EmployeeDashboard");
+const EmployeePayslips = lazyWithRetry(() => import("./pages/EmployeePayslips"), "EmployeePayslips");
 const Timesheets = lazyWithRetry(() => import("./pages/Timesheets"), "Timesheets");
 const Leave = lazyWithRetry(() => import("./pages/Leave"), "Leave");
 const LeaveApply = lazyWithRetry(() => import("./pages/LeaveApply"), "LeaveApply");
@@ -129,6 +130,16 @@ const App = () => (
                 <RequireAuth permissions={["TIMESHEET_VIEW_SELF", "LEAVE_VIEW_SELF", "EMP_SELF_VIEW"]}>
                   <RequireProfile>
                     <EmployeeDashboard />
+                  </RequireProfile>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/employee-dashboard/payslips"
+              element={
+                <RequireAuth permissions={["EMP_SELF_VIEW"]}>
+                  <RequireProfile>
+                    <EmployeePayslips />
                   </RequireProfile>
                 </RequireAuth>
               }

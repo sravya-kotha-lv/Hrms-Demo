@@ -13,3 +13,11 @@ exports.getMonthlyPayslipQuerySchema = Joi.object({
   month: Joi.string().pattern(/^\d{4}-\d{2}$/).required(),
   employeeExternalId: Joi.string().pattern(objectIdPattern).required()
 });
+
+exports.getMyMonthlyPayslipQuerySchema = Joi.object({
+  month: Joi.string().pattern(/^\d{4}-\d{2}$/).required()
+});
+
+exports.getMyRunPayslipParamsSchema = Joi.object({
+  runId: Joi.string().pattern(uuidPattern).required()
+});

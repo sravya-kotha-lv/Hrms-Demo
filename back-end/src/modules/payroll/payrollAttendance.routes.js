@@ -61,7 +61,9 @@ const {
 } = require("./payrollApproval.validation");
 const {
   getRunPayslipParamsSchema,
-  getMonthlyPayslipQuerySchema
+  getMonthlyPayslipQuerySchema,
+  getMyMonthlyPayslipQuerySchema,
+  getMyRunPayslipParamsSchema
 } = require("./payslip.validation");
 const {
   payrollRegisterQuerySchema,
@@ -451,6 +453,36 @@ router.get(
   authorize(["PAYROLL_PAYSLIP_VIEW"]),
   validate(getMonthlyPayslipQuerySchema, "query"),
   asyncHandler(payslipController.getPayslipByMonth)
+);
+
+router.get(
+  "/payslips/my/monthly",
+  auth,
+  authorize(["EMP_SELF_VIEW", "TIMESHEET_VIEW_SELF", "LEAVE_VIEW_SELF"]),
+  validate(getMyMonthlyPayslipQuerySchema, "query"),
+  asyncHandler(payslipController.getMyPayslipByMonth)
+);
+
+router.get(
+  "/payslips/my/months",
+  auth,
+  authorize(["EMP_SELF_VIEW", "TIMESHEET_VIEW_SELF", "LEAVE_VIEW_SELF"]),
+  asyncHandler(payslipController.listMyPayslipMonths)
+);
+
+router.get(
+  "/payslips/my/runs",
+  auth,
+  authorize(["EMP_SELF_VIEW", "TIMESHEET_VIEW_SELF", "LEAVE_VIEW_SELF"]),
+  asyncHandler(payslipController.listMyPayslipRuns)
+);
+
+router.get(
+  "/payslips/my/runs/:runId",
+  auth,
+  authorize(["EMP_SELF_VIEW", "TIMESHEET_VIEW_SELF", "LEAVE_VIEW_SELF"]),
+  validate(getMyRunPayslipParamsSchema, "params"),
+  asyncHandler(payslipController.getMyPayslipByRun)
 );
 
 router.get(
