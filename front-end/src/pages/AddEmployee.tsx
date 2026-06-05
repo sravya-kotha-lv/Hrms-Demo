@@ -2052,7 +2052,14 @@ const AddEmployee = () => {
         return;
       }
 
-      toast.success("Bank details saved");
+      const bankAction = String(saveBankRes.data?.saveAction || "");
+      toast.success(
+        bankAction === "updated_current"
+          ? "Current bank details updated"
+          : bankAction === "created_revision"
+            ? "New bank revision created"
+            : "Bank details saved"
+      );
       setEditableSections((prev) => ({ ...prev, bank: false }));
       fetchPayrollData();
     } finally {

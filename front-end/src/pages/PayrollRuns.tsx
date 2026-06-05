@@ -54,11 +54,18 @@ import {
 } from "@/components/payroll/payrollShared";
 
 const PayrollRuns = () => {
-  const monthOptions = useMemo(() => buildMonthOptions(), []);
-  const [monthFilter, setMonthFilter] = useState(monthOptions[0]);
-  const [searchQuery, setSearchQuery] = useState("");
   const [settings, setSettings] = useState<any>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const monthOptions = useMemo(
+    () =>
+      buildMonthOptions({
+        payrollCutoffDay: settings?.payrollCutoffDay,
+        payrollSalaryPayDay: settings?.payrollSalaryPayDay
+      }),
+    [settings?.payrollCutoffDay, settings?.payrollSalaryPayDay]
+  );
+  const [monthFilter, setMonthFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [payGroups, setPayGroups] = useState<PayGroup[]>([]);
   const [selectedPayGroupId, setSelectedPayGroupId] = useState("");
   const [runs, setRuns] = useState<PayrollRun[]>([]);
@@ -221,6 +228,13 @@ const PayrollRuns = () => {
   }, [loadEmployeeDirectory]);
 
   useEffect(() => {
+    if (!monthOptions.length) return;
+    if (!monthFilter || !monthOptions.includes(monthFilter)) {
+      setMonthFilter(monthOptions[0]);
+    }
+  }, [monthFilter, monthOptions]);
+
+  useEffect(() => {
     if (!settingsLoaded || settings?.payrollEnabled === false) return;
     loadPayGroups();
   }, [loadPayGroups, settingsLoaded, settings?.payrollEnabled]);
@@ -238,7 +252,7 @@ const PayrollRuns = () => {
   }, [payGroups, selectedPayGroupId, settings?.defaultPayGroupId, settings?.default_pay_group_id]);
 
   useEffect(() => {
-    if (!settingsLoaded || settings?.payrollEnabled === false) return;
+    if (!settingsLoaded || settings?.payrollEnabled === false || !monthFilter) return;
     loadRuns(monthFilter, selectedPayGroupId || undefined);
   }, [loadRuns, monthFilter, selectedPayGroupId, settingsLoaded, settings?.payrollEnabled]);
 

@@ -42,6 +42,10 @@ const orgSettingsSchema = new mongoose.Schema(
       type: String,
       default: "Asia/Kolkata"
     },
+    logoUrl: {
+      type: String,
+      default: ""
+    },
     payrollCutoffDay: {
       type: Number,
       default: 25

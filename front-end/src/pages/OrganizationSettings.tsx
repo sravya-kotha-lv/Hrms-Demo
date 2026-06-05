@@ -52,6 +52,12 @@ const OrganizationSettings = () => {
   const [probationPeriodDays, setProbationPeriodDays] = useState(90);
   const [noticePeriodDays, setNoticePeriodDays] = useState(30);
   const [employeeIdPrefix, setEmployeeIdPrefix] = useState("");
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
+  const [logoUpload, setLogoUpload] = useState<null | {
+    fileName: string;
+    mimeType: string;
+    base64Data: string;
+  }>(null);
   const [loading, setLoading] = useState(false);
   const canView = hasAnyPermission(["ORG_SETTINGS_VIEW"]);
   const canManage = hasAnyPermission(["ORG_SETTINGS_MANAGE"]);
@@ -118,6 +124,8 @@ const OrganizationSettings = () => {
         typeof res.data?.noticePeriodDays === "number" ? res.data.noticePeriodDays : 30
       );
       setEmployeeIdPrefix(String(res.data?.employeeIdPrefix || ""));
+      setLogoPreviewUrl(String(res.data?.logoUrl || ""));
+      setLogoUpload(null);
     } else {
       toast.error(res?.message || "Failed to load settings");
     }
@@ -155,13 +163,18 @@ const OrganizationSettings = () => {
         attendanceDevBypassEnabled,
         probationPeriodDays: Number(probationPeriodDays),
         noticePeriodDays: Number(noticePeriodDays),
-        employeeIdPrefix: employeeIdPrefix.trim().toUpperCase()
+        employeeIdPrefix: employeeIdPrefix.trim().toUpperCase(),
+        ...(logoUpload ? { logoUpload } : {})
       }, null, { requiredPermissions: ["ORG_SETTINGS_MANAGE"] });
       if (res?.skipped) return;
       if (res?.success) {
         if (timezone) {
           setOrgTimeZone(timezone);
         }
+        if (res.data?.logoUrl) {
+          setLogoPreviewUrl(String(res.data.logoUrl));
+        }
+        setLogoUpload(null);
         toast.success("Settings saved");
       } else {
         toast.error(res?.message || "Save failed");
@@ -204,6 +217,42 @@ const OrganizationSettings = () => {
                 {canManage
                   ? "You can update and save policy changes."
                   : "You can view settings but cannot update them."}
+              </p>
+            </div>
+          </div>
+          <div className="relative mt-5 flex flex-col gap-4 rounded-2xl border border-white/70 bg-white/80 p-4 backdrop-blur sm:flex-row sm:items-center">
+            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+              {logoPreviewUrl ? (
+                <img src={logoPreviewUrl} alt="Organization logo preview" className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-xs text-slate-400">No logo</span>
+              )}
+            </div>
+            <div className="flex-1 space-y-2">
+              <label className="text-sm font-medium">Organization Logo</label>
+              <Input
+                type="file"
+                accept=".png,.jpg,.jpeg,.webp"
+                disabled={!canManage}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const result = String(reader.result || "");
+                    const base64Data = result.includes(",") ? result.split(",")[1] : "";
+                    setLogoPreviewUrl(result);
+                    setLogoUpload({
+                      fileName: file.name,
+                      mimeType: file.type || "image/png",
+                      base64Data
+                    });
+                  };
+                  reader.readAsDataURL(file);
+                }}
+              />
+              <p className="text-xs text-slate-500">
+                Upload a PNG, JPG, or WEBP logo. It will appear on employee payslips and PDF downloads.
               </p>
             </div>
           </div>

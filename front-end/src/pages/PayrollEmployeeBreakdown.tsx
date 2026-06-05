@@ -61,8 +61,16 @@ const componentBadgeClass = (scope: string) => {
 };
 
 const PayrollEmployeeBreakdown = () => {
-  const monthOptions = useMemo(() => buildMonthOptions(), []);
-  const [monthFilter, setMonthFilter] = useState(monthOptions[0]);
+  const [settings, setSettings] = useState<any>(null);
+  const monthOptions = useMemo(
+    () =>
+      buildMonthOptions({
+        payrollCutoffDay: settings?.payrollCutoffDay,
+        payrollSalaryPayDay: settings?.payrollSalaryPayDay
+      }),
+    [settings?.payrollCutoffDay, settings?.payrollSalaryPayDay]
+  );
+  const [monthFilter, setMonthFilter] = useState("");
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [search, setSearch] = useState("");
@@ -107,6 +115,13 @@ const PayrollEmployeeBreakdown = () => {
     }
   };
 
+  const loadSettings = async () => {
+    const res = await getApiWithToken("/payroll/settings");
+    if (res?.success) {
+      setSettings(res.data || null);
+    }
+  };
+
   const loadBreakdown = async (runId: string, query: string) => {
     if (!runId) {
       setRows([]);
@@ -128,8 +143,20 @@ const PayrollEmployeeBreakdown = () => {
   };
 
   useEffect(() => {
+    loadSettings();
+  }, []);
+
+  useEffect(() => {
+    if (!monthFilter) return;
     loadRuns(monthFilter);
   }, [monthFilter]);
+
+  useEffect(() => {
+    if (!monthOptions.length) return;
+    if (!monthFilter || !monthOptions.includes(monthFilter)) {
+      setMonthFilter(monthOptions[0]);
+    }
+  }, [monthFilter, monthOptions]);
 
   useEffect(() => {
     loadBreakdown(selectedRunId, submittedSearch);

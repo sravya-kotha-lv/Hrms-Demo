@@ -3,6 +3,7 @@ const Organization = require("../organizations/organization.model");
 const { isValidTimeZone } = require("../../utils/timezone");
 const { getDefaultMaxActiveLoginsPerUser } = require("../../utils/orgSettingsDefaults");
 const { ensurePayrollTenantAndDefaults } = require("../payroll/payrollProvisioning.service");
+const { uploadDataUri } = require("../../config/cloudinary");
 
 const DEFAULT_MAX_ACTIVE_LOGINS_PER_USER = getDefaultMaxActiveLoginsPerUser();
 
@@ -14,6 +15,7 @@ const DEFAULTS = {
   attendanceLockAfterDays: 7,
   attendanceLockMode: "payroll_cutoff",
   timezone: "Asia/Kolkata",
+  logoUrl: "",
   payrollCutoffDay: 25,
   payrollSalaryPayDay: 30,
   payrollEnabled: false,
@@ -84,6 +86,7 @@ exports.upsert = async (req) => {
     attendanceLockAfterDays,
     attendanceLockMode,
     timezone,
+    logoUpload,
     payrollCutoffDay,
     payrollSalaryPayDay,
     payrollEnabled,
@@ -106,6 +109,20 @@ exports.upsert = async (req) => {
 
   if (!isValidTimeZone(timezone)) {
     throw { code: 400, statusCode: 400, message: "Invalid timezone" };
+  }
+
+  const existingSettings = await OrgSettings.findOne({
+    organizationId: req.user.organizationId
+  }).select("logoUrl");
+
+  let logoUrl = existingSettings?.logoUrl || "";
+  if (logoUpload?.base64Data && logoUpload?.mimeType) {
+    const imageDataUri = `data:${logoUpload.mimeType};base64,${logoUpload.base64Data}`;
+    const uploadedLogo = await uploadDataUri(imageDataUri, {
+      folder: "org-logos",
+      resource_type: "image"
+    });
+    logoUrl = uploadedLogo?.secure_url || "";
   }
   if (attendanceIpEnabled && !(attendanceAllowedIp || "").trim()) {
     throw {
@@ -140,6 +157,7 @@ exports.upsert = async (req) => {
       attendanceLockAfterDays,
       attendanceLockMode,
       timezone,
+      logoUrl,
       payrollCutoffDay,
       payrollSalaryPayDay,
       payrollEnabled,
