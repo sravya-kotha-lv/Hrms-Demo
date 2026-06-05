@@ -11,6 +11,7 @@ module.exports = (err, req, res, next) => {
   let statusCode =
     parseStatusCode(err.statusCode) ||
     parseStatusCode(err.status) ||
+    parseStatusCode(err.code) ||
     parseStatusCode(err.httpStatus) ||
     500;
   let message = err.message || "Internal Server Error";
