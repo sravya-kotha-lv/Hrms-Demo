@@ -33,6 +33,7 @@ const OrganizationSettings = () => {
   const [attendanceLockEnabled, setAttendanceLockEnabled] = useState(true);
   const [attendanceLockAfterDays, setAttendanceLockAfterDays] = useState(7);
   const [attendanceLockMode, setAttendanceLockMode] = useState("payroll_cutoff");
+  const [attendanceLockDay, setAttendanceLockDay] = useState(25);
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [maxActiveLoginsPerUser, setMaxActiveLoginsPerUser] = useState(1);
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
@@ -78,6 +79,13 @@ const OrganizationSettings = () => {
         typeof res.data?.attendanceLockAfterDays === "number" ? res.data.attendanceLockAfterDays : 7
       );
       setAttendanceLockMode(res.data?.attendanceLockMode || "payroll_cutoff");
+      setAttendanceLockDay(
+        typeof res.data?.attendanceLockDay === "number"
+          ? res.data.attendanceLockDay
+          : typeof res.data?.payrollCutoffDay === "number"
+            ? res.data.payrollCutoffDay
+            : 25
+      );
       setTimezone(res.data?.timezone || "Asia/Kolkata");
       setMaxActiveLoginsPerUser(
         typeof res.data?.maxActiveLoginsPerUser === "number" ? res.data.maxActiveLoginsPerUser : 1
@@ -145,6 +153,7 @@ const OrganizationSettings = () => {
         attendanceLockEnabled,
         attendanceLockAfterDays: Number(attendanceLockAfterDays),
         attendanceLockMode,
+        attendanceLockDay: Number(attendanceLockDay),
         timezone,
         maxActiveLoginsPerUser: Number(maxActiveLoginsPerUser || 1),
         payrollCutoffDay: Number(payrollCutoffDay),
@@ -419,7 +428,7 @@ const OrganizationSettings = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="days_window">By days window</SelectItem>
-                      <SelectItem value="payroll_cutoff">By payroll cutoff</SelectItem>
+                      <SelectItem value="payroll_cutoff">By attendance lock day</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -434,6 +443,21 @@ const OrganizationSettings = () => {
                     disabled={!canManage || !attendanceLockEnabled || attendanceLockMode !== "days_window"}
                     placeholder="Ex: 7"
                   />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Attendance Lock Day</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={attendanceLockDay}
+                    onChange={(e) => setAttendanceLockDay(Number(e.target.value))}
+                    disabled={!canManage || !attendanceLockEnabled || attendanceLockMode !== "payroll_cutoff"}
+                    placeholder="Ex: 9"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Attendance edits lock from this day of the month. This is separate from the payroll cutoff day.
+                  </p>
                 </div>
               </div>
             </div>
@@ -468,7 +492,7 @@ const OrganizationSettings = () => {
                   placeholder="Ex: 25"
                 />
                 <p className="text-xs text-muted-foreground">
-                  This is the single payroll cutoff used for attendance lock rules and payroll setup defaults.
+                  This is used for payroll setup defaults and pay-group provisioning.
                 </p>
               </div>
 

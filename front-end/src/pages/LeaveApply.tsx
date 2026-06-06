@@ -49,6 +49,7 @@ type LeaveApplyWindow = {
   attendanceLockEnabled?: boolean;
   attendanceLockMode?: "days_window" | "payroll_cutoff";
   payrollCutoffDay?: number;
+  attendanceLockDay?: number;
   attendanceLockAfterDays?: number;
   earliestAllowedDateKey?: string | null;
 };
@@ -608,7 +609,7 @@ const LeaveApply = () => {
             {!dateError && leaveApplyWindow?.attendanceLockEnabled && leaveApplyWindow?.earliestAllowedDateKey && (
               <p className="text-sm text-muted-foreground">
                 {leaveApplyWindow.attendanceLockMode === "payroll_cutoff"
-                  ? `You can apply leave from ${leaveApplyWindow.earliestAllowedDateKey} onwards based on payroll cutoff day ${leaveApplyWindow.payrollCutoffDay}.`
+                  ? `You can apply leave from ${leaveApplyWindow.earliestAllowedDateKey} onwards based on attendance lock day ${leaveApplyWindow.attendanceLockDay ?? leaveApplyWindow.payrollCutoffDay ?? "-"}.`
                   : `You can apply leave for dates within the last ${leaveApplyWindow.attendanceLockAfterDays} days.`}
               </p>
             )}

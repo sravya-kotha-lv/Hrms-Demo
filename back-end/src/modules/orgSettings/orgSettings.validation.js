@@ -14,6 +14,7 @@ exports.upsertOrgSettingsSchema = Joi.object({
   attendanceLockEnabled: Joi.boolean().default(true),
   attendanceLockAfterDays: Joi.number().integer().min(0).max(365).default(7),
   attendanceLockMode: Joi.string().valid("days_window", "payroll_cutoff").default("payroll_cutoff"),
+  attendanceLockDay: Joi.number().integer().min(1).max(31).default(25),
   timezone: Joi.string().required(),
   logoUpload: uploadSchema.optional(),
   payrollCutoffDay: Joi.number().integer().min(1).max(31).default(25),

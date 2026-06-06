@@ -559,13 +559,14 @@ const getOrganizationTimeZone = async (organizationId) => {
 
 const getLeaveApplyWindowMeta = async ({ organizationId, timeZone = "UTC" }) => {
   const settings = await OrgSettings.findOne({ organizationId })
-    .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay");
+    .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode attendanceLockDay payrollCutoffDay");
 
   if (!settings?.attendanceLockEnabled) {
     return {
       attendanceLockEnabled: false,
       attendanceLockMode: settings?.attendanceLockMode || "days_window",
       payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+      attendanceLockDay: Number(settings?.attendanceLockDay ?? settings?.payrollCutoffDay ?? 25),
       attendanceLockAfterDays: Number(settings?.attendanceLockAfterDays ?? 7),
       earliestAllowedDateKey: null
     };
@@ -581,26 +582,28 @@ const getLeaveApplyWindowMeta = async ({ organizationId, timeZone = "UTC" }) => 
       attendanceLockEnabled: true,
       attendanceLockMode: mode,
       payrollCutoffDay: Number(settings.payrollCutoffDay ?? 25),
+      attendanceLockDay: Number(settings?.attendanceLockDay ?? settings?.payrollCutoffDay ?? 25),
       attendanceLockAfterDays,
       earliestAllowedDateKey: addDaysToDateKey(todayKey, -attendanceLockAfterDays)
     };
   }
 
-  const payrollCutoffDay = Number(settings.payrollCutoffDay ?? 25);
+  const attendanceLockDay = Number(settings.attendanceLockDay ?? settings.payrollCutoffDay ?? 25);
   const currentDay = getDayInTimeZone(today, timeZone);
   const [todayYear, todayMonth] = todayKey.split("-").map(Number);
   const currentMonthFirstKey = `${todayYear}-${String(todayMonth).padStart(2, "0")}-01`;
   const previousMonthYear = todayMonth === 1 ? todayYear - 1 : todayYear;
   const previousMonth = todayMonth === 1 ? 12 : todayMonth - 1;
   const previousMonthFirstKey = `${previousMonthYear}-${String(previousMonth).padStart(2, "0")}-01`;
-  const earliestAllowedDateKey = currentDay > payrollCutoffDay
-    ? addDaysToDateKey(currentMonthFirstKey, payrollCutoffDay)
-    : addDaysToDateKey(previousMonthFirstKey, payrollCutoffDay);
+  const earliestAllowedDateKey = currentDay > attendanceLockDay
+    ? addDaysToDateKey(currentMonthFirstKey, attendanceLockDay)
+    : addDaysToDateKey(previousMonthFirstKey, attendanceLockDay);
 
   return {
     attendanceLockEnabled: true,
     attendanceLockMode: mode,
-    payrollCutoffDay,
+    payrollCutoffDay: Number(settings.payrollCutoffDay ?? 25),
+    attendanceLockDay,
     attendanceLockAfterDays: Number(settings.attendanceLockAfterDays ?? 7),
     earliestAllowedDateKey
   };
@@ -622,7 +625,7 @@ const assertLeaveApplyWindow = async ({ organizationId, fromDate, toDate, timeZo
   if (fromDateKey < windowMeta.earliestAllowedDateKey || toDateKey < windowMeta.earliestAllowedDateKey) {
     if (windowMeta.attendanceLockMode === "payroll_cutoff") {
       throw new Error(
-        `Leave cannot be applied before ${windowMeta.earliestAllowedDateKey}. Dates up to payroll cutoff ${windowMeta.payrollCutoffDay} are locked.`
+        `Leave cannot be applied before ${windowMeta.earliestAllowedDateKey}. Dates up to attendance lock day ${windowMeta.attendanceLockDay} are locked.`
       );
     }
     throw new Error(

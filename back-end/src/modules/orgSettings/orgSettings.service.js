@@ -14,6 +14,7 @@ const DEFAULTS = {
   attendanceLockEnabled: true,
   attendanceLockAfterDays: 7,
   attendanceLockMode: "payroll_cutoff",
+  attendanceLockDay: 25,
   timezone: "Asia/Kolkata",
   logoUrl: "",
   payrollCutoffDay: 25,
@@ -74,6 +75,11 @@ exports.get = async (req) => {
     await settings.save();
   }
 
+  if (settings.attendanceLockDay === undefined || settings.attendanceLockDay === null) {
+    settings.attendanceLockDay = Number(settings.payrollCutoffDay ?? 25);
+    await settings.save();
+  }
+
   return settings;
 };
 
@@ -85,6 +91,7 @@ exports.upsert = async (req) => {
     attendanceLockEnabled,
     attendanceLockAfterDays,
     attendanceLockMode,
+    attendanceLockDay,
     timezone,
     logoUpload,
     payrollCutoffDay,
@@ -156,6 +163,7 @@ exports.upsert = async (req) => {
       attendanceLockEnabled,
       attendanceLockAfterDays,
       attendanceLockMode,
+      attendanceLockDay,
       timezone,
       logoUrl,
       payrollCutoffDay,

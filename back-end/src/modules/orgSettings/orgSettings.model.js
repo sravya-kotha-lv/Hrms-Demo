@@ -38,6 +38,10 @@ const orgSettingsSchema = new mongoose.Schema(
       enum: ["days_window", "payroll_cutoff"],
       default: "payroll_cutoff"
     },
+    attendanceLockDay: {
+      type: Number,
+      default: 25
+    },
     timezone: {
       type: String,
       default: "Asia/Kolkata"
