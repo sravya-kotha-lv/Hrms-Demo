@@ -554,6 +554,8 @@ const AddEmployee = () => {
   const [savingSalary, setSavingSalary] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
   const [hasSavedBankDetails, setHasSavedBankDetails] = useState(false);
+  const [currentBankEffectiveFrom, setCurrentBankEffectiveFrom] = useState("");
+  const [hasSavedStatutoryDetails, setHasSavedStatutoryDetails] = useState(false);
   const [lookingUpIfsc, setLookingUpIfsc] = useState(false);
   const [lookingUpAccount, setLookingUpAccount] = useState(false);
   const [salaryStructures, setSalaryStructures] = useState<SalaryStructureRow[]>([]);
@@ -666,6 +668,42 @@ const AddEmployee = () => {
     salaryEditMode === "update" &&
     Boolean(selectedSalaryRevision?.effective_to) &&
     selectedSalaryRevision?.id !== openSalaryRevision?.id;
+  const bankIsCurrentRevision =
+    Boolean(hasSavedBankDetails) &&
+    Boolean(currentBankEffectiveFrom) &&
+    String(bankForm.effectiveFrom || "") === currentBankEffectiveFrom;
+  const salarySaveButtonLabel = selectedSalaryRevisionIsClosed
+    ? "View Only - Cannot Update"
+    : savingSalary
+      ? salaryEditMode === "revision"
+        ? "Creating Salary Revision..."
+        : "Updating Current Salary..."
+      : salaryEditMode === "revision"
+        ? "Create Salary Revision"
+        : "Update Current Salary";
+  const bankSaveButtonLabel = savingBank
+    ? "Saving Bank Details..."
+    : hasSavedBankDetails
+      ? bankIsCurrentRevision
+        ? "Update Current Bank Details"
+        : "Create Bank Revision"
+      : "Save Bank Details";
+  const statutorySaveButtonLabel = savingStatutory
+    ? "Saving..."
+    : hasSavedStatutoryDetails
+      ? "Create Statutory Revision"
+      : "Save Tax & Statutory";
+  const salaryModeBadgeLabel = !salaryStructures.length
+    ? "New"
+    : salaryEditMode === "revision"
+      ? "Revision"
+      : "Current";
+  const bankModeBadgeLabel = !hasSavedBankDetails
+    ? "New"
+    : bankIsCurrentRevision
+      ? "Current"
+      : "Revision";
+  const statutoryModeBadgeLabel = !hasSavedStatutoryDetails ? "New" : "Revision";
   const employeeIdCardData = useMemo(
     () => ({
       firstName: form.firstName,
@@ -1309,6 +1347,7 @@ const AddEmployee = () => {
         prev.effectiveFrom
     }));
     setHasSavedBankDetails(Boolean(currentBank));
+    setCurrentBankEffectiveFrom((currentBank?.effective_from || "").slice(0, 10));
 
     setStatutoryForm((prev) => ({
       ...prev,
@@ -1345,6 +1384,7 @@ const AddEmployee = () => {
       deduction80dAnnual: String(taxDeclaration.deduction80dAnnual ?? ""),
       deduction80OtherAnnual: String(taxDeclaration.deduction80OtherAnnual ?? "")
     }));
+    setHasSavedStatutoryDetails(Boolean(currentStatutory));
   };
 
   const fetchPayrollComponents = async (payGroupId: string) => {
@@ -2052,7 +2092,14 @@ const AddEmployee = () => {
         return;
       }
 
-      toast.success("Bank details saved");
+      const bankAction = String(saveBankRes.data?.saveAction || "");
+      toast.success(
+        bankAction === "updated_current"
+          ? "Current bank details updated"
+          : bankAction === "created_revision"
+            ? "New bank revision created"
+            : "Bank details saved"
+      );
       setEditableSections((prev) => ({ ...prev, bank: false }));
       fetchPayrollData();
     } finally {
@@ -3131,7 +3178,12 @@ const AddEmployee = () => {
                 <div className="flex flex-col gap-3 border-b pb-5 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-primary">Compensation workspace</p>
-                    <h2 className="mt-1 text-2xl font-semibold text-foreground">Salary Details</h2>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <h2 className="text-2xl font-semibold text-foreground">Salary Details</h2>
+                      <Badge variant="outline" className="rounded-md">
+                        {salaryModeBadgeLabel}
+                      </Badge>
+                    </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       Add payroll, salary rules, statutory contributions, and employee-specific components in one flow.
                     </p>
@@ -4581,20 +4633,16 @@ const AddEmployee = () => {
                     </p>
                   )}
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Saving with the same Effective From updates the current salary record. Changing the
+                  Effective From creates a new salary revision for future payroll periods.
+                </p>
                 <div className="flex justify-end">
                   <Button
                     onClick={handleSaveSalary}
                     disabled={savingSalary || isSectionReadOnly("salary")}
                   >
-                    {selectedSalaryRevisionIsClosed
-                      ? "View Only - Cannot Update"
-                      : savingSalary
-                      ? salaryEditMode === "revision"
-                        ? "Creating Revision..."
-                        : "Updating Salary..."
-                      : salaryEditMode === "revision"
-                        ? "Create Revision"
-                        : "Update Salary"}
+                    {salarySaveButtonLabel}
                   </Button>
                 </div>
               </>
@@ -4617,6 +4665,18 @@ const AddEmployee = () => {
               </p>
             ) : (
               <>
+                <div className="flex items-center justify-between gap-3 border-b pb-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary">Tax workspace</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <h2 className="text-2xl font-semibold text-foreground">Tax & Statutory</h2>
+                      <Badge variant="outline" className="rounded-md">
+                        {statutoryModeBadgeLabel}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="rounded-md border bg-muted/30 p-3">
                   <p className="text-sm font-medium">TDS Estimation Inputs</p>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -4790,9 +4850,13 @@ const AddEmployee = () => {
                     monthly TDS during run computation.
                   </p>
                   <Button onClick={handleSaveStatutory} disabled={savingStatutory}>
-                    {savingStatutory ? "Saving..." : "Save Tax & Statutory"}
+                    {statutorySaveButtonLabel}
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Statutory details are saved as revisions. Use a new Effective From date for a new
+                  revision; reusing an existing date may be rejected by the system.
+                </p>
               </>
             )}
           </fieldset>
@@ -4811,8 +4875,20 @@ const AddEmployee = () => {
               <p className="text-sm text-muted-foreground">
                 You need `PAYROLL_CONFIG_MANAGE` permission to configure bank details.
               </p>
-        ) : (
+            ) : (
               <>
+                <div className="flex items-center justify-between gap-3 border-b pb-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary">Payment workspace</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <h2 className="text-2xl font-semibold text-foreground">Bank Details</h2>
+                      <Badge variant="outline" className="rounded-md">
+                        {bankModeBadgeLabel}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
                 {isSectionReadOnly("bank") && !hasSavedBankDetails && (
                   <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
                     No bank details are saved yet for this employee. Click <span className="font-medium text-foreground">Edit</span>, enter the bank details, and then use <span className="font-medium text-foreground">Save Bank Details</span>.
@@ -4990,13 +5066,18 @@ const AddEmployee = () => {
                 </div>
 
                 <p className="text-xs text-muted-foreground">
+                  Saving with the same Effective From updates the current bank record. Changing the
+                  Effective From creates a new bank revision.
+                </p>
+
+                <p className="text-xs text-muted-foreground">
                   If payment mode is Bank Transfer, account holder, bank name, account number, and
                   IFSC are required for payroll disbursement validation.
                 </p>
 
                 <div className="flex justify-end">
                   <Button onClick={handleSaveBank} disabled={savingBank || isSectionReadOnly("bank")}>
-                    {savingBank ? "Saving Bank Details..." : "Save Bank Details"}
+                    {bankSaveButtonLabel}
                   </Button>
                 </div>
               </>

@@ -1,6 +1,7 @@
 const { getPayrollPgPool } = require("../../config/payrollDb");
 const Employee = require("../employees/employee.model");
 const Organization = require("../organizations/organization.model");
+const OrgSettings = require("../orgSettings/orgSettings.model");
 const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
 
 const toNumber = (value, fallback = 0) => {
@@ -164,7 +165,13 @@ const getOrganizationBrief = async (organizationId) => {
   const org = await Organization.findById(organizationId)
     .select("name code currency timezone")
     .lean();
-  return org || null;
+  const settings = await OrgSettings.findOne({ organizationId })
+    .select("logoUrl")
+    .lean();
+  return {
+    ...(org || null),
+    logoUrl: settings?.logoUrl || null
+  };
 };
 
 const fetchRunContext = async (client, tenantId, runId, employeeExternalId) => {
@@ -379,7 +386,8 @@ const buildPayslipPayload = ({
     company: {
       name: organization?.name || null,
       code: organization?.code || null,
-      timezone: organization?.timezone || "Asia/Kolkata"
+      timezone: organization?.timezone || "Asia/Kolkata",
+      logoUrl: organization?.logoUrl || null
     },
     employee: {
       employeeExternalId: runEmployee.employee_external_id,
@@ -427,6 +435,7 @@ const buildPayslipPayload = ({
     header: {
       companyName: payslipJson.company.name,
       companyCode: payslipJson.company.code,
+      companyLogoUrl: payslipJson.company.logoUrl,
       payslipMonth: run.pay_month,
       payrollRunCode: run.run_code
     },

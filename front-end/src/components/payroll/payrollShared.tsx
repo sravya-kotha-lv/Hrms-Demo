@@ -131,11 +131,41 @@ export const toMonthValue = (date: Date) => {
   return `${y}-${m}`;
 };
 
-export const buildMonthOptions = () => {
+type BuildMonthOptionsParams = {
+  payrollCutoffDay?: number | null;
+  payrollSalaryPayDay?: number | null;
+  months?: number;
+  baseDate?: Date;
+};
+
+const normalizePayrollDay = (value: number | null | undefined, fallback: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const day = Math.floor(parsed);
+  if (day < 1 || day > 31) return fallback;
+  return day;
+};
+
+export const getPayrollCycleMonth = (params: BuildMonthOptionsParams = {}) => {
+  const baseDate = params.baseDate ? new Date(params.baseDate) : new Date();
+  const cutoffDay = normalizePayrollDay(params.payrollCutoffDay, 25);
+  const salaryPayDay = normalizePayrollDay(params.payrollSalaryPayDay, 30);
+  const isCrossMonthPayroll = salaryPayDay < cutoffDay;
+
+  if (isCrossMonthPayroll && baseDate.getDate() <= salaryPayDay) {
+    baseDate.setMonth(baseDate.getMonth() - 1);
+  }
+
+  return toMonthValue(baseDate);
+};
+
+export const buildMonthOptions = (params: BuildMonthOptionsParams = {}) => {
   const options: string[] = [];
-  const now = new Date();
-  for (let i = 0; i < 12; i += 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+  const monthCount = Math.max(1, Math.min(24, Math.floor(Number(params.months || 12))));
+  const anchorMonth = getPayrollCycleMonth(params);
+  const [year, month] = anchorMonth.split("-").map(Number);
+  for (let i = 0; i < monthCount; i += 1) {
+    const d = new Date(year, month - 1 - i, 1);
     options.push(toMonthValue(d));
   }
   return options;

@@ -1182,15 +1182,93 @@ exports.upsertBankDetail = async (req) => {
 
     await client.query("BEGIN");
 
-    const versionRes = await client.query(
+    const currentRes = await client.query(
       `
-        SELECT COALESCE(MAX(version_no), 0) + 1 AS next_version
+        SELECT *
         FROM employee_bank_details
-        WHERE employee_payroll_profile_id = $1
+        WHERE id = (
+          SELECT id
+          FROM employee_bank_details
+          WHERE employee_payroll_profile_id = $1
+          ORDER BY version_no DESC, effective_from DESC, created_at DESC
+          LIMIT 1
+        )
+        FOR UPDATE
       `,
       [profileId]
     );
-    const nextVersion = Number(versionRes.rows[0]?.next_version || 1);
+    const currentRow = currentRes.rows[0] || null;
+    const targetEffectiveFrom = new Date(p.effectiveFrom);
+    if (Number.isNaN(targetEffectiveFrom.getTime())) {
+      throw { code: 400, message: "Invalid effectiveFrom date" };
+    }
+
+    if (currentRow && String(currentRow.effective_from || "").slice(0, 10) === String(p.effectiveFrom).slice(0, 10)) {
+      const updatedRes = await client.query(
+        `
+          UPDATE employee_bank_details
+          SET
+            account_holder_name = $3,
+            bank_name = $4,
+            branch_name = $5,
+            account_number = $6,
+            ifsc_code = $7,
+            account_type = $8,
+            payment_mode = $9,
+            upi_id = $10,
+            is_primary = $11,
+            is_verified = $12,
+            effective_to = $13,
+            metadata = $14::jsonb,
+            updated_by = $15,
+            updated_at = NOW()
+          WHERE id = $1
+            AND tenant_id = $2
+          RETURNING *
+        `,
+        [
+          currentRow.id,
+          tenantId,
+          p.accountHolderName || null,
+          p.bankName || null,
+          p.branchName || null,
+          p.accountNumber || null,
+          p.ifscCode || null,
+          p.accountType || "savings",
+          p.paymentMode || "bank_transfer",
+          p.upiId || null,
+          p.isPrimary ?? true,
+          p.isVerified ?? false,
+          p.effectiveTo || null,
+          JSON.stringify(p.metadata || {}),
+          actorId
+        ]
+      );
+      await client.query("COMMIT");
+      return {
+        ...updatedRes.rows[0],
+        saveAction: "updated_current"
+      };
+    }
+
+    const nextVersion = Number(currentRow?.version_no || 0) + 1 || 1;
+    if (currentRow?.effective_to == null && currentRow?.is_primary) {
+      const closedEffectiveTo = new Date(targetEffectiveFrom);
+      closedEffectiveTo.setDate(closedEffectiveTo.getDate() - 1);
+      await client.query(
+        `
+          UPDATE employee_bank_details
+          SET
+            effective_to = $2,
+            is_primary = FALSE,
+            updated_by = $3,
+            updated_at = NOW()
+          WHERE id = $1
+            AND tenant_id = $4
+        `,
+        [currentRow.id, closedEffectiveTo.toISOString().slice(0, 10), actorId, tenantId]
+      );
+    }
 
     const result = await client.query(
       `
@@ -1217,9 +1295,9 @@ exports.upsertBankDetail = async (req) => {
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$17)
         RETURNING *
       `,
-      [
-        tenantId,
-        profileId,
+        [
+          tenantId,
+          profileId,
         p.accountHolderName || null,
         p.bankName || null,
         p.branchName || null,
@@ -1231,14 +1309,17 @@ exports.upsertBankDetail = async (req) => {
         p.isPrimary ?? true,
         p.isVerified ?? false,
         p.effectiveFrom,
-        p.effectiveTo || null,
-        nextVersion,
-        JSON.stringify(p.metadata || {}),
-        actorId
-      ]
-    );
+          p.effectiveTo || null,
+          nextVersion,
+          JSON.stringify(p.metadata || {}),
+          actorId
+        ]
+      );
     await client.query("COMMIT");
-    return result.rows[0];
+    return {
+      ...result.rows[0],
+      saveAction: "created_revision"
+    };
   } catch (error) {
     await safeRollback(client);
     throw error;

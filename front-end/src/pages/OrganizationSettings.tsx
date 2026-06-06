@@ -33,6 +33,7 @@ const OrganizationSettings = () => {
   const [attendanceLockEnabled, setAttendanceLockEnabled] = useState(true);
   const [attendanceLockAfterDays, setAttendanceLockAfterDays] = useState(7);
   const [attendanceLockMode, setAttendanceLockMode] = useState("payroll_cutoff");
+  const [attendanceLockDay, setAttendanceLockDay] = useState(25);
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [maxActiveLoginsPerUser, setMaxActiveLoginsPerUser] = useState(1);
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
@@ -52,6 +53,12 @@ const OrganizationSettings = () => {
   const [probationPeriodDays, setProbationPeriodDays] = useState(90);
   const [noticePeriodDays, setNoticePeriodDays] = useState(30);
   const [employeeIdPrefix, setEmployeeIdPrefix] = useState("");
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
+  const [logoUpload, setLogoUpload] = useState<null | {
+    fileName: string;
+    mimeType: string;
+    base64Data: string;
+  }>(null);
   const [loading, setLoading] = useState(false);
   const canView = hasAnyPermission(["ORG_SETTINGS_VIEW"]);
   const canManage = hasAnyPermission(["ORG_SETTINGS_MANAGE"]);
@@ -72,6 +79,13 @@ const OrganizationSettings = () => {
         typeof res.data?.attendanceLockAfterDays === "number" ? res.data.attendanceLockAfterDays : 7
       );
       setAttendanceLockMode(res.data?.attendanceLockMode || "payroll_cutoff");
+      setAttendanceLockDay(
+        typeof res.data?.attendanceLockDay === "number"
+          ? res.data.attendanceLockDay
+          : typeof res.data?.payrollCutoffDay === "number"
+            ? res.data.payrollCutoffDay
+            : 25
+      );
       setTimezone(res.data?.timezone || "Asia/Kolkata");
       setMaxActiveLoginsPerUser(
         typeof res.data?.maxActiveLoginsPerUser === "number" ? res.data.maxActiveLoginsPerUser : 1
@@ -118,6 +132,8 @@ const OrganizationSettings = () => {
         typeof res.data?.noticePeriodDays === "number" ? res.data.noticePeriodDays : 30
       );
       setEmployeeIdPrefix(String(res.data?.employeeIdPrefix || ""));
+      setLogoPreviewUrl(String(res.data?.logoUrl || ""));
+      setLogoUpload(null);
     } else {
       toast.error(res?.message || "Failed to load settings");
     }
@@ -137,6 +153,7 @@ const OrganizationSettings = () => {
         attendanceLockEnabled,
         attendanceLockAfterDays: Number(attendanceLockAfterDays),
         attendanceLockMode,
+        attendanceLockDay: Number(attendanceLockDay),
         timezone,
         maxActiveLoginsPerUser: Number(maxActiveLoginsPerUser || 1),
         payrollCutoffDay: Number(payrollCutoffDay),
@@ -155,13 +172,18 @@ const OrganizationSettings = () => {
         attendanceDevBypassEnabled,
         probationPeriodDays: Number(probationPeriodDays),
         noticePeriodDays: Number(noticePeriodDays),
-        employeeIdPrefix: employeeIdPrefix.trim().toUpperCase()
+        employeeIdPrefix: employeeIdPrefix.trim().toUpperCase(),
+        ...(logoUpload ? { logoUpload } : {})
       }, null, { requiredPermissions: ["ORG_SETTINGS_MANAGE"] });
       if (res?.skipped) return;
       if (res?.success) {
         if (timezone) {
           setOrgTimeZone(timezone);
         }
+        if (res.data?.logoUrl) {
+          setLogoPreviewUrl(String(res.data.logoUrl));
+        }
+        setLogoUpload(null);
         toast.success("Settings saved");
       } else {
         toast.error(res?.message || "Save failed");
@@ -204,6 +226,42 @@ const OrganizationSettings = () => {
                 {canManage
                   ? "You can update and save policy changes."
                   : "You can view settings but cannot update them."}
+              </p>
+            </div>
+          </div>
+          <div className="relative mt-5 flex flex-col gap-4 rounded-2xl border border-white/70 bg-white/80 p-4 backdrop-blur sm:flex-row sm:items-center">
+            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+              {logoPreviewUrl ? (
+                <img src={logoPreviewUrl} alt="Organization logo preview" className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-xs text-slate-400">No logo</span>
+              )}
+            </div>
+            <div className="flex-1 space-y-2">
+              <label className="text-sm font-medium">Organization Logo</label>
+              <Input
+                type="file"
+                accept=".png,.jpg,.jpeg,.webp"
+                disabled={!canManage}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const result = String(reader.result || "");
+                    const base64Data = result.includes(",") ? result.split(",")[1] : "";
+                    setLogoPreviewUrl(result);
+                    setLogoUpload({
+                      fileName: file.name,
+                      mimeType: file.type || "image/png",
+                      base64Data
+                    });
+                  };
+                  reader.readAsDataURL(file);
+                }}
+              />
+              <p className="text-xs text-slate-500">
+                Upload a PNG, JPG, or WEBP logo. It will appear on employee payslips and PDF downloads.
               </p>
             </div>
           </div>
@@ -370,7 +428,7 @@ const OrganizationSettings = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="days_window">By days window</SelectItem>
-                      <SelectItem value="payroll_cutoff">By payroll cutoff</SelectItem>
+                      <SelectItem value="payroll_cutoff">By attendance lock day</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -385,6 +443,21 @@ const OrganizationSettings = () => {
                     disabled={!canManage || !attendanceLockEnabled || attendanceLockMode !== "days_window"}
                     placeholder="Ex: 7"
                   />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Attendance Lock Day</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={attendanceLockDay}
+                    onChange={(e) => setAttendanceLockDay(Number(e.target.value))}
+                    disabled={!canManage || !attendanceLockEnabled || attendanceLockMode !== "payroll_cutoff"}
+                    placeholder="Ex: 9"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Attendance edits lock from this day of the month. This is separate from the payroll cutoff day.
+                  </p>
                 </div>
               </div>
             </div>
@@ -419,7 +492,7 @@ const OrganizationSettings = () => {
                   placeholder="Ex: 25"
                 />
                 <p className="text-xs text-muted-foreground">
-                  This is the single payroll cutoff used for attendance lock rules and payroll setup defaults.
+                  This is used for payroll setup defaults and pay-group provisioning.
                 </p>
               </div>
 

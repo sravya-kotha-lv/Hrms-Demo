@@ -39,12 +39,19 @@ import {
 
 const PayrollEmployees = () => {
   const navigate = useNavigate();
-  const monthOptions = useMemo(() => buildMonthOptions(), []);
   const canManageConfig = hasAnyPermission(["PAYROLL_CONFIG_MANAGE"]);
   const canCreateRun = hasAnyPermission(["PAYROLL_RUN_CREATE"]);
   const canViewReports = hasAnyPermission(["PAYROLL_REPORT_VIEW"]);
   const [settings, setSettings] = useState<any>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const monthOptions = useMemo(
+    () =>
+      buildMonthOptions({
+        payrollCutoffDay: settings?.payrollCutoffDay,
+        payrollSalaryPayDay: settings?.payrollSalaryPayDay
+      }),
+    [settings?.payrollCutoffDay, settings?.payrollSalaryPayDay]
+  );
   const [payGroups, setPayGroups] = useState<PayGroup[]>([]);
   const [selectedPayGroupId, setSelectedPayGroupId] = useState("");
   const [employeeProfiles, setEmployeeProfiles] = useState<EmployeePayrollProfile[]>([]);
@@ -54,7 +61,7 @@ const PayrollEmployees = () => {
   const [employeeNameMap, setEmployeeNameMap] = useState<Record<string, string>>({});
   const [employeeCodeMap, setEmployeeCodeMap] = useState<Record<string, string>>({});
   const [employeeProfileImageMap, setEmployeeProfileImageMap] = useState<Record<string, string>>({});
-  const [monthFilter, setMonthFilter] = useState(monthOptions[0]);
+  const [monthFilter, setMonthFilter] = useState("");
 
   const selectedPayGroup = useMemo(
     () => payGroups.find((group) => group.id === selectedPayGroupId) || null,
@@ -180,6 +187,13 @@ const PayrollEmployees = () => {
   }, [loadEmployeeDirectory]);
 
   useEffect(() => {
+    if (!monthOptions.length) return;
+    if (!monthFilter || !monthOptions.includes(monthFilter)) {
+      setMonthFilter(monthOptions[0]);
+    }
+  }, [monthFilter, monthOptions]);
+
+  useEffect(() => {
     if (!settingsLoaded || settings?.payrollEnabled === false) return;
     loadPayGroups();
   }, [loadPayGroups, settingsLoaded, settings?.payrollEnabled]);
@@ -205,7 +219,7 @@ const PayrollEmployees = () => {
   }, [loadEmployeeProfiles, selectedPayGroupId]);
 
   useEffect(() => {
-    if (!settingsLoaded || settings?.payrollEnabled === false) return;
+    if (!settingsLoaded || settings?.payrollEnabled === false || !monthFilter) return;
     loadAttendanceSnapshots(monthFilter);
   }, [loadAttendanceSnapshots, monthFilter, settingsLoaded, settings?.payrollEnabled]);
 

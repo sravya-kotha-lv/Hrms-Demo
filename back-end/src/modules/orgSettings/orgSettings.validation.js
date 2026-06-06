@@ -1,6 +1,12 @@
 const Joi = require("joi");
 const { getDefaultMaxActiveLoginsPerUser } = require("../../utils/orgSettingsDefaults");
 
+const uploadSchema = Joi.object({
+  fileName: Joi.string().required(),
+  mimeType: Joi.string().required(),
+  base64Data: Joi.string().required()
+});
+
 exports.upsertOrgSettingsSchema = Joi.object({
   leaveCreditFrequency: Joi.string().valid("monthly", "quarterly", "yearly").required(),
   leaveTypeCreditMode: Joi.string().valid("current_month_onwards", "full_year").required(),
@@ -8,7 +14,9 @@ exports.upsertOrgSettingsSchema = Joi.object({
   attendanceLockEnabled: Joi.boolean().default(true),
   attendanceLockAfterDays: Joi.number().integer().min(0).max(365).default(7),
   attendanceLockMode: Joi.string().valid("days_window", "payroll_cutoff").default("payroll_cutoff"),
+  attendanceLockDay: Joi.number().integer().min(1).max(31).default(25),
   timezone: Joi.string().required(),
+  logoUpload: uploadSchema.optional(),
   payrollCutoffDay: Joi.number().integer().min(1).max(31).default(25),
   payrollSalaryPayDay: Joi.number().integer().min(1).max(31).default(30),
   payrollEnabled: Joi.boolean().default(false),

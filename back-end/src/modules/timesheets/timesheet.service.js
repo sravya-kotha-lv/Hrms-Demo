@@ -1264,11 +1264,17 @@ const resolveAttendanceDisplayStatus = ({
   leaveType,
   leaveDuration,
   attendanceStatus,
+  hasAttendanceOverride,
   isFuture,
   snapshotGenerated
 }) => {
   // When sandwich rule turns a holiday/week off into a deducted leave day,
   // the calendar should reflect the leave outcome rather than the base day type.
+  if (hasAttendanceOverride && ["present", "half_day_present", "full_day_present", "absent"].includes(attendanceStatus)) {
+    if (attendanceStatus === "half_day_present") return "Half Day";
+    if (attendanceStatus === "present" || attendanceStatus === "full_day_present") return "Present";
+    return "Absent";
+  }
   if (isOnLeave && leaveDuration === "full_day" && leaveType) return "Leave";
   if (isHoliday) return "Holiday";
   if (isWeekOff) return "Week Off";
@@ -1465,6 +1471,7 @@ const decorateAttendanceCell = ({
     leaveType: cell.leaveType || null,
     leaveDuration: cell.leaveDuration || null,
     attendanceStatus: cell.status,
+    hasAttendanceOverride: Boolean(cell.overriddenBy),
     isFuture: dayKey > todayKey,
     snapshotGenerated
   });
@@ -1722,7 +1729,7 @@ const assertManageAccessForEmployee = async (req, employeeId) => {
 
 const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone = "UTC") => {
   const settings = await OrgSettings.findOne({ organizationId })
-    .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay");
+    .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode attendanceLockDay payrollCutoffDay");
 
   const target = startOfDayInTimeZone(dateValue, timeZone);
   const today = startOfDayInTimeZone(new Date(), timeZone);
@@ -1747,17 +1754,18 @@ const validateAttendanceEditWindow = async (organizationId, dateValue, timeZone 
     return;
   }
 
-  const cutoffDay = Number(settings.payrollCutoffDay ?? 25);
+  const cutoffDay = Number(settings.attendanceLockDay ?? settings.payrollCutoffDay ?? 25);
   const currentDay = getDayInTimeZone(today, timeZone);
 
   // payroll_cutoff mode policy:
-  // - Before cutoff day: dates after the previous month's cutoff remain editable.
-  // - On or after cutoff day: dates after the current month's cutoff remain editable.
-  // This means once the cutoff day arrives, the cutoff day and any older dates are locked.
+  // - Before cutoff day: any past date remains editable.
+  // - On or after cutoff day: the current month's cutoff day and older dates are locked.
+  if (currentDay < cutoffDay) {
+    return;
+  }
+
   const [todayYear, todayMonth] = todayKey.split("-").map(Number);
-  const lockUntilKey = currentDay >= cutoffDay
-    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`
-    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
+  const lockUntilKey = `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
 
   if (targetKey <= lockUntilKey) {
     throw new Error(`Attendance is locked through payroll cutoff date ${lockUntilKey}`);
@@ -1776,6 +1784,7 @@ const getAttendanceLockWindowMeta = (settings, timeZone = "UTC", now = new Date(
       attendanceLockMode: mode,
       attendanceLockAfterDays: Number(settings?.attendanceLockAfterDays ?? 7),
       payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+      attendanceLockDay: Number(settings?.attendanceLockDay ?? settings?.payrollCutoffDay ?? 25),
       todayKey,
       lockedThroughDateKey: null
     };
@@ -1788,23 +1797,35 @@ const getAttendanceLockWindowMeta = (settings, timeZone = "UTC", now = new Date(
       attendanceLockMode: mode,
       attendanceLockAfterDays,
       payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+      attendanceLockDay: Number(settings?.attendanceLockDay ?? settings?.payrollCutoffDay ?? 25),
       todayKey,
       lockedThroughDateKey: addDaysToDateKey(todayKey, -attendanceLockAfterDays)
     };
   }
 
-  const cutoffDay = Number(settings?.payrollCutoffDay ?? 25);
+  const cutoffDay = Number(settings?.attendanceLockDay ?? settings?.payrollCutoffDay ?? 25);
   const currentDay = getDayInTimeZone(today, timeZone);
+  if (currentDay < cutoffDay) {
+    return {
+      attendanceLockEnabled: true,
+      attendanceLockMode: mode,
+      attendanceLockAfterDays: Number(settings?.attendanceLockAfterDays ?? 7),
+      payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+      attendanceLockDay: cutoffDay,
+      todayKey,
+      lockedThroughDateKey: null
+    };
+  }
+
   const [todayYear, todayMonth] = todayKey.split("-").map(Number);
-  const lockedThroughDateKey = currentDay >= cutoffDay
-    ? `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`
-    : `${todayMonth === 1 ? todayYear - 1 : todayYear}-${String(todayMonth === 1 ? 12 : todayMonth - 1).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
+  const lockedThroughDateKey = `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(cutoffDay).padStart(2, "0")}`;
 
   return {
     attendanceLockEnabled: true,
     attendanceLockMode: mode,
     attendanceLockAfterDays: Number(settings?.attendanceLockAfterDays ?? 7),
-    payrollCutoffDay: cutoffDay,
+    payrollCutoffDay: Number(settings?.payrollCutoffDay ?? 25),
+    attendanceLockDay: cutoffDay,
     todayKey,
     lockedThroughDateKey
   };
@@ -3965,7 +3986,7 @@ exports.lockAttendanceMonth = async (req) => {
   const { start, end } = parseMonthRangeInTimeZone(req.body.month, organizationTimeZone);
   const monthEndDateKey = toDateKeyInTimeZone(end, organizationTimeZone);
   const settings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
-    .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode payrollCutoffDay");
+    .select("attendanceLockEnabled attendanceLockAfterDays attendanceLockMode attendanceLockDay payrollCutoffDay");
   const scopedEmployeeIds = await getScopedEmployeeIdsForViewer(req);
 
   const attendanceQuery = {
@@ -4450,11 +4471,14 @@ exports.recallWeekly = async (req) => {
 };
 
 exports.__private__ = {
+  validateAttendanceEditWindow,
+  getAttendanceLockWindowMeta,
   getAttendanceRowDayKey,
   getAttendanceRowNormalizedDate,
   mergeAttendanceRowsByEmployeeDay,
   isNoOpAttendanceOverride,
   buildAttendanceOverrideUpdate,
   buildAttendanceMatrixEmployeeQuery,
-  resolveOvertimeMinutes
+  resolveOvertimeMinutes,
+  resolveAttendanceDisplayStatus
 };

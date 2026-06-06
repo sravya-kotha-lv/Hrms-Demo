@@ -243,7 +243,7 @@ const administratorSections: DocSection[] = [
     category: "Policies And Configuration",
     title: "Organization Settings And Policies",
     points: [
-      "Organization Settings control timezone, leave credit behavior, sandwich rule, attendance lock, and payroll-sensitive policy options.",
+      "Organization Settings control timezone, leave credit behavior, sandwich rule, attendance lock day, attendance lock mode, and payroll-sensitive policy options.",
       "Changes to policy settings can affect leave calculation, attendance edit windows, and month-end payroll readiness.",
       "Review holiday setup, week off setup, leave types, and organization settings together because these modules influence one another."
     ],
