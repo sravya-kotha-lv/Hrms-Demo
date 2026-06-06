@@ -1264,11 +1264,17 @@ const resolveAttendanceDisplayStatus = ({
   leaveType,
   leaveDuration,
   attendanceStatus,
+  hasAttendanceOverride,
   isFuture,
   snapshotGenerated
 }) => {
   // When sandwich rule turns a holiday/week off into a deducted leave day,
   // the calendar should reflect the leave outcome rather than the base day type.
+  if (hasAttendanceOverride && ["present", "half_day_present", "full_day_present", "absent"].includes(attendanceStatus)) {
+    if (attendanceStatus === "half_day_present") return "Half Day";
+    if (attendanceStatus === "present" || attendanceStatus === "full_day_present") return "Present";
+    return "Absent";
+  }
   if (isOnLeave && leaveDuration === "full_day" && leaveType) return "Leave";
   if (isHoliday) return "Holiday";
   if (isWeekOff) return "Week Off";
@@ -1465,6 +1471,7 @@ const decorateAttendanceCell = ({
     leaveType: cell.leaveType || null,
     leaveDuration: cell.leaveDuration || null,
     attendanceStatus: cell.status,
+    hasAttendanceOverride: Boolean(cell.overriddenBy),
     isFuture: dayKey > todayKey,
     snapshotGenerated
   });
@@ -4472,5 +4479,6 @@ exports.__private__ = {
   isNoOpAttendanceOverride,
   buildAttendanceOverrideUpdate,
   buildAttendanceMatrixEmployeeQuery,
-  resolveOvertimeMinutes
+  resolveOvertimeMinutes,
+  resolveAttendanceDisplayStatus
 };

@@ -143,3 +143,41 @@ test("attendance lock day locks previous month attendance on and after cutoff da
     restore();
   }
 });
+
+test("attendance override takes priority over leave in display status", async () => {
+  const { service, restore } = loadTimesheetService({});
+
+  try {
+    assert.equal(
+      service.__private__.resolveAttendanceDisplayStatus({
+        isHoliday: false,
+        isWeekOff: false,
+        isOnLeave: true,
+        leaveType: "SICK",
+        leaveDuration: "full_day",
+        attendanceStatus: "half_day_present",
+        hasAttendanceOverride: true,
+        isFuture: false,
+        snapshotGenerated: false
+      }),
+      "Half Day"
+    );
+
+    assert.equal(
+      service.__private__.resolveAttendanceDisplayStatus({
+        isHoliday: false,
+        isWeekOff: false,
+        isOnLeave: true,
+        leaveType: "SICK",
+        leaveDuration: "full_day",
+        attendanceStatus: "present",
+        hasAttendanceOverride: true,
+        isFuture: false,
+        snapshotGenerated: false
+      }),
+      "Present"
+    );
+  } finally {
+    restore();
+  }
+});
