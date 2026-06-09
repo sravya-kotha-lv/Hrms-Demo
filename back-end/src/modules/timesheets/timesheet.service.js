@@ -2288,6 +2288,8 @@ exports.checkOut = async (req) => {
   const shouldBypassPolicyChecks = process.env.NODE_ENV !== "production"
     && Boolean(attendanceSecurity?.attendanceDevBypassEnabled);
   const isMultiPunchEnabled = Boolean(attendanceSecurity?.attendanceMultiPunchEnabled);
+  const checkOutLatitude = req.body?.latitude;
+  const checkOutLongitude = req.body?.longitude;
   const checkOutSelfieImage = req.body?.selfieImage || null;
   const checkOutSelfieProvided = Boolean(req.body?.selfieImage);
 
@@ -2369,6 +2371,8 @@ exports.checkOut = async (req) => {
       action: "check_out",
       at: now,
       ip: checkOutIp,
+      latitude: checkOutLatitude,
+      longitude: checkOutLongitude,
       selfieProvided: checkOutSelfieProvided,
       selfieImage: checkOutSelfieImage
     })

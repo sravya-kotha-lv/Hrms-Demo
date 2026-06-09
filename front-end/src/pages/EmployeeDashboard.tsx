@@ -699,7 +699,7 @@ const EmployeeDashboard = () => {
     return Number(attendanceToday?.lateByMinutes || 0) > 0;
   }, [attendanceToday]);
 
-  const getCheckInLocation = async () => {
+  const getCurrentLocation = async (actionLabel: "check-in" | "check-out") => {
     if (!navigator.geolocation) {
       throw new Error("Location is not supported on this browser");
     }
@@ -750,7 +750,7 @@ const EmployeeDashboard = () => {
 
     const buildLocationErrorMessage = (error: GeolocationPositionError) => {
       if (error.code === error.PERMISSION_DENIED) {
-        return "Location permission is required for check-in";
+        return `Location permission is required for ${actionLabel}`;
       }
       if (error.code === error.TIMEOUT) {
         return "Unable to get location. Please turn on device location and try again.";
@@ -758,7 +758,7 @@ const EmployeeDashboard = () => {
       if (error.code === error.POSITION_UNAVAILABLE) {
         return "Current location is unavailable. Please turn on device location, disable VPN/location blockers, and try again.";
       }
-      return error.message || "Unable to get current location for check-in";
+      return error.message || `Unable to get current location for ${actionLabel}`;
     };
 
     try {
@@ -772,14 +772,14 @@ const EmployeeDashboard = () => {
     } catch (error) {
       const geoError = error as GeolocationPositionError;
       if (geoError.code === geoError.PERMISSION_DENIED) {
-        throw new Error("Location permission is required for check-in");
+        throw new Error(`Location permission is required for ${actionLabel}`);
       }
       try {
         return await readPosition({ enableHighAccuracy: false, timeout: 30000, maximumAge: 300000 });
       } catch (fallbackError) {
         const fallbackGeoError = fallbackError as GeolocationPositionError;
         if (fallbackGeoError.code === fallbackGeoError.PERMISSION_DENIED) {
-          throw new Error("Location permission is required for check-in");
+          throw new Error(`Location permission is required for ${actionLabel}`);
         }
         try {
           return await watchPositionOnce({ enableHighAccuracy: false, timeout: 45000, maximumAge: 300000 });
@@ -815,7 +815,7 @@ const EmployeeDashboard = () => {
     if (checkInPolicy.attendanceGeoFenceEnabled) {
       let position: GeolocationPosition | null = null;
       try {
-        position = await getCheckInLocation();
+        position = await getCurrentLocation("check-in");
       } catch (error) {
         const fallbackLocation = getLocalGeoFenceFallbackLocation();
         if (!fallbackLocation) {
@@ -865,6 +865,26 @@ const EmployeeDashboard = () => {
 
   const handleCheckOut = async () => {
     const payload: Record<string, unknown> = {};
+
+    if (checkInPolicy.attendanceGeoFenceEnabled) {
+      let position: GeolocationPosition | null = null;
+      try {
+        position = await getCurrentLocation("check-out");
+      } catch (error) {
+        const fallbackLocation = getLocalGeoFenceFallbackLocation();
+        if (!fallbackLocation) {
+          toast.error(error instanceof Error ? error.message : "Unable to get current location for check-out");
+          return;
+        }
+        payload.latitude = fallbackLocation.latitude;
+        payload.longitude = fallbackLocation.longitude;
+        toast.info("Using office geofence location for local testing.");
+      }
+      if (position) {
+        payload.latitude = position.coords.latitude;
+        payload.longitude = position.coords.longitude;
+      }
+    }
 
     const shouldCaptureSelfie = checkInPolicy.attendanceSelfieRequired;
 

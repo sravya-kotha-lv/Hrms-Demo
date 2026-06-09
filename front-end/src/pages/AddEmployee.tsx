@@ -866,6 +866,8 @@ const AddEmployee = () => {
           monthlyGross: esiWages,
           includeEsi: salaryForm.includeEsi
         });
+    const netSalary = Number((monthlyGross - employeeEpf - esiEmployeeAmount).toFixed(2));
+    const annualNetSalary = Number((netSalary * 12).toFixed(2));
 
     return {
       annualCtc,
@@ -878,7 +880,9 @@ const AddEmployee = () => {
       employerEpf,
       employeeEpf,
       esiEmployeeAmount,
-      esiEmployerAmount
+      esiEmployerAmount,
+      netSalary,
+      annualNetSalary
     };
   }, [
     salaryForm.annualCtc,
@@ -3410,7 +3414,7 @@ const AddEmployee = () => {
                             <Info className="h-3.5 w-3.5 cursor-help text-muted-foreground" />
                           </TooltipTrigger>
                           <TooltipContent>
-                            Annual CTC includes employer contributions. Pay group percentages are applied on gross, and employer PF is treated as round(employee PF).
+                            Annual CTC includes fixed pay, employer contributions, and variable pay target. Employee PF is a deduction and is not part of CTC.
                           </TooltipContent>
                         </Tooltip>
                       </div>
@@ -3420,7 +3424,7 @@ const AddEmployee = () => {
                             Gross {formatInr(salaryBreakdown.monthlyGross)} / month
                           </span>
                           <span className="rounded-md border bg-muted/40 px-2 py-1">
-                            Employer PF {formatInr(salaryBreakdown.employerEpf)} / month = round(employee PF)
+                            Employer PF {formatInr(salaryBreakdown.employerEpf)} / month
                           </span>
                         </div>
                       )}
@@ -3444,7 +3448,7 @@ const AddEmployee = () => {
                       <p className="mt-1 text-xs text-red-600">{getFieldError("annualCtc")}</p>
                     )}
                     <p className="mt-1 text-xs text-muted-foreground">
-                      CTC includes employer contributions. Monthly gross is derived first, then Basic and HRA are calculated from gross. Employer PF is applied as round(employee PF).
+                      CTC includes variable pay and employer contributions. Monthly gross is derived first, then Basic and HRA are calculated from gross. Employee PF is shown separately as a deduction.
                     </p>
                   </div>
 
@@ -4203,6 +4207,37 @@ const AddEmployee = () => {
                         </section>
 
                         <section className="rounded-lg border bg-muted/20">
+                          <div className="grid grid-cols-1 gap-2 border-b p-3 sm:grid-cols-3">
+                            <div className="rounded-md border bg-background p-3">
+                              <p className="text-xs text-muted-foreground">Monthly Gross</p>
+                              <p className="mt-1 text-base font-semibold">
+                                {formatInr(salaryBreakdown.monthlyGross)}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Basic + HRA + Variable Pay + Fixed Allowance
+                              </p>
+                            </div>
+                            <div className="rounded-md border bg-background p-3">
+                              <p className="text-xs text-muted-foreground">Monthly Net</p>
+                              <p className="mt-1 text-base font-semibold">
+                                {formatInr(salaryBreakdown.netSalary)}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Gross - Employee PF
+                                {salaryForm.includeEsi ? " - Employee ESI" : ""}
+                              </p>
+                            </div>
+                            <div className="rounded-md border bg-background p-3">
+                              <p className="text-xs text-muted-foreground">Monthly CTC</p>
+                              <p className="mt-1 text-base font-semibold">
+                                {formatInr(salaryBreakdown.monthlyCtc)}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Gross + Employer PF
+                                {salaryForm.includeEsi ? " + Employer ESI" : ""}
+                              </p>
+                            </div>
+                          </div>
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
                             <span>Component</span>
                             <span className="text-right">Monthly</span>
@@ -4215,7 +4250,6 @@ const AddEmployee = () => {
                               ? [["Variable Pay", salaryBreakdown.variablePay] as [string, number]]
                               : []),
                             ["Fixed Allowance", salaryBreakdown.fixedAllowance],
-                            ["Employee PF", salaryBreakdown.employeeEpf],
                             ["Employer PF", salaryBreakdown.employerEpf],
                             ...(salaryForm.includeEsi ? [["ESI Employer", salaryBreakdown.esiEmployerAmount] as [string, number]] : [])
                           ].map(([label, amount]) => (
@@ -4225,10 +4259,19 @@ const AddEmployee = () => {
                               <span className="text-right text-muted-foreground">{formatInr(Number(amount) * 12)}</span>
                             </div>
                           ))}
+                          <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+                            Employee PF is not included in CTC because it is deducted from the employee's salary.
+                            Net salary is gross minus employee-side deductions.
+                          </div>
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 bg-secondary px-3 py-3 text-sm font-semibold">
                             <span>Cost to Company</span>
                             <span className="text-right">{formatInr(salaryBreakdown.monthlyCtc)}</span>
                             <span className="text-right">{formatInr(salaryBreakdown.annualCtc)}</span>
+                          </div>
+                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-t px-3 py-3 text-sm font-semibold">
+                            <span>Net Salary</span>
+                            <span className="text-right">{formatInr(salaryBreakdown.netSalary)}</span>
+                            <span className="text-right">{formatInr(salaryBreakdown.annualNetSalary)}</span>
                           </div>
                         </section>
 

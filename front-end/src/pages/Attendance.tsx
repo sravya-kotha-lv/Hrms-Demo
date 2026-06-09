@@ -1751,9 +1751,19 @@ const Attendance = () => {
                               IP: {entry.ip || "-"} • Selfie: {entry.selfieProvided ? "Yes" : "No"}
                             </p>
                           )}
-                          {(entry.latitude !== null && entry.latitude !== undefined && entry.longitude !== null && entry.longitude !== undefined) && (
-                            <p>Location: {entry.latitude}, {entry.longitude}</p>
-                          )}
+                          {(() => {
+                            const hasValidCoordinates =
+                              entry.latitude !== null &&
+                              entry.latitude !== undefined &&
+                              entry.longitude !== null &&
+                              entry.longitude !== undefined &&
+                              !(Number(entry.latitude) === 0 && Number(entry.longitude) === 0);
+                            return (
+                              <p>
+                                Location: {hasValidCoordinates ? `${entry.latitude}, ${entry.longitude}` : "-"}
+                              </p>
+                            );
+                          })()}
                         </div>
                       </div>
                     ))}
