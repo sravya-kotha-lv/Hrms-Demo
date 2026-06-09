@@ -98,6 +98,8 @@ type AttendanceHistoryItem = {
   action: string;
   createdAt: string;
   actor: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
 };
 
 type AttendanceDayHistoryItem = {
@@ -308,16 +310,39 @@ const buildActivityTimeline = (
   return items.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 };
 
-const formatActivityAction = (action: string) => {
-  switch (action) {
+const formatAttendanceStatusLabel = (status?: unknown) => {
+  switch (status) {
+    case "present":
+    case "full_day_present":
+      return "Present";
+    case "half_day_present":
+      return "Half Day";
+    case "absent":
+      return "Absent";
+    case "pending_checkout":
+      return "Pending Checkout";
+    default:
+      return null;
+  }
+};
+
+const formatActivityAction = (item: AttendanceHistoryItem) => {
+  switch (item.action) {
     case "CHECK_IN":
       return "Checked in";
     case "CHECK_OUT":
       return "Checked out";
-    case "ATTENDANCE_OVERRIDE":
+    case "ATTENDANCE_OVERRIDE": {
+      const beforeStatus = formatAttendanceStatusLabel(item.before?.status);
+      const afterStatus = formatAttendanceStatusLabel(item.after?.status);
+      if (afterStatus) {
+        const leaveNote = item.after?.isOnLeave ? "; approved leave retained" : "";
+        return `Attendance overridden to ${afterStatus}${beforeStatus ? ` from ${beforeStatus}` : ""}${leaveNote}`;
+      }
       return "Attendance overridden";
+    }
     default:
-      return action.replace(/_/g, " ").toLowerCase().replace(/^\w/, (char) => char.toUpperCase());
+      return item.action.replace(/_/g, " ").toLowerCase().replace(/^\w/, (char) => char.toUpperCase());
   }
 };
 
@@ -723,7 +748,7 @@ const Attendance = () => {
         : (cell.leaveType || "Leave");
       parts.push(`Approved Leave: ${leaveLabel}`);
     }
-    if (cell.overriddenBy) parts.push(`Overridden by: ${cell.overriddenBy}`);
+    if (cell.overriddenBy) parts.push(`Attendance override: Set to ${cell.displayStatus || "Present"} by ${cell.overriddenBy}`);
     if (cell.overriddenAt) parts.push(`Overridden at: ${formatDateTimeInOrgTimeZone(cell.overriddenAt)}`);
     return parts.join(" | ") || "No details";
   };
@@ -1058,6 +1083,16 @@ const Attendance = () => {
                                       <p>{cell.checkInAt ? `In ${formatTimeInOrgTimeZone(cell.checkInAt)}` : "No check-in"}</p>
                                       <p>{cell.checkOutAt ? `Out ${formatTimeInOrgTimeZone(cell.checkOutAt)}` : "No check-out"}</p>
                                     </>
+                                  )}
+                                  {cell.isOnLeave && (
+                                    <p className="text-violet-700">
+                                      Approved leave: {cell.leaveType || "Leave"}
+                                    </p>
+                                  )}
+                                  {cell.overriddenBy && (
+                                    <p className="text-slate-600">
+                                      Attendance override: {cell.displayStatus || "Present"}
+                                    </p>
                                   )}
                                 </div>
                               </button>
@@ -1750,7 +1785,8 @@ const Attendance = () => {
                   ) : null}
                   {selectedCell.overriddenBy ? (
                     <p className="text-xs text-muted-foreground">
-                      Overridden by: {selectedCell.overriddenBy}
+                      Attendance override: Set to {selectedCell.displayStatus || "Present"} by {selectedCell.overriddenBy}
+                      {selectedCell.isOnLeave ? "; approved leave retained" : ""}
                     </p>
                   ) : null}
                   {selectedCell.overriddenAt ? (
@@ -1769,7 +1805,7 @@ const Attendance = () => {
                 )}
                 {!historyLoading && activityTimeline.map((h, idx) => (
                   <p key={`${h.createdAt}-${idx}`} className="text-xs mb-1 text-slate-600">
-                    {formatDateTimeInOrgTimeZone(h.createdAt)} - {formatActivityAction(h.action)} by {h.actor}
+                    {formatDateTimeInOrgTimeZone(h.createdAt)} - {formatActivityAction(h)} by {h.actor}
                   </p>
                 ))}
               </section>
