@@ -577,21 +577,6 @@ const mapComponentToDraft = (component: SalaryComponentPayload): ComponentDraft 
   };
 };
 
-const mergeTemplateComponents = (
-  existingComponents: ComponentDraft[],
-  templateComponents: ComponentDraft[]
-) => {
-  const existingKeys = new Set(
-    existingComponents.map((component) => `${component.scope}:${component.code.trim().toUpperCase()}`)
-  );
-
-  const missingTemplateComponents = templateComponents
-    .filter((component) => !existingKeys.has(`${component.scope}:${component.code.trim().toUpperCase()}`))
-    .map((component) => ({ ...component }));
-
-  return [...existingComponents, ...missingTemplateComponents];
-};
-
 export const PayrollSetupWizard = ({
   open,
   onOpenChange,
@@ -611,7 +596,7 @@ export const PayrollSetupWizard = ({
     buildPayGroupState(initialSettings, preferredPayGroupId, payrollSalaryPayDay)
   );
 
-  const [components, setComponents] = useState<ComponentDraft[]>([defaultComponent()]);
+  const [components, setComponents] = useState<ComponentDraft[]>([]);
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
   const [startupDefaultsApplied, setStartupDefaultsApplied] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
@@ -703,30 +688,47 @@ export const PayrollSetupWizard = ({
 
     const loadExistingSetup = async () => {
       setLoadingExistingSetup(true);
+      setComponents([]);
+      setLoadedComponentIds([]);
+      setLoadedComponentScopeMap({});
       try {
-        const [settingsRes, earningsRes, deductionsRes, employerRes] = await Promise.all([
-          getApiWithToken("/payroll/settings", null, {
-            requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
-          }),
-          getApiWithToken("/payroll/salary-components?scope=earning", null, {
-            requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
-          }),
-          getApiWithToken("/payroll/salary-components?scope=deduction", null, {
-            requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
-          }),
-          getApiWithToken("/payroll/salary-components?scope=employer_contribution", null, {
-            requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
-          })
-        ]);
-
-        if (!active) return;
-
-        const nextSettings = settingsRes?.success ? settingsRes.data : initialSettings;
-        const selectedPayGroupId =
+        const nextSettingsRes = await getApiWithToken("/payroll/settings", null, {
+          requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+        });
+        const nextSettings = nextSettingsRes?.success ? nextSettingsRes.data : initialSettings;
+        const resolvedPayGroupId =
           preferredPayGroupId ||
           nextSettings?.default_pay_group_id ||
           nextSettings?.defaultPayGroupId ||
           "";
+
+        const [settingsRes, earningsRes, deductionsRes, employerRes] = await Promise.all([
+          Promise.resolve(nextSettingsRes),
+          getApiWithToken(
+            `/payroll/salary-components?scope=earning${resolvedPayGroupId ? `&payGroupId=${resolvedPayGroupId}` : ""}`,
+            null,
+            {
+              requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+            }
+          ),
+          getApiWithToken(
+            `/payroll/salary-components?scope=deduction${resolvedPayGroupId ? `&payGroupId=${resolvedPayGroupId}` : ""}`,
+            null,
+            {
+              requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+            }
+          ),
+          getApiWithToken(
+            `/payroll/salary-components?scope=employer_contribution${resolvedPayGroupId ? `&payGroupId=${resolvedPayGroupId}` : ""}`,
+            null,
+            {
+              requiredPermissions: ["PAYROLL_CONFIG_MANAGE"]
+            }
+          )
+        ]);
+
+        if (!active) return;
+
         const allComponents = [
           ...(Array.isArray(earningsRes?.data)
             ? earningsRes.data.map((item: SalaryComponentPayload) => ({ ...item, scope: "earning" as const }))
@@ -741,30 +743,24 @@ export const PayrollSetupWizard = ({
               }))
             : [])
         ];
+        const exactPayGroupComponents = resolvedPayGroupId
+          ? allComponents.filter((component) => getComponentPayGroupIds(component).includes(resolvedPayGroupId))
+          : [];
+        const componentsToUse = exactPayGroupComponents.length ? exactPayGroupComponents : allComponents;
 
         setPayGroup(buildPayGroupState(nextSettings, preferredPayGroupId, payrollSalaryPayDay, availablePayGroups));
-        const applicableComponents = allComponents.filter((component) => {
-          const payGroupIds = getComponentPayGroupIds(component);
-          if (!selectedPayGroupId || !payGroupIds.length) return true;
-          return payGroupIds.includes(String(selectedPayGroupId));
-        });
 
-        if (applicableComponents.length) {
+        if (componentsToUse.length) {
           setStatutory(buildStatutoryState(nextSettings));
           setAttendanceRules(buildAttendanceRulesState(nextSettings));
-          setComponents(
-            mergeTemplateComponents(
-              applicableComponents.map(mapComponentToDraft),
-              TELANGANA_DEFAULT_TEMPLATE.components
-            )
-          );
+          setComponents(componentsToUse.map(mapComponentToDraft));
           setLoadedComponentIds(
-            applicableComponents
+            componentsToUse
               .map((component) => String(component.id || ""))
               .filter(Boolean)
           );
           setLoadedComponentScopeMap(
-            applicableComponents.reduce<Record<string, ComponentDraft["scope"]>>((acc, component) => {
+            componentsToUse.reduce<Record<string, ComponentDraft["scope"]>>((acc, component) => {
               if (component.id) {
                 acc[String(component.id)] = component.scope;
               }

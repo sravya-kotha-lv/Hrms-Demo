@@ -88,6 +88,145 @@ const resolvePayGroupCutoffDay = async (organizationId, payloadCutoffDay) => {
   return Number(orgSettings?.payrollCutoffDay ?? 25);
 };
 
+const updateSalaryComponentRecord = async ({
+  client,
+  tenantId,
+  scope,
+  componentId,
+  payload,
+  actorId,
+  forceActive = false
+}) => {
+  if (scope === "earning") {
+    return client.query(
+      `
+        UPDATE earning_components
+        SET
+          name = COALESCE($3, name),
+          display_name = COALESCE($4, display_name),
+          description = COALESCE($5, description),
+          calculation_mode = COALESCE($6, calculation_mode),
+          taxable = COALESCE($7, taxable),
+          priority = COALESCE($8, priority),
+          pf_applicable = COALESCE($9, pf_applicable),
+          esi_applicable = COALESCE($10, esi_applicable),
+          prorate_with_attendance = COALESCE($11, prorate_with_attendance),
+          rounding_policy = COALESCE($12, rounding_policy),
+          effective_from = COALESCE($13, effective_from),
+          effective_to = COALESCE($14, effective_to),
+          is_active = COALESCE($15, is_active),
+          metadata = CASE WHEN $16::jsonb = '{}'::jsonb THEN metadata ELSE metadata || $16::jsonb END,
+          updated_by = $17
+        WHERE id = $1 AND tenant_id = $2
+        RETURNING *
+      `,
+      [
+        componentId,
+        tenantId,
+        payload.name ?? null,
+        payload.displayName ?? null,
+        payload.description ?? null,
+        payload.calculationMode ?? null,
+        payload.taxable ?? null,
+        payload.priority ?? null,
+        payload.pfApplicable ?? null,
+        payload.esiApplicable ?? null,
+        payload.prorateWithAttendance ?? null,
+        payload.roundingPolicy ?? null,
+        payload.effectiveFrom ?? null,
+        payload.effectiveTo ?? null,
+        forceActive ? true : payload.isActive ?? null,
+        JSON.stringify(payload.metadata || {}),
+        actorId
+      ]
+    );
+  }
+
+  if (scope === "deduction") {
+    return client.query(
+      `
+        UPDATE deduction_components
+        SET
+          name = COALESCE($3, name),
+          display_name = COALESCE($4, display_name),
+          description = COALESCE($5, description),
+          calculation_mode = COALESCE($6, calculation_mode),
+          taxable = COALESCE($7, taxable),
+          priority = COALESCE($8, priority),
+          is_statutory = COALESCE($9, is_statutory),
+          employee_share_only = COALESCE($10, employee_share_only),
+          cap_amount = COALESCE($11, cap_amount),
+          rounding_policy = COALESCE($12, rounding_policy),
+          effective_from = COALESCE($13, effective_from),
+          effective_to = COALESCE($14, effective_to),
+          is_active = COALESCE($15, is_active),
+          metadata = CASE WHEN $16::jsonb = '{}'::jsonb THEN metadata ELSE metadata || $16::jsonb END,
+          updated_by = $17
+        WHERE id = $1 AND tenant_id = $2
+        RETURNING *
+      `,
+      [
+        componentId,
+        tenantId,
+        payload.name ?? null,
+        payload.displayName ?? null,
+        payload.description ?? null,
+        payload.calculationMode ?? null,
+        payload.taxable ?? null,
+        payload.priority ?? null,
+        payload.isStatutory ?? null,
+        payload.employeeShareOnly ?? null,
+        payload.capAmount ?? null,
+        payload.roundingPolicy ?? null,
+        payload.effectiveFrom ?? null,
+        payload.effectiveTo ?? null,
+        forceActive ? true : payload.isActive ?? null,
+        JSON.stringify(payload.metadata || {}),
+        actorId
+      ]
+    );
+  }
+
+  return client.query(
+    `
+      UPDATE employer_contribution_components
+      SET
+        name = COALESCE($3, name),
+        display_name = COALESCE($4, display_name),
+        description = COALESCE($5, description),
+        calculation_mode = COALESCE($6, calculation_mode),
+        priority = COALESCE($7, priority),
+        contributes_to_ctc = COALESCE($8, contributes_to_ctc),
+        linked_deduction_code = COALESCE($9, linked_deduction_code),
+        rounding_policy = COALESCE($10, rounding_policy),
+        effective_from = COALESCE($11, effective_from),
+        effective_to = COALESCE($12, effective_to),
+        is_active = COALESCE($13, is_active),
+        metadata = CASE WHEN $14::jsonb = '{}'::jsonb THEN metadata ELSE metadata || $14::jsonb END,
+        updated_by = $15
+      WHERE id = $1 AND tenant_id = $2
+      RETURNING *
+    `,
+    [
+      componentId,
+      tenantId,
+      payload.name ?? null,
+      payload.displayName ?? null,
+      payload.description ?? null,
+      payload.calculationMode ?? null,
+      payload.priority ?? null,
+      payload.contributesToCtc ?? null,
+      payload.linkedDeductionCode ?? null,
+      payload.roundingPolicy ?? null,
+      payload.effectiveFrom ?? null,
+      payload.effectiveTo ?? null,
+      forceActive ? true : payload.isActive ?? null,
+      JSON.stringify(payload.metadata || {}),
+      actorId
+    ]
+  );
+};
+
 const throwPayGroupConflictError = (error) => {
   if (error?.code !== "23505") throw error;
 
@@ -589,7 +728,16 @@ exports.createSalaryComponent = async (req) => {
         throw error;
       }
 
-      return existing;
+      const updated = await updateSalaryComponentRecord({
+        client,
+        tenantId,
+        scope: payload.scope,
+        componentId: existing.id,
+        payload,
+        actorId,
+        forceActive: true
+      });
+      return updated.rows[0] || existing;
     }
   } finally {
     client.release();
