@@ -98,6 +98,8 @@ type AttendanceHistoryItem = {
   action: string;
   createdAt: string;
   actor: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
 };
 
 type AttendanceDayHistoryItem = {
@@ -145,6 +147,13 @@ type AttendanceRequestDetail = {
   approvedAt?: string | null;
   rejectionReason?: string | null;
 } | null;
+
+type AttendanceCellDetailPayload = {
+  history: AttendanceHistoryItem[];
+  attendance: AttendanceSnapshot;
+  leave: ApprovedLeaveDetail;
+  attendanceRequest: AttendanceRequestDetail;
+};
 
 type MatrixPagination = {
   total: number;
@@ -308,16 +317,39 @@ const buildActivityTimeline = (
   return items.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 };
 
-const formatActivityAction = (action: string) => {
-  switch (action) {
+const formatAttendanceStatusLabel = (status?: unknown) => {
+  switch (status) {
+    case "present":
+    case "full_day_present":
+      return "Present";
+    case "half_day_present":
+      return "Half Day";
+    case "absent":
+      return "Absent";
+    case "pending_checkout":
+      return "Pending Checkout";
+    default:
+      return null;
+  }
+};
+
+const formatActivityAction = (item: AttendanceHistoryItem) => {
+  switch (item.action) {
     case "CHECK_IN":
       return "Checked in";
     case "CHECK_OUT":
       return "Checked out";
-    case "ATTENDANCE_OVERRIDE":
+    case "ATTENDANCE_OVERRIDE": {
+      const beforeStatus = formatAttendanceStatusLabel(item.before?.status);
+      const afterStatus = formatAttendanceStatusLabel(item.after?.status);
+      if (afterStatus) {
+        const leaveNote = item.after?.isOnLeave ? "; approved leave retained" : "";
+        return `Attendance overridden to ${afterStatus}${beforeStatus ? ` from ${beforeStatus}` : ""}${leaveNote}`;
+      }
       return "Attendance overridden";
+    }
     default:
-      return action.replace(/_/g, " ").toLowerCase().replace(/^\w/, (char) => char.toUpperCase());
+      return item.action.replace(/_/g, " ").toLowerCase().replace(/^\w/, (char) => char.toUpperCase());
   }
 };
 
@@ -364,6 +396,10 @@ const Attendance = () => {
   const [selectedAttendanceSnapshot, setSelectedAttendanceSnapshot] = useState<AttendanceSnapshot>(null);
   const [selectedLeaveDetail, setSelectedLeaveDetail] = useState<ApprovedLeaveDetail>(null);
   const [selectedAttendanceRequestDetail, setSelectedAttendanceRequestDetail] = useState<AttendanceRequestDetail>(null);
+  const [hoveredCellDay, setHoveredCellDay] = useState<number | null>(null);
+  const [hoveredCellLoading, setHoveredCellLoading] = useState(false);
+  const [hoveredCellDetails, setHoveredCellDetails] = useState<AttendanceCellDetailPayload | null>(null);
+  const hoveredCellRequestRef = useRef(0);
   const [selectedYear, selectedMonth] = month.split("-");
   const yearOptions = useMemo(() => {
     const currentYearValue = new Date().getFullYear();
@@ -560,6 +596,30 @@ const Attendance = () => {
     [history, selectedAttendanceSnapshot, selectedCell]
   );
 
+  const loadAttendanceCellDetails = useCallback(async (row: EmployeeRow, day: number) => {
+    const cell = row.days?.[day] || emptyCell;
+    if (cell.isFuture || cell.isWeekOff) return null;
+
+    const date = `${month}-${String(day).padStart(2, "0")}`;
+    const employeeId = toEmployeeIdString(row.employeeId);
+    const endpoint = canViewAll
+      ? `/timesheets/attendance/matrix/history?employeeId=${employeeId}&date=${date}`
+      : `/timesheets/attendance/matrix/history/my?date=${date}`;
+    const requiredPermissions = canViewAll
+      ? ["ATTENDANCE_VIEW_ALL"]
+      : ["ATTENDANCE_VIEW_SELF"];
+
+    const res = await getApiWithToken(endpoint, null, { requiredPermissions });
+    if (!res?.success) return null;
+
+    return {
+      history: res.data?.history || [],
+      attendance: res.data?.attendance || null,
+      leave: res.data?.leave || null,
+      attendanceRequest: res.data?.attendanceRequest || null
+    } satisfies AttendanceCellDetailPayload;
+  }, [canViewAll, month]);
+
   const handleMatrixScroll = () => {
     const viewport = tableViewportRef.current;
     if (!viewport || loading || loadingMore || loadingMoreRef.current || !hasMoreRows) return;
@@ -604,25 +664,35 @@ const Attendance = () => {
     setSelectedAttendanceRequestDetail(null);
     try {
       setHistoryLoading(true);
-      const date = `${month}-${String(day).padStart(2, "0")}`;
-      const employeeId = toEmployeeIdString(row.employeeId);
-      const endpoint = canViewAll
-        ? `/timesheets/attendance/matrix/history?employeeId=${employeeId}&date=${date}`
-        : `/timesheets/attendance/matrix/history/my?date=${date}`;
-      const requiredPermissions = canViewAll
-        ? ["ATTENDANCE_VIEW_ALL"]
-        : ["ATTENDANCE_VIEW_SELF"];
-      const res = await getApiWithToken(endpoint, null, { requiredPermissions });
-      if (res?.success) {
-        setHistory(res.data?.history || []);
-        setSelectedAttendanceSnapshot(res.data?.attendance || null);
-        setSelectedLeaveDetail(res.data?.leave || null);
-        setSelectedAttendanceRequestDetail(res.data?.attendanceRequest || null);
+      const payload = await loadAttendanceCellDetails(row, day);
+      if (payload) {
+        setHistory(payload.history);
+        setSelectedAttendanceSnapshot(payload.attendance);
+        setSelectedLeaveDetail(payload.leave);
+        setSelectedAttendanceRequestDetail(payload.attendanceRequest);
       }
     } finally {
       setHistoryLoading(false);
     }
   };
+
+  const loadEmployeeHoverPreview = useCallback(async (row: EmployeeRow, day: number) => {
+    const requestId = hoveredCellRequestRef.current + 1;
+    hoveredCellRequestRef.current = requestId;
+    setHoveredCellDay(day);
+    setHoveredCellLoading(true);
+    setHoveredCellDetails(null);
+
+    try {
+      const payload = await loadAttendanceCellDetails(row, day);
+      if (hoveredCellRequestRef.current !== requestId) return;
+      setHoveredCellDetails(payload);
+    } finally {
+      if (hoveredCellRequestRef.current === requestId) {
+        setHoveredCellLoading(false);
+      }
+    }
+  }, [loadAttendanceCellDetails]);
 
   const saveOverride = async () => {
     if (!selectedEmployee || !selectedDay) return;
@@ -723,7 +793,7 @@ const Attendance = () => {
         : (cell.leaveType || "Leave");
       parts.push(`Approved Leave: ${leaveLabel}`);
     }
-    if (cell.overriddenBy) parts.push(`Overridden by: ${cell.overriddenBy}`);
+    if (cell.overriddenBy) parts.push(`Attendance override: Set to ${cell.displayStatus || "Present"} by ${cell.overriddenBy}`);
     if (cell.overriddenAt) parts.push(`Overridden at: ${formatDateTimeInOrgTimeZone(cell.overriddenAt)}`);
     return parts.join(" | ") || "No details";
   };
@@ -755,7 +825,7 @@ const Attendance = () => {
       "Present",
       "Pending Checkout",
       "Absent",
-      "On Leave",
+      "Leave",
       "Week Off",
       "Holiday",
       "Excluded From Payroll",
@@ -901,7 +971,7 @@ const Attendance = () => {
     (_, idx) => (idx < firstDayOffset ? null : idx - firstDayOffset + 1)
   );
   const weekDayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const summaryColumnCount = canViewSelfieData ? 10 : 9;
+  const summaryColumnCount = canViewSelfieData ? 8 : 7;
   const loadingRowCount = 6;
 
   const renderMonthSelector = (tone: "soft" | "bright" = "soft") => {
@@ -1031,8 +1101,27 @@ const Attendance = () => {
                         const hideTimings = isLeaveOnlyDay || Boolean(cell.holidayName) || cell.isWeekOff;
                         const isOvernightShift = Boolean(cell.isOvernightShift);
                         const attendanceDateKey = cell.attendanceDateKey || getAttendanceDateKey(day);
+                        const hoverTimeline =
+                          hoveredCellDay === day && hoveredCellDetails
+                            ? buildActivityTimeline(hoveredCellDetails.history, hoveredCellDetails.attendance, cell)
+                            : [];
                         return (
-                          <HoverCard key={day} openDelay={120} closeDelay={80}>
+                          <HoverCard
+                            key={day}
+                            openDelay={120}
+                            closeDelay={80}
+                            onOpenChange={(openState) => {
+                              if (openState) {
+                                void loadEmployeeHoverPreview(selfRow, day);
+                                return;
+                              }
+                              if (hoveredCellDay === day) {
+                                setHoveredCellDay(null);
+                                setHoveredCellLoading(false);
+                                setHoveredCellDetails(null);
+                              }
+                            }}
+                          >
                             <HoverCardTrigger asChild>
                               <button
                                 type="button"
@@ -1059,11 +1148,21 @@ const Attendance = () => {
                                       <p>{cell.checkOutAt ? `Out ${formatTimeInOrgTimeZone(cell.checkOutAt)}` : "No check-out"}</p>
                                     </>
                                   )}
-                                </div>
-                              </button>
-                            </HoverCardTrigger>
-                            <HoverCardContent className="w-72">
-                              <div className="space-y-1.5">
+                                {cell.isOnLeave && (
+                                  <p className="text-violet-700">
+                                    Approved leave: {cell.leaveType || "Leave"}
+                                  </p>
+                                )}
+                                  {cell.overriddenBy && (
+                                    <p className="text-slate-600">
+                                      Attendance override: {cell.displayStatus || "Present"}
+                                  </p>
+                                )}
+                              </div>
+                            </button>
+                          </HoverCardTrigger>
+                          <HoverCardContent className="w-72">
+                              <div className="space-y-2">
                                 <p className="text-sm font-semibold">{month}-{String(day).padStart(2, "0")} • {cellUi.label}</p>
                                 {isOvernightShift && (
                                   <p className="text-xs text-slate-700">
@@ -1134,6 +1233,30 @@ const Attendance = () => {
                                 {(cell.lateByMinutes || 0) > 0 && (
                                   <p className="text-xs text-rose-700">Late by {cell.lateByMinutes} min</p>
                                 )}
+                                <div className="rounded-md border border-slate-100 bg-slate-50 p-2">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                    Day history
+                                  </p>
+                                  {hoveredCellLoading && hoveredCellDay === day ? (
+                                    <p className="mt-1 text-xs text-muted-foreground">Loading history...</p>
+                                  ) : hoverTimeline.length ? (
+                                    <div className="mt-1 space-y-1.5">
+                                      {hoverTimeline.slice(0, 3).map((item, index) => (
+                                        <p key={`${item.createdAt}-${index}`} className="text-xs text-slate-600">
+                                          {formatDateTimeInOrgTimeZone(item.createdAt)} - {formatActivityAction(item)} by {item.actor}
+                                        </p>
+                                      ))}
+                                      {hoverTimeline.length > 3 && (
+                                        <p className="text-[11px] text-slate-500">
+                                          + {hoverTimeline.length - 3} more event{hoverTimeline.length - 3 === 1 ? "" : "s"}
+                                        </p>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="mt-1 text-xs text-muted-foreground">No history found for this date.</p>
+                                  )}
+                                  <p className="mt-2 text-[11px] text-slate-500">Click the date to open full details.</p>
+                                </div>
                               </div>
                             </HoverCardContent>
                           </HoverCard>
@@ -1317,14 +1440,8 @@ const Attendance = () => {
                       <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                         Absent
                       </th>
-                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
-                        On Leave
-                      </th>
-                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
-                        Paid Leave
-                      </th>
-                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[100px]">
-                        Unpaid Leave
+                      <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[120px]">
+                        Leave
                       </th>
                       <th className="sticky top-0 bg-white/95 backdrop-blur z-20 text-center p-2 text-sm text-slate-500 min-w-[90px]">
                         Week Off
@@ -1415,6 +1532,10 @@ const Attendance = () => {
                             payrollExcludedDays: 0,
                             totalDays: 0
                           };
+                          const leaveBreakdown = [
+                            `Paid ${totals.paidLeaveDays.toFixed(1)}`,
+                            `Unpaid ${totals.unpaidLeaveDays.toFixed(1)}`
+                          ].join(" · ");
                           return (
                             <>
                               <td className="text-center text-sm font-medium text-emerald-700">
@@ -1427,13 +1548,22 @@ const Attendance = () => {
                                 {totals.absentDays.toFixed(1)}
                               </td>
                               <td className="text-center text-sm font-medium text-violet-700">
-                                {totals.onLeaveDays.toFixed(1)}
-                              </td>
-                              <td className="text-center text-sm font-medium text-emerald-700">
-                                {totals.paidLeaveDays.toFixed(1)}
-                              </td>
-                              <td className="text-center text-sm font-medium text-amber-700">
-                                {totals.unpaidLeaveDays.toFixed(1)}
+                                <HoverCard openDelay={120} closeDelay={80}>
+                                  <HoverCardTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="inline-flex cursor-help items-center rounded px-1 py-0.5 transition-colors hover:bg-violet-50 focus:outline-none focus:ring-2 focus:ring-violet-300"
+                                    >
+                                      {totals.onLeaveDays.toFixed(1)}
+                                    </button>
+                                  </HoverCardTrigger>
+                                  <HoverCardContent className="w-48">
+                                    <div className="space-y-1 text-left">
+                                      <p className="text-sm font-semibold text-slate-900">Leave breakdown</p>
+                                      <p className="text-xs text-slate-600">{leaveBreakdown}</p>
+                                    </div>
+                                  </HoverCardContent>
+                                </HoverCard>
                               </td>
                               <td className="text-center text-sm font-medium text-sky-700">
                                 {totals.weekOffDays}
@@ -1750,7 +1880,8 @@ const Attendance = () => {
                   ) : null}
                   {selectedCell.overriddenBy ? (
                     <p className="text-xs text-muted-foreground">
-                      Overridden by: {selectedCell.overriddenBy}
+                      Attendance override: Set to {selectedCell.displayStatus || "Present"} by {selectedCell.overriddenBy}
+                      {selectedCell.isOnLeave ? "; approved leave retained" : ""}
                     </p>
                   ) : null}
                   {selectedCell.overriddenAt ? (
@@ -1769,7 +1900,7 @@ const Attendance = () => {
                 )}
                 {!historyLoading && activityTimeline.map((h, idx) => (
                   <p key={`${h.createdAt}-${idx}`} className="text-xs mb-1 text-slate-600">
-                    {formatDateTimeInOrgTimeZone(h.createdAt)} - {formatActivityAction(h.action)} by {h.actor}
+                    {formatDateTimeInOrgTimeZone(h.createdAt)} - {formatActivityAction(h)} by {h.actor}
                   </p>
                 ))}
               </section>
