@@ -855,6 +855,7 @@ const AddEmployee = () => {
           restrictPfWage: salaryForm.restrictPfWage,
           pfWageCeiling: Number(salaryForm.pfWageCeiling || 15000)
         });
+    const employeeEpf = employerEpf;
     const esiWages = monthlyGross > 0 ? monthlyGross : basicPay;
     const esiEmployeeAmount = salaryForm.includeEsi && esiWages <= 21000
       ? Number((esiWages * 0.0075).toFixed(2))
@@ -875,6 +876,7 @@ const AddEmployee = () => {
       hraAmount,
       fixedAllowance,
       employerEpf,
+      employeeEpf,
       esiEmployeeAmount,
       esiEmployerAmount
     };
@@ -3424,11 +3426,17 @@ const AddEmployee = () => {
                       )}
                     </div>
                     <Input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
+                      pattern="[0-9]*[.,]?[0-9]*"
                       value={salaryForm.annualCtc}
                       onChange={(e) => {
                         clearFieldError("annualCtc");
-                        setSalaryForm((prev) => ({ ...prev, annualCtc: e.target.value }));
+                        const nextValue = e.target.value.replace(/,/g, "").replace(/[^0-9.]/g, "");
+                        const parts = nextValue.split(".");
+                        const sanitizedValue =
+                          parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : nextValue;
+                        setSalaryForm((prev) => ({ ...prev, annualCtc: sanitizedValue }));
                       }}
                       placeholder="e.g. 720000"
                     />
@@ -4207,7 +4215,8 @@ const AddEmployee = () => {
                               ? [["Variable Pay", salaryBreakdown.variablePay] as [string, number]]
                               : []),
                             ["Fixed Allowance", salaryBreakdown.fixedAllowance],
-                            ["EPF Employer", salaryBreakdown.employerEpf],
+                            ["Employee PF", salaryBreakdown.employeeEpf],
+                            ["Employer PF", salaryBreakdown.employerEpf],
                             ...(salaryForm.includeEsi ? [["ESI Employer", salaryBreakdown.esiEmployerAmount] as [string, number]] : [])
                           ].map(([label, amount]) => (
                             <div key={label} className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm last:border-b-0">
@@ -4246,6 +4255,12 @@ const AddEmployee = () => {
                                 {salaryForm.epfMode === "fixed"
                                   ? formatInr(salaryForm.epfFixedAmount)
                                   : `${Number(salaryForm.epfPercentOfBasic || 12).toFixed(2)}%`}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">Employee PF</span>
+                              <span className="font-medium">
+                                {formatInr(salaryBreakdown.employeeEpf)}
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
