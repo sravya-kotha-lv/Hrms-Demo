@@ -47,7 +47,7 @@ const VARIABLE_PAY_RELEASE_OPTIONS = [
 ];
 const VARIABLE_PAY_MODE_OPTIONS = [
   { label: "Fixed amount", value: "fixed" },
-  { label: "% of Annual CTC", value: "percentage" }
+  { label: "% of Earnings", value: "percentage" }
 ];
 const RELATION_OPTIONS = [
   { label: "Father", value: "father" },
@@ -139,6 +139,43 @@ const computeEmployerEsiAmount = ({
   includeEsi && monthlyGross > 0 && monthlyGross <= esiEligibilityThreshold
     ? roundPayrollAmount(monthlyGross * (esiEmployerRate / 100))
     : 0;
+
+const computeProfessionalTaxAmount = ({
+  monthlyGross,
+  professionalTaxApplicable
+}: {
+  monthlyGross: number;
+  professionalTaxApplicable: boolean;
+}) => {
+  if (!professionalTaxApplicable || monthlyGross <= 0) {
+    return 0;
+  }
+
+  if (monthlyGross <= 15000) {
+    return 0;
+  }
+
+  if (monthlyGross <= 20000) {
+    return 150;
+  }
+
+  return 200;
+};
+
+const computeVariablePayFromEarnings = ({
+  monthlyGross,
+  percentage
+}: {
+  monthlyGross: number;
+  percentage: number;
+}) => {
+  if (monthlyGross <= 0 || percentage <= 0) {
+    return 0;
+  }
+
+  const earningBase = monthlyGross / (1 + percentage / 100);
+  return roundPayrollAmount(monthlyGross - earningBase);
+};
 
 const deriveGrossFromMonthlyCtc = ({
   monthlyCtc,
@@ -835,9 +872,13 @@ const AddEmployee = () => {
     const basicPay = derivedSalary
       ? derivedSalary.basicPay
       : Number(salaryForm.basicPay || 0);
+    const variablePercent = Number(salaryForm.variablePayPercentOfCtc || 0);
     const variablePay = salaryForm.variablePayEnabled
       ? salaryForm.variablePayMode === "percentage"
-        ? Number(((annualCtc * (Number(salaryForm.variablePayPercentOfCtc || 0) / 100)) / 12).toFixed(2))
+        ? computeVariablePayFromEarnings({
+            monthlyGross,
+            percentage: variablePercent
+          })
         : Number(salaryForm.variablePay || 0)
       : 0;
     const hraPercent = Math.max(0, Number(salaryForm.hraPercentOfBasic || 0));
@@ -866,7 +907,13 @@ const AddEmployee = () => {
           monthlyGross: esiWages,
           includeEsi: salaryForm.includeEsi
         });
-    const netSalary = Number((monthlyGross - employeeEpf - esiEmployeeAmount).toFixed(2));
+    const professionalTaxAmount = computeProfessionalTaxAmount({
+      monthlyGross,
+      professionalTaxApplicable: statutoryForm.professionalTaxApplicable
+    });
+    const netSalary = Number(
+      (monthlyGross - employeeEpf - esiEmployeeAmount - professionalTaxAmount).toFixed(2)
+    );
     const annualNetSalary = Number((netSalary * 12).toFixed(2));
 
     return {
@@ -881,6 +928,7 @@ const AddEmployee = () => {
       employeeEpf,
       esiEmployeeAmount,
       esiEmployerAmount,
+      professionalTaxAmount,
       netSalary,
       annualNetSalary
     };
@@ -901,7 +949,8 @@ const AddEmployee = () => {
     salaryForm.includeEsi,
     salaryAutoCalc,
     salaryForm.payGroupId,
-    effectiveBasicPercent
+    effectiveBasicPercent,
+    statutoryForm.professionalTaxApplicable
   ]);
 
   const enabledEmployeeComponents = useMemo(
@@ -1457,7 +1506,10 @@ const AddEmployee = () => {
     });
     const variablePay = salaryForm.variablePayEnabled
       ? salaryForm.variablePayMode === "percentage"
-        ? Number(((annualCtc * (Number(salaryForm.variablePayPercentOfCtc || 0) / 100)) / 12).toFixed(2))
+        ? computeVariablePayFromEarnings({
+            monthlyGross: derivedSalary.monthlyGross,
+            percentage: Number(salaryForm.variablePayPercentOfCtc || 0)
+          })
         : Number(salaryForm.variablePay || 0)
       : 0;
 
@@ -3576,12 +3628,13 @@ const AddEmployee = () => {
                         !salaryForm.variablePayEnabled
                           ? "Not eligible"
                           : salaryForm.variablePayMode === "percentage"
-                            ? "Calculated from % of CTC"
+                            ? "Calculated from % of Earnings"
                             : "Monthly target amount"
                       }
                     />
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Included in CTC. Release is performance-based using the schedule below.
+                      Included in CTC. In percentage mode, target is derived from earnings/base pay.
+                      Release is performance-based using the schedule below.
                     </p>
                   </div>
 
@@ -3615,7 +3668,7 @@ const AddEmployee = () => {
 
                       {salaryForm.variablePayMode === "percentage" && (
                         <div>
-                          <Label>Variable % of Annual CTC</Label>
+                          <Label>Variable % of Earnings</Label>
                           <Input
                             type="number"
                             min={0}
@@ -3630,7 +3683,7 @@ const AddEmployee = () => {
                             placeholder="e.g. 10"
                           />
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Monthly target is calculated from annual CTC and included in the CTC breakup.
+                            Monthly target is calculated from earnings/base pay and included in the CTC breakup.
                           </p>
                         </div>
                       )}
@@ -4207,71 +4260,112 @@ const AddEmployee = () => {
                         </section>
 
                         <section className="rounded-lg border bg-muted/20">
-                          <div className="grid grid-cols-1 gap-2 border-b p-3 sm:grid-cols-3">
-                            <div className="rounded-md border bg-background p-3">
-                              <p className="text-xs text-muted-foreground">Monthly Gross</p>
-                              <p className="mt-1 text-base font-semibold">
-                                {formatInr(salaryBreakdown.monthlyGross)}
-                              </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Basic + HRA + Variable Pay + Fixed Allowance
-                              </p>
-                            </div>
-                            <div className="rounded-md border bg-background p-3">
-                              <p className="text-xs text-muted-foreground">Monthly Net</p>
-                              <p className="mt-1 text-base font-semibold">
-                                {formatInr(salaryBreakdown.netSalary)}
-                              </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Gross - Employee PF
-                                {salaryForm.includeEsi ? " - Employee ESI" : ""}
-                              </p>
-                            </div>
-                            <div className="rounded-md border bg-background p-3">
-                              <p className="text-xs text-muted-foreground">Monthly CTC</p>
-                              <p className="mt-1 text-base font-semibold">
-                                {formatInr(salaryBreakdown.monthlyCtc)}
-                              </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Gross + Employer PF
-                                {salaryForm.includeEsi ? " + Employer ESI" : ""}
-                              </p>
-                            </div>
-                          </div>
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
                             <span>Component</span>
                             <span className="text-right">Monthly</span>
                             <span className="text-right">Annual</span>
                           </div>
                           {[
-                            ["Basic Salary", salaryBreakdown.basicPay],
-                            ["House Rent Allowance", salaryBreakdown.hraAmount],
+                            { label: "Basic Salary", amount: salaryBreakdown.basicPay },
+                            { label: "House Rent Allowance", amount: salaryBreakdown.hraAmount },
+                            { label: "Fixed Allowance", amount: salaryBreakdown.fixedAllowance },
+                            {
+                              label: "Earnings",
+                              amount:
+                                salaryBreakdown.basicPay +
+                                salaryBreakdown.hraAmount +
+                                salaryBreakdown.fixedAllowance,
+                              description: "Basic + HRA + Fixed Allowance",
+                              highlight: true
+                            },
                             ...(salaryForm.variablePayEnabled
-                              ? [["Variable Pay", salaryBreakdown.variablePay] as [string, number]]
+                              ? [{
+                                  label: "Variable Pay",
+                                  amount: salaryBreakdown.variablePay,
+                                  description: "Performance-linked target on earnings"
+                                }]
                               : []),
-                            ["Fixed Allowance", salaryBreakdown.fixedAllowance],
-                            ["Employer PF", salaryBreakdown.employerEpf],
-                            ...(salaryForm.includeEsi ? [["ESI Employer", salaryBreakdown.esiEmployerAmount] as [string, number]] : [])
-                          ].map(([label, amount]) => (
-                            <div key={label} className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm last:border-b-0">
-                              <span>{label}</span>
+                            {
+                              label: "Monthly Gross",
+                              amount: salaryBreakdown.monthlyGross,
+                              description: salaryForm.variablePayEnabled
+                                ? "Earnings + Variable Pay"
+                                : "Earnings",
+                              highlight: true
+                            },
+                            { label: "Employer PF", amount: salaryBreakdown.employerEpf },
+                            ...(salaryForm.includeEsi
+                              ? [{ label: "Employer ESI", amount: salaryBreakdown.esiEmployerAmount }]
+                              : []),
+                            {
+                              label: "Fixed Pay",
+                              amount: salaryBreakdown.monthlyCtc - salaryBreakdown.variablePay,
+                              description: "Earnings + Employer Contributions",
+                              highlight: true
+                            },
+                            {
+                              label: "Monthly CTC",
+                              amount: salaryBreakdown.monthlyCtc,
+                              description: salaryForm.variablePayEnabled
+                                ? "Fixed Pay + Variable Pay"
+                                : "Fixed Pay",
+                              highlight: true
+                            },
+                            { label: "Employee PF", amount: salaryBreakdown.employeeEpf },
+                            ...(salaryForm.includeEsi
+                              ? [{ label: "Employee ESI", amount: salaryBreakdown.esiEmployeeAmount }]
+                              : []),
+                            ...(statutoryForm.professionalTaxApplicable
+                              ? [{ label: "Professional Tax", amount: salaryBreakdown.professionalTaxAmount }]
+                              : []),
+                            {
+                              label: "Deductions",
+                              amount:
+                                salaryBreakdown.employeeEpf +
+                                salaryBreakdown.esiEmployeeAmount +
+                                salaryBreakdown.professionalTaxAmount,
+                              description: "Employee-side statutory deductions",
+                              highlight: true
+                            },
+                            {
+                              label: "Net Salary",
+                              amount: salaryBreakdown.netSalary,
+                              description: "Monthly Gross - Deductions",
+                              highlight: true
+                            }
+                          ].map(({ label, amount, description, highlight }) => (
+                            <div
+                              key={label}
+                              className={`grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm ${
+                                highlight
+                                  ? "bg-background/70 font-semibold"
+                                  : ""
+                              }`}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <span>{label}</span>
+                                {description ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Info
+                                        className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
+                                        aria-label={`${label} formula`}
+                                      />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="max-w-48 text-xs">{description}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                ) : null}
+                              </span>
                               <span className="text-right font-medium">{formatInr(amount)}</span>
                               <span className="text-right text-muted-foreground">{formatInr(Number(amount) * 12)}</span>
                             </div>
                           ))}
                           <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-                            Employee PF is not included in CTC because it is deducted from the employee's salary.
-                            Net salary is gross minus employee-side deductions.
-                          </div>
-                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 bg-secondary px-3 py-3 text-sm font-semibold">
-                            <span>Cost to Company</span>
-                            <span className="text-right">{formatInr(salaryBreakdown.monthlyCtc)}</span>
-                            <span className="text-right">{formatInr(salaryBreakdown.annualCtc)}</span>
-                          </div>
-                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-t px-3 py-3 text-sm font-semibold">
-                            <span>Net Salary</span>
-                            <span className="text-right">{formatInr(salaryBreakdown.netSalary)}</span>
-                            <span className="text-right">{formatInr(salaryBreakdown.annualNetSalary)}</span>
+                            Admin summary: earnings are the employee's base pay, gross adds variable pay,
+                            fixed pay adds employer contributions, CTC is fixed pay plus variable pay,
+                            and net salary is what remains after employee deductions.
                           </div>
                         </section>
 
@@ -4321,7 +4415,7 @@ const AddEmployee = () => {
                                 <span className="text-muted-foreground">Variable target type</span>
                                 <span className="font-medium">
                                   {salaryForm.variablePayMode === "percentage"
-                                    ? `${Number(salaryForm.variablePayPercentOfCtc || 0).toFixed(2)}% of CTC`
+                                    ? `${Number(salaryForm.variablePayPercentOfCtc || 0).toFixed(2)}% of Earnings`
                                     : "Fixed amount"}
                                 </span>
                               </div>
