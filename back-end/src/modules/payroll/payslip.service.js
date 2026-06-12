@@ -156,7 +156,9 @@ const getEmployeeBrief = async (organizationId, employeeExternalId) => {
     _id: employeeExternalId,
     organizationId
   })
-    .select("firstName lastName employeeCode dateOfJoining")
+    .select("firstName lastName employeeCode dateOfJoining departmentId designationId address panNumber")
+    .populate("departmentId", "name")
+    .populate("designationId", "name")
     .lean();
   return employee || null;
 };
@@ -394,13 +396,17 @@ const buildPayslipPayload = ({
       employeeCode: employee?.employeeCode || profile?.employee_code || null,
       name: employee ? `${employee.firstName || ""} ${employee.lastName || ""}`.trim() : null,
       dateOfJoining: employee?.dateOfJoining || profile?.date_of_joining || null,
-      taxRegime: profile?.tax_regime || null
+      taxRegime: profile?.tax_regime || null,
+      department: employee?.departmentId?.name || null,
+      designation: employee?.designationId?.name || null,
+      address: employee?.address || null
     },
     bank: bank
       ? {
           paymentMode: bank.payment_mode,
           accountHolderName: bank.account_holder_name,
           bankName: bank.bank_name,
+          branchName: bank.branch_name || null,
           accountNumberMasked: bank.account_number
             ? `XXXXXX${String(bank.account_number).slice(-4)}`
             : null,
@@ -410,7 +416,7 @@ const buildPayslipPayload = ({
       : null,
     statutory: statutory
       ? {
-          pan: statutory.pan || null,
+          pan: statutory.pan || employee?.panNumber || null,
           uan: statutory.uan || null,
           esicNumber: statutory.esic_number || null
         }

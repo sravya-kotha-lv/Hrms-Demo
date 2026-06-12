@@ -1442,7 +1442,8 @@ export const PayrollSetupWizard = ({
                         }
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        Use variables like `BASIC`, `HRA`, `MONTHLY_GROSS`, or `BASIC_PAY`.
+                        Use variables like `BASIC`, `HRA`, `MONTHLY_GROSS`, or `BASIC_PAY`. `VARIABLE`
+                        means the employee's Variable Pay target.
                       </p>
                     </div>
                   </div>

@@ -911,8 +911,16 @@ const AddEmployee = () => {
       monthlyGross,
       professionalTaxApplicable: statutoryForm.professionalTaxApplicable
     });
+    const totalDeductions = Number(
+      (
+        employeeEpf +
+        employerEpf +
+        esiEmployeeAmount +
+        professionalTaxAmount
+      ).toFixed(2)
+    );
     const netSalary = Number(
-      (monthlyGross - employeeEpf - esiEmployeeAmount - professionalTaxAmount).toFixed(2)
+      (monthlyCtc - totalDeductions).toFixed(2)
     );
     const annualNetSalary = Number((netSalary * 12).toFixed(2));
 
@@ -929,6 +937,7 @@ const AddEmployee = () => {
       esiEmployeeAmount,
       esiEmployerAmount,
       professionalTaxAmount,
+      totalDeductions,
       netSalary,
       annualNetSalary
     };
@@ -3634,7 +3643,8 @@ const AddEmployee = () => {
                     />
                     <p className="mt-1 text-xs text-muted-foreground">
                       Included in CTC. In percentage mode, target is derived from earnings/base pay.
-                      Release is performance-based using the schedule below.
+                      In payroll formulas, `VARIABLE` means this monthly target amount. Release is
+                      performance-based using the schedule below.
                     </p>
                   </div>
 
@@ -4268,14 +4278,23 @@ const AddEmployee = () => {
                           {[
                             { label: "Basic Salary", amount: salaryBreakdown.basicPay },
                             { label: "House Rent Allowance", amount: salaryBreakdown.hraAmount },
-                            { label: "Fixed Allowance", amount: salaryBreakdown.fixedAllowance },
+                            { label: "Special Allowance", amount: salaryBreakdown.fixedAllowance },
                             {
                               label: "Earnings",
                               amount:
                                 salaryBreakdown.basicPay +
                                 salaryBreakdown.hraAmount +
                                 salaryBreakdown.fixedAllowance,
-                              description: "Basic + HRA + Fixed Allowance",
+                              description: "Basic + HRA + Special Allowance",
+                              highlight: true
+                            },
+                            {
+                              label: "Fixed Pay",
+                              amount:
+                                salaryBreakdown.basicPay +
+                                salaryBreakdown.hraAmount +
+                                salaryBreakdown.fixedAllowance,
+                              description: "Fixed Pay = Earnings",
                               highlight: true
                             },
                             ...(salaryForm.variablePayEnabled
@@ -4298,20 +4317,15 @@ const AddEmployee = () => {
                               ? [{ label: "Employer ESI", amount: salaryBreakdown.esiEmployerAmount }]
                               : []),
                             {
-                              label: "Fixed Pay",
-                              amount: salaryBreakdown.monthlyCtc - salaryBreakdown.variablePay,
-                              description: "Earnings + Employer Contributions",
-                              highlight: true
-                            },
-                            {
                               label: "Monthly CTC",
                               amount: salaryBreakdown.monthlyCtc,
-                              description: salaryForm.variablePayEnabled
-                                ? "Fixed Pay + Variable Pay"
-                                : "Fixed Pay",
+                              description: salaryForm.includeEsi
+                                ? "Fixed Pay + Variable Pay + Employer PF + Employer ESI"
+                                : "Fixed Pay + Variable Pay + Employer PF",
                               highlight: true
                             },
                             { label: "Employee PF", amount: salaryBreakdown.employeeEpf },
+                            { label: "Employer PF Deduction", amount: salaryBreakdown.employerEpf },
                             ...(salaryForm.includeEsi
                               ? [{ label: "Employee ESI", amount: salaryBreakdown.esiEmployeeAmount }]
                               : []),
@@ -4320,17 +4334,18 @@ const AddEmployee = () => {
                               : []),
                             {
                               label: "Deductions",
-                              amount:
-                                salaryBreakdown.employeeEpf +
-                                salaryBreakdown.esiEmployeeAmount +
-                                salaryBreakdown.professionalTaxAmount,
-                              description: "Employee-side statutory deductions",
+                              amount: salaryBreakdown.totalDeductions,
+                              description: salaryForm.includeEsi
+                                ? "Employee PF + Employer PF + Employee ESI + PT"
+                                : "Employee PF + Employer PF + PT",
                               highlight: true
                             },
                             {
                               label: "Net Salary",
                               amount: salaryBreakdown.netSalary,
-                              description: "Monthly Gross - Deductions",
+                              description: salaryForm.includeEsi
+                                ? "CTC - Employee PF - Employer PF - Employee ESI - PT"
+                                : "CTC - Employee PF - Employer PF - PT",
                               highlight: true
                             }
                           ].map(({ label, amount, description, highlight }) => (
@@ -4363,9 +4378,9 @@ const AddEmployee = () => {
                             </div>
                           ))}
                           <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-                            Admin summary: earnings are the employee's base pay, gross adds variable pay,
-                            fixed pay adds employer contributions, CTC is fixed pay plus variable pay,
-                            and net salary is what remains after employee deductions.
+                            Admin summary: fixed pay is equal to earnings, gross is earnings plus
+                            variable pay, CTC adds employer contributions, and net salary removes PF,
+                            PT, and other employee-side deductions from CTC.
                           </div>
                         </section>
 
