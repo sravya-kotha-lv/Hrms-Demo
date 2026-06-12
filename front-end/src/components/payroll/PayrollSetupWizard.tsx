@@ -46,6 +46,7 @@ type PayrollTemplate = {
     attendanceLockMode: "payroll_cutoff" | "days_window";
     attendanceLockAfterDays: string;
     lopCalculationMethod: "calendar_days" | "working_days";
+    salaryProrationRule: "payable_days" | "present_days_on_working_days";
     defaultWorkingDays: string;
     enableProration: boolean;
     enableAutoOvertime: boolean;
@@ -313,6 +314,7 @@ const TELANGANA_DEFAULT_TEMPLATE: PayrollTemplate = {
     attendanceLockMode: "payroll_cutoff",
     attendanceLockAfterDays: "7",
     lopCalculationMethod: "working_days",
+    salaryProrationRule: "payable_days",
     defaultWorkingDays: "30",
     enableProration: true,
     enableAutoOvertime: true
@@ -529,6 +531,9 @@ const buildAttendanceRulesState = (settings?: PayrollSettingsPayload) => ({
   lopCalculationMethod: (settings?.lop_calculation_method || "calendar_days") as
     | "calendar_days"
     | "working_days",
+  salaryProrationRule: (
+    settings?.metadata?.attendance?.salaryProrationRule || "payable_days"
+  ) as "payable_days" | "present_days_on_working_days",
   defaultWorkingDays: String(settings?.default_working_days || 30),
   enableProration:
     typeof settings?.enable_proration === "boolean" ? settings.enable_proration : true,
@@ -839,7 +844,8 @@ export const PayrollSetupWizard = ({
           },
           statutory,
           attendance: {
-            enableAutoOvertime: attendanceRules.enableAutoOvertime
+            enableAutoOvertime: attendanceRules.enableAutoOvertime,
+            salaryProrationRule: attendanceRules.salaryProrationRule
           }
         }
       };
@@ -1577,8 +1583,9 @@ export const PayrollSetupWizard = ({
             <div className="rounded-lg border bg-muted/20 p-3">
               <p className="font-medium text-sm">What this step means</p>
               <p className="text-sm text-muted-foreground mt-1">
-                This controls when attendance becomes final for payroll and how loss of pay is
-                calculated. If you are unsure, use payroll cutoff + working days + proration on.
+                This controls when attendance becomes final for payroll, how loss of pay is
+                calculated, and how monthly salary is prorated. If you are unsure, use payroll
+                cutoff + working days + payable days based proration.
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1646,7 +1653,8 @@ export const PayrollSetupWizard = ({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Most HR teams use working days.
+                  This only changes the LOP denominator. It does not automatically mean salary is
+                  paid only on present days.
                 </p>
               </div>
               <div>
@@ -1667,6 +1675,36 @@ export const PayrollSetupWizard = ({
                   Most teams keep `30` as a simple default.
                 </p>
               </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Salary Proration Basis</label>
+              <Select
+                value={attendanceRules.salaryProrationRule}
+                onValueChange={(value) =>
+                  setAttendanceRules((prev) => ({
+                    ...prev,
+                    salaryProrationRule: value as "payable_days" | "present_days_on_working_days"
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="payable_days">Pay on payable days</SelectItem>
+                  <SelectItem value="present_days_on_working_days">Pay on present days / working days</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Example: if your organization pays salary only for worked days excluding week offs
+                and holidays, choose present days / working days. Formula: salary ÷ working days ×
+                present days.
+              </p>
+              <p className="text-xs text-amber-600 mt-1">
+                Changes apply only to future payroll runs or runs that are recomputed. Already
+                processed payroll will not change automatically.
+              </p>
             </div>
 
             <div className="flex items-center justify-between border rounded p-3">
@@ -1750,6 +1788,12 @@ export const PayrollSetupWizard = ({
                 Lock Mode: {attendanceRules.attendanceLockMode}, LOP:{" "}
                 {attendanceRules.lopCalculationMethod}, Working Days:{" "}
                 {attendanceRules.defaultWorkingDays}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Proration Basis:{" "}
+                {attendanceRules.salaryProrationRule === "present_days_on_working_days"
+                  ? "Salary ÷ working days × present days"
+                  : "Payable days based"}
               </p>
             </div>
           </div>

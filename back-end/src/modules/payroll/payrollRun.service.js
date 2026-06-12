@@ -3,6 +3,7 @@ const logger = require("../../logger/logger");
 const { observePayrollCompute } = require("../../observability/payrollMetrics");
 const { safeRollback } = require("./payrollTx");
 const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
+const OrgSettings = require("../orgSettings/orgSettings.model");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -749,6 +750,14 @@ exports.computePayrollRun = async (req) => {
     );
     const settings = settingsResult.rows[0] || {};
     const settingsMetadata = parseJson(settings.metadata, {});
+    const orgSettings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
+      .select("salaryProrationRule")
+      .lean();
+    const salaryProrationRule = String(
+      settingsMetadata?.attendance?.salaryProrationRule ||
+      orgSettings?.salaryProrationRule ||
+      "payable_days"
+    );
     const autoOvertimeEnabled =
       typeof settingsMetadata?.attendance?.enableAutoOvertime === "boolean"
         ? settingsMetadata.attendance.enableAutoOvertime
@@ -1039,13 +1048,20 @@ exports.computePayrollRun = async (req) => {
         const variablePay = salaryContext.variablePay;
         const calendarDays = Math.max(1, toNumber(snapshot.calendar_days, 30));
         const workingDays = Math.max(1, toNumber(snapshot.working_days, calendarDays));
+        const presentDays = toNumber(snapshot.present_days, 0);
         const payableDays = toNumber(snapshot.payable_days, 0);
         const lopDays = toNumber(snapshot.lop_days, 0);
         const overtimeMinutes = toNumber(snapshot.overtime_minutes, 0);
         const minWorkMinutes = Math.max(1, toNumber(snapshot.min_work_minutes, 480));
         const denominator =
-          settings.lop_calculation_method === "working_days" ? workingDays : calendarDays;
-        const prorationFactor = Math.max(0, Math.min(1, payableDays / Math.max(1, denominator)));
+          salaryProrationRule === "present_days_on_working_days"
+            ? workingDays
+            : settings.lop_calculation_method === "working_days"
+              ? workingDays
+              : calendarDays;
+        const prorationUnits =
+          salaryProrationRule === "present_days_on_working_days" ? presentDays : payableDays;
+        const prorationFactor = Math.max(0, Math.min(1, prorationUnits / Math.max(1, denominator)));
         const lopFactor = Math.max(0, Math.min(1, lopDays / Math.max(1, denominator)));
         const perDayRate = monthlyGross / Math.max(1, denominator);
         const perMinuteRate = perDayRate / minWorkMinutes;
@@ -1075,6 +1091,7 @@ exports.computePayrollRun = async (req) => {
           ESI_EMPLOYER_RATE: salaryContext.esiEmployerRate,
           EFFECTIVE_BASIC_PERCENT: salaryContext.effectiveBasicPercent,
           HRA_PERCENT_OF_BASIC: salaryContext.hraPercentOfBasic,
+          PRESENT_DAYS: presentDays,
           PAYABLE_DAYS: payableDays,
           LOP_DAYS: lopDays,
           OVERTIME_MINUTES: overtimeMinutes,

@@ -22,6 +22,69 @@ type PayslipLineItem = {
   amount?: number;
 };
 
+const normalizeComponentKey = (item: PayslipLineItem) =>
+  String(item.code || item.name || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_");
+
+const PAYSLIP_LABEL_ALIASES: Record<string, string> = {
+  BASIC: "Basic Salary",
+  BASIC_PAY: "Basic Salary",
+  EARNED_BASIC: "Basic Salary",
+  HRA: "House Rent Allowance",
+  HOUSE_RENT_ALLOWANCE: "House Rent Allowance",
+  OTHER_ALLOWANCE: "Special Allowance",
+  FIXED_ALLOWANCE: "Special Allowance",
+  SPECIAL_ALLOWANCE: "Special Allowance",
+  VARIABLE: "Variable Pay",
+  VARIABLE_PAY: "Variable Pay",
+  EMPLOYER_EPF: "Employer PF",
+  EMPLOYER_PF: "Employer PF",
+  EMPLOYER_PROVIDENT_FUND: "Employer PF",
+  PF_EMPLOYER_SHARE: "Employer PF",
+  EPF: "Employee PF",
+  EMPLOYEE_EPF: "Employee PF",
+  EMPLOYEE_PROVIDENT_FUND: "Employee PF",
+  PF_EMPLOYEE_SHARE: "Employee PF",
+  PT: "Professional Tax",
+  PROFESSIONAL_TAX: "Professional Tax",
+  P_TAX: "Professional Tax"
+};
+
+const EARNING_ORDER: Record<string, number> = {
+  BASIC: 1,
+  BASIC_PAY: 1,
+  EARNED_BASIC: 1,
+  HRA: 2,
+  HOUSE_RENT_ALLOWANCE: 2,
+  OTHER_ALLOWANCE: 3,
+  FIXED_ALLOWANCE: 3,
+  SPECIAL_ALLOWANCE: 3,
+  VARIABLE: 4,
+  VARIABLE_PAY: 4,
+  EMPLOYER_EPF: 5,
+  EMPLOYER_PF: 5,
+  EMPLOYER_PROVIDENT_FUND: 5,
+  PF_EMPLOYER_SHARE: 5,
+  FOOD_COUPONS: 90,
+  CHILDREN_EDUCATION_ALLOWANCE: 91,
+  CHILDREN_EDU_ALLOW: 91
+};
+
+const DEDUCTION_ORDER: Record<string, number> = {
+  EPF: 1,
+  EMPLOYEE_EPF: 1,
+  EMPLOYEE_PROVIDENT_FUND: 1,
+  PF_EMPLOYEE_SHARE: 1,
+  PT: 2,
+  PROFESSIONAL_TAX: 2,
+  P_TAX: 2,
+  TDS: 3,
+  PARENTS_MEDICAL_PREMIUM: 90,
+  PARENTS_MEDICAL_PREM: 90
+};
+
 const formatMonthLabel = (value?: string | null) => {
   if (!value) return "-";
   const [year, month] = String(value).split("-").map(Number);
@@ -108,7 +171,20 @@ const amountToWordsIndian = (amount: number) => {
   return `${parts.join(" ")} Rupees Only`;
 };
 
-const getDisplayName = (item: PayslipLineItem) => item.name || item.code || "-";
+const getDisplayName = (item: PayslipLineItem) => {
+  const key = normalizeComponentKey(item);
+  return PAYSLIP_LABEL_ALIASES[key] || item.name || item.code || "-";
+};
+
+const sortPayslipItems = (items: PayslipLineItem[], orderMap: Record<string, number>) =>
+  [...items].sort((left, right) => {
+    const leftKey = normalizeComponentKey(left);
+    const rightKey = normalizeComponentKey(right);
+    const leftOrder = orderMap[leftKey] ?? 999;
+    const rightOrder = orderMap[rightKey] ?? 999;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return getDisplayName(left).localeCompare(getDisplayName(right));
+  });
 
 const EmployeePayslips = () => {
   const [settings, setSettings] = useState<any>(null);
@@ -122,10 +198,10 @@ const EmployeePayslips = () => {
   );
   const [monthOptions, setMonthOptions] = useState<string[]>(defaultMonths);
   const [month, setMonth] = useState(defaultMonths[0] || "");
+  const [runByMonth, setRunByMonth] = useState<Record<string, EmployeePayslipRun>>({});
   const [loading, setLoading] = useState(false);
   const [payslipData, setPayslipData] = useState<PayslipData | null>(null);
   const [monthsLoaded, setMonthsLoaded] = useState(false);
-  const [runByMonth, setRunByMonth] = useState<Record<string, EmployeePayslipRun>>({});
   const requestSeqRef = useRef(0);
 
   useEffect(() => {
@@ -143,10 +219,10 @@ const EmployeePayslips = () => {
     const run = runByMonth[selectedMonth];
     if (!run?.runId) {
       setPayslipData(null);
+      setLoading(false);
       toast.error(`Payslip not available for ${selectedMonth}`);
       return;
     }
-
     const requestSeq = ++requestSeqRef.current;
     setLoading(true);
     try {
@@ -169,26 +245,23 @@ const EmployeePayslips = () => {
     const initMonths = async () => {
       try {
         const res = await getApiWithToken("/payroll/payslips/my/runs");
-        const availableRuns = res?.success && Array.isArray(res?.data) ? res.data.filter(Boolean) : [];
-        const nextRunMap: Record<string, EmployeePayslipRun> = {};
-        const nextMonths: string[] = [];
-
-        for (const row of availableRuns as EmployeePayslipRun[]) {
-          const normalizedMonth = String(row?.month || "").trim();
-          const normalizedRunId = String(row?.runId || "").trim();
-          if (!normalizedMonth || !normalizedRunId) continue;
-          if (!nextRunMap[normalizedMonth]) {
-            nextRunMap[normalizedMonth] = row;
-            nextMonths.push(normalizedMonth);
-          }
-        }
+        const runs =
+          res?.success && Array.isArray(res?.data)
+            ? (res.data as EmployeePayslipRun[]).filter((row) => row?.month && row?.runId)
+            : [];
+        const nextRunByMonth = runs.reduce<Record<string, EmployeePayslipRun>>((acc, row) => {
+          acc[String(row.month)] = row;
+          return acc;
+        }, {});
+        setRunByMonth(nextRunByMonth);
+        const nextMonths = runs.map((row) => String(row.month).trim()).filter(Boolean);
 
         if (nextMonths.length) {
-          setRunByMonth(nextRunMap);
           setMonthOptions(nextMonths);
           setMonth(nextMonths[0]);
           return;
         }
+        setRunByMonth({});
         setMonthOptions(defaultMonths);
         setMonth(defaultMonths[0] || "");
       } finally {
@@ -205,18 +278,25 @@ const EmployeePayslips = () => {
 
   const payslip = payslipData?.payslipJson;
   const fileMonth = payslip?.payMonth || month;
-  const activeRun = runByMonth[fileMonth] || null;
+  const activeRun = {
+    runCode: payslipData?.pdfPayload?.header?.payrollRunCode || payslip?.runId || null,
+    status: payslip?.payrollStatus || null
+  };
 
   const earningsRows = useMemo(
-    () => [
-      ...((payslip?.earnings || []) as PayslipLineItem[]),
-      ...((payslip?.employerContributions || []) as PayslipLineItem[])
-    ],
+    () =>
+      sortPayslipItems(
+        [
+          ...((payslip?.earnings || []) as PayslipLineItem[]),
+          ...((payslip?.employerContributions || []) as PayslipLineItem[])
+        ],
+        EARNING_ORDER
+      ),
     [payslip?.earnings, payslip?.employerContributions]
   );
 
   const deductionRows = useMemo(
-    () => (payslip?.deductions || []) as PayslipLineItem[],
+    () => sortPayslipItems((payslip?.deductions || []) as PayslipLineItem[], DEDUCTION_ORDER),
     [payslip?.deductions]
   );
 
@@ -241,22 +321,18 @@ const EmployeePayslips = () => {
     () => [
       { label: "Emp Code", value: payslip?.employee?.employeeCode || "-" },
       { label: "Employee Name", value: payslip?.employee?.name || "-" },
-      { label: "Payslip Month", value: formatMonthLabel(payslip?.payMonth || month) },
       { label: "Department", value: payslip?.employee?.department || "-" },
       { label: "Designation", value: payslip?.employee?.designation || "-" },
-      { label: "Joining Date", value: formatDateValue(payslip?.employee?.dateOfJoining) },
       { label: "Bank Name", value: payslip?.bank?.bankName || "-" },
       { label: "Bank Account", value: payslip?.bank?.accountNumberMasked || "-" },
-      { label: "Account Holder", value: payslip?.bank?.accountHolderName || "-" },
       { label: "Branch", value: payslip?.bank?.branchName || "-" },
       { label: "IFSC Code", value: payslip?.bank?.ifscCode || "-" },
       { label: "Payment Mode", value: payslip?.bank?.paymentMode || "-" },
-      { label: "Tax Regime", value: payslip?.employee?.taxRegime || "-" },
       { label: "PAN No", value: payslip?.statutory?.pan || "-" },
       { label: "UAN No", value: payslip?.statutory?.uan || "-" },
       { label: "ESIC No", value: payslip?.statutory?.esicNumber || "-" }
     ],
-    [month, payslip]
+    [payslip]
   );
 
   const attendanceMetrics = useMemo(

@@ -1,5 +1,7 @@
 const { getPayrollPgPool } = require("../../config/payrollDb");
 const Employee = require("../employees/employee.model");
+require("../departments/department.model");
+require("../designations/designation.model");
 const Organization = require("../organizations/organization.model");
 const OrgSettings = require("../orgSettings/orgSettings.model");
 const { getTenantIdForOrganization } = require("./payrollProvisioning.service");
