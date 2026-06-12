@@ -73,6 +73,7 @@ const findRunByEmployeeCodeForMonth = async ({ req, month, employeeCode }) => {
           AND epp.employee_code = $3
           AND r.status IN ('ready_for_approval', 'approved', 'locked', 'paid')
         ORDER BY
+          CASE WHEN re.attendance_snapshot_id IS NOT NULL THEN 0 ELSE 1 END,
           CASE r.status
             WHEN 'paid' THEN 1
             WHEN 'locked' THEN 2
@@ -350,24 +351,22 @@ const buildPayslipPayload = ({
   const reimbursements = buildLineItems(components, "reimbursement");
   const employerContributions = buildLineItems(components, "employer_contribution");
 
-  const attendanceSummary = attendance
-    ? {
-        month: run.pay_month,
-        calendarDays: toNumber(attendance.calendar_days, 0),
-        workingDays: toNumber(attendance.working_days, 0),
-        payableDays: toNumber(attendance.payable_days, 0),
-        lopDays: toNumber(attendance.lop_days, 0),
-        presentDays: toNumber(attendance.present_days, 0),
-        halfDays: toNumber(attendance.half_days, 0),
-        paidLeaveDays: toNumber(attendance.paid_leave_days, 0),
-        unpaidLeaveDays: toNumber(attendance.unpaid_leave_days, 0),
-        holidayDays: toNumber(attendance.holiday_days, 0),
-        weekOffDays: toNumber(attendance.week_off_days, 0),
-        overtimeMinutes: toNumber(attendance.overtime_minutes, 0),
-        lateByMinutes: toNumber(attendance.late_by_minutes, 0),
-        attendanceMinutes: toNumber(attendance.attendance_minutes, 0)
-      }
-    : null;
+  const attendanceSummary = {
+    month: run.pay_month,
+    calendarDays: toNumber(attendance?.calendar_days, 0),
+    workingDays: toNumber(attendance?.working_days, 0),
+    payableDays: toNumber(attendance?.payable_days, toNumber(runEmployee?.payable_days, 0)),
+    lopDays: toNumber(attendance?.lop_days, toNumber(runEmployee?.lop_days, 0)),
+    presentDays: toNumber(attendance?.present_days, 0),
+    halfDays: toNumber(attendance?.half_days, 0),
+    paidLeaveDays: toNumber(attendance?.paid_leave_days, 0),
+    unpaidLeaveDays: toNumber(attendance?.unpaid_leave_days, 0),
+    holidayDays: toNumber(attendance?.holiday_days, 0),
+    weekOffDays: toNumber(attendance?.week_off_days, 0),
+    overtimeMinutes: toNumber(attendance?.overtime_minutes, toNumber(runEmployee?.overtime_minutes, 0)),
+    lateByMinutes: toNumber(attendance?.late_by_minutes, 0),
+    attendanceMinutes: toNumber(attendance?.attendance_minutes, 0)
+  };
 
   const totals = {
     grossEarnings: toNumber(runEmployee.gross_earnings, 0),
@@ -660,6 +659,7 @@ exports.listMyPayslipRuns = async (req) => {
             row_number() OVER (
               PARTITION BY r.pay_month
               ORDER BY
+                CASE WHEN re.attendance_snapshot_id IS NOT NULL THEN 0 ELSE 1 END,
                 CASE r.status
                   WHEN 'paid' THEN 1
                   WHEN 'locked' THEN 2

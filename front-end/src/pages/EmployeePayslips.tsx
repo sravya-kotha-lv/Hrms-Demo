@@ -247,12 +247,38 @@ const EmployeePayslips = () => {
       { label: "Joining Date", value: formatDateValue(payslip?.employee?.dateOfJoining) },
       { label: "Bank Name", value: payslip?.bank?.bankName || "-" },
       { label: "Bank Account", value: payslip?.bank?.accountNumberMasked || "-" },
+      { label: "Account Holder", value: payslip?.bank?.accountHolderName || "-" },
       { label: "Branch", value: payslip?.bank?.branchName || "-" },
+      { label: "IFSC Code", value: payslip?.bank?.ifscCode || "-" },
+      { label: "Payment Mode", value: payslip?.bank?.paymentMode || "-" },
+      { label: "Tax Regime", value: payslip?.employee?.taxRegime || "-" },
       { label: "PAN No", value: payslip?.statutory?.pan || "-" },
       { label: "UAN No", value: payslip?.statutory?.uan || "-" },
       { label: "ESIC No", value: payslip?.statutory?.esicNumber || "-" }
     ],
     [month, payslip]
+  );
+
+  const attendanceMetrics = useMemo(
+    () => [
+      { label: "Days Paid", value: Number(payslip?.attendanceSummary?.payableDays || 0).toFixed(2), tone: "green" },
+      { label: "Present Days", value: Number(payslip?.attendanceSummary?.presentDays || 0).toFixed(2), tone: "slate" },
+      { label: "Paid Leave", value: Number(payslip?.attendanceSummary?.paidLeaveDays || 0).toFixed(2), tone: "slate" },
+      { label: "LWP / Absent", value: Number(payslip?.attendanceSummary?.lopDays || 0).toFixed(2), tone: "amber" }
+    ],
+    [payslip?.attendanceSummary]
+  );
+
+  const payrollMetrics = useMemo(
+    () => [
+      { label: "Gross Earnings", value: formatPlainAmount(Number(payslip?.totals?.grossEarnings || 0)) },
+      { label: "Employer Contributions", value: formatPlainAmount(Number(payslip?.totals?.employerContributions || 0)) },
+      { label: "Total Deductions", value: formatPlainAmount(Number(payslip?.totals?.totalDeductions || 0)) },
+      { label: "Taxable Income", value: formatPlainAmount(Number(payslip?.totals?.taxableIncome || 0)) },
+      { label: "TDS", value: formatPlainAmount(Number(payslip?.totals?.tds || 0)) },
+      { label: "Net Pay", value: formatPlainAmount(Number(payslip?.totals?.netPay || 0)) }
+    ],
+    [payslip?.totals]
   );
 
   const buildPayslipHtml = () => {
@@ -309,10 +335,16 @@ const EmployeePayslips = () => {
             .meta-table td, .line-table td, .line-table th { border: 1px solid #d1d5db; padding: 8px 10px; font-size: 13px; }
             .meta-table .label { width: 12%; background: #f8fafc; font-weight: 700; }
             .meta-table .value { width: 13%; }
-            .strip { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; font-size: 15px; font-weight: 700; }
+            .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0; font-size: 15px; font-weight: 700; }
             .strip-box { border: 1px solid #d1d5db; padding: 10px 12px; background: #fafafa; display: flex; justify-content: space-between; }
             .green { color: #2f6f3e; }
             .red { color: #c2410c; }
+            .amber { color: #c2410c; }
+            .slate { color: #334155; }
+            .payroll-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 16px; }
+            .metric-card { border: 1px solid #d1d5db; background: #fafafa; padding: 12px; }
+            .metric-card .metric-label { font-size: 12px; color: #64748b; }
+            .metric-card .metric-value { margin-top: 6px; font-size: 18px; font-weight: 700; color: #111827; }
             .line-table th { background: #f3f4f6; font-size: 14px; text-align: left; }
             .line-table .amount { text-align: right; }
             .line-table .total-row td { font-weight: 700; background: #f8fafc; }
@@ -340,8 +372,29 @@ const EmployeePayslips = () => {
             </table>
 
             <div class="strip">
-              <div class="strip-box"><span>Days Paid</span><span class="green">${escapeHtml(Number(payslip.attendanceSummary?.payableDays || 0).toFixed(2))}</span></div>
-              <div class="strip-box"><span>LWP / Absent</span><span class="red">${escapeHtml(Number(payslip.attendanceSummary?.lopDays || 0).toFixed(2))}</span></div>
+              ${attendanceMetrics
+                .map(
+                  (item) => `
+                    <div class="strip-box">
+                      <span>${escapeHtml(item.label)}</span>
+                      <span class="${item.tone}">${escapeHtml(item.value)}</span>
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>
+
+            <div class="payroll-grid">
+              ${payrollMetrics
+                .map(
+                  (item) => `
+                    <div class="metric-card">
+                      <div class="metric-label">${escapeHtml(item.label)}</div>
+                      <div class="metric-value">${escapeHtml(item.value)}</div>
+                    </div>
+                  `
+                )
+                .join("")}
             </div>
 
             <table class="line-table">
@@ -560,22 +613,39 @@ const EmployeePayslips = () => {
       currentY += 42;
     }
 
-    ctx.fillStyle = "#fafafa";
-    ctx.fillRect(60, currentY + 18, 620, 56);
-    ctx.fillRect(720, currentY + 18, 620, 56);
-    ctx.strokeRect(60, currentY + 18, 620, 56);
-    ctx.strokeRect(720, currentY + 18, 620, 56);
-    ctx.fillStyle = "#111827";
-    ctx.font = "bold 18px Arial";
-    ctx.fillText("Days Paid", 82, currentY + 52);
-    ctx.fillStyle = "#2f6f3e";
-    ctx.fillText(Number(payslip.attendanceSummary?.payableDays || 0).toFixed(2), 300, currentY + 52);
-    ctx.fillStyle = "#111827";
-    ctx.fillText("LWP/Absent", 742, currentY + 52);
-    ctx.fillStyle = "#c2410c";
-    ctx.fillText(Number(payslip.attendanceSummary?.lopDays || 0).toFixed(2), 1010, currentY + 52);
+    const attendanceCardWidth = 300;
+    attendanceMetrics.forEach((item, index) => {
+      const x = 60 + index * (attendanceCardWidth + 14);
+      ctx.fillStyle = "#fafafa";
+      ctx.fillRect(x, currentY + 18, attendanceCardWidth, 56);
+      ctx.strokeRect(x, currentY + 18, attendanceCardWidth, 56);
+      ctx.fillStyle = "#111827";
+      ctx.font = "bold 16px Arial";
+      ctx.fillText(item.label, x + 14, currentY + 52);
+      ctx.fillStyle = item.tone === "green" ? "#2f6f3e" : item.tone === "amber" ? "#c2410c" : "#334155";
+      const width = ctx.measureText(item.value).width;
+      ctx.fillText(item.value, x + attendanceCardWidth - width - 14, currentY + 52);
+    });
 
-    currentY += 110;
+    currentY += 104;
+    const payrollCardWidth = 398;
+    payrollMetrics.forEach((item, index) => {
+      const row = Math.floor(index / 3);
+      const col = index % 3;
+      const x = 60 + col * (payrollCardWidth + 14);
+      const y = currentY + row * 74;
+      ctx.fillStyle = "#fafafa";
+      ctx.fillRect(x, y, payrollCardWidth, 60);
+      ctx.strokeRect(x, y, payrollCardWidth, 60);
+      ctx.fillStyle = "#64748b";
+      ctx.font = "13px Arial";
+      ctx.fillText(item.label, x + 14, y + 22);
+      ctx.fillStyle = "#111827";
+      ctx.font = "bold 20px Arial";
+      ctx.fillText(item.value, x + 14, y + 46);
+    });
+
+    currentY += 164;
     const tableX = 60;
     const colWidths = [440, 180, 440, 180];
     const rowHeight = 42;
@@ -806,18 +876,31 @@ const EmployeePayslips = () => {
               </table>
 
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div className="flex items-center justify-between border bg-slate-50 px-4 py-3">
-                  <span className="font-semibold text-slate-700">Days Paid</span>
-                  <span className="font-bold text-green-700">
-                    {Number(payslip.attendanceSummary?.payableDays || 0).toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between border bg-slate-50 px-4 py-3">
-                  <span className="font-semibold text-slate-700">LWP / Absent</span>
-                  <span className="font-bold text-amber-700">
-                    {Number(payslip.attendanceSummary?.lopDays || 0).toFixed(2)}
-                  </span>
-                </div>
+                {attendanceMetrics.map((item) => (
+                  <div key={item.label} className="flex items-center justify-between border bg-slate-50 px-4 py-3">
+                    <span className="font-semibold text-slate-700">{item.label}</span>
+                    <span
+                      className={`font-bold ${
+                        item.tone === "green"
+                          ? "text-green-700"
+                          : item.tone === "amber"
+                            ? "text-amber-700"
+                            : "text-slate-700"
+                      }`}
+                    >
+                      {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {payrollMetrics.map((item) => (
+                  <div key={item.label} className="border bg-slate-50 px-4 py-3">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">{item.label}</p>
+                    <p className="mt-1 text-lg font-bold text-slate-900">{item.value}</p>
+                  </div>
+                ))}
               </div>
 
               <div className="mt-5 overflow-hidden border">
