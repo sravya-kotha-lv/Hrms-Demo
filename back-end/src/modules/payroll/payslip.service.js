@@ -73,6 +73,7 @@ const findRunByEmployeeCodeForMonth = async ({ req, month, employeeCode }) => {
           AND epp.employee_code = $3
           AND r.status IN ('ready_for_approval', 'approved', 'locked', 'paid')
         ORDER BY
+          CASE WHEN re.attendance_snapshot_id IS NOT NULL THEN 0 ELSE 1 END,
           CASE r.status
             WHEN 'paid' THEN 1
             WHEN 'locked' THEN 2
@@ -156,7 +157,9 @@ const getEmployeeBrief = async (organizationId, employeeExternalId) => {
     _id: employeeExternalId,
     organizationId
   })
-    .select("firstName lastName employeeCode dateOfJoining")
+    .select("firstName lastName employeeCode dateOfJoining departmentId designationId address panNumber")
+    .populate("departmentId", "name")
+    .populate("designationId", "name")
     .lean();
   return employee || null;
 };
@@ -348,24 +351,22 @@ const buildPayslipPayload = ({
   const reimbursements = buildLineItems(components, "reimbursement");
   const employerContributions = buildLineItems(components, "employer_contribution");
 
-  const attendanceSummary = attendance
-    ? {
-        month: run.pay_month,
-        calendarDays: toNumber(attendance.calendar_days, 0),
-        workingDays: toNumber(attendance.working_days, 0),
-        payableDays: toNumber(attendance.payable_days, 0),
-        lopDays: toNumber(attendance.lop_days, 0),
-        presentDays: toNumber(attendance.present_days, 0),
-        halfDays: toNumber(attendance.half_days, 0),
-        paidLeaveDays: toNumber(attendance.paid_leave_days, 0),
-        unpaidLeaveDays: toNumber(attendance.unpaid_leave_days, 0),
-        holidayDays: toNumber(attendance.holiday_days, 0),
-        weekOffDays: toNumber(attendance.week_off_days, 0),
-        overtimeMinutes: toNumber(attendance.overtime_minutes, 0),
-        lateByMinutes: toNumber(attendance.late_by_minutes, 0),
-        attendanceMinutes: toNumber(attendance.attendance_minutes, 0)
-      }
-    : null;
+  const attendanceSummary = {
+    month: run.pay_month,
+    calendarDays: toNumber(attendance?.calendar_days, 0),
+    workingDays: toNumber(attendance?.working_days, 0),
+    payableDays: toNumber(attendance?.payable_days, toNumber(runEmployee?.payable_days, 0)),
+    lopDays: toNumber(attendance?.lop_days, toNumber(runEmployee?.lop_days, 0)),
+    presentDays: toNumber(attendance?.present_days, 0),
+    halfDays: toNumber(attendance?.half_days, 0),
+    paidLeaveDays: toNumber(attendance?.paid_leave_days, 0),
+    unpaidLeaveDays: toNumber(attendance?.unpaid_leave_days, 0),
+    holidayDays: toNumber(attendance?.holiday_days, 0),
+    weekOffDays: toNumber(attendance?.week_off_days, 0),
+    overtimeMinutes: toNumber(attendance?.overtime_minutes, toNumber(runEmployee?.overtime_minutes, 0)),
+    lateByMinutes: toNumber(attendance?.late_by_minutes, 0),
+    attendanceMinutes: toNumber(attendance?.attendance_minutes, 0)
+  };
 
   const totals = {
     grossEarnings: toNumber(runEmployee.gross_earnings, 0),
@@ -394,13 +395,17 @@ const buildPayslipPayload = ({
       employeeCode: employee?.employeeCode || profile?.employee_code || null,
       name: employee ? `${employee.firstName || ""} ${employee.lastName || ""}`.trim() : null,
       dateOfJoining: employee?.dateOfJoining || profile?.date_of_joining || null,
-      taxRegime: profile?.tax_regime || null
+      taxRegime: profile?.tax_regime || null,
+      department: employee?.departmentId?.name || null,
+      designation: employee?.designationId?.name || null,
+      address: employee?.address || null
     },
     bank: bank
       ? {
           paymentMode: bank.payment_mode,
           accountHolderName: bank.account_holder_name,
           bankName: bank.bank_name,
+          branchName: bank.branch_name || null,
           accountNumberMasked: bank.account_number
             ? `XXXXXX${String(bank.account_number).slice(-4)}`
             : null,
@@ -410,7 +415,7 @@ const buildPayslipPayload = ({
       : null,
     statutory: statutory
       ? {
-          pan: statutory.pan || null,
+          pan: statutory.pan || employee?.panNumber || null,
           uan: statutory.uan || null,
           esicNumber: statutory.esic_number || null
         }
@@ -654,6 +659,7 @@ exports.listMyPayslipRuns = async (req) => {
             row_number() OVER (
               PARTITION BY r.pay_month
               ORDER BY
+                CASE WHEN re.attendance_snapshot_id IS NOT NULL THEN 0 ELSE 1 END,
                 CASE r.status
                   WHEN 'paid' THEN 1
                   WHEN 'locked' THEN 2

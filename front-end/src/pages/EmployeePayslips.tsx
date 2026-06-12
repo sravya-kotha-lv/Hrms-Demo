@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { getApiWithToken } from "@/services/apiWrapper";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Download, Printer } from "lucide-react";
-import { buildMonthOptions, formatCurrency, type PayslipData } from "@/components/payroll/payrollShared";
+import { buildMonthOptions, type PayslipData } from "@/components/payroll/payrollShared";
 
 type EmployeePayslipRun = {
   runId: string;
@@ -15,6 +15,100 @@ type EmployeePayslipRun = {
   status?: string;
   employeeExternalId?: string;
 };
+
+type PayslipLineItem = {
+  code?: string;
+  name?: string;
+  amount?: number;
+};
+
+const formatMonthLabel = (value?: string | null) => {
+  if (!value) return "-";
+  const [year, month] = String(value).split("-").map(Number);
+  if (!year || !month) return String(value);
+  return new Intl.DateTimeFormat("en-IN", {
+    month: "short",
+    year: "numeric"
+  }).format(new Date(year, month - 1, 1));
+};
+
+const formatDateValue = (value?: string | null) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(date);
+};
+
+const formatPlainAmount = (amount: number) =>
+  new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number.isFinite(amount) ? amount : 0);
+
+const escapeHtml = (value: unknown) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const numberToWordsBelowThousand = (value: number) => {
+  const ones = [
+    "",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen"
+  ];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+  if (value < 20) return ones[value];
+  if (value < 100) {
+    return `${tens[Math.floor(value / 10)]}${value % 10 ? ` ${ones[value % 10]}` : ""}`.trim();
+  }
+  return `${ones[Math.floor(value / 100)]} Hundred${value % 100 ? ` ${numberToWordsBelowThousand(value % 100)}` : ""}`.trim();
+};
+
+const amountToWordsIndian = (amount: number) => {
+  const value = Math.floor(Number.isFinite(amount) ? amount : 0);
+  if (!value) return "Zero Rupees Only";
+
+  const crore = Math.floor(value / 10000000);
+  const lakh = Math.floor((value % 10000000) / 100000);
+  const thousand = Math.floor((value % 100000) / 1000);
+  const remainder = value % 1000;
+
+  const parts = [
+    crore ? `${numberToWordsBelowThousand(crore)} Crore` : "",
+    lakh ? `${numberToWordsBelowThousand(lakh)} Lakh` : "",
+    thousand ? `${numberToWordsBelowThousand(thousand)} Thousand` : "",
+    remainder ? numberToWordsBelowThousand(remainder) : ""
+  ].filter(Boolean);
+
+  return `${parts.join(" ")} Rupees Only`;
+};
+
+const getDisplayName = (item: PayslipLineItem) => item.name || item.code || "-";
 
 const EmployeePayslips = () => {
   const [settings, setSettings] = useState<any>(null);
@@ -105,14 +199,236 @@ const EmployeePayslips = () => {
   }, [defaultMonths]);
 
   useEffect(() => {
-    if (!monthsLoaded) return;
-    if (!month) return;
+    if (!monthsLoaded || !month) return;
     loadPayslip(month);
   }, [month, monthsLoaded, runByMonth]);
 
   const payslip = payslipData?.payslipJson;
   const fileMonth = payslip?.payMonth || month;
   const activeRun = runByMonth[fileMonth] || null;
+
+  const earningsRows = useMemo(
+    () => [
+      ...((payslip?.earnings || []) as PayslipLineItem[]),
+      ...((payslip?.employerContributions || []) as PayslipLineItem[])
+    ],
+    [payslip?.earnings, payslip?.employerContributions]
+  );
+
+  const deductionRows = useMemo(
+    () => (payslip?.deductions || []) as PayslipLineItem[],
+    [payslip?.deductions]
+  );
+
+  const tableRows = useMemo(() => {
+    const maxRows = Math.max(earningsRows.length, deductionRows.length);
+    return Array.from({ length: maxRows }, (_, index) => ({
+      earning: earningsRows[index] || null,
+      deduction: deductionRows[index] || null
+    }));
+  }, [deductionRows, earningsRows]);
+
+  const earningsTotal = useMemo(
+    () => earningsRows.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    [earningsRows]
+  );
+  const deductionsTotal = useMemo(
+    () => deductionRows.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    [deductionRows]
+  );
+
+  const headerFields = useMemo(
+    () => [
+      { label: "Emp Code", value: payslip?.employee?.employeeCode || "-" },
+      { label: "Employee Name", value: payslip?.employee?.name || "-" },
+      { label: "Payslip Month", value: formatMonthLabel(payslip?.payMonth || month) },
+      { label: "Department", value: payslip?.employee?.department || "-" },
+      { label: "Designation", value: payslip?.employee?.designation || "-" },
+      { label: "Joining Date", value: formatDateValue(payslip?.employee?.dateOfJoining) },
+      { label: "Bank Name", value: payslip?.bank?.bankName || "-" },
+      { label: "Bank Account", value: payslip?.bank?.accountNumberMasked || "-" },
+      { label: "Account Holder", value: payslip?.bank?.accountHolderName || "-" },
+      { label: "Branch", value: payslip?.bank?.branchName || "-" },
+      { label: "IFSC Code", value: payslip?.bank?.ifscCode || "-" },
+      { label: "Payment Mode", value: payslip?.bank?.paymentMode || "-" },
+      { label: "Tax Regime", value: payslip?.employee?.taxRegime || "-" },
+      { label: "PAN No", value: payslip?.statutory?.pan || "-" },
+      { label: "UAN No", value: payslip?.statutory?.uan || "-" },
+      { label: "ESIC No", value: payslip?.statutory?.esicNumber || "-" }
+    ],
+    [month, payslip]
+  );
+
+  const attendanceMetrics = useMemo(
+    () => [
+      { label: "Days Paid", value: Number(payslip?.attendanceSummary?.payableDays || 0).toFixed(2), tone: "green" },
+      { label: "Present Days", value: Number(payslip?.attendanceSummary?.presentDays || 0).toFixed(2), tone: "slate" },
+      { label: "Paid Leave", value: Number(payslip?.attendanceSummary?.paidLeaveDays || 0).toFixed(2), tone: "slate" },
+      { label: "LWP / Absent", value: Number(payslip?.attendanceSummary?.lopDays || 0).toFixed(2), tone: "amber" }
+    ],
+    [payslip?.attendanceSummary]
+  );
+
+  const payrollMetrics = useMemo(
+    () => [
+      { label: "Gross Earnings", value: formatPlainAmount(Number(payslip?.totals?.grossEarnings || 0)) },
+      { label: "Employer Contributions", value: formatPlainAmount(Number(payslip?.totals?.employerContributions || 0)) },
+      { label: "Total Deductions", value: formatPlainAmount(Number(payslip?.totals?.totalDeductions || 0)) },
+      { label: "Taxable Income", value: formatPlainAmount(Number(payslip?.totals?.taxableIncome || 0)) },
+      { label: "TDS", value: formatPlainAmount(Number(payslip?.totals?.tds || 0)) },
+      { label: "Net Pay", value: formatPlainAmount(Number(payslip?.totals?.netPay || 0)) }
+    ],
+    [payslip?.totals]
+  );
+
+  const buildPayslipHtml = () => {
+    if (!payslip) return "";
+    const rowsHtml = tableRows
+      .map(({ earning, deduction }) => {
+        const earningName = earning ? getDisplayName(earning) : "&nbsp;";
+        const earningAmount = earning ? formatPlainAmount(Number(earning.amount || 0)) : "&nbsp;";
+        const deductionName = deduction ? getDisplayName(deduction) : "&nbsp;";
+        const deductionAmount = deduction ? formatPlainAmount(Number(deduction.amount || 0)) : "&nbsp;";
+        return `
+          <tr>
+            <td>${escapeHtml(earningName)}</td>
+            <td class="amount">${earningAmount}</td>
+            <td>${escapeHtml(deductionName)}</td>
+            <td class="amount">${deductionAmount}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const fieldRows = Array.from({ length: Math.ceil(headerFields.length / 4) }, (_, index) =>
+      headerFields.slice(index * 4, index * 4 + 4)
+    )
+      .map(
+        (group) => `
+          <tr>
+            ${group
+              .map(
+                (item) => `
+                  <td class="label">${escapeHtml(item.label)}</td>
+                  <td class="value">${escapeHtml(item.value)}</td>
+                `
+              )
+              .join("")}
+          </tr>
+        `
+      )
+      .join("");
+
+    return `
+      <html>
+        <head>
+          <title>Payslip ${escapeHtml(fileMonth)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; background: #ffffff; color: #1f2937; }
+            .page { padding: 28px 36px; }
+            .header { display: flex; align-items: center; gap: 18px; border-bottom: 1px solid #d1d5db; padding-bottom: 16px; }
+            .logo { width: 84px; height: 84px; object-fit: contain; }
+            .header-copy { flex: 1; text-align: center; }
+            .company { margin: 0; color: #2f6f3e; font-size: 28px; font-weight: 700; }
+            .subtitle { margin: 10px 0 0; font-size: 14px; color: #6b7280; }
+            .meta-table, .line-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            .meta-table td, .line-table td, .line-table th { border: 1px solid #d1d5db; padding: 8px 10px; font-size: 13px; }
+            .meta-table .label { width: 12%; background: #f8fafc; font-weight: 700; }
+            .meta-table .value { width: 13%; }
+            .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0; font-size: 15px; font-weight: 700; }
+            .strip-box { border: 1px solid #d1d5db; padding: 10px 12px; background: #fafafa; display: flex; justify-content: space-between; }
+            .green { color: #2f6f3e; }
+            .red { color: #c2410c; }
+            .amber { color: #c2410c; }
+            .slate { color: #334155; }
+            .payroll-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 16px; }
+            .metric-card { border: 1px solid #d1d5db; background: #fafafa; padding: 12px; }
+            .metric-card .metric-label { font-size: 12px; color: #64748b; }
+            .metric-card .metric-value { margin-top: 6px; font-size: 18px; font-weight: 700; color: #111827; }
+            .line-table th { background: #f3f4f6; font-size: 14px; text-align: left; }
+            .line-table .amount { text-align: right; }
+            .line-table .total-row td { font-weight: 700; background: #f8fafc; }
+            .line-table .net-row td { font-weight: 700; background: #f9fafb; }
+            .footer-note { margin-top: 14px; font-size: 12px; color: #6b7280; }
+            .net-words { margin-top: 10px; padding: 10px 12px; border: 1px solid #d1d5db; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <div class="header">
+              ${
+                payslip.company?.logoUrl
+                  ? `<img class="logo" src="${escapeHtml(payslip.company.logoUrl)}" alt="Company Logo" />`
+                  : ""
+              }
+              <div class="header-copy">
+                <h1 class="company">${escapeHtml(payslip.company?.name || "Company")}</h1>
+                <p class="subtitle">Payslip for the month ${escapeHtml(formatMonthLabel(payslip.payMonth || month))}</p>
+              </div>
+            </div>
+
+            <table class="meta-table">
+              <tbody>${fieldRows}</tbody>
+            </table>
+
+            <div class="strip">
+              ${attendanceMetrics
+                .map(
+                  (item) => `
+                    <div class="strip-box">
+                      <span>${escapeHtml(item.label)}</span>
+                      <span class="${item.tone}">${escapeHtml(item.value)}</span>
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>
+
+            <div class="payroll-grid">
+              ${payrollMetrics
+                .map(
+                  (item) => `
+                    <div class="metric-card">
+                      <div class="metric-label">${escapeHtml(item.label)}</div>
+                      <div class="metric-value">${escapeHtml(item.value)}</div>
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>
+
+            <table class="line-table">
+              <thead>
+                <tr>
+                  <th>Earnings</th>
+                  <th class="amount">Amount</th>
+                  <th>Deductions & Recoveries</th>
+                  <th class="amount">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+                <tr class="total-row">
+                  <td>Amount Total</td>
+                  <td class="amount">${formatPlainAmount(earningsTotal)}</td>
+                  <td>Amount Total</td>
+                  <td class="amount">${formatPlainAmount(deductionsTotal)}</td>
+                </tr>
+                <tr class="net-row">
+                  <td colspan="2"></td>
+                  <td>Net Pay</td>
+                  <td class="amount">${formatPlainAmount(Number(payslip.totals?.netPay || 0))}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="net-words">Net Pay : ${escapeHtml(amountToWordsIndian(Number(payslip.totals?.netPay || 0)))}</div>
+            <p class="footer-note">This is a computer generated payslip and does not require signature.</p>
+          </div>
+        </body>
+      </html>
+    `;
+  };
 
   const blobToDataUrl = (blob: Blob): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -187,7 +503,7 @@ const EmployeePayslips = () => {
 
     const pageWidthPt = 595.28;
     const pageHeightPt = 841.89;
-    const marginPt = 20;
+    const marginPt = 16;
     const maxDrawWidth = pageWidthPt - marginPt * 2;
     const maxDrawHeight = pageHeightPt - marginPt * 2;
 
@@ -245,92 +561,179 @@ const EmployeePayslips = () => {
     if (!payslip) throw new Error("No payslip data available");
     const canvas = document.createElement("canvas");
     canvas.width = 1400;
-    canvas.height = 2000;
+    canvas.height = 1900;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas context unavailable");
 
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#0f172a";
+    ctx.strokeStyle = "#d1d5db";
+    ctx.fillStyle = "#1f2937";
 
     const logoSrc = await getCanvasSafeImageSrc(String(payslip.company?.logoUrl || ""));
     if (logoSrc) {
       try {
         const logo = await loadImage(logoSrc);
-        const maxLogoWidth = 220;
-        const maxLogoHeight = 100;
-        const scale = Math.min(maxLogoWidth / logo.naturalWidth, maxLogoHeight / logo.naturalHeight, 1);
-        const drawWidth = logo.naturalWidth * scale;
-        const drawHeight = logo.naturalHeight * scale;
-        ctx.drawImage(logo, 90, 70, drawWidth, drawHeight);
+        const scale = Math.min(120 / logo.naturalWidth, 90 / logo.naturalHeight, 1);
+        ctx.drawImage(logo, 70, 48, logo.naturalWidth * scale, logo.naturalHeight * scale);
       } catch {
-        // Keep the PDF usable even if the logo cannot be loaded.
+        // Keep PDF generation usable without logo.
       }
     }
 
+    ctx.fillStyle = "#2f6f3e";
     ctx.font = "bold 34px Arial";
-    ctx.fillText(String(payslip.company?.name || "Company"), 90, 220);
+    ctx.textAlign = "center";
+    ctx.fillText(String(payslip.company?.name || "Company"), 700, 86);
+    ctx.fillStyle = "#6b7280";
     ctx.font = "20px Arial";
-    ctx.fillStyle = "#475569";
-    ctx.fillText(`Payslip for ${payslip.payMonth || month}`, 90, 260);
-    ctx.fillText(`Employee: ${payslip.employee?.name || "-"}`, 90, 295);
-    ctx.fillText(`Employee Code: ${payslip.employee?.employeeCode || "-"}`, 90, 330);
-    ctx.fillText(`Payroll Run: ${activeRun?.runCode || payslip.runId || "-"}`, 90, 365);
-    ctx.fillText(`Status: ${activeRun?.status || payslip.payrollStatus || "-"}`, 90, 400);
+    ctx.fillText(`Payslip for the month ${formatMonthLabel(payslip.payMonth || month)}`, 700, 122);
+    ctx.textAlign = "left";
 
-    const cardY = 470;
-    const cardHeight = 150;
-    const cardGap = 30;
-    const cardWidth = 280;
-    const cards = [
-      { label: "Gross Earnings", value: formatCurrency(Number(payslip.totals?.grossEarnings || 0)) },
-      { label: "Total Deductions", value: formatCurrency(Number(payslip.totals?.totalDeductions || 0)) },
-      { label: "Taxable Income", value: formatCurrency(Number(payslip.totals?.taxableIncome || 0)) },
-      { label: "Net Pay", value: formatCurrency(Number(payslip.totals?.netPay || 0)) }
-    ];
-    cards.forEach((card, index) => {
-      const x = 90 + (index % 2) * (cardWidth + cardGap);
-      const y = cardY + Math.floor(index / 2) * (cardHeight + 24);
-      ctx.fillStyle = "#f8fafc";
-      ctx.strokeStyle = "#cbd5e1";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(x, y, cardWidth, cardHeight, 18);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#64748b";
-      ctx.font = "18px Arial";
-      ctx.fillText(card.label, x + 20, y + 48);
-      ctx.fillStyle = card.label === "Net Pay" ? "#16a34a" : "#0f172a";
-      ctx.font = "bold 28px Arial";
-      ctx.fillText(card.value, x + 20, y + 92);
-    });
-
-    const drawSection = (title: string, rows: Array<{ code?: string; name?: string; amount?: number }>, startY: number) => {
-      ctx.fillStyle = "#0f172a";
-      ctx.font = "bold 24px Arial";
-      ctx.fillText(title, 90, startY);
-      let y = startY + 28;
-      ctx.font = "18px Arial";
-      rows.slice(0, 8).forEach((row) => {
-        ctx.fillStyle = "#0f172a";
-        ctx.fillText(`${row.name || row.code || "-"}`, 110, y);
-        ctx.fillStyle = "#475569";
-        ctx.fillText(formatCurrency(Number(row.amount || 0)), 1020, y);
-        y += 28;
+    const drawBoxRow = (y: number, pairs: Array<{ label: string; value: string }>) => {
+      let x = 60;
+      pairs.forEach((pair) => {
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(x, y, 320, 42);
+        ctx.strokeRect(x, y, 320, 42);
+        ctx.fillStyle = "#334155";
+        ctx.font = "bold 13px Arial";
+        ctx.fillText(pair.label, x + 10, y + 26);
+        ctx.fillStyle = "#111827";
+        ctx.font = "13px Arial";
+        ctx.fillText(pair.value, x + 124, y + 26);
+        x += 320;
       });
-      return y;
     };
 
-    let sectionY = 800;
-    sectionY = drawSection("Earnings", (payslip.earnings || []) as Array<{ code?: string; name?: string; amount?: number }>, sectionY);
-    sectionY += 30;
-    sectionY = drawSection("Deductions", (payslip.deductions || []) as Array<{ code?: string; name?: string; amount?: number }>, sectionY);
+    const fieldPairs = headerFields.map((field) => ({ label: field.label, value: String(field.value || "-") }));
+    let currentY = 165;
+    for (let index = 0; index < fieldPairs.length; index += 4) {
+      drawBoxRow(currentY, fieldPairs.slice(index, index + 4));
+      currentY += 42;
+    }
 
-    ctx.fillStyle = "#64748b";
-    ctx.font = "16px Arial";
-    ctx.fillText("This is a system-generated payslip.", 90, 1870);
-    ctx.fillText("For queries contact payroll/HR team.", 90, 1900);
+    const attendanceCardWidth = 300;
+    attendanceMetrics.forEach((item, index) => {
+      const x = 60 + index * (attendanceCardWidth + 14);
+      ctx.fillStyle = "#fafafa";
+      ctx.fillRect(x, currentY + 18, attendanceCardWidth, 56);
+      ctx.strokeRect(x, currentY + 18, attendanceCardWidth, 56);
+      ctx.fillStyle = "#111827";
+      ctx.font = "bold 16px Arial";
+      ctx.fillText(item.label, x + 14, currentY + 52);
+      ctx.fillStyle = item.tone === "green" ? "#2f6f3e" : item.tone === "amber" ? "#c2410c" : "#334155";
+      const width = ctx.measureText(item.value).width;
+      ctx.fillText(item.value, x + attendanceCardWidth - width - 14, currentY + 52);
+    });
+
+    currentY += 104;
+    const payrollCardWidth = 398;
+    payrollMetrics.forEach((item, index) => {
+      const row = Math.floor(index / 3);
+      const col = index % 3;
+      const x = 60 + col * (payrollCardWidth + 14);
+      const y = currentY + row * 74;
+      ctx.fillStyle = "#fafafa";
+      ctx.fillRect(x, y, payrollCardWidth, 60);
+      ctx.strokeRect(x, y, payrollCardWidth, 60);
+      ctx.fillStyle = "#64748b";
+      ctx.font = "13px Arial";
+      ctx.fillText(item.label, x + 14, y + 22);
+      ctx.fillStyle = "#111827";
+      ctx.font = "bold 20px Arial";
+      ctx.fillText(item.value, x + 14, y + 46);
+    });
+
+    currentY += 164;
+    const tableX = 60;
+    const colWidths = [440, 180, 440, 180];
+    const rowHeight = 42;
+    const headerTitles = ["Earnings", "Amount", "Deductions & Recoveries", "Amount"];
+
+    let xCursor = tableX;
+    headerTitles.forEach((title, index) => {
+      ctx.fillStyle = "#f3f4f6";
+      ctx.fillRect(xCursor, currentY, colWidths[index], rowHeight);
+      ctx.strokeRect(xCursor, currentY, colWidths[index], rowHeight);
+      ctx.fillStyle = "#111827";
+      ctx.font = "bold 15px Arial";
+      ctx.fillText(title, xCursor + 10, currentY + 26);
+      xCursor += colWidths[index];
+    });
+
+    let rowY = currentY + rowHeight;
+    tableRows.forEach(({ earning, deduction }) => {
+      const values = [
+        earning ? getDisplayName(earning) : "",
+        earning ? formatPlainAmount(Number(earning.amount || 0)) : "",
+        deduction ? getDisplayName(deduction) : "",
+        deduction ? formatPlainAmount(Number(deduction.amount || 0)) : ""
+      ];
+      let rowX = tableX;
+      values.forEach((value, index) => {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(rowX, rowY, colWidths[index], rowHeight);
+        ctx.strokeRect(rowX, rowY, colWidths[index], rowHeight);
+        ctx.fillStyle = "#374151";
+        ctx.font = "14px Arial";
+        const isAmount = index === 1 || index === 3;
+        if (isAmount) {
+          const width = ctx.measureText(value).width;
+          ctx.fillText(value, rowX + colWidths[index] - width - 10, rowY + 26);
+        } else {
+          ctx.fillText(value || "-", rowX + 10, rowY + 26);
+        }
+        rowX += colWidths[index];
+      });
+      rowY += rowHeight;
+    });
+
+    const totalValues = ["Amount Total", formatPlainAmount(earningsTotal), "Amount Total", formatPlainAmount(deductionsTotal)];
+    let totalX = tableX;
+    totalValues.forEach((value, index) => {
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(totalX, rowY, colWidths[index], rowHeight);
+      ctx.strokeRect(totalX, rowY, colWidths[index], rowHeight);
+      ctx.fillStyle = "#111827";
+      ctx.font = "bold 14px Arial";
+      const isAmount = index === 1 || index === 3;
+      if (isAmount) {
+        const width = ctx.measureText(value).width;
+        ctx.fillText(value, totalX + colWidths[index] - width - 10, rowY + 26);
+      } else {
+        ctx.fillText(value, totalX + 10, rowY + 26);
+      }
+      totalX += colWidths[index];
+    });
+
+    rowY += rowHeight;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(tableX, rowY, colWidths[0] + colWidths[1], rowHeight);
+    ctx.strokeRect(tableX, rowY, colWidths[0] + colWidths[1], rowHeight);
+    ctx.fillStyle = "#f9fafb";
+    ctx.fillRect(tableX + colWidths[0] + colWidths[1], rowY, colWidths[2], rowHeight);
+    ctx.fillRect(tableX + colWidths[0] + colWidths[1] + colWidths[2], rowY, colWidths[3], rowHeight);
+    ctx.strokeRect(tableX + colWidths[0] + colWidths[1], rowY, colWidths[2], rowHeight);
+    ctx.strokeRect(tableX + colWidths[0] + colWidths[1] + colWidths[2], rowY, colWidths[3], rowHeight);
+    ctx.fillStyle = "#111827";
+    ctx.font = "bold 14px Arial";
+    ctx.fillText("Net Pay", tableX + colWidths[0] + colWidths[1] + 10, rowY + 26);
+    const netValue = formatPlainAmount(Number(payslip.totals?.netPay || 0));
+    const netWidth = ctx.measureText(netValue).width;
+    ctx.fillText(netValue, tableX + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] - netWidth - 10, rowY + 26);
+
+    rowY += rowHeight + 18;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(tableX, rowY, 1240, 54);
+    ctx.strokeRect(tableX, rowY, 1240, 54);
+    ctx.fillStyle = "#111827";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText(`Net Pay : ${amountToWordsIndian(Number(payslip.totals?.netPay || 0))}`, tableX + 12, rowY + 34);
+
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "15px Arial";
+    ctx.fillText("This is a computer generated payslip and does not require signature.", 60, 1825);
 
     return canvas.toDataURL("image/jpeg", 0.95);
   };
@@ -368,47 +771,12 @@ const EmployeePayslips = () => {
 
   const printPayslip = () => {
     if (!payslip) return;
-    const content = `
-      <html>
-        <head>
-          <title>Payslip ${fileMonth}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #111827; }
-            h1 { margin: 0 0 8px; }
-            .meta { margin-bottom: 16px; color: #4b5563; }
-            table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-            th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 12px; }
-            th { background: #f3f4f6; }
-            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-          </style>
-        </head>
-        <body>
-          <h1>${payslip.company?.name || "Company"} - Payslip</h1>
-          <div class="meta">Month: ${payslip.payMonth || "-"} | Employee: ${payslip.employee?.name || "-"} (${payslip.employee?.employeeCode || "-"})</div>
-          <div class="grid">
-            <div><strong>Gross:</strong> ${formatCurrency(Number(payslip.totals?.grossEarnings || 0))}</div>
-            <div><strong>Net:</strong> ${formatCurrency(Number(payslip.totals?.netPay || 0))}</div>
-            <div><strong>Deductions:</strong> ${formatCurrency(Number(payslip.totals?.totalDeductions || 0))}</div>
-            <div><strong>Taxable:</strong> ${formatCurrency(Number(payslip.totals?.taxableIncome || 0))}</div>
-          </div>
-          <h3>Earnings</h3>
-          <table><thead><tr><th>Code</th><th>Name</th><th>Amount</th></tr></thead><tbody>
-            ${(payslip.earnings || []).map((row: any) => `<tr><td>${row.code || "-"}</td><td>${row.name || "-"}</td><td>${formatCurrency(Number(row.amount || 0))}</td></tr>`).join("")}
-          </tbody></table>
-          <h3>Deductions</h3>
-          <table><thead><tr><th>Code</th><th>Name</th><th>Amount</th></tr></thead><tbody>
-            ${(payslip.deductions || []).map((row: any) => `<tr><td>${row.code || "-"}</td><td>${row.name || "-"}</td><td>${formatCurrency(Number(row.amount || 0))}</td></tr>`).join("")}
-          </tbody></table>
-        </body>
-      </html>
-    `;
-
-    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=1024,height=768");
+    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=1024,height=900");
     if (!printWindow) {
       toast.error("Unable to open print window");
       return;
     }
-    printWindow.document.write(content);
+    printWindow.document.write(buildPayslipHtml());
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
@@ -419,82 +787,169 @@ const EmployeePayslips = () => {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">My Payslips</h1>
-          <p className="text-sm text-muted-foreground">Month-wise salary slip from finalized payroll runs.</p>
+          <p className="text-sm text-muted-foreground">Structured monthly salary slip from finalized payroll runs.</p>
         </div>
-        <div className="w-[180px]">
-          <Select value={month} onValueChange={setMonth}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select month" />
-            </SelectTrigger>
-            <SelectContent>
-              {monthOptions.map((option) => (
-                <SelectItem key={option} value={option}>{option}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-2">
+          <div className="w-[180px]">
+            <Select value={month} onValueChange={setMonth}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select month" />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((option) => (
+                  <SelectItem key={option} value={option}>{option}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="outline" size="sm" onClick={downloadPdf} disabled={!payslip}>
+            <Download className="mr-2 h-4 w-4" /> PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={printPayslip} disabled={!payslip}>
+            <Printer className="mr-2 h-4 w-4" /> Print
+          </Button>
+          <Button size="sm" onClick={downloadJson} disabled={!payslipData}>
+            <Download className="mr-2 h-4 w-4" /> JSON
+          </Button>
         </div>
       </div>
 
       {loading ? (
-        <Card><CardContent className="p-6"><Skeleton className="h-40 w-full" /></CardContent></Card>
-      ) : !payslip ? (
-        <Card><CardContent className="p-6 text-sm text-muted-foreground">No payslip available for {month}.</CardContent></Card>
-      ) : (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                {payslip.company?.logoUrl ? (
-                  <img src={payslip.company.logoUrl} alt="Company logo" className="h-full w-full object-contain" />
-                ) : (
-                  <span className="text-[10px] text-slate-400">Logo</span>
-                )}
+          <CardContent className="p-6">
+            <Skeleton className="h-[640px] w-full" />
+          </CardContent>
+        </Card>
+      ) : !payslip ? (
+        <Card>
+          <CardContent className="p-6 text-sm text-muted-foreground">
+            No payslip available for {month}.
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden border-slate-200">
+          <CardContent className="bg-white p-0">
+            <div className="border-b px-8 py-6">
+              <div className="flex items-start gap-4">
+                <div className="flex h-20 w-24 items-center justify-center overflow-hidden">
+                  {payslip.company?.logoUrl ? (
+                    <img src={payslip.company.logoUrl} alt="Company logo" className="h-full w-full object-contain" />
+                  ) : (
+                    <span className="text-xs text-slate-400">Logo</span>
+                  )}
+                </div>
+                <div className="flex-1 text-center">
+                  <h2 className="text-4xl font-bold uppercase tracking-tight text-green-800">
+                    {payslip.company?.name || "Company"}
+                  </h2>
+                  <p className="mt-3 text-base text-slate-500">
+                    Payslip for the month {formatMonthLabel(payslip.payMonth || month)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {activeRun?.runCode ? `Payroll Run ${activeRun.runCode}` : "Finalized payroll payslip"}
+                    {activeRun?.status ? ` · ${activeRun.status}` : ""}
+                  </p>
+                </div>
               </div>
-              <div className="space-y-1">
-                <CardTitle>{payslip.employee?.name || "Employee"} - {payslip.payMonth}</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {activeRun?.runCode ? `Payroll Run: ${activeRun.runCode}` : "Payroll run linked to this month"}
-                  {activeRun?.status ? ` · ${activeRun.status}` : ""}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={downloadPdf}><Download className="h-4 w-4 mr-2" />Download PDF</Button>
-              <Button variant="outline" size="sm" onClick={printPayslip}><Printer className="h-4 w-4 mr-2" />Print</Button>
-              <Button size="sm" onClick={downloadJson}><Download className="h-4 w-4 mr-2" />JSON</Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Gross Earnings</p><p className="font-semibold">{formatCurrency(Number(payslip.totals?.grossEarnings || 0))}</p></div>
-              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Deductions</p><p className="font-semibold">{formatCurrency(Number(payslip.totals?.totalDeductions || 0))}</p></div>
-              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Taxable Income</p><p className="font-semibold">{formatCurrency(Number(payslip.totals?.taxableIncome || 0))}</p></div>
-              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Net Pay</p><p className="font-semibold text-green-600">{formatCurrency(Number(payslip.totals?.netPay || 0))}</p></div>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card>
-                <CardHeader><CardTitle className="text-base">Earnings</CardTitle></CardHeader>
-                <CardContent className="space-y-2">
-                  {(payslip.earnings || []).map((item: any) => (
-                    <div key={`${item.code}-${item.name}`} className="flex items-center justify-between text-sm">
-                      <span>{item.name || item.code || "-"}</span>
-                      <span className="font-medium">{formatCurrency(Number(item.amount || 0))}</span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader><CardTitle className="text-base">Deductions</CardTitle></CardHeader>
-                <CardContent className="space-y-2">
-                  {(payslip.deductions || []).map((item: any) => (
-                    <div key={`${item.code}-${item.name}`} className="flex items-center justify-between text-sm">
-                      <span>{item.name || item.code || "-"}</span>
-                      <span className="font-medium">{formatCurrency(Number(item.amount || 0))}</span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+            <div className="px-8 py-5">
+              <table className="w-full border-collapse text-sm">
+                      <tbody>
+                        {Array.from({ length: Math.ceil(headerFields.length / 4) }, (_, index) =>
+                          headerFields.slice(index * 4, index * 4 + 4)
+                        ).map((group, rowIndex) => (
+                          <tr key={rowIndex} className="border-b">
+                            {group.map((item) => (
+                              <Fragment key={item.label}>
+                                <td className="w-[12%] bg-slate-50 px-3 py-2 font-semibold text-slate-700">
+                                  {item.label}
+                                </td>
+                                <td className="w-[13%] px-3 py-2 text-slate-900">
+                                  {item.value}
+                                </td>
+                              </Fragment>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+              </table>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {attendanceMetrics.map((item) => (
+                  <div key={item.label} className="flex items-center justify-between border bg-slate-50 px-4 py-3">
+                    <span className="font-semibold text-slate-700">{item.label}</span>
+                    <span
+                      className={`font-bold ${
+                        item.tone === "green"
+                          ? "text-green-700"
+                          : item.tone === "amber"
+                            ? "text-amber-700"
+                            : "text-slate-700"
+                      }`}
+                    >
+                      {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {payrollMetrics.map((item) => (
+                  <div key={item.label} className="border bg-slate-50 px-4 py-3">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">{item.label}</p>
+                    <p className="mt-1 text-lg font-bold text-slate-900">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 overflow-hidden border">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="w-[38%] border-b border-r px-3 py-2 text-left text-lg font-semibold text-slate-700">Earnings</th>
+                      <th className="w-[12%] border-b border-r px-3 py-2 text-right text-lg font-semibold text-slate-700">Amount</th>
+                      <th className="w-[38%] border-b border-r px-3 py-2 text-left text-lg font-semibold text-slate-700">Deductions & Recoveries</th>
+                      <th className="w-[12%] border-b px-3 py-2 text-right text-lg font-semibold text-slate-700">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.map(({ earning, deduction }, index) => (
+                      <tr key={index} className="border-b last:border-b-0">
+                        <td className="border-r px-3 py-2 text-slate-700">{earning ? getDisplayName(earning) : ""}</td>
+                        <td className="border-r px-3 py-2 text-right text-slate-700">
+                          {earning ? formatPlainAmount(Number(earning.amount || 0)) : ""}
+                        </td>
+                        <td className="border-r px-3 py-2 text-slate-700">{deduction ? getDisplayName(deduction) : ""}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">
+                          {deduction ? formatPlainAmount(Number(deduction.amount || 0)) : ""}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-slate-50 font-semibold">
+                      <td className="border-r px-3 py-3 text-right text-slate-700">Amount Total :</td>
+                      <td className="border-r px-3 py-3 text-right text-slate-900">{formatPlainAmount(earningsTotal)}</td>
+                      <td className="border-r px-3 py-3 text-right text-slate-700">Amount Total :</td>
+                      <td className="px-3 py-3 text-right text-slate-900">{formatPlainAmount(deductionsTotal)}</td>
+                    </tr>
+                    <tr className="font-semibold">
+                      <td colSpan={2} className="border-r px-3 py-3" />
+                      <td className="border-r px-3 py-3 text-right text-slate-700">Net Pay :</td>
+                      <td className="px-3 py-3 text-right text-slate-900">
+                        {formatPlainAmount(Number(payslip.totals?.netPay || 0))}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 border px-3 py-3 text-sm">
+                <span className="font-semibold">Net Pay :</span> {amountToWordsIndian(Number(payslip.totals?.netPay || 0))}
+              </div>
+
+              <p className="mt-5 text-sm text-slate-500">
+                This is a computer generated payslip and does not require signature.
+              </p>
             </div>
           </CardContent>
         </Card>
