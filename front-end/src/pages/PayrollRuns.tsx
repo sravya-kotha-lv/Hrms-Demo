@@ -277,6 +277,7 @@ const PayrollRuns = () => {
     () => runs.find((r) => r.id === selectedRunId) || null,
     [runs, selectedRunId]
   );
+  const salaryProrationRule = String(settings?.metadata?.attendance?.salaryProrationRule || "payable_days");
 
   const runEmployees = useMemo(() => {
     const rows: PayrollRunEmployee[] = Array.isArray(runDetail?.employees) ? runDetail.employees : [];
@@ -493,6 +494,8 @@ const PayrollRuns = () => {
     ? payslipJson.employerContributions
     : [];
   const payslipWarnings = normalizeWarnings(payslipJson?.warnings);
+  const runDaysColumnLabel =
+    salaryProrationRule === "present_days_on_working_days" ? "Paid Present Days" : "Payable Days";
 
   const renderPayslipLineItems = (title: string, items: any[], emptyLabel: string) => (
     <div className="rounded-lg border">
@@ -723,7 +726,7 @@ const PayrollRuns = () => {
                       <TableRow>
                         <TableHead>Employee</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Payable Days</TableHead>
+                        <TableHead className="text-right">{runDaysColumnLabel}</TableHead>
                         <TableHead className="text-right">LOP</TableHead>
                         <TableHead className="text-right">Gross</TableHead>
                         <TableHead className="text-right">Net</TableHead>
@@ -741,7 +744,13 @@ const PayrollRuns = () => {
                               <p className="font-mono text-xs text-muted-foreground">{employeeCodeMap[row.employee_external_id] || row.employee_external_id}</p>
                             </TableCell>
                             <TableCell>{getStatusBadge(row.payroll_status)}</TableCell>
-                            <TableCell className="text-right">{Number(row.payable_days || 0).toFixed(2)}</TableCell>
+                            <TableCell className="text-right">
+                              {Number(
+                                salaryProrationRule === "present_days_on_working_days"
+                                  ? row.present_days || 0
+                                  : row.payable_days || 0
+                              ).toFixed(2)}
+                            </TableCell>
                             <TableCell className="text-right text-red-600">{Number(row.lop_days || 0).toFixed(2)}</TableCell>
                             <TableCell className="text-right">{formatCurrency(Number(row.gross_earnings || 0))}</TableCell>
                             <TableCell className="text-right font-semibold">{formatCurrency(Number(row.net_pay || 0))}</TableCell>
@@ -869,8 +878,16 @@ const PayrollRuns = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-3 px-4 py-3 md:grid-cols-6">
                     <div>
-                      <p className="text-xs text-muted-foreground">Payable Days</p>
-                      <p className="font-semibold">{Number(payslipAttendance.payableDays || 0).toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {salaryProrationRule === "present_days_on_working_days" ? "Paid Present Days" : "Payable Days"}
+                      </p>
+                      <p className="font-semibold">
+                        {Number(
+                          salaryProrationRule === "present_days_on_working_days"
+                            ? payslipAttendance.presentDays || 0
+                            : payslipAttendance.payableDays || 0
+                        ).toFixed(2)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">LOP Days</p>

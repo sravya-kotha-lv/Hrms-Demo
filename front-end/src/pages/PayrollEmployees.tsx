@@ -234,6 +234,8 @@ const PayrollEmployees = () => {
     return attendanceSnapshots.filter((row) => employeeIdSet.has(String(row.employee_external_id || "")));
   }, [attendanceSnapshots, selectedPayGroupEmployeeIds]);
 
+  const salaryProrationRule = String(settings?.metadata?.attendance?.salaryProrationRule || "payable_days");
+
   const getAttendanceSyncBreakdown = (snapshot: AttendanceSnapshotRow) => {
     const presentDays = Number(snapshot.present_days || 0);
     const halfDays = Number(snapshot.half_days || 0);
@@ -248,6 +250,13 @@ const PayrollEmployees = () => {
       weekOffDays > 0 ? `Week Off ${weekOffDays.toFixed(2)}` : null,
       holidayDays > 0 ? `Holiday ${holidayDays.toFixed(2)}` : null
     ].filter(Boolean).join(" + ");
+  };
+
+  const getAttendanceSyncHeadline = (snapshot: AttendanceSnapshotRow) => {
+    if (salaryProrationRule === "present_days_on_working_days") {
+      return `${Number(snapshot.present_days || 0).toFixed(2)} paid present days`;
+    }
+    return `${Number(snapshot.payable_days || 0).toFixed(2)} payroll payable days`;
   };
 
   const employeeCustomizationCount = useMemo(
@@ -361,9 +370,11 @@ const PayrollEmployees = () => {
         <div className="border-b p-4">
           <p className="font-semibold">Employees In Selected Pay Group</p>
           <p className="text-sm text-muted-foreground">
-            Attendance sync below is shown for {monthFilter}. Payroll payable days come from the attendance
-            snapshot: Present + Paid Leave + Week Off + Holiday. Use `Manage Salary` to customize Basic %,
-            HRA %, variable pay, benefits, and payroll profile details.
+            Attendance sync below is shown for {monthFilter}.{" "}
+            {salaryProrationRule === "present_days_on_working_days"
+              ? "Salary proration is using Present Days ÷ Working Days, so week offs and holidays are not counted as paid days in payroll calculation."
+              : "Payroll payable days come from the attendance snapshot: Present + Paid Leave + Week Off + Holiday."}{" "}
+            Use `Manage Salary` to customize Basic %, HRA %, variable pay, benefits, and payroll profile details.
           </p>
         </div>
         <div className="max-h-[560px] overflow-auto p-4">
@@ -439,10 +450,11 @@ const PayrollEmployees = () => {
                         {snapshot ? (
                           <div className="space-y-1">
                             <p className="text-sm font-medium text-green-600">
-                              {Number(snapshot.payable_days || 0).toFixed(2)} payroll payable days
+                              {getAttendanceSyncHeadline(snapshot)}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {getAttendanceSyncBreakdown(snapshot) || "No payable attendance found in snapshot"}
+                              {getAttendanceSyncBreakdown(snapshot) ||
+                                "No payable attendance found in snapshot"}
                             </p>
                           </div>
                         ) : loadingAttendanceSnapshots ? (

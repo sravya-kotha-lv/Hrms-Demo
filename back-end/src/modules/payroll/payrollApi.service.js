@@ -2223,10 +2223,19 @@ exports.getPayrollRun = async (req) => {
 
     const employeesRes = await client.query(
       `
-        SELECT *
-        FROM payroll_run_employees
-        WHERE payroll_run_id = $1
-        ORDER BY employee_external_id
+        SELECT
+          re.*,
+          snap.present_days,
+          snap.working_days,
+          snap.paid_leave_days,
+          snap.week_off_days,
+          snap.holiday_days,
+          snap.half_days
+        FROM payroll_run_employees re
+        LEFT JOIN payroll_attendance_snapshots snap
+          ON snap.id = re.attendance_snapshot_id
+        WHERE re.payroll_run_id = $1
+        ORDER BY re.employee_external_id
       `,
       [runId]
     );
@@ -2266,10 +2275,19 @@ exports.previewPayrollRun = async (req) => {
     if (includeEmployees) {
       const employeeRes = await client.query(
         `
-          SELECT *
-          FROM payroll_run_employees
-          WHERE payroll_run_id = $1
-          ORDER BY net_pay DESC, employee_external_id ASC
+          SELECT
+            re.*,
+            snap.present_days,
+            snap.working_days,
+            snap.paid_leave_days,
+            snap.week_off_days,
+            snap.holiday_days,
+            snap.half_days
+          FROM payroll_run_employees re
+          LEFT JOIN payroll_attendance_snapshots snap
+            ON snap.id = re.attendance_snapshot_id
+          WHERE re.payroll_run_id = $1
+          ORDER BY re.net_pay DESC, re.employee_external_id ASC
           LIMIT $2
         `,
         [runId, limitEmployees]
@@ -2325,9 +2343,17 @@ exports.getRunEmployeeBreakdown = async (req) => {
 
     const employeeRes = await client.query(
       `
-        SELECT *
-        FROM payroll_run_employees
-        WHERE payroll_run_id = $1
+        SELECT
+          re.*,
+          snap.present_days,
+          snap.working_days,
+          snap.paid_leave_days,
+          snap.week_off_days,
+          snap.holiday_days
+        FROM payroll_run_employees re
+        LEFT JOIN payroll_attendance_snapshots snap
+          ON snap.id = re.attendance_snapshot_id
+        WHERE re.payroll_run_id = $1
         ORDER BY employee_external_id ASC
         LIMIT $2
       `,
