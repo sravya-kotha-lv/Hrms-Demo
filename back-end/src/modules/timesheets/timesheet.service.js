@@ -1579,6 +1579,47 @@ const getScopedEmployeeIdsForViewer = async (req) => {
   }).distinct("_id");
 };
 
+const buildOnlineAttendanceQuery = ({
+  organizationId,
+  todayKey,
+  yesterdayKey,
+  now,
+  scopedEmployeeIds
+}) => {
+  const query = {
+    organizationId,
+    dateKey: { $gte: yesterdayKey, $lte: todayKey },
+    checkInAt: { $ne: null, $lte: now },
+    $or: [
+      { status: "checked_in" },
+      { checkOutAt: null }
+    ]
+  };
+
+  if (Array.isArray(scopedEmployeeIds)) {
+    query.employeeId = { $in: scopedEmployeeIds };
+  }
+
+  return query;
+};
+
+const isOnlineAttendanceRowVisible = (row, { now, timeZone, todayKey, yesterdayKey }) => {
+  if (!row) return false;
+
+  const rowDateKey = row.dateKey || (row.date ? toDateKeyInTimeZone(row.date, timeZone) : null);
+  if (!rowDateKey || (rowDateKey !== todayKey && rowDateKey !== yesterdayKey)) {
+    return false;
+  }
+
+  const scheduledEndAt = row.scheduledEndAt
+    ? new Date(row.scheduledEndAt)
+    : endOfDayInTimeZone(row.date || row.checkInAt || now, timeZone);
+
+  if (Number.isNaN(scheduledEndAt.getTime())) return false;
+
+  return now <= scheduledEndAt;
+};
+
 const getActorRoleSlug = async (req) => {
   if (!req.user.activeRoleId) return "";
   const role = await Role.findOne({
@@ -4052,69 +4093,41 @@ exports.lockAttendanceMonth = async (req) => {
 };
 
 exports.getOnline = async (req) => {
-  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const [organizationTimeZone, scopedEmployeeIds] = await Promise.all([
+    getOrganizationTimeZone(req.user.organizationId),
+    getScopedEmployeeIdsForViewer(req)
+  ]);
   const now = new Date();
-  const yesterdayStart = startOfDayInTimeZone(
-    addDaysToDateKey(toDateKeyInTimeZone(now, organizationTimeZone), -1),
-    organizationTimeZone
-  );
   const todayKey = toDateKeyInTimeZone(now, organizationTimeZone);
   const yesterdayKey = addDaysToDateKey(todayKey, -1);
 
-  const query = {
+  const query = buildOnlineAttendanceQuery({
     organizationId: req.user.organizationId,
-    checkInAt: { $ne: null, $lte: now },
-    $or: [
-      { status: "checked_in" },
-      { checkOutAt: null }
-    ],
-    date: { $gte: yesterdayStart }
-  };
-
-  if (req.user.activeRoleId) {
-    const role = await Role.findOne({
-      _id: req.user.activeRoleId,
-      organizationId: req.user.organizationId
-    }).select("slug");
-
-    if (role?.slug === "manager") {
-      const managerEmployee = await Employee.findOne({
-        userId: req.user.userId,
-        organizationId: req.user.organizationId
-      }).select("_id");
-
-      if (managerEmployee) {
-        const reportIds = await Employee.find({
-          organizationId: req.user.organizationId,
-          managerId: managerEmployee._id
-        }).distinct("_id");
-        query.employeeId = { $in: reportIds };
-      }
-    }
-  }
+    todayKey,
+    yesterdayKey,
+    now,
+    scopedEmployeeIds
+  });
 
   const rows = await Attendance.find(query)
+    .select("employeeId date dateKey checkInAt checkOutAt scheduledEndAt status")
     .populate("employeeId", "firstName lastName employeeCode")
-    .sort({ checkInAt: -1 });
+    .sort({ checkInAt: -1 })
+    .lean();
 
-  return rows.filter((row) => {
-    const attendanceDateKey = toDateKeyInTimeZone(row.date, organizationTimeZone);
-    const scheduledEndAt = row.scheduledEndAt ? new Date(row.scheduledEndAt) : endOfDayInTimeZone(row.date, organizationTimeZone);
-
-    if (now > scheduledEndAt) return false;
-
-    if (attendanceDateKey === todayKey) return true;
-
-    if (attendanceDateKey === yesterdayKey && row.scheduledEndAt) {
-      return now <= scheduledEndAt;
-    }
-
-    return false;
-  });
+  return rows.filter((row) => isOnlineAttendanceRowVisible(row, {
+    now,
+    timeZone: organizationTimeZone,
+    todayKey,
+    yesterdayKey
+  }));
 };
 
 exports.getOnLeave = async (req) => {
-  const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
+  const [organizationTimeZone, scopedEmployeeIds] = await Promise.all([
+    getOrganizationTimeZone(req.user.organizationId),
+    getScopedEmployeeIdsForViewer(req)
+  ]);
   const todayStart = startOfDayInTimeZone(new Date(), organizationTimeZone);
   const todayEnd = endOfDayInTimeZone(new Date(), organizationTimeZone);
 
@@ -4125,32 +4138,16 @@ exports.getOnLeave = async (req) => {
     toDate: { $gte: todayStart }
   };
 
-  if (req.user.activeRoleId) {
-    const role = await Role.findOne({
-      _id: req.user.activeRoleId,
-      organizationId: req.user.organizationId
-    }).select("slug");
-
-    if (role?.slug === "manager") {
-      const managerEmployee = await Employee.findOne({
-        userId: req.user.userId,
-        organizationId: req.user.organizationId
-      }).select("_id");
-
-      if (managerEmployee) {
-        const reportIds = await Employee.find({
-          organizationId: req.user.organizationId,
-          managerId: managerEmployee._id
-        }).distinct("_id");
-        query.employeeId = { $in: reportIds };
-      }
-    }
+  if (Array.isArray(scopedEmployeeIds)) {
+    query.employeeId = { $in: scopedEmployeeIds };
   }
 
   return Leave.find(query)
+    .select("employeeId leaveTypeId fromDate toDate status")
     .populate("employeeId", "firstName lastName employeeCode")
     .populate("leaveTypeId", "name code")
-    .sort({ fromDate: 1 });
+    .sort({ fromDate: 1 })
+    .lean();
 };
 
 exports.createWeekly = async (req) => {
@@ -4484,5 +4481,7 @@ exports.__private__ = {
   buildAttendanceOverrideUpdate,
   buildAttendanceMatrixEmployeeQuery,
   resolveOvertimeMinutes,
-  resolveAttendanceDisplayStatus
+  resolveAttendanceDisplayStatus,
+  buildOnlineAttendanceQuery,
+  isOnlineAttendanceRowVisible
 };

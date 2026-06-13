@@ -196,5 +196,6 @@ timesheetAttendanceSchema.index(
   }
 );
 timesheetAttendanceSchema.index({ organizationId: 1, dateKey: 1 });
+timesheetAttendanceSchema.index({ organizationId: 1, dateKey: 1, checkInAt: -1 });
 
 module.exports = mongoose.model("timesheet_attendance", timesheetAttendanceSchema);
