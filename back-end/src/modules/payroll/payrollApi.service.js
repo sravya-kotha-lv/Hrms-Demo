@@ -14,10 +14,23 @@ const toJson = (value, fallback = {}) => {
   }
 };
 
+const toDateKey = (value) => String(value || "").slice(0, 10);
+
+const isRevisionEditableByDate = (effectiveTo, currentDate = new Date()) => {
+  const normalizedEffectiveTo = toDateKey(effectiveTo);
+  if (!normalizedEffectiveTo) return true;
+  return toDateKey(currentDate.toISOString()) <= normalizedEffectiveTo;
+};
+
 const tableByScope = {
   earning: "earning_components",
   deduction: "deduction_components",
   employer_contribution: "employer_contribution_components"
+};
+
+exports.__test__ = {
+  isRevisionEditableByDate,
+  toDateKey
 };
 
 const starterConstraintByScope = {
@@ -1755,6 +1768,13 @@ exports.updateSalaryStructure = async (req) => {
       employee_payroll_profile_id: profileId,
       effective_from: targetEffectiveFrom
     } = targetSalary;
+    if (!isRevisionEditableByDate(targetSalary.effective_to)) {
+      throw {
+        code: 409,
+        message:
+          "This salary revision is view-only after its effective period ends. Create a new revision for future changes."
+      };
+    }
     const laterRevisionRes = await client.query(
       `
         SELECT id

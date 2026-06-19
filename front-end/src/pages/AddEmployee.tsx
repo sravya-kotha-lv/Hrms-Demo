@@ -79,6 +79,25 @@ const addDaysToDateValue = (dateValue: string, days: number) => {
   return toDateInputValue(date);
 };
 
+const isRevisionEditableToday = (effectiveTo?: string | null) => {
+  const normalizedEffectiveTo = String(effectiveTo || "").slice(0, 10);
+  if (!normalizedEffectiveTo) return true;
+  return toDateInputValue(new Date()) <= normalizedEffectiveTo;
+};
+
+const isRevisionActiveToday = (revision?: SalaryStructureRow | null) => {
+  if (!revision?.effective_from) return false;
+  const today = toDateInputValue(new Date());
+  const effectiveFrom = String(revision.effective_from || "").slice(0, 10);
+  const effectiveTo = String(revision.effective_to || "").slice(0, 10);
+  return effectiveFrom <= today && (!effectiveTo || today <= effectiveTo);
+};
+
+const isRevisionScheduledForFuture = (revision?: SalaryStructureRow | null) => {
+  if (!revision?.effective_from) return false;
+  return String(revision.effective_from || "").slice(0, 10) > toDateInputValue(new Date());
+};
+
 const getDefaultSalaryRevisionDate = (salaryStructures: SalaryStructureRow[]) => {
   const today = toDateInputValue(new Date());
   const latestEffectiveFrom = salaryStructures
@@ -93,9 +112,14 @@ const getDefaultSalaryRevisionDate = (salaryStructures: SalaryStructureRow[]) =>
 
 const getOpenSalaryRevision = (salaryStructures: SalaryStructureRow[]) =>
   [...salaryStructures]
-    .filter((row) => !row.effective_to)
+    .filter((row) => isRevisionActiveToday(row))
     .sort((a, b) =>
       String(b.effective_from || "").localeCompare(String(a.effective_from || ""))
+    )[0] ||
+  [...salaryStructures]
+    .filter((row) => isRevisionScheduledForFuture(row))
+    .sort((a, b) =>
+      String(a.effective_from || "").localeCompare(String(b.effective_from || ""))
     )[0] ||
   [...salaryStructures].sort((a, b) =>
     String(b.effective_from || "").localeCompare(String(a.effective_from || ""))
@@ -652,6 +676,7 @@ const AddEmployee = () => {
   const [payrollComponents, setPayrollComponents] = useState<PayrollComponent[]>([]);
   const [payrollProfileId, setPayrollProfileId] = useState<string>("");
   const [savingSalary, setSavingSalary] = useState(false);
+  const [salarySaveNotice, setSalarySaveNotice] = useState("");
   const [savingBank, setSavingBank] = useState(false);
   const [hasSavedBankDetails, setHasSavedBankDetails] = useState(false);
   const [currentBankEffectiveFrom, setCurrentBankEffectiveFrom] = useState("");
@@ -767,8 +792,7 @@ const AddEmployee = () => {
   );
   const selectedSalaryRevisionIsClosed =
     salaryEditMode === "update" &&
-    Boolean(selectedSalaryRevision?.effective_to) &&
-    selectedSalaryRevision?.id !== openSalaryRevision?.id;
+    !isRevisionEditableToday(selectedSalaryRevision?.effective_to);
   const currentSalarySetupFingerprint = useMemo(
     () =>
       buildSalarySetupFingerprint({
@@ -830,9 +854,13 @@ const AddEmployee = () => {
       : "Save Tax & Statutory";
   const salaryModeBadgeLabel = !salaryStructures.length
     ? "New"
-    : salaryEditMode === "revision"
-      ? "Revision"
-      : "Current";
+    : selectedSalaryRevision && isRevisionScheduledForFuture(selectedSalaryRevision)
+      ? "Scheduled"
+      : selectedSalaryRevision && !isRevisionActiveToday(selectedSalaryRevision)
+        ? "Historical"
+        : salaryEditMode === "revision"
+          ? "Revision"
+          : "Current";
   const bankModeBadgeLabel = !hasSavedBankDetails
     ? "New"
     : bankIsCurrentRevision
@@ -2299,7 +2327,10 @@ const AddEmployee = () => {
           variablePay: salaryForm.variablePayEnabled ? salaryBreakdown.variablePay : 0,
           isCurrent:
             shouldCreateRevision ||
-            Boolean(selectedSalaryStructure?.id && selectedSalaryStructure.id === openSalaryRevision?.id),
+            Boolean(
+              selectedSalaryStructure?.id &&
+                selectedSalaryStructure.id === currentSalaryRevision?.id
+            ),
           revisionReason: salaryForm.revisionReason || "Salary update",
           metadata: {
             salaryRules: {
@@ -2444,7 +2475,11 @@ const AddEmployee = () => {
           componentOverrides
         })
       );
-      toast.success(shouldCreateRevision ? "Salary revision created" : "Salary details updated");
+      const successMessage =
+        saveSalaryRes?.message ||
+        (shouldCreateRevision ? "Salary revision created" : "Salary details updated");
+      setSalarySaveNotice(successMessage);
+      toast.success(successMessage);
       setEditableSections((prev) => ({ ...prev, salary: false }));
       fetchPayrollData();
     } finally {
@@ -3661,6 +3696,11 @@ const AddEmployee = () => {
                         You have unsaved salary changes. Save before switching tabs if you want to keep this draft.
                       </p>
                     )}
+                    {salarySaveNotice && !salaryHasUnsavedChanges && (
+                      <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                        {salarySaveNotice}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col items-start gap-2 lg:items-end">
                     {isEdit && canEditActiveSection && (
@@ -3744,10 +3784,13 @@ const AddEmployee = () => {
                     <div className="space-y-2">
                       {salaryStructures.map((salary) => {
                         const effectiveFrom = (salary.effective_from || "").slice(0, 10);
-                        const isCurrentRevision = Boolean(openSalaryRevision?.id && salary.id === openSalaryRevision.id);
+                        const isCurrentRevision = isRevisionActiveToday(salary);
+                        const isScheduledRevision = isRevisionScheduledForFuture(salary);
                         const effectiveTo = isCurrentRevision
                           ? "Current"
-                          : (salary.effective_to || "").slice(0, 10) || "-";
+                          : isScheduledRevision
+                            ? "Scheduled"
+                            : (salary.effective_to || "").slice(0, 10) || "-";
                         const isSelected =
                           salaryEditMode === "update" &&
                           Boolean(salary.id) &&
@@ -3766,7 +3809,11 @@ const AddEmployee = () => {
                               <div>
                                 <p className="text-sm font-medium">
                                   {formatInr(salary.annual_ctc)} CTC
-                                  {isCurrentRevision ? " - Current" : ""}
+                                  {isCurrentRevision
+                                    ? " - Current"
+                                    : isScheduledRevision
+                                      ? " - Scheduled"
+                                      : ""}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
                                   {effectiveFrom || "-"} to {effectiveTo}
@@ -4255,17 +4302,19 @@ const AddEmployee = () => {
                     />
                     {salaryEditMode === "update" && !selectedSalaryRevisionIsClosed && (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        You can backdate the current salary revision here when payroll should start from an earlier month. Use New Revision for hikes or structure changes that must keep separate history.
+                        You can edit this revision until its effective period ends. Use New Revision
+                        for hikes or structure changes that must keep separate history.
                       </p>
                     )}
                     {salaryEditMode === "update" && selectedSalaryRevisionIsClosed && (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Effective date is locked while updating this historical row. Use New Revision for hikes or CTC changes.
+                        This revision is view-only because its effective period has ended. Use New
+                        Revision for hikes or CTC changes.
                       </p>
                     )}
                     {selectedSalaryRevisionIsClosed && (
                       <p className="mt-1 text-xs text-amber-700">
-                        This older revision is view-only. You can't switch back to an older completed salary period.
+                        This older revision is view-only now that a newer effective period has started.
                       </p>
                     )}
                     {salaryEditMode === "revision" && salaryStructures.length > 0 && (
@@ -4638,7 +4687,7 @@ const AddEmployee = () => {
                             <p className="mt-1 text-base font-semibold">{formatInr(salaryBreakdown.annualCtc)}</p>
                           </div>
                           <div className="rounded-md bg-white/10 p-3">
-                            <p className="text-xs text-primary-foreground/70">Monthly CTC</p>
+                            <p className="text-xs text-primary-foreground/70">CTC</p>
                             <p className="mt-1 text-base font-semibold">{formatInr(salaryBreakdown.monthlyCtc)}</p>
                           </div>
                         </div>
@@ -4713,7 +4762,65 @@ const AddEmployee = () => {
                           ))}
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm bg-background/70 font-semibold">
                             <span className="flex items-center gap-1.5">
-                              <span>Monthly Gross</span>
+                              <span>CTC</span>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info
+                                    className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
+                                    aria-label="Monthly CTC formula"
+                                  />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="max-w-48 text-xs">
+                                    Fixed Pay + Variable Pay + Employer Contributions
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </span>
+                            <span className="text-right font-medium">{formatInr(salaryBreakdown.monthlyCtc)}</span>
+                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.monthlyCtc * 12)}</span>
+                          </div>
+                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
+                            <span className="flex items-center gap-1.5">
+                              <span>Employer Contributions</span>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info
+                                    className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
+                                    aria-label="Employer contributions formula"
+                                  />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="max-w-48 text-xs">Calculated from the configured employer contribution rules.</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </span>
+                            <span className="text-right font-medium">{formatInr(salaryBreakdown.employerEpf)}</span>
+                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.employerEpf * 12)}</span>
+                          </div>
+                          {salaryForm.includeEsi && (
+                            <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
+                              <span className="flex items-center gap-1.5">
+                                <span>Employer ESI Contribution</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Info
+                                      className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
+                                      aria-label="Employer ESI contribution formula"
+                                    />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="max-w-48 text-xs">Applied when ESI is enabled and wage thresholds are met.</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </span>
+                              <span className="text-right font-medium">{formatInr(salaryBreakdown.esiEmployerAmount)}</span>
+                              <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.esiEmployerAmount * 12)}</span>
+                            </div>
+                          )}
+                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm bg-background/70 font-semibold">
+                            <span className="flex items-center gap-1.5">
+                              <span>Gross</span>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Info
@@ -4732,90 +4839,32 @@ const AddEmployee = () => {
                             <span className="text-right text-muted-foreground">{formatInr(earningsPreviewTotal * 12)}</span>
                           </div>
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                            <span className="flex items-center gap-1.5">
-                              <span>Employer PF</span>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Info
-                                    className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
-                                    aria-label="Employer PF formula"
-                                  />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="max-w-48 text-xs">Calculated from the configured PF rule.</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </span>
-                            <span className="text-right font-medium">{formatInr(salaryBreakdown.employerEpf)}</span>
-                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.employerEpf * 12)}</span>
-                          </div>
-                          {salaryForm.includeEsi && (
-                            <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                              <span className="flex items-center gap-1.5">
-                                <span>Employer ESI</span>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Info
-                                      className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
-                                      aria-label="Employer ESI formula"
-                                    />
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="max-w-48 text-xs">Applied when ESI is enabled and wage thresholds are met.</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </span>
-                              <span className="text-right font-medium">{formatInr(salaryBreakdown.esiEmployerAmount)}</span>
-                              <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.esiEmployerAmount * 12)}</span>
-                            </div>
-                          )}
-                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm bg-background/70 font-semibold">
-                            <span className="flex items-center gap-1.5">
-                              <span>Monthly CTC</span>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Info
-                                    className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
-                                    aria-label="Monthly CTC formula"
-                                  />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="max-w-48 text-xs">
-                                    Fixed Pay + Variable Pay + Employer PF + Employer ESI
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </span>
-                            <span className="text-right font-medium">{formatInr(salaryBreakdown.monthlyCtc)}</span>
-                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.monthlyCtc * 12)}</span>
-                          </div>
-                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                            <span>Employee PF</span>
+                            <span>Employee PF Deduction</span>
                             <span className="text-right font-medium">{formatInr(salaryBreakdown.employeeEpf)}</span>
                             <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.employeeEpf * 12)}</span>
                           </div>
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                            <span>Employer PF Deduction</span>
+                            <span>Employer PF Contribution</span>
                             <span className="text-right font-medium">{formatInr(salaryBreakdown.employerEpf)}</span>
                             <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.employerEpf * 12)}</span>
                           </div>
                           {salaryForm.includeEsi && (
                             <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                              <span>Employee ESI</span>
+                              <span>Employee ESI Deduction</span>
                               <span className="text-right font-medium">{formatInr(salaryBreakdown.esiEmployeeAmount)}</span>
                               <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.esiEmployeeAmount * 12)}</span>
                             </div>
                           )}
                           {statutoryForm.professionalTaxApplicable && (
                             <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                              <span>Professional Tax</span>
+                              <span>Professional Tax Deduction</span>
                               <span className="text-right font-medium">{formatInr(salaryBreakdown.professionalTaxAmount)}</span>
                               <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.professionalTaxAmount * 12)}</span>
                             </div>
                           )}
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm bg-background/70 font-semibold">
                             <span className="flex items-center gap-1.5">
-                              <span>Deductions</span>
+                              <span>Employee Deductions</span>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Info
@@ -5009,10 +5058,13 @@ const AddEmployee = () => {
                         <div className="space-y-2">
                           {salaryStructures.slice(0, 4).map((salary) => {
                             const effectiveFrom = (salary.effective_from || "").slice(0, 10);
-                            const isCurrentRevision = Boolean(openSalaryRevision?.id && salary.id === openSalaryRevision.id);
+                            const isCurrentRevision = isRevisionActiveToday(salary);
+                            const isScheduledRevision = isRevisionScheduledForFuture(salary);
                             const effectiveTo = isCurrentRevision
                               ? "Current"
-                              : (salary.effective_to || "").slice(0, 10) || "-";
+                              : isScheduledRevision
+                                ? "Scheduled"
+                                : (salary.effective_to || "").slice(0, 10) || "-";
                             return (
                               <button
                                 key={`review-${salary.id || effectiveFrom}`}
@@ -5028,6 +5080,11 @@ const AddEmployee = () => {
                                 <div className="flex items-center justify-between gap-3">
                                   <span className="text-sm font-medium">{formatInr(salary.annual_ctc)}</span>
                                   {isCurrentRevision && <Badge className="rounded-md">Current</Badge>}
+                                  {!isCurrentRevision && isScheduledRevision && (
+                                    <Badge variant="secondary" className="rounded-md">
+                                      Scheduled
+                                    </Badge>
+                                  )}
                                 </div>
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {effectiveFrom || "-"} to {effectiveTo}
@@ -5317,6 +5374,11 @@ const AddEmployee = () => {
                   Saving with the same Effective From updates the current salary record. Changing the
                   Effective From creates a new salary revision for future payroll periods.
                 </p>
+                {salarySaveNotice && !salaryHasUnsavedChanges && (
+                  <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                    {salarySaveNotice}
+                  </p>
+                )}
                 <div className="flex justify-end">
                   <Button
                     onClick={handleSaveSalary}
