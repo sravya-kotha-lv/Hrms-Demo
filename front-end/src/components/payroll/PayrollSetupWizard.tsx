@@ -113,6 +113,14 @@ type Props = {
 };
 
 const TODAY = new Date().toISOString().slice(0, 10);
+const CURRENT_MONTH_START = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  .toISOString()
+  .slice(0, 10);
+const toMonthInputValue = (value?: string) => String(value || CURRENT_MONTH_START).slice(0, 7);
+const toMonthStartDate = (value?: string) => {
+  const monthValue = String(value || "").slice(0, 7);
+  return monthValue ? `${monthValue}-01` : CURRENT_MONTH_START;
+};
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LEGACY_OTHER_ALLOWANCE_FORMULA =
@@ -133,6 +141,7 @@ const defaultComponent = (): ComponentDraft => ({
   scope: "earning",
   code: "",
   name: "",
+  effectiveFrom: CURRENT_MONTH_START,
   calculationMode: "fixed",
   taxable: true,
   amount: "",
@@ -543,6 +552,19 @@ const buildAttendanceRulesState = (settings?: PayrollSettingsPayload) => ({
       : true
 });
 
+const buildSetupFingerprint = (payload: {
+  payGroup: ReturnType<typeof buildPayGroupState>;
+  components: ComponentDraft[];
+  statutory: ReturnType<typeof buildStatutoryState>;
+  attendanceRules: ReturnType<typeof buildAttendanceRulesState>;
+}) =>
+  JSON.stringify({
+    payGroup: payload.payGroup,
+    components: payload.components,
+    statutory: payload.statutory,
+    attendanceRules: payload.attendanceRules
+  });
+
 const getComponentPayGroupIds = (component?: SalaryComponentPayload) => {
   const metadata = component?.metadata || {};
   const values = Array.isArray(metadata?.payGroupIds)
@@ -569,7 +591,9 @@ const mapComponentToDraft = (component: SalaryComponentPayload): ComponentDraft 
     scope: component.scope,
     code,
     name: String(component?.name || ""),
-    effectiveFrom: String(component?.effectiveFrom || component?.effective_from || "").slice(0, 10) || TODAY,
+    effectiveFrom:
+      String(component?.effectiveFrom || component?.effective_from || "").slice(0, 10) ||
+      CURRENT_MONTH_START,
     calculationMode: (component?.calculation_mode || "fixed") as ComponentDraft["calculationMode"],
     taxable: Boolean(component?.taxable),
     amount: String(
@@ -608,6 +632,7 @@ export const PayrollSetupWizard = ({
   const [showFormulaGuide, setShowFormulaGuide] = useState(false);
   const [availablePayGroups, setAvailablePayGroups] = useState<PayGroupOption[]>([]);
   const [loadingPayGroups, setLoadingPayGroups] = useState(false);
+  const [savedSetupFingerprint, setSavedSetupFingerprint] = useState("");
 
   const [statutory, setStatutory] = useState(buildStatutoryState(initialSettings));
 
@@ -634,6 +659,11 @@ export const PayrollSetupWizard = ({
     [activeComponents]
   );
   const isPayGroupIdValid = UUID_REGEX.test(payGroup.defaultPayGroupId.trim());
+  const currentSetupFingerprint = useMemo(
+    () => buildSetupFingerprint({ payGroup, components, statutory, attendanceRules }),
+    [attendanceRules, components, payGroup, statutory]
+  );
+  const hasUnsavedChanges = currentSetupFingerprint !== savedSetupFingerprint;
   const componentCodeOptions = useMemo(() => {
     const codes = components
       .map((c) => c.code.trim().toUpperCase())
@@ -753,12 +783,21 @@ export const PayrollSetupWizard = ({
           : [];
         const componentsToUse = exactPayGroupComponents.length ? exactPayGroupComponents : allComponents;
 
-        setPayGroup(buildPayGroupState(nextSettings, preferredPayGroupId, payrollSalaryPayDay, availablePayGroups));
+        const nextPayGroup = buildPayGroupState(
+          nextSettings,
+          preferredPayGroupId,
+          payrollSalaryPayDay,
+          availablePayGroups
+        );
+        const nextStatutory = buildStatutoryState(nextSettings);
+        const nextAttendanceRules = buildAttendanceRulesState(nextSettings);
+        setPayGroup(nextPayGroup);
 
         if (componentsToUse.length) {
-          setStatutory(buildStatutoryState(nextSettings));
-          setAttendanceRules(buildAttendanceRulesState(nextSettings));
-          setComponents(componentsToUse.map(mapComponentToDraft));
+          const nextComponents = componentsToUse.map(mapComponentToDraft);
+          setStatutory(nextStatutory);
+          setAttendanceRules(nextAttendanceRules);
+          setComponents(nextComponents);
           setLoadedComponentIds(
             componentsToUse
               .map((component) => String(component.id || ""))
@@ -773,6 +812,14 @@ export const PayrollSetupWizard = ({
             }, {})
           );
           setStartupDefaultsApplied(false);
+          setSavedSetupFingerprint(
+            buildSetupFingerprint({
+              payGroup: nextPayGroup,
+              components: nextComponents,
+              statutory: nextStatutory,
+              attendanceRules: nextAttendanceRules
+            })
+          );
         } else {
           setComponents(TELANGANA_DEFAULT_TEMPLATE.components.map((component) => ({ ...component })));
           setStatutory(TELANGANA_DEFAULT_TEMPLATE.statutory);
@@ -780,6 +827,7 @@ export const PayrollSetupWizard = ({
           setLoadedComponentIds([]);
           setLoadedComponentScopeMap({});
           setStartupDefaultsApplied(true);
+          setSavedSetupFingerprint("");
         }
       } finally {
         if (active) setLoadingExistingSetup(false);
@@ -897,13 +945,13 @@ export const PayrollSetupWizard = ({
           name: component.name.trim(),
           calculationMode: component.calculationMode,
           taxable: component.taxable,
-          effectiveFrom: TODAY,
+          effectiveFrom: component.effectiveFrom || CURRENT_MONTH_START,
           metadata: componentMetadata
         };
         const updatePayload: SalaryComponentUpdatePayload = {
           name: component.name.trim(),
           calculationMode: component.calculationMode,
-          effectiveFrom: component.effectiveFrom || TODAY,
+          effectiveFrom: component.effectiveFrom || CURRENT_MONTH_START,
           metadata: componentMetadata,
           ...(component.scope !== "employer_contribution" ? { taxable: component.taxable } : {})
         };
@@ -945,6 +993,14 @@ export const PayrollSetupWizard = ({
         );
       }
 
+      setSavedSetupFingerprint(
+        buildSetupFingerprint({
+          payGroup,
+          components: components.filter((c) => c.code.trim() && c.name.trim()),
+          statutory,
+          attendanceRules
+        })
+      );
       onActivated?.();
       onOpenChange(false);
       setStep(0);
@@ -954,7 +1010,18 @@ export const PayrollSetupWizard = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && hasUnsavedChanges) {
+          const discard = window.confirm(
+            "You have unsaved payroll setup changes. Close without saving?"
+          );
+          if (!discard) return;
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>Payroll Setup Wizard</DialogTitle>
@@ -967,6 +1034,12 @@ export const PayrollSetupWizard = ({
             Telangana compliance defaults, and save a payroll structure your team can understand.
           </p>
         </div>
+
+        {hasUnsavedChanges && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            You have unsaved payroll setup changes. Save before closing if you want to keep them.
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
           {steps.map((label, index) => (
@@ -1255,6 +1328,9 @@ export const PayrollSetupWizard = ({
                     <p className="text-xs text-muted-foreground">
                       {getScopeLabel(component.scope)} • {getCalculationModeLabel(component.calculationMode)}
                     </p>
+                    <p className="text-xs text-muted-foreground">
+                      Effective from {toMonthInputValue(component.effectiveFrom)}
+                    </p>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
@@ -1276,6 +1352,7 @@ export const PayrollSetupWizard = ({
                   <Input
                     placeholder="Code (BASIC)"
                     value={component.code}
+                    disabled={Boolean(component.id)}
                     {...scrollInputProps(component.code || "Code (BASIC)")}
                     onChange={(e) => updateComponent(index, { code: e.target.value })}
                   />
@@ -1325,8 +1402,23 @@ export const PayrollSetupWizard = ({
                             : "Monthly amount")
                       )}
                       onChange={(e) => updateComponent(index, { amount: e.target.value })}
+                      />
+                    )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium">Effective From</label>
+                    <Input
+                      type="month"
+                      value={toMonthInputValue(component.effectiveFrom)}
+                      onChange={(e) =>
+                        updateComponent(index, { effectiveFrom: toMonthStartDate(e.target.value) })
+                      }
                     />
-                  )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      The component will apply from this month onward in payroll runs.
+                    </p>
+                  </div>
                 </div>
                 {component.calculationMode === "percentage" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">

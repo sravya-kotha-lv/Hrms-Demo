@@ -337,7 +337,7 @@ const EmployeePayslips = () => {
 
   const attendanceMetrics = useMemo(
     () => [
-      { label: "Days Paid", value: Number(payslip?.attendanceSummary?.payableDays || 0).toFixed(2), tone: "green" },
+      { label: "Payable Days", value: Number(payslip?.attendanceSummary?.payableDays || 0).toFixed(2), tone: "green" },
       { label: "Present Days", value: Number(payslip?.attendanceSummary?.presentDays || 0).toFixed(2), tone: "slate" },
       { label: "Paid Leave", value: Number(payslip?.attendanceSummary?.paidLeaveDays || 0).toFixed(2), tone: "slate" },
       { label: "LWP / Absent", value: Number(payslip?.attendanceSummary?.lopDays || 0).toFixed(2), tone: "amber" }
@@ -355,6 +355,15 @@ const EmployeePayslips = () => {
       { label: "Net Pay", value: formatPlainAmount(Number(payslip?.totals?.netPay || 0)) }
     ],
     [payslip?.totals]
+  );
+  const earningsBreakdownRows = useMemo(
+    () =>
+      earningsRows.map((item) => ({
+        code: item.code || item.name || "-",
+        label: getDisplayName(item),
+        amount: Number(item.amount || 0)
+      })),
+    [earningsRows]
   );
 
   const buildPayslipHtml = () => {
@@ -977,6 +986,34 @@ const EmployeePayslips = () => {
                     <p className="mt-1 text-lg font-bold text-slate-900">{item.value}</p>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-4 border bg-slate-50 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Dynamic Earnings Breakdown</p>
+                    <p className="text-xs text-slate-500">
+                      This section comes from the saved payroll run, so custom components like Conveyance
+                      appear automatically.
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-500">{earningsBreakdownRows.length} active</p>
+                </div>
+                {earningsBreakdownRows.length > 0 ? (
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {earningsBreakdownRows.map((item) => (
+                      <div key={item.code} className="flex items-center justify-between border bg-white px-3 py-2">
+                        <span className="min-w-0">
+                          <span className="block font-medium text-slate-800">{item.label}</span>
+                          <span className="block text-xs text-slate-500">{item.code}</span>
+                        </span>
+                        <span className="font-semibold text-slate-900">{formatPlainAmount(item.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-500">No earnings components found for this payslip.</p>
+                )}
               </div>
 
               <div className="mt-5 overflow-hidden border">

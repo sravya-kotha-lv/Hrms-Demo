@@ -39,7 +39,6 @@ const OrganizationSettings = () => {
   const [payrollCutoffDay, setPayrollCutoffDay] = useState(25);
   const [payrollSalaryPayDay, setPayrollSalaryPayDay] = useState(30);
   const [payrollEnabled, setPayrollEnabled] = useState(false);
-  const [salaryProrationRule, setSalaryProrationRule] = useState("payable_days");
   const [minWorkHoursPerDay, setMinWorkHoursPerDay] = useState(8);
   const [minHalfDayHours, setMinHalfDayHours] = useState(4);
   const [attendanceAllowedIp, setAttendanceAllowedIp] = useState("");
@@ -101,7 +100,6 @@ const OrganizationSettings = () => {
         typeof res.data?.payrollSalaryPayDay === "number" ? res.data.payrollSalaryPayDay : 30
       );
       setPayrollEnabled(Boolean(res.data?.payrollEnabled));
-      setSalaryProrationRule(String(res.data?.salaryProrationRule || "payable_days"));
       setMinWorkHoursPerDay(
         typeof res.data?.minWorkHoursPerDay === "number" ? res.data.minWorkHoursPerDay : 8
       );
@@ -161,7 +159,6 @@ const OrganizationSettings = () => {
         payrollCutoffDay: Number(payrollCutoffDay),
         payrollSalaryPayDay: Number(payrollSalaryPayDay),
         payrollEnabled,
-        salaryProrationRule,
         minWorkHoursPerDay: Number(minWorkHoursPerDay),
         minHalfDayHours: Number(minHalfDayHours),
         attendanceIpEnabled,
@@ -516,23 +513,13 @@ const OrganizationSettings = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Salary Proration Rule</label>
-                <Select value={salaryProrationRule} onValueChange={setSalaryProrationRule} disabled={!canManage}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select salary proration rule" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="payable_days">Payable days based</SelectItem>
-                    <SelectItem value="present_days_on_working_days">Present days on working days</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  <span className="font-medium">Payable days based:</span> monthly salary × payable days ratio.{" "}
-                  <span className="font-medium">Present days on working days:</span> monthly salary ÷ working days × present days, excluding week offs and holidays from the month base.
-                </p>
+                <label className="text-sm font-medium">Salary Proration</label>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-muted-foreground">
+                  Salary proration is configured in <span className="font-medium text-slate-700">Payroll Setup</span> for each pay group.
+                  Use that screen when you want to choose between payable-days based and present-days-on-working-days logic.
+                </div>
                 <p className="text-xs text-amber-600">
-                  Changes apply only to future payroll runs or runs that are recomputed. Already
-                  processed payroll will not change automatically.
+                  Existing payroll runs keep their current calculation until they are recomputed.
                 </p>
               </div>
             </div>

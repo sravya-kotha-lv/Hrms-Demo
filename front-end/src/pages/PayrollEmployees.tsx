@@ -247,14 +247,14 @@ const PayrollEmployees = () => {
       presentDays > 0 ? `Present ${presentDays.toFixed(2)}` : null,
       halfDays > 0 ? `Half Day ${halfDays.toFixed(2)}` : null,
       paidLeaveDays > 0 ? `Paid Leave ${paidLeaveDays.toFixed(2)}` : null,
-      weekOffDays > 0 ? `Week Off ${weekOffDays.toFixed(2)}` : null,
-      holidayDays > 0 ? `Holiday ${holidayDays.toFixed(2)}` : null
+      weekOffDays > 0 ? `Week Off ${weekOffDays.toFixed(2)} excluded` : null,
+      holidayDays > 0 ? `Holiday ${holidayDays.toFixed(2)} excluded` : null
     ].filter(Boolean).join(" + ");
   };
 
   const getAttendanceSyncHeadline = (snapshot: AttendanceSnapshotRow) => {
     if (salaryProrationRule === "present_days_on_working_days") {
-      return `${Number(snapshot.present_days || 0).toFixed(2)} paid present days`;
+      return `${Number(snapshot.present_days || 0).toFixed(2)} payable days`;
     }
     return `${Number(snapshot.payable_days || 0).toFixed(2)} payroll payable days`;
   };
@@ -372,7 +372,7 @@ const PayrollEmployees = () => {
           <p className="text-sm text-muted-foreground">
             Attendance sync below is shown for {monthFilter}.{" "}
             {salaryProrationRule === "present_days_on_working_days"
-              ? "Salary proration is using Present Days ÷ Working Days, so week offs and holidays are not counted as paid days in payroll calculation."
+              ? "Salary proration is using Present Days ÷ Working Days, so week offs and holidays are excluded from payable days in payroll calculation."
               : "Payroll payable days come from the attendance snapshot: Present + Paid Leave + Week Off + Holiday."}{" "}
             Use `Manage Salary` to customize Basic %, HRA %, variable pay, benefits, and payroll profile details.
           </p>

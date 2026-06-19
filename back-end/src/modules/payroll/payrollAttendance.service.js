@@ -24,6 +24,18 @@ const toSafeNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const resolveAttendanceMinutes = (row) => {
+  const storedMinutes = toSafeNumber(row?.totalMinutes, 0);
+  if (storedMinutes > 0) return storedMinutes;
+  if (!row?.checkInAt || !row?.checkOutAt) return 0;
+
+  const checkInAt = new Date(row.checkInAt);
+  const checkOutAt = new Date(row.checkOutAt);
+  if (Number.isNaN(checkInAt.getTime()) || Number.isNaN(checkOutAt.getTime())) return 0;
+
+  return Math.max(0, Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000));
+};
+
 const getOrganizationTimeZone = async (organizationId) => {
   const settings = await OrgSettings.findOne({ organizationId }).select("timezone").lean();
   if (settings?.timezone) return settings.timezone;
@@ -49,7 +61,10 @@ const buildAttendanceMap = (rows, timeZone) => {
   for (const row of rows) {
     const employeeId = String(row.employeeId);
     const dayKey = toDateKeyInTimeZone(row.date, timeZone);
-    map.set(`${employeeId}:${dayKey}`, row);
+    map.set(`${employeeId}:${dayKey}`, {
+      ...row,
+      totalMinutes: resolveAttendanceMinutes(row)
+    });
   }
   return map;
 };
@@ -818,6 +833,7 @@ exports.listMonthlyAttendanceSnapshots = async (req) => {
 
 exports.__test__ = {
   toSafeNumber,
+  resolveAttendanceMinutes,
   buildDateKeys,
   buildAttendanceMap,
   buildHolidayMap,

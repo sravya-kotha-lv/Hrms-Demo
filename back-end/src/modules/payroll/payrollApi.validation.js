@@ -90,6 +90,7 @@ exports.createSalaryComponentSchema = Joi.object({
 });
 
 exports.updateSalaryComponentSchema = Joi.object({
+  code: buildCodeSchema({ max: 60 }),
   name: buildNameSchema(),
   displayName: Joi.string().trim().max(120).allow("", null),
   description: Joi.string().max(1000).allow("", null),
