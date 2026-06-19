@@ -222,6 +222,12 @@ const buildWeekOffResolver = (rows) => {
   };
 };
 
+const normalizeSnapshotDayStatus = (dayStatus) => {
+  if (dayStatus === "present_paid_leave_half") return "paid_leave_half";
+  if (dayStatus === "present_unpaid_leave_half") return "unpaid_leave_half";
+  return dayStatus;
+};
+
 const getTenantIdByOrganization = async (client, organizationId) => {
   const result = await client.query(
     `SELECT id FROM payroll_tenants WHERE organization_id = $1`,
@@ -612,7 +618,7 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
         } else if (leave && leave.units === 0.5) {
           const qualifiesHalfDayAttendance = attendance && attendanceMinutes >= minHalfDayMinutes;
           if (qualifiesHalfDayAttendance) {
-            dayStatus = leave.isPaid ? "present_paid_leave_half" : "present_unpaid_leave_half";
+            dayStatus = leave.isPaid ? "paid_leave_half" : "unpaid_leave_half";
             payableUnits = leave.isPaid ? 1 : 0.5;
             totals.halfDays += 0.5;
             if (leave.isPaid) {
@@ -696,6 +702,7 @@ exports.generateMonthlyAttendanceSnapshots = async (req) => {
           weekOffApplied: isWeekOff,
           isHoliday,
           isLeave: Boolean(leave),
+          dayStatus: normalizeSnapshotDayStatus(dayStatus),
           metadata: {
             leaveTypeCode: leave?.leaveTypeCode || null
           }
@@ -838,5 +845,6 @@ exports.__test__ = {
   buildAttendanceMap,
   buildHolidayMap,
   buildLeaveIndex,
-  buildWeekOffResolver
+  buildWeekOffResolver,
+  normalizeSnapshotDayStatus
 };

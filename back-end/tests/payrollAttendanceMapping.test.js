@@ -9,6 +9,7 @@ const {
   buildHolidayMap,
   buildLeaveIndex,
   buildWeekOffResolver,
+  normalizeSnapshotDayStatus,
   resolveAttendanceMinutes
 } = __test__;
 
@@ -102,4 +103,10 @@ test("buildWeekOffResolver prefers shift-specific list and falls back to default
   assert.deepEqual(resolveWeekOffDays("shift-a"), ["saturday", "sunday"]);
   assert.deepEqual(resolveWeekOffDays("shift-b"), ["sunday"]);
   assert.deepEqual(resolveWeekOffDays(null), ["sunday"]);
+});
+
+test("normalizeSnapshotDayStatus maps hybrid leave statuses to allowed snapshot values", () => {
+  assert.equal(normalizeSnapshotDayStatus("present_paid_leave_half"), "paid_leave_half");
+  assert.equal(normalizeSnapshotDayStatus("present_unpaid_leave_half"), "unpaid_leave_half");
+  assert.equal(normalizeSnapshotDayStatus("paid_leave_half"), "paid_leave_half");
 });
