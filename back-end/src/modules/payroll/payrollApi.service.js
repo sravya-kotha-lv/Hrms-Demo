@@ -54,11 +54,6 @@ const fetchExistingSalaryComponentByCode = async ({ client, tenantId, scope, cod
   return result.rows[0] || null;
 };
 
-const isStarterPackComponent = (component) => {
-  const metadata = toJson(component?.metadata, {});
-  return metadata?.autoProvisioned === true || metadata?.starterPack === true;
-};
-
 const getOrgPayrollSettings = async (organizationId) =>
   OrgSettings.findOne({ organizationId })
     .select("payrollEnabled payrollCutoffDay payrollSalaryPayDay")
@@ -724,7 +719,7 @@ exports.createSalaryComponent = async (req) => {
         scope: payload.scope,
         code: payload.code
       });
-      if (!existing || !isStarterPackComponent(existing)) {
+      if (!existing) {
         throw error;
       }
 
@@ -822,27 +817,29 @@ exports.updateSalaryComponent = async (req) => {
         `
           UPDATE earning_components
           SET
-            name = COALESCE($3, name),
-            display_name = COALESCE($4, display_name),
-            description = COALESCE($5, description),
-            calculation_mode = COALESCE($6, calculation_mode),
-            taxable = COALESCE($7, taxable),
-            priority = COALESCE($8, priority),
-            pf_applicable = COALESCE($9, pf_applicable),
-            esi_applicable = COALESCE($10, esi_applicable),
-            prorate_with_attendance = COALESCE($11, prorate_with_attendance),
-            rounding_policy = COALESCE($12, rounding_policy),
-            effective_from = COALESCE($13, effective_from),
-            effective_to = COALESCE($14, effective_to),
-            is_active = COALESCE($15, is_active),
-            metadata = CASE WHEN $16::jsonb = '{}'::jsonb THEN metadata ELSE metadata || $16::jsonb END,
-            updated_by = $17
+            code = COALESCE($3, code),
+            name = COALESCE($4, name),
+            display_name = COALESCE($5, display_name),
+            description = COALESCE($6, description),
+            calculation_mode = COALESCE($7, calculation_mode),
+            taxable = COALESCE($8, taxable),
+            priority = COALESCE($9, priority),
+            pf_applicable = COALESCE($10, pf_applicable),
+            esi_applicable = COALESCE($11, esi_applicable),
+            prorate_with_attendance = COALESCE($12, prorate_with_attendance),
+            rounding_policy = COALESCE($13, rounding_policy),
+            effective_from = COALESCE($14, effective_from),
+            effective_to = COALESCE($15, effective_to),
+            is_active = COALESCE($16, is_active),
+            metadata = CASE WHEN $17::jsonb = '{}'::jsonb THEN metadata ELSE metadata || $17::jsonb END,
+            updated_by = $18
           WHERE id = $1 AND tenant_id = $2
           RETURNING *
         `,
         [
           req.params.id,
           tenantId,
+          payload.code ?? null,
           payload.name ?? null,
           payload.displayName ?? null,
           payload.description ?? null,
@@ -865,27 +862,29 @@ exports.updateSalaryComponent = async (req) => {
         `
           UPDATE deduction_components
           SET
-            name = COALESCE($3, name),
-            display_name = COALESCE($4, display_name),
-            description = COALESCE($5, description),
-            calculation_mode = COALESCE($6, calculation_mode),
-            taxable = COALESCE($7, taxable),
-            priority = COALESCE($8, priority),
-            is_statutory = COALESCE($9, is_statutory),
-            employee_share_only = COALESCE($10, employee_share_only),
-            cap_amount = COALESCE($11, cap_amount),
-            rounding_policy = COALESCE($12, rounding_policy),
-            effective_from = COALESCE($13, effective_from),
-            effective_to = COALESCE($14, effective_to),
-            is_active = COALESCE($15, is_active),
-            metadata = CASE WHEN $16::jsonb = '{}'::jsonb THEN metadata ELSE metadata || $16::jsonb END,
-            updated_by = $17
+            code = COALESCE($3, code),
+            name = COALESCE($4, name),
+            display_name = COALESCE($5, display_name),
+            description = COALESCE($6, description),
+            calculation_mode = COALESCE($7, calculation_mode),
+            taxable = COALESCE($8, taxable),
+            priority = COALESCE($9, priority),
+            is_statutory = COALESCE($10, is_statutory),
+            employee_share_only = COALESCE($11, employee_share_only),
+            cap_amount = COALESCE($12, cap_amount),
+            rounding_policy = COALESCE($13, rounding_policy),
+            effective_from = COALESCE($14, effective_from),
+            effective_to = COALESCE($15, effective_to),
+            is_active = COALESCE($16, is_active),
+            metadata = CASE WHEN $17::jsonb = '{}'::jsonb THEN metadata ELSE metadata || $17::jsonb END,
+            updated_by = $18
           WHERE id = $1 AND tenant_id = $2
           RETURNING *
         `,
         [
           req.params.id,
           tenantId,
+          payload.code ?? null,
           payload.name ?? null,
           payload.displayName ?? null,
           payload.description ?? null,
@@ -908,25 +907,27 @@ exports.updateSalaryComponent = async (req) => {
         `
           UPDATE employer_contribution_components
           SET
-            name = COALESCE($3, name),
-            display_name = COALESCE($4, display_name),
-            description = COALESCE($5, description),
-            calculation_mode = COALESCE($6, calculation_mode),
-            priority = COALESCE($7, priority),
-            contributes_to_ctc = COALESCE($8, contributes_to_ctc),
-            linked_deduction_code = COALESCE($9, linked_deduction_code),
-            rounding_policy = COALESCE($10, rounding_policy),
-            effective_from = COALESCE($11, effective_from),
-            effective_to = COALESCE($12, effective_to),
-            is_active = COALESCE($13, is_active),
-            metadata = CASE WHEN $14::jsonb = '{}'::jsonb THEN metadata ELSE metadata || $14::jsonb END,
-            updated_by = $15
+            code = COALESCE($3, code),
+            name = COALESCE($4, name),
+            display_name = COALESCE($5, display_name),
+            description = COALESCE($6, description),
+            calculation_mode = COALESCE($7, calculation_mode),
+            priority = COALESCE($8, priority),
+            contributes_to_ctc = COALESCE($9, contributes_to_ctc),
+            linked_deduction_code = COALESCE($10, linked_deduction_code),
+            rounding_policy = COALESCE($11, rounding_policy),
+            effective_from = COALESCE($12, effective_from),
+            effective_to = COALESCE($13, effective_to),
+            is_active = COALESCE($14, is_active),
+            metadata = CASE WHEN $15::jsonb = '{}'::jsonb THEN metadata ELSE metadata || $15::jsonb END,
+            updated_by = $16
           WHERE id = $1 AND tenant_id = $2
           RETURNING *
         `,
         [
           req.params.id,
           tenantId,
+          payload.code ?? null,
           payload.name ?? null,
           payload.displayName ?? null,
           payload.description ?? null,

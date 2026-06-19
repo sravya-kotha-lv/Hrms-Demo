@@ -780,6 +780,26 @@ exports.computePayrollRun = async (req) => {
     const effectiveEmployeeIds = employeeIds.length > 0 ? employeeIds : runScopedEmployeeIds;
     const filterByEmployees = effectiveEmployeeIds.length > 0;
 
+    if (req.body?.forceRecompute) {
+      const payrollAttendanceService = require("./payrollAttendance.service");
+      const snapshotRefreshResult = await payrollAttendanceService.generateMonthlyAttendanceSnapshots({
+        ...req,
+        body: {
+          month,
+          forceRebuild: true,
+          employeeIds: filterByEmployees ? effectiveEmployeeIds : undefined
+        }
+      });
+
+      logger.info("payroll.compute.snapshots.refreshed", {
+        runId,
+        organizationId,
+        month,
+        employeeFilterCount: filterByEmployees ? effectiveEmployeeIds.length : 0,
+        generatedCount: snapshotRefreshResult?.generatedCount || 0
+      });
+    }
+
     const snapshotsResult = await client.query(
       `
         SELECT *

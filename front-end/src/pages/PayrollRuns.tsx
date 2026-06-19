@@ -494,8 +494,7 @@ const PayrollRuns = () => {
     ? payslipJson.employerContributions
     : [];
   const payslipWarnings = normalizeWarnings(payslipJson?.warnings);
-  const runDaysColumnLabel =
-    salaryProrationRule === "present_days_on_working_days" ? "Paid Present Days" : "Payable Days";
+  const runDaysColumnLabel = "Payable Days";
 
   const renderPayslipLineItems = (title: string, items: any[], emptyLabel: string) => (
     <div className="rounded-lg border">
@@ -878,9 +877,7 @@ const PayrollRuns = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-3 px-4 py-3 md:grid-cols-6">
                     <div>
-                      <p className="text-xs text-muted-foreground">
-                        {salaryProrationRule === "present_days_on_working_days" ? "Paid Present Days" : "Payable Days"}
-                      </p>
+                      <p className="text-xs text-muted-foreground">Payable Days</p>
                       <p className="font-semibold">
                         {Number(
                           salaryProrationRule === "present_days_on_working_days"

@@ -8,7 +8,8 @@ const {
   buildAttendanceMap,
   buildHolidayMap,
   buildLeaveIndex,
-  buildWeekOffResolver
+  buildWeekOffResolver,
+  resolveAttendanceMinutes
 } = __test__;
 
 test("buildDateKeys returns full inclusive range", () => {
@@ -23,7 +24,9 @@ test("attendance and holiday maps are keyed by employee/date and date", () => {
       _id: "a1",
       employeeId: "emp1",
       date: new Date("2026-02-04T09:00:00.000Z"),
-      totalMinutes: 510
+      totalMinutes: 0,
+      checkInAt: new Date("2026-02-04T03:30:00.000Z"),
+      checkOutAt: new Date("2026-02-04T12:00:00.000Z")
     }
   ];
   const holidayRows = [{ _id: "h1", date: new Date("2026-02-05T00:00:00.000Z") }];
@@ -32,7 +35,19 @@ test("attendance and holiday maps are keyed by employee/date and date", () => {
   const holidayMap = buildHolidayMap(holidayRows, timeZone);
 
   assert.equal(attendanceMap.has("emp1:2026-02-04"), true);
+  assert.equal(attendanceMap.get("emp1:2026-02-04").totalMinutes, 510);
   assert.equal(holidayMap.has("2026-02-05"), true);
+});
+
+test("resolveAttendanceMinutes falls back to punch timestamps", () => {
+  assert.equal(
+    resolveAttendanceMinutes({
+      totalMinutes: 0,
+      checkInAt: new Date("2026-02-04T03:30:00.000Z"),
+      checkOutAt: new Date("2026-02-04T12:00:00.000Z")
+    }),
+    510
+  );
 });
 
 test("buildLeaveIndex marks paid and unpaid leaves correctly", () => {
@@ -65,12 +80,12 @@ test("buildLeaveIndex marks paid and unpaid leaves correctly", () => {
     leaveTypeCodeById,
     new Set(["LOP"]),
     "Asia/Kolkata",
-    "2026-02-01",
-    "2026-02-28"
+    new Set(),
+    ["sunday"]
   );
 
-  const paid = leaveMap.get("emp1:2026-02-10");
-  const unpaidHalf = leaveMap.get("emp1:2026-02-11");
+  const paid = leaveMap.get("2026-02-10");
+  const unpaidHalf = leaveMap.get("2026-02-11");
 
   assert.equal(paid.isPaid, true);
   assert.equal(paid.units, 1);
