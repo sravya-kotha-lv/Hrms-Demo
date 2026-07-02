@@ -211,6 +211,10 @@ type AttendanceTodayRecord = AttendanceDay & {
   lateByMinutes?: number;
   shiftStartTime?: string | null;
   shiftEndTime?: string | null;
+  dayHistory?: Array<{
+    action?: "check_in" | "check_out";
+    at?: string | Date | null;
+  }>;
 };
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -647,11 +651,20 @@ const EmployeeDashboard = () => {
 
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
   const attendanceRuntimeStatus = (attendanceToday as { status?: string } | null)?.status;
-  const isCheckedIn = hasCheckedInToday && (attendanceRuntimeStatus === "checked_in" || !attendanceToday?.checkOutAt);
-  const isCheckedOut = hasCheckedInToday && Boolean(attendanceToday?.checkOutAt) && !isCheckedIn;
+  const latestPunchAction = attendanceToday?.dayHistory?.length
+    ? attendanceToday.dayHistory[attendanceToday.dayHistory.length - 1]?.action
+    : null;
+  const isCheckedIn = hasCheckedInToday && (
+    latestPunchAction === "check_in"
+    || attendanceRuntimeStatus === "checked_in"
+    || !attendanceToday?.checkOutAt
+  );
+  const isCheckedOut = hasCheckedInToday && (
+    latestPunchAction === "check_out"
+    || attendanceRuntimeStatus === "checked_out"
+    || (Boolean(attendanceToday?.checkOutAt) && !isCheckedIn)
+  );
 
-  console.log(attendanceToday?.checkInAt,"---------");
-  
   const checkInTimeText = attendanceToday?.checkInAt
     ? formatTimeInOrgTimeZone(attendanceToday.checkInAt)
     : "-";
