@@ -672,7 +672,7 @@ const EmployeeDashboard = () => {
     ? formatTimeInOrgTimeZone(attendanceToday.checkOutAt)
     : "-";
   const assignedShift = myProfile?.shiftId || null;
-  const shiftNameText = attendanceToday?.shiftName || assignedShift?.name || "Assigned Shift";
+  const shiftNameText = (attendanceToday as any)?.shiftName || assignedShift?.name || "Assigned Shift";
   const shiftStartText = formatShiftTime(attendanceToday?.shiftStartTime || assignedShift?.startTime);
   const shiftEndText = formatShiftTime(attendanceToday?.shiftEndTime || assignedShift?.endTime);
   const shiftTimingsText = shiftStartText && shiftEndText
