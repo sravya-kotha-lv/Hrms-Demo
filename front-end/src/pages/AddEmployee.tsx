@@ -1120,75 +1120,92 @@ const AddEmployee = () => {
   );
 
   const salaryComponentPreviewRows = useMemo(
-    () =>
-      [...payrollComponents]
-        .sort((a, b) =>
-          Number(a.priority ?? 100) - Number(b.priority ?? 100) ||
-          String(a.code || "").localeCompare(String(b.code || ""))
-        )
-        .map((component) => {
-          const key = String(component.code || "").toUpperCase();
-          const override = componentOverrides[key] || buildComponentOverrideState(component);
-          if (!override.enabled) return null;
-
-          const baseKey = String(override.base || "MONTHLY_GROSS").toUpperCase();
-          const baseAmount = salaryPreviewBaseAmounts[baseKey] ?? salaryBreakdown.monthlyGross;
-          let monthlyAmount: number | null = null;
-
-          try {
-            monthlyAmount =
-              override.calculationMode === "fixed" && !isBlankValue(override.amount)
-                ? Number(override.amount)
-                : override.calculationMode === "percentage" && !isBlankValue(override.amount)
-                  ? Number((baseAmount * Number(override.amount)) / 100)
-                  : override.calculationMode === "formula"
-                    ? evaluatePreviewFormula(override.formulaExpression || "0", {
-                        ...salaryPreviewBaseAmounts,
-                        ...Object.fromEntries(
-                          Object.entries(componentOverrides).map(([codeKey, rowOverride]) => [
-                            codeKey,
-                            Number(rowOverride.amount || 0)
-                          ])
-                        )
-                      })
-                    : override.calculationMode === "slab" && !isBlankValue(override.amount)
-                      ? Number(override.amount)
-                      : null;
-          } catch (_) {
-            monthlyAmount = null;
-          }
-
-          const detail =
-            override.calculationMode === "percentage"
-              ? `${override.amount || 0}% of ${override.base || "MONTHLY_GROSS"}`
-              : override.calculationMode === "formula"
-                ? override.formulaExpression || "Formula not set"
-                : override.calculationMode === "slab"
-                  ? "Slab-based amount"
-                  : monthlyAmount != null && Number.isFinite(monthlyAmount)
-                    ? formatInr(monthlyAmount)
-                    : "Amount not set";
-
-          return {
-            code: key,
-            label: override.name || component.name,
-            scope: component.scope,
-            mode: override.calculationMode,
-            detail,
-            monthlyAmount:
-              monthlyAmount != null && Number.isFinite(monthlyAmount)
-                ? Number(monthlyAmount.toFixed(2))
-                : null
-          };
-        })
-        .filter(Boolean) as Array<{
+    () => {
+      const previewValues: Record<string, number> = {
+        ...salaryPreviewBaseAmounts,
+        EPF: 0,
+        EMPLOYEE_EPF: 0,
+        EMPLOYEE_PROVIDENT_FUND: 0,
+        PF_EMPLOYEE_SHARE: 0
+      };
+      const previewRows: Array<{
         code: string;
         label: string;
         scope: PayrollComponent["scope"];
         mode: PayrollComponent["calculation_mode"];
         detail: string;
         monthlyAmount: number | null;
-      }>,
+      }> = [];
+
+      const setEmployeePfAliases = (amount: number) => {
+        previewValues.EPF = amount;
+        previewValues.EMPLOYEE_EPF = amount;
+        previewValues.EMPLOYEE_PROVIDENT_FUND = amount;
+        previewValues.PF_EMPLOYEE_SHARE = amount;
+      };
+
+      for (const component of [...payrollComponents].sort((a, b) =>
+        Number(a.priority ?? 100) - Number(b.priority ?? 100) ||
+        String(a.code || "").localeCompare(String(b.code || ""))
+      )) {
+        const key = String(component.code || "").toUpperCase();
+        const override = componentOverrides[key] || buildComponentOverrideState(component);
+        if (!override.enabled) continue;
+
+        const baseKey = String(override.base || "MONTHLY_GROSS").toUpperCase();
+        const baseAmount = previewValues[baseKey] ?? salaryPreviewBaseAmounts[baseKey] ?? salaryBreakdown.monthlyGross;
+        let monthlyAmount: number | null = null;
+
+        try {
+          monthlyAmount =
+            override.calculationMode === "fixed" && !isBlankValue(override.amount)
+              ? Number(override.amount)
+              : override.calculationMode === "percentage" && !isBlankValue(override.amount)
+                ? Number((baseAmount * Number(override.amount)) / 100)
+                : override.calculationMode === "formula"
+                  ? evaluatePreviewFormula(override.formulaExpression || "0", previewValues)
+                  : override.calculationMode === "slab" && !isBlankValue(override.amount)
+                    ? Number(override.amount)
+                    : null;
+        } catch (_) {
+          monthlyAmount = null;
+        }
+
+        const resolvedAmount =
+          monthlyAmount != null && Number.isFinite(monthlyAmount)
+            ? Number(monthlyAmount.toFixed(2))
+            : null;
+
+        if (resolvedAmount != null) {
+          previewValues[key] = resolvedAmount;
+          if (key === "EPF") {
+            setEmployeePfAliases(resolvedAmount);
+          }
+        }
+
+        const detail =
+          override.calculationMode === "percentage"
+            ? `${override.amount || 0}% of ${override.base || "MONTHLY_GROSS"}`
+            : override.calculationMode === "formula"
+              ? override.formulaExpression || "Formula not set"
+              : override.calculationMode === "slab"
+                ? "Slab-based amount"
+                : resolvedAmount != null
+                  ? formatInr(resolvedAmount)
+                  : "Amount not set";
+
+        previewRows.push({
+          code: key,
+          label: override.name || component.name,
+          scope: component.scope,
+          mode: override.calculationMode,
+          detail,
+          monthlyAmount: resolvedAmount
+        });
+      }
+
+      return previewRows;
+    },
     [componentOverrides, payrollComponents, salaryBreakdown.monthlyGross, salaryPreviewBaseAmounts]
   );
 
