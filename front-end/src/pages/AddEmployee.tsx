@@ -2348,7 +2348,7 @@ const AddEmployee = () => {
             shouldCreateRevision ||
             Boolean(
               selectedSalaryStructure?.id &&
-                selectedSalaryStructure.id === currentSalaryRevision?.id
+                selectedSalaryStructure.id === openSalaryRevision?.id
             ),
           revisionReason: salaryForm.revisionReason || "Salary update",
           metadata: {
