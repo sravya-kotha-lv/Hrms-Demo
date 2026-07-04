@@ -22,8 +22,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useNavigate } from "react-router-dom";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
+import { subscribeAttendanceUpdates } from "@/services/attendanceSocket";
 import PermissionGate from "@/components/PermissionGate";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,6 +51,15 @@ const getWeekStart = (value: Date) => {
   const diff = (day + 6) % 7;
   d.setDate(d.getDate() - diff);
   return d;
+};
+
+const formatDuration = (milliseconds: number) => {
+  const safeMilliseconds = Math.max(0, Math.floor(milliseconds));
+  const totalSeconds = Math.floor(safeMilliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
 let publicIpLookupPromise: Promise<string | null> | null = null;
@@ -117,6 +128,7 @@ type CheckInPolicy = {
   attendanceGeoLongitude: number | null;
   localGeoFenceFallbackEnabled: boolean;
   attendanceGeoRadiusMeters: number;
+  minWorkHoursPerDay: number;
 };
 
 type WeeklyEntry = {
@@ -237,6 +249,8 @@ type AttendanceTodayRecord = AttendanceDay & {
   lateByMinutes?: number;
   shiftStartTime?: string | null;
   shiftEndTime?: string | null;
+  scheduledStartAt?: string | null;
+  scheduledEndAt?: string | null;
   dayHistory?: Array<{
     action?: "check_in" | "check_out";
     at?: string | Date | null;
@@ -388,6 +402,7 @@ const EmployeeDashboard = () => {
   const [attendanceRefreshLoading, setAttendanceRefreshLoading] = useState(false);
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [clockTick, setClockTick] = useState(() => Date.now());
   const [activeTab, setActiveTab] = useState("overview");
   const [leaveBalanceDialogOpen, setLeaveBalanceDialogOpen] = useState(false);
   const [onlineDialogOpen, setOnlineDialogOpen] = useState(false);
@@ -402,7 +417,8 @@ const EmployeeDashboard = () => {
     attendanceGeoLatitude: null,
     attendanceGeoLongitude: null,
     localGeoFenceFallbackEnabled: false,
-    attendanceGeoRadiusMeters: 200
+    attendanceGeoRadiusMeters: 200,
+    minWorkHoursPerDay: 8
   });
   const hasShownMatrixCompatibilityErrorRef = useRef(false);
 
@@ -561,7 +577,8 @@ const EmployeeDashboard = () => {
             ? null
             : Number(checkInPolicyRes.data.attendanceGeoLongitude),
         localGeoFenceFallbackEnabled: Boolean(checkInPolicyRes.data.localGeoFenceFallbackEnabled),
-        attendanceGeoRadiusMeters: Number(checkInPolicyRes.data.attendanceGeoRadiusMeters || 200)
+        attendanceGeoRadiusMeters: Number(checkInPolicyRes.data.attendanceGeoRadiusMeters || 200),
+        minWorkHoursPerDay: Number(checkInPolicyRes.data.minWorkHoursPerDay || 8)
       });
     }
     if (!silent) setDashboardLoading(false);
@@ -588,6 +605,23 @@ const EmployeeDashboard = () => {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setClockTick(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeAttendanceUpdates((payload) => {
+      if (payload?.attendance) {
+        setAttendanceToday(payload.attendance as AttendanceTodayRecord);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     if (activeTab === "team" && !teamLoadedRef.current && myProfile?._id) {
@@ -763,15 +797,38 @@ const EmployeeDashboard = () => {
   const shiftTimingsText = shiftStartText && shiftEndText
     ? `${shiftStartText} - ${shiftEndText}`
     : shiftStartText || shiftEndText || "-";
+  const firstCheckInDate = firstCheckInAt ? new Date(firstCheckInAt) : null;
+  const checkOutDate = attendanceToday?.checkOutAt ? new Date(attendanceToday.checkOutAt) : null;
+  const scheduledEndDate = attendanceToday?.scheduledEndAt ? new Date(attendanceToday.scheduledEndAt) : null;
+  const minimumWorkDurationMs = Number(checkInPolicy.minWorkHoursPerDay || 8) * 60 * 60 * 1000;
+  const effectiveDisplayDurationMs = firstCheckInDate
+    ? (() => {
+      const liveElapsedMs = clockTick - firstCheckInDate.getTime();
+      if (!isCheckedOut) return liveElapsedMs;
+      const actualAtCheckoutMs = checkOutDate ? checkOutDate.getTime() - firstCheckInDate.getTime() : liveElapsedMs;
+      if (actualAtCheckoutMs >= minimumWorkDurationMs) return actualAtCheckoutMs;
+      return Math.min(liveElapsedMs, minimumWorkDurationMs);
+    })()
+    : null;
+  const effectiveDisplayDurationText = Number.isFinite(Number(effectiveDisplayDurationMs))
+    ? formatDuration(Number(effectiveDisplayDurationMs))
+    : null;
+  const effectiveDisplayDurationParts = effectiveDisplayDurationText ? effectiveDisplayDurationText.split(":") : null;
+  const remainingToCheckoutText = isCheckedIn && scheduledEndDate
+    ? formatDuration(scheduledEndDate.getTime() - clockTick)
+    : null;
+  const remainingToMinimumText = firstCheckInDate
+    ? formatDuration(Math.max(0, minimumWorkDurationMs - ((isCheckedOut && checkOutDate ? checkOutDate.getTime() : clockTick) - firstCheckInDate.getTime())))
+    : null;
   const checkInWindowStartText = useMemo(() => {
     const startMinutes = shiftTimeToMinutes(attendanceToday?.shiftStartTime || assignedShift?.startTime);
     if (startMinutes === null) return null;
     return formatMinutesAsShiftTime(startMinutes - 120);
   }, [assignedShift?.startTime, attendanceToday?.shiftStartTime]);
   const statusHeroClassName = isCheckedOut
-    ? "border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(220,252,231,0.84)_42%,rgba(255,255,255,0.98))]"
+    ? "border-amber-200/80 bg-[linear-gradient(135deg,rgba(255,251,235,0.98),rgba(254,243,199,0.84)_42%,rgba(255,255,255,0.98))]"
     : isCheckedIn
-      ? "border-amber-200/80 bg-[linear-gradient(135deg,rgba(255,251,235,0.98),rgba(254,243,199,0.84)_42%,rgba(255,255,255,0.98))]"
+      ? "border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(220,252,231,0.84)_42%,rgba(255,255,255,0.98))]"
       : "border-sky-200/80 bg-[linear-gradient(135deg,rgba(239,246,255,0.98),rgba(224,242,254,0.84)_42%,rgba(255,255,255,0.98))]";
   const balanceCardClassName =
     "stat-card border-emerald-200/70 bg-[linear-gradient(135deg,rgba(236,253,245,0.92),rgba(209,250,229,0.72)_48%,rgba(255,255,255,0.96))]";
@@ -785,6 +842,11 @@ const EmployeeDashboard = () => {
     "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96)_100%)]";
   const softInsetClassName =
     "bg-[linear-gradient(135deg,rgba(255,255,255,0.82),rgba(248,250,252,0.72))]";
+  const clockBoxClassName = isCheckedOut
+    ? "bg-[linear-gradient(180deg,#f59e0b_0%,#fbbf24_55%,#fde68a_100%)] ring-1 ring-amber-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_14px_28px_rgba(245,158,11,0.18)]"
+    : isCheckedIn
+      ? "bg-[linear-gradient(180deg,#059669_0%,#10b981_55%,#6ee7b7_100%)] ring-1 ring-emerald-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_14px_28px_rgba(16,185,129,0.18)]"
+      : "bg-[linear-gradient(180deg,#1d4ed8_0%,#2563eb_55%,#60a5fa_100%)] ring-1 ring-sky-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_14px_28px_rgba(37,99,235,0.18)]";
   const secondaryHeroButtonClassName =
     "h-10 rounded-xl border-white/70 bg-white/75 px-4 text-slate-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900";
   const primaryHeroButtonClassName = isCheckedOut
@@ -932,6 +994,7 @@ const EmployeeDashboard = () => {
       if (position) {
         payload.latitude = position.coords.latitude;
         payload.longitude = position.coords.longitude;
+        payload.accuracy = position.coords.accuracy;
       }
     }
 
@@ -992,6 +1055,7 @@ const EmployeeDashboard = () => {
       if (position) {
         payload.latitude = position.coords.latitude;
         payload.longitude = position.coords.longitude;
+        payload.accuracy = position.coords.accuracy;
       }
     }
 
@@ -1146,62 +1210,98 @@ const EmployeeDashboard = () => {
               </p>
             )}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <PermissionGate permissions={["TIMESHEET_CHECKIN_SELF"]}>
-              <Button
-                className={primaryHeroButtonClassName}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleCheckIn();
-                }}
-                disabled={checkinLoading || (!checkInPolicy.attendanceMultiPunchEnabled && hasCheckedInToday)}
-              >
-                <LogIn className="w-4 h-4 mr-2" /> Check In
-              </Button>
-            </PermissionGate>
-            <PermissionGate permissions={["TIMESHEET_CHECKOUT_SELF"]}>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap gap-2 justify-end">
+              <PermissionGate permissions={["TIMESHEET_CHECKIN_SELF"]}>
+                <Button
+                  className={primaryHeroButtonClassName}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleCheckIn();
+                  }}
+                  disabled={checkinLoading || (!checkInPolicy.attendanceMultiPunchEnabled && hasCheckedInToday)}
+                >
+                  <LogIn className="w-4 h-4 mr-2" /> Check In
+                </Button>
+              </PermissionGate>
+              <PermissionGate permissions={["TIMESHEET_CHECKOUT_SELF"]}>
+                <Button
+                  variant="outline"
+                  className={secondaryHeroButtonClassName}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleCheckOut();
+                  }}
+                  disabled={checkoutLoading || (!isCheckedIn && !checkInPolicy.attendanceMultiPunchEnabled)}
+                >
+                  <LogOut className="w-4 h-4 mr-2" /> Check Out
+                </Button>
+              </PermissionGate>
               <Button
                 variant="outline"
                 className={secondaryHeroButtonClassName}
                 onClick={(event) => {
                   event.stopPropagation();
-                  handleCheckOut();
+                  setDayHistoryDialogOpen(true);
                 }}
-                disabled={checkoutLoading || (!isCheckedIn && !checkInPolicy.attendanceMultiPunchEnabled)}
               >
-                <LogOut className="w-4 h-4 mr-2" /> Check Out
+                Day History
               </Button>
-            </PermissionGate>
-            <Button
-              variant="outline"
-              className={secondaryHeroButtonClassName}
-              onClick={(event) => {
-                event.stopPropagation();
-                setDayHistoryDialogOpen(true);
-              }}
-            >
-              Day History
+              <Button
+                variant="outline"
+                className={secondaryHeroButtonClassName}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigate("/leave/apply");
+                }}
+              >
+                Apply Leave
+              </Button>
+              <Button
+                variant="outline"
+                className={secondaryHeroButtonClassName}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigate("/timesheets");
+                }}
+              >
+                Timesheet
             </Button>
-            <Button
-              variant="outline"
-              className={secondaryHeroButtonClassName}
-              onClick={(event) => {
-                event.stopPropagation();
-                navigate("/leave/apply");
-              }}
-            >
-              Apply Leave
-            </Button>
-            <Button
-              variant="outline"
-              className={secondaryHeroButtonClassName}
-              onClick={(event) => {
-                event.stopPropagation();
-                navigate("/timesheets");
-              }}
-            >
-              Timesheet
-            </Button>
+          </div>
+          <TooltipProvider delayDuration={0}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="w-full max-w-[420px] cursor-help">
+                  <div className="flex items-center justify-end gap-2">
+                    {/* <div className="text-xs font-medium text-emerald-800">
+                      Completed time
+                    </div> */}
+                    <div className="flex items-center gap-1">
+                      {(effectiveDisplayDurationParts || ["00", "00", "00"]).map((part, index) => (
+                        <div key={`duration-part-${index}`} className="flex items-center gap-1">
+                          <div className={`min-w-[3.25rem] rounded-2xl px-2.5 py-2.5 text-center text-5xl font-black leading-none tracking-[0.08em] text-white shadow-[0_10px_24px_rgba(11,52,81,0.18)] ${clockBoxClassName}`}>
+                            {part}
+                          </div>
+                          {index < 2 && (
+                            <div className="mx-0.5 text-3xl font-bold text-slate-400">
+                              :
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end" className="max-w-xs text-left">
+                {effectiveDisplayDurationText
+                  ? (isCheckedOut
+                    ? `Completed time: ${effectiveDisplayDurationText}${effectiveDisplayDurationMs !== null && Number(effectiveDisplayDurationMs) < minimumWorkDurationMs ? ` • Continues until ${formatDuration(minimumWorkDurationMs)}` : ""}`
+                    : `Working since first check-in: ${effectiveDisplayDurationText}${remainingToCheckoutText ? ` • Time left to checkout: ${remainingToCheckoutText}` : ""}${remainingToMinimumText ? ` • Time left to minimum hours: ${remainingToMinimumText}` : ""}`)
+                  : "Time will appear after the first check-in."}
+              </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
       </motion.div>

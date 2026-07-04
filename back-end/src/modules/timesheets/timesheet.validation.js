@@ -18,6 +18,7 @@ exports.checkInSchema = Joi.object({
   publicIp: Joi.string().trim().allow("", null).optional(),
   ipAddress: Joi.string().trim().allow("", null).optional(),
   deviceId: Joi.string().trim().allow("", null).optional(),
+  accuracy: Joi.number().min(0).optional(),
   latitude: Joi.number().min(-90).max(90).optional(),
   longitude: Joi.number().min(-180).max(180).optional(),
   selfieImage: Joi.string().max(5 * 1024 * 1024).allow("").optional()
@@ -28,6 +29,7 @@ exports.checkOutSchema = Joi.object({
   publicIp: Joi.string().trim().allow("", null).optional(),
   ipAddress: Joi.string().trim().allow("", null).optional(),
   deviceId: Joi.string().trim().allow("", null).optional(),
+  accuracy: Joi.number().min(0).optional(),
   latitude: Joi.number().min(-90).max(90).optional(),
   longitude: Joi.number().min(-180).max(180).optional(),
   selfieImage: Joi.string().max(5 * 1024 * 1024).allow("").optional()

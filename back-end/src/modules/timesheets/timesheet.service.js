@@ -41,6 +41,7 @@ const {
   getWeekdayForDateKey
 } = require("../../utils/timezone");
 const { analyzeLeaveDateKeys } = require("../leaves/leavePolicy.util");
+const { emitAttendanceUpdate } = require("../../realtime/socket");
 
 const REQUEST_APPROVER_ROLE_SLUGS = new Set([
   "manager",
@@ -2028,6 +2029,7 @@ exports.checkIn = async (req) => {
   const checkInDeviceId = getRequestDeviceId(req, req.body);
   const checkInLatitude = req.body?.latitude;
   const checkInLongitude = req.body?.longitude;
+  const checkInAccuracy = Number(req.body?.accuracy);
   const checkInSelfieImage = req.body?.selfieImage || null;
   const checkInSelfieProvided = Boolean(req.body?.selfieImage);
   if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceIpEnabled) {
@@ -2065,6 +2067,8 @@ exports.checkIn = async (req) => {
     const radiusMeters = Number(attendanceSecurity.attendanceGeoRadiusMeters || 200);
     const employeeLat = Number(checkInLatitude);
     const employeeLng = Number(checkInLongitude);
+    const accuracyMeters = Number.isFinite(checkInAccuracy) ? Math.max(10, Math.min(checkInAccuracy * 1.5, 50)) : 15;
+    const effectiveRadiusMeters = radiusMeters + accuracyMeters;
     if (!Number.isFinite(employeeLat) || !Number.isFinite(employeeLng)) {
       throwHttpError(403, "Location access is required for check-in");
     }
@@ -2077,8 +2081,11 @@ exports.checkIn = async (req) => {
       employeeLat,
       employeeLng
     );
-    if (distanceMeters > radiusMeters) {
-      throwHttpError(403, `You are outside office geofence. Allowed radius is ${radiusMeters} meters.`);
+    if (distanceMeters > effectiveRadiusMeters) {
+      throwHttpError(
+        403,
+        `You are outside office geofence. Allowed radius is ${radiusMeters} meters (GPS tolerance applied: ${accuracyMeters.toFixed(0)} meters).`
+      );
     }
   }
 
@@ -2227,14 +2234,21 @@ exports.checkIn = async (req) => {
       }
       throw error;
     }
-    await audit({
-      req,
-      module: "timesheets",
-      action: "CHECK_IN",
-      entityId: createdAttendance?._id || null,
-      after: createdAttendance?.toObject?.() || null
-    });
-    return createdAttendance;
+  await audit({
+    req,
+    module: "timesheets",
+    action: "CHECK_IN",
+    entityId: createdAttendance?._id || null,
+    after: createdAttendance?.toObject?.() || null
+  });
+  emitAttendanceUpdate(
+    { organizationId: req.user.organizationId, userId: req.user.userId },
+    {
+      event: "CHECK_IN",
+      attendance: createdAttendance?.toObject?.() || null
+    }
+  );
+  return createdAttendance;
   }
 
   if (existing?.checkInAt) {
@@ -2317,6 +2331,13 @@ exports.checkIn = async (req) => {
     existing.totalMinutes = sumInsideMinutesFromDayHistory(existing.dayHistory);
     normalizeAttendanceDocumentDateFields(existing, organizationTimeZone);
     await existing.save();
+    emitAttendanceUpdate(
+      { organizationId: req.user.organizationId, userId: req.user.userId },
+      {
+        event: "CHECK_IN",
+        attendance: existing.toObject()
+      }
+    );
     return existing;
   }
 
@@ -2375,7 +2396,7 @@ exports.checkIn = async (req) => {
 exports.getCheckInPolicy = async (req) => {
   const settings = await OrgSettings.findOne({ organizationId: req.user.organizationId })
     .select(
-      "attendanceIpEnabled attendanceSelfieRequired attendanceMultiPunchEnabled attendanceGeoFenceEnabled attendanceGeoLatitude attendanceGeoLongitude attendanceGeoRadiusMeters"
+      "attendanceIpEnabled attendanceSelfieRequired attendanceMultiPunchEnabled attendanceGeoFenceEnabled attendanceGeoLatitude attendanceGeoLongitude attendanceGeoRadiusMeters minWorkHoursPerDay"
     );
   const localGeoFenceFallbackEnabled = process.env.NODE_ENV !== "production";
 
@@ -2387,7 +2408,8 @@ exports.getCheckInPolicy = async (req) => {
     attendanceGeoLatitude: localGeoFenceFallbackEnabled ? settings?.attendanceGeoLatitude ?? null : null,
     attendanceGeoLongitude: localGeoFenceFallbackEnabled ? settings?.attendanceGeoLongitude ?? null : null,
     localGeoFenceFallbackEnabled,
-    attendanceGeoRadiusMeters: Number(settings?.attendanceGeoRadiusMeters || 200)
+    attendanceGeoRadiusMeters: Number(settings?.attendanceGeoRadiusMeters || 200),
+    minWorkHoursPerDay: Number(settings?.minWorkHoursPerDay || 8)
   };
 };
 
@@ -2562,6 +2584,13 @@ exports.checkOut = async (req) => {
     before: { checkOutAt: previousCheckOutAt },
     after: attendance.toObject()
   });
+  emitAttendanceUpdate(
+    { organizationId: req.user.organizationId, userId: req.user.userId },
+    {
+      event: "CHECK_OUT",
+      attendance: attendance.toObject()
+    }
+  );
 
   return attendance;
 };

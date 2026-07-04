@@ -1,4 +1,5 @@
 const express = require("express");
+const http = require("http");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const morgan = require("morgan");
@@ -56,6 +57,7 @@ const configuredAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 const allowedOrigins = configuredAllowedOrigins.length ? configuredAllowedOrigins : defaultAllowedOrigins;
+const server = http.createServer(app);
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
 
@@ -99,6 +101,7 @@ if (process.env.ENABLE_RATE_LIMIT !== "false") {
 
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./swagger");
+const { initRealtime } = require("./src/realtime/socket");
 
 if (shouldExposeSwagger) {
   app.use("/swagger-ui", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -194,6 +197,7 @@ const startServer = async () => {
   await connectDB();
   validatePayrollDbConfig();
   await connectPayrollDb();
+  initRealtime(server, { allowedOrigins });
 
   try {
     const bootstrapResult = await ensureSystemBootstrap();
@@ -226,7 +230,7 @@ const startServer = async () => {
     }
   }
 
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     if (shouldExposeSwagger) {
       console.log(`📄 Swagger docs: http://localhost:${PORT}/swagger-ui`);
