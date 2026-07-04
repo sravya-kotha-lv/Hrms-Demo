@@ -38,6 +38,10 @@ exports.updateRoleSchema = Joi.object({
   permissionIds: Joi.array()
     .items(objectId)
     .min(1)
+    .optional(),
+
+  status: Joi.string()
+    .valid("active", "inactive")
     .optional()
 });
 
