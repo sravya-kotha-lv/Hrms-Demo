@@ -3,6 +3,33 @@ const Role = require("./role.model");
 const organizationService = require("../organizations/organization.service");
 const permissionService = require("../permissions/permission.service");
 
+const PROTECTED_ROLE_SLUGS = new Set([
+  "org-admin",
+  "hr",
+  "manager",
+  "employee"
+]);
+
+const restoreProtectedRoles = async (roles = []) => {
+  const protectedInactiveRoleIds = roles
+    .filter((role) => PROTECTED_ROLE_SLUGS.has(role.slug) && role.status === "inactive")
+    .map((role) => role._id);
+
+  if (protectedInactiveRoleIds.length) {
+    await Role.updateMany(
+      { _id: { $in: protectedInactiveRoleIds } },
+      { $set: { status: "active" } }
+    );
+    roles.forEach((role) => {
+      if (protectedInactiveRoleIds.some((roleId) => String(roleId) === String(role._id))) {
+        role.status = "active";
+      }
+    });
+  }
+
+  return roles;
+};
+
 const getDefaultPermissionIds = async (organizationId) => {
   const employeeRole = await Role.findOne({
     organizationId,
@@ -17,9 +44,11 @@ const getDefaultPermissionIds = async (organizationId) => {
 exports.getRolesByIds = async (roleIds = []) => {
   if (!Array.isArray(roleIds) || roleIds.length === 0) return [];
 
-  return Role.find({
+  const roles = await Role.find({
     _id: { $in: roleIds.map(id => new mongoose.Types.ObjectId(id)) }
   }).lean();
+
+  return restoreProtectedRoles(roles);
 };
 
 /**
@@ -59,31 +88,47 @@ exports.update = async (id, data) => {
   const role = await Role.findById(id);
   if (!role) throw { code: 404, message: "Role not found" };
 
+  if (PROTECTED_ROLE_SLUGS.has(role.slug) && data?.status && data.status !== role.status) {
+    throw { code: 403, message: "Default roles cannot be deactivated" };
+  }
+
+  if (role.isSystemRole && data?.status && data.status !== role.status) {
+    throw { code: 403, message: "System roles cannot be deactivated" };
+  }
+
   Object.assign(role, data);
   return role.save();
 };
 
 /**
- * Delete role
+ * Deactivate role
  */
 exports.remove = async (id) => {
   const role = await Role.findById(id);
   if (!role) throw { code: 404, message: "Role not found" };
 
-  if (role.isSystemRole) {
-    throw { code: 403, message: "System roles cannot be deleted" };
+  if (PROTECTED_ROLE_SLUGS.has(role.slug)) {
+    throw { code: 403, message: "Default roles cannot be deactivated" };
   }
 
-  await role.deleteOne();
+  if (role.isSystemRole) {
+    throw { code: 403, message: "System roles cannot be deactivated" };
+  }
+
+  if (role.status === "inactive") {
+    return role;
+  }
+
+  role.status = "inactive";
+  return role.save();
 };
 
 /**
  * List roles
  */
 exports.list = async (organizationId) => {
-  console.log(organizationId,"orgid");
-  
-  return Role.find({ organizationId }).lean();
+  const roles = await Role.find({ organizationId }).sort({ isSystemRole: -1, createdAt: 1 }).lean();
+  return restoreProtectedRoles(roles);
 };
 
 /**
@@ -92,5 +137,6 @@ exports.list = async (organizationId) => {
 exports.getById = async (id) => {
   const role = await Role.findById(id).lean();
   if (!role) throw { code: 404, message: "Role not found" };
+  await restoreProtectedRoles([role]);
   return role;
 };

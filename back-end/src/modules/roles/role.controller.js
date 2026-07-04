@@ -32,7 +32,7 @@ exports.remove = async (req, res) => {
 
   res.json(
     buildSuccessResponse({
-      message: "Role deleted successfully"
+      message: "Role deactivated successfully"
     })
   );
 };

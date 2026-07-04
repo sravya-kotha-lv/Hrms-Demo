@@ -29,6 +29,12 @@ const roleSchema = new mongoose.Schema(
     isSystemRole: {
       type: Boolean,
       default: false
+    },
+
+    status: {
+      type: String,
+      enum: ["active", "inactive"],
+      default: "active"
     }
   },
   { timestamps: true }

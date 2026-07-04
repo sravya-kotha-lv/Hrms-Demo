@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
 import { useAuth } from "@/context/useAuth";
@@ -29,7 +29,15 @@ interface Role {
   slug: string;
   permissionIds: string[];
   isSystemRole: boolean;
+  status?: "active" | "inactive";
 }
+
+const PROTECTED_ROLE_SLUGS = new Set([
+  "org-admin",
+  "hr",
+  "manager",
+  "employee",
+]);
 
 const emptyRole: Role = {
   name: "",
@@ -69,23 +77,30 @@ const Roles = () => {
     fetchRoles();
   }, []);
 
-  /* ================= DELETE ================= */
+  /* ================= DELETE / DEACTIVATE ================= */
 
   const handleDelete = async (role: Role) => {
-    if (role.isSystemRole) {
-      toast.warning("System roles cannot be deleted");
+    if (role.isSystemRole || PROTECTED_ROLE_SLUGS.has(role.slug)) {
+      toast.warning("Default roles cannot be deactivated");
       return;
     }
 
-    if (!window.confirm("Delete this role?")) return;
+    const isInactive = role.status === "inactive";
+    const confirmMessage = isInactive
+      ? "Reactivate this role?"
+      : "Deactivate this role? Employees already assigned to it will keep their access.";
 
-    const res = await deleteApiWithToken(`/roles/${role._id}`);
+    if (!window.confirm(confirmMessage)) return;
+
+    const res = isInactive
+      ? await putApiWithToken(`/roles/${role._id}`, { status: "active" })
+      : await deleteApiWithToken(`/roles/${role._id}`);
 
     if (res?.code === 200) {
-      toast.success("Role deleted");
+      toast.success(isInactive ? "Role reactivated" : "Role deactivated");
       fetchRoles();
     } else {
-      toast.error(res?.message || "Delete failed");
+      toast.error(res?.message || (isInactive ? "Reactivate failed" : "Deactivate failed"));
     }
   };
 
@@ -102,7 +117,6 @@ const Roles = () => {
     if (isEdit && form._id) {
       res = await putApiWithToken(`/roles/${form._id}`, {
         name: form.name,
-        slug: form.slug,
         permissionIds: form.permissionIds,
       });
     } else {
@@ -144,9 +158,17 @@ const Roles = () => {
       header: "Type",
       accessor: "isSystemRole",
       render: (role) => (
-        <Badge variant={role.isSystemRole ? "secondary" : "default"}>
-          {role.isSystemRole ? "System" : "Custom"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={role.isSystemRole ? "secondary" : "default"}>
+            {role.isSystemRole ? "System" : "Custom"}
+          </Badge>
+          <Badge
+            variant={role.status === "inactive" ? "secondary" : "outline"}
+            className={role.status === "inactive" ? "text-muted-foreground" : ""}
+          >
+            {role.status === "inactive" ? "Inactive" : "Active"}
+          </Badge>
+        </div>
       ),
     },
     {
@@ -154,7 +176,7 @@ const Roles = () => {
       accessor: "_id",
       render: (role) => (
         <div className="flex gap-3">
-          {!role.isSystemRole && (
+          {!role.isSystemRole && !PROTECTED_ROLE_SLUGS.has(role.slug) && (
             <>
               <PermissionGate permissions={["ROLE_UPDATE"]}>
                 <Pencil
@@ -167,10 +189,17 @@ const Roles = () => {
                 />
               </PermissionGate>
               <PermissionGate permissions={["ROLE_DELETE"]}>
-                <Trash2
-                  className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
-                  onClick={() => handleDelete(role)}
-                />
+                {role.status === "inactive" ? (
+                  <RefreshCw
+                    className="w-4 h-4 text-emerald-600 cursor-pointer hover:scale-110"
+                    onClick={() => handleDelete(role)}
+                  />
+                ) : (
+                  <Trash2
+                    className="w-4 h-4 text-red-600 cursor-pointer hover:scale-110"
+                    onClick={() => handleDelete(role)}
+                  />
+                )}
               </PermissionGate>
             </>
           )}
@@ -244,6 +273,7 @@ const Roles = () => {
               placeholder="Slug (eg: hr, manager)"
               validationType="slug"
               value={form.slug}
+              disabled={isEdit}
               onChange={(e) =>
                 setForm({ ...form, slug: e.target.value })
               }
