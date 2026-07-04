@@ -49,6 +49,10 @@ const timesheetAttendanceSchema = new mongoose.Schema(
       type: String,
       default: null
     },
+    checkInDeviceId: {
+      type: String,
+      default: null
+    },
 
     checkOutAt: Date,
     checkOutIp: {
@@ -60,6 +64,10 @@ const timesheetAttendanceSchema = new mongoose.Schema(
       default: false
     },
     checkOutSelfieImage: {
+      type: String,
+      default: null
+    },
+    checkOutDeviceId: {
       type: String,
       default: null
     },
@@ -92,6 +100,10 @@ const timesheetAttendanceSchema = new mongoose.Schema(
             default: false
           },
           selfieImage: {
+            type: String,
+            default: null
+          },
+          deviceId: {
             type: String,
             default: null
           },

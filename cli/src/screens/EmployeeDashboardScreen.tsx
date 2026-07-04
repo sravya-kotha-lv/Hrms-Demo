@@ -22,6 +22,7 @@ import Geolocation from 'react-native-geolocation-service';
 import AttendanceTab from '../components/AttendanceTab';
 import { AttendanceDay } from '../types/attendance';
 import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
+import { getDeviceId } from '../utils/deviceId';
 
 const pressedStyle = {
   transform: [{ scale: 0.96 }],
@@ -73,6 +74,30 @@ const formatDateLong = (value: string | Date) =>
 
 const formatTime = (value: string | Date) =>
   new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+let publicIpLookupPromise: Promise<string | null> | null = null;
+
+const getPublicIpAddress = async () => {
+  if (publicIpLookupPromise) return publicIpLookupPromise;
+
+  publicIpLookupPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const response = await fetch('https://api.ipify.org?format=json', {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return typeof data?.ip === 'string' && data.ip.trim() ? data.ip.trim() : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  return publicIpLookupPromise;
+};
 
 const getOrganizationName = (...sources: any[]) => {
   for (const source of sources) {
@@ -537,7 +562,13 @@ function EmployeeDashboardScreen() {
   const isCheckInDisabled = checkinLoading || (!checkInPolicy.attendanceMultiPunchEnabled && hasCheckedInToday);
   const isCheckOutDisabled = checkoutLoading || (!isCheckedIn && !checkInPolicy.attendanceMultiPunchEnabled);
 
-  const checkInTimeText = attendanceToday?.checkInAt ? formatTime(attendanceToday.checkInAt) : '-';
+  const firstCheckInAt = useMemo(() => {
+    const punches = attendanceToday?.dayHistory || [];
+    const firstCheckIn = punches.find((entry: any) => entry?.action === 'check_in' && entry?.at);
+    return firstCheckIn?.at || attendanceToday?.checkInAt || null;
+  }, [attendanceToday]);
+
+  const checkInTimeText = firstCheckInAt ? formatTime(firstCheckInAt) : '-';
   const checkOutTimeText = attendanceToday?.checkOutAt
     ? formatTime(attendanceToday.checkOutAt)
     : '-';
@@ -607,6 +638,11 @@ function EmployeeDashboardScreen() {
     }
     const latestPolicy = await loadLatestCheckInPolicy();
     const payload: Record<string, unknown> = {};
+    const clientIp = await getPublicIpAddress();
+    if (clientIp) {
+      payload.clientIp = clientIp;
+    }
+    payload.deviceId = await getDeviceId();
     if (latestPolicy.attendanceGeoFenceEnabled) {
       const ok = await requestLocationPermission();
       if (!ok) {
@@ -648,6 +684,11 @@ function EmployeeDashboardScreen() {
     }
     const latestPolicy = await loadLatestCheckInPolicy();
     const payload: Record<string, unknown> = {};
+    const clientIp = await getPublicIpAddress();
+    if (clientIp) {
+      payload.clientIp = clientIp;
+    }
+    payload.deviceId = await getDeviceId();
     if (latestPolicy.attendanceSelfieRequired) {
       const selfie = await captureSelfie();
       if (!selfie) {

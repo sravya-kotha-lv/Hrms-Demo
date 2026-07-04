@@ -926,7 +926,17 @@ const matchesIpv4Cidr = (ip, cidr) => {
   return (ipNum & mask) === (networkNum & mask);
 };
 
-const getRequestIp = (req) => {
+const getRequestIp = (req, body = {}) => {
+  const bodyCandidates = [
+    body?.clientIp,
+    body?.publicIp,
+    body?.ipAddress,
+    body?.ip
+  ].map((value) => normalizeIp(value)).filter(Boolean);
+  if (bodyCandidates.length) {
+    return bodyCandidates[0];
+  }
+
   const forwarded = req.headers["x-forwarded-for"];
   if (typeof forwarded === "string" && forwarded.trim()) {
     const forwardedCandidates = forwarded
@@ -940,6 +950,27 @@ const getRequestIp = (req) => {
     return normalizeIp(xRealIp);
   }
   return normalizeIp(req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || "");
+};
+
+const getRequestDeviceId = (req, body = {}) => {
+  const bodyCandidates = [
+    body?.deviceId,
+    body?.device_id,
+    body?.deviceID
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  if (bodyCandidates.length) {
+    return bodyCandidates[0];
+  }
+
+  const headerCandidates = [
+    req.headers["x-device-id"],
+    req.headers["x-client-device-id"]
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  if (headerCandidates.length) {
+    return headerCandidates[0];
+  }
+
+  return null;
 };
 
 const isAllowedIp = (requestIp, allowedIpRaw) => {
@@ -1079,6 +1110,7 @@ const buildAttendancePunch = ({
   longitude = null,
   selfieProvided = false,
   selfieImage = null,
+  deviceId = null,
   source = "web"
 }) => ({
   action,
@@ -1088,6 +1120,7 @@ const buildAttendancePunch = ({
   longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
   selfieProvided: Boolean(selfieProvided),
   selfieImage: selfieImage || null,
+  deviceId: deviceId || null,
   source
 });
 
@@ -1991,7 +2024,8 @@ exports.checkIn = async (req) => {
   const shouldBypassPolicyChecks = process.env.NODE_ENV !== "production"
     && Boolean(attendanceSecurity?.attendanceDevBypassEnabled);
   const isMultiPunchEnabled = Boolean(attendanceSecurity?.attendanceMultiPunchEnabled);
-  const checkInIp = getRequestIp(req);
+  const checkInIp = getRequestIp(req, req.body);
+  const checkInDeviceId = getRequestDeviceId(req, req.body);
   const checkInLatitude = req.body?.latitude;
   const checkInLongitude = req.body?.longitude;
   const checkInSelfieImage = req.body?.selfieImage || null;
@@ -2142,6 +2176,7 @@ exports.checkIn = async (req) => {
     dateKey: effectiveAttendanceDateKey,
     checkInAt: now,
     checkInIp: checkInIp || null,
+    checkInDeviceId,
     checkInLatitude: Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null,
     checkInLongitude: Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null,
     checkInSelfieProvided,
@@ -2154,6 +2189,7 @@ exports.checkIn = async (req) => {
         action: "check_in",
         at: now,
         ip: checkInIp,
+        deviceId: checkInDeviceId,
         latitude: checkInLatitude,
         longitude: checkInLongitude,
         selfieProvided: checkInSelfieProvided,
@@ -2214,6 +2250,7 @@ exports.checkIn = async (req) => {
           action: "check_in",
           at: existing.checkInAt,
           ip: existing.checkInIp,
+          deviceId: existing.checkInDeviceId,
           latitude: existing.checkInLatitude,
           longitude: existing.checkInLongitude,
           selfieProvided: existing.checkInSelfieProvided,
@@ -2225,6 +2262,7 @@ exports.checkIn = async (req) => {
               action: "check_out",
               at: existing.checkOutAt,
               ip: existing.checkOutIp,
+              deviceId: existing.checkOutDeviceId,
               selfieProvided: existing.checkOutSelfieProvided,
               selfieImage: existing.checkOutSelfieImage
             })
@@ -2239,6 +2277,7 @@ exports.checkIn = async (req) => {
           action: "check_out",
           at: now,
           ip: checkInIp,
+          deviceId: checkInDeviceId,
           latitude: checkInLatitude,
           longitude: checkInLongitude,
           selfieProvided: checkInSelfieProvided,
@@ -2249,12 +2288,14 @@ exports.checkIn = async (req) => {
 
     existing.checkInAt = now;
     existing.checkInIp = checkInIp || null;
+    existing.checkInDeviceId = checkInDeviceId;
     existing.checkInLatitude = Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null;
     existing.checkInLongitude = Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null;
     existing.checkInSelfieProvided = checkInSelfieProvided;
     existing.checkInSelfieImage = checkInSelfieImage;
     existing.checkOutAt = null;
     existing.checkOutIp = null;
+    existing.checkOutDeviceId = null;
     existing.checkOutSelfieProvided = false;
     existing.checkOutSelfieImage = null;
     existing.status = "checked_in";
@@ -2266,6 +2307,7 @@ exports.checkIn = async (req) => {
         action: "check_in",
         at: now,
         ip: checkInIp,
+        deviceId: checkInDeviceId,
         latitude: checkInLatitude,
         longitude: checkInLongitude,
         selfieProvided: checkInSelfieProvided,
@@ -2282,12 +2324,14 @@ exports.checkIn = async (req) => {
     existing.checkInAt = now;
     existing.checkOutAt = null;
     existing.checkInIp = checkInIp || null;
+    existing.checkInDeviceId = checkInDeviceId;
     existing.checkInLatitude = Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null;
     existing.checkInLongitude = Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null;
     existing.checkInSelfieProvided = checkInSelfieProvided;
     existing.checkInSelfieImage = checkInSelfieImage;
     existing.checkOutSelfieProvided = false;
     existing.checkOutIp = null;
+    existing.checkOutDeviceId = null;
     existing.checkOutSelfieImage = null;
     existing.dayHistory = [
       buildAttendancePunch({
@@ -2350,7 +2394,8 @@ exports.getCheckInPolicy = async (req) => {
 exports.checkOut = async (req) => {
   const employee = await getEmployeeFromReq(req);
   const now = new Date();
-  const checkOutIp = getRequestIp(req);
+  const checkOutIp = getRequestIp(req, req.body);
+  const checkOutDeviceId = getRequestDeviceId(req, req.body);
   const organizationTimeZone = await getOrganizationTimeZone(req.user.organizationId);
   const attendanceSecurity = await OrgSettings.findOne({ organizationId: req.user.organizationId })
     .select("attendanceSelfieRequired attendanceMultiPunchEnabled attendanceDevBypassEnabled");
@@ -2428,6 +2473,7 @@ exports.checkOut = async (req) => {
         action: "check_in",
         at: attendance.checkInAt,
         ip: attendance.checkInIp,
+        deviceId: attendance.checkInDeviceId,
         latitude: attendance.checkInLatitude,
         longitude: attendance.checkInLongitude,
         selfieProvided: attendance.checkInSelfieProvided,
@@ -2440,6 +2486,7 @@ exports.checkOut = async (req) => {
       action: "check_out",
       at: now,
       ip: checkOutIp,
+      deviceId: checkOutDeviceId,
       latitude: checkOutLatitude,
       longitude: checkOutLongitude,
       selfieProvided: checkOutSelfieProvided,
@@ -2478,6 +2525,7 @@ exports.checkOut = async (req) => {
 
   attendance.checkOutAt = now;
   attendance.checkOutIp = checkOutIp || null;
+  attendance.checkOutDeviceId = checkOutDeviceId;
   attendance.checkOutSelfieProvided = checkOutSelfieProvided;
   attendance.checkOutSelfieImage = checkOutSelfieImage;
   attendance.dayHistory = nextDayHistory;
