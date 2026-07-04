@@ -829,9 +829,9 @@ const EmployeeDashboard = () => {
     return formatMinutesAsShiftTime(startMinutes - 120);
   }, [assignedShift?.startTime, attendanceToday?.shiftStartTime]);
   const statusHeroClassName = isCheckedOut
-    ? "border-orange-200/80 bg-[linear-gradient(135deg,rgba(255,247,237,0.98),rgba(254,215,170,0.84)_42%,rgba(255,255,255,0.98))]"
+    ? "border-amber-200/80 bg-[linear-gradient(135deg,rgba(255,251,235,0.98),rgba(254,243,199,0.84)_42%,rgba(255,255,255,0.98))]"
     : isCheckedIn
-      ? "border-amber-200/80 bg-[linear-gradient(135deg,rgba(255,251,235,0.98),rgba(254,243,199,0.84)_42%,rgba(255,255,255,0.98))]"
+      ? "border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(220,252,231,0.84)_42%,rgba(255,255,255,0.98))]"
       : "border-sky-200/80 bg-[linear-gradient(135deg,rgba(239,246,255,0.98),rgba(224,242,254,0.84)_42%,rgba(255,255,255,0.98))]";
   const balanceCardClassName =
     "stat-card border-emerald-200/70 bg-[linear-gradient(135deg,rgba(236,253,245,0.92),rgba(209,250,229,0.72)_48%,rgba(255,255,255,0.96))]";
@@ -846,9 +846,9 @@ const EmployeeDashboard = () => {
   const softInsetClassName =
     "bg-[linear-gradient(135deg,rgba(255,255,255,0.82),rgba(248,250,252,0.72))]";
   const clockBoxClassName = isCheckedOut
-    ? "bg-[linear-gradient(180deg,#ea580c_0%,#f59e0b_55%,#fdba74_100%)] ring-1 ring-orange-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_14px_28px_rgba(245,158,11,0.18)]"
+    ? "bg-[linear-gradient(180deg,#f59e0b_0%,#fbbf24_55%,#fde68a_100%)] ring-1 ring-amber-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_14px_28px_rgba(245,158,11,0.18)]"
     : isCheckedIn
-      ? "bg-[linear-gradient(180deg,#b45309_0%,#f59e0b_55%,#fbbf24_100%)] ring-1 ring-amber-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_14px_28px_rgba(245,158,11,0.18)]"
+      ? "bg-[linear-gradient(180deg,#059669_0%,#10b981_55%,#6ee7b7_100%)] ring-1 ring-emerald-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_14px_28px_rgba(16,185,129,0.18)]"
       : "bg-[linear-gradient(180deg,#1d4ed8_0%,#2563eb_55%,#60a5fa_100%)] ring-1 ring-sky-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_14px_28px_rgba(37,99,235,0.18)]";
   const secondaryHeroButtonClassName =
     "h-10 rounded-xl border-white/70 bg-white/75 px-4 text-slate-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900";
@@ -1280,11 +1280,11 @@ const EmployeeDashboard = () => {
                     <div className="flex items-center gap-1">
                       {(effectiveDisplayDurationParts || ["00", "00", "00"]).map((part, index) => (
                         <div key={`duration-part-${index}`} className="flex items-center gap-1">
-                          <div className={`min-w-[3.25rem] rounded-2xl px-2.5 py-2.5 text-center text-4xl font-bold leading-none tracking-[0.08em] text-white shadow-[0_10px_24px_rgba(11,52,81,0.18)] ${clockBoxClassName}`}>
+                          <div className={`min-w-[3.25rem] rounded-2xl px-2.5 py-2.5 text-center text-5xl font-black leading-none tracking-[0.08em] text-white shadow-[0_10px_24px_rgba(11,52,81,0.18)] ${clockBoxClassName}`}>
                             {part}
                           </div>
                           {index < 2 && (
-                            <div className="mx-0.5 text-3xl font-semibold text-slate-400">
+                            <div className="mx-0.5 text-3xl font-bold text-slate-400">
                               :
                             </div>
                           )}
