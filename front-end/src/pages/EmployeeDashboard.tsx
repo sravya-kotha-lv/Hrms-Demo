@@ -800,9 +800,6 @@ const EmployeeDashboard = () => {
   const firstCheckInDate = firstCheckInAt ? new Date(firstCheckInAt) : null;
   const checkOutDate = attendanceToday?.checkOutAt ? new Date(attendanceToday.checkOutAt) : null;
   const scheduledEndDate = attendanceToday?.scheduledEndAt ? new Date(attendanceToday.scheduledEndAt) : null;
-  const liveWorkDurationText = firstCheckInDate
-    ? formatDuration((isCheckedOut && checkOutDate ? checkOutDate.getTime() : clockTick) - firstCheckInDate.getTime())
-    : null;
   const minimumWorkDurationMs = Number(checkInPolicy.minWorkHoursPerDay || 8) * 60 * 60 * 1000;
   const effectiveDisplayDurationMs = firstCheckInDate
     ? (() => {
@@ -997,6 +994,7 @@ const EmployeeDashboard = () => {
       if (position) {
         payload.latitude = position.coords.latitude;
         payload.longitude = position.coords.longitude;
+        payload.accuracy = position.coords.accuracy;
       }
     }
 
@@ -1057,6 +1055,7 @@ const EmployeeDashboard = () => {
       if (position) {
         payload.latitude = position.coords.latitude;
         payload.longitude = position.coords.longitude;
+        payload.accuracy = position.coords.accuracy;
       }
     }
 
@@ -1295,12 +1294,12 @@ const EmployeeDashboard = () => {
                 </div>
               </TooltipTrigger>
               <TooltipContent side="bottom" align="end" className="max-w-xs text-left">
-                  {effectiveDisplayDurationText
-                    ? (isCheckedOut
-                      ? `Time continues until minimum working hours (${formatDuration(minimumWorkDurationMs)}). Actual worked time: ${liveWorkDurationText || "00:00:00"}`
-                      : `Working since first check-in: ${effectiveDisplayDurationText}${remainingToCheckoutText ? ` • Time left to checkout: ${remainingToCheckoutText}` : ""}${remainingToMinimumText ? ` • Time left to minimum hours: ${remainingToMinimumText}` : ""}`)
-                    : "Time will appear after the first check-in."}
-                </TooltipContent>
+                {effectiveDisplayDurationText
+                  ? (isCheckedOut
+                    ? `Completed time: ${effectiveDisplayDurationText}${effectiveDisplayDurationMs !== null && Number(effectiveDisplayDurationMs) < minimumWorkDurationMs ? ` • Continues until ${formatDuration(minimumWorkDurationMs)}` : ""}`
+                    : `Working since first check-in: ${effectiveDisplayDurationText}${remainingToCheckoutText ? ` • Time left to checkout: ${remainingToCheckoutText}` : ""}${remainingToMinimumText ? ` • Time left to minimum hours: ${remainingToMinimumText}` : ""}`)
+                  : "Time will appear after the first check-in."}
+              </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>

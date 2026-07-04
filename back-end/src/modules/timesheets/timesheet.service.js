@@ -2029,6 +2029,7 @@ exports.checkIn = async (req) => {
   const checkInDeviceId = getRequestDeviceId(req, req.body);
   const checkInLatitude = req.body?.latitude;
   const checkInLongitude = req.body?.longitude;
+  const checkInAccuracy = Number(req.body?.accuracy);
   const checkInSelfieImage = req.body?.selfieImage || null;
   const checkInSelfieProvided = Boolean(req.body?.selfieImage);
   if (!shouldBypassPolicyChecks && attendanceSecurity?.attendanceIpEnabled) {
@@ -2066,6 +2067,8 @@ exports.checkIn = async (req) => {
     const radiusMeters = Number(attendanceSecurity.attendanceGeoRadiusMeters || 200);
     const employeeLat = Number(checkInLatitude);
     const employeeLng = Number(checkInLongitude);
+    const accuracyMeters = Number.isFinite(checkInAccuracy) ? Math.max(10, Math.min(checkInAccuracy * 1.5, 50)) : 15;
+    const effectiveRadiusMeters = radiusMeters + accuracyMeters;
     if (!Number.isFinite(employeeLat) || !Number.isFinite(employeeLng)) {
       throwHttpError(403, "Location access is required for check-in");
     }
@@ -2078,8 +2081,11 @@ exports.checkIn = async (req) => {
       employeeLat,
       employeeLng
     );
-    if (distanceMeters > radiusMeters) {
-      throwHttpError(403, `You are outside office geofence. Allowed radius is ${radiusMeters} meters.`);
+    if (distanceMeters > effectiveRadiusMeters) {
+      throwHttpError(
+        403,
+        `You are outside office geofence. Allowed radius is ${radiusMeters} meters (GPS tolerance applied: ${accuracyMeters.toFixed(0)} meters).`
+      );
     }
   }
 
