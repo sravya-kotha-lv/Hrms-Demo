@@ -2111,11 +2111,10 @@ exports.checkIn = async (req) => {
     ]
   }).sort({ date: -1, checkInAt: -1 });
 
-  if (openAttendance) {
-    if (getAttendanceStoredDateKey(openAttendance, organizationTimeZone) === effectiveAttendanceDateKey) {
-      throw new Error("Already checked in for this shift");
-    }
-
+  if (
+    openAttendance
+    && getAttendanceStoredDateKey(openAttendance, organizationTimeZone) !== effectiveAttendanceDateKey
+  ) {
     await Attendance.updateOne(
       { _id: openAttendance._id },
       {
@@ -2206,23 +2205,8 @@ exports.checkIn = async (req) => {
     if (!isMultiPunchEnabled) {
       throw new Error("Already checked in for this shift");
     }
-    if (isAttendanceOpenSession(existing)) {
-      throw new Error("Already checked in");
-    }
-    existing.checkInAt = now;
-    existing.checkInIp = checkInIp || null;
-    existing.checkInLatitude = Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null;
-    existing.checkInLongitude = Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null;
-    existing.checkInSelfieProvided = checkInSelfieProvided;
-    existing.checkInSelfieImage = checkInSelfieImage;
-    existing.checkOutAt = null;
-    existing.checkOutIp = null;
-    existing.checkOutSelfieProvided = false;
-    existing.checkOutSelfieImage = null;
-    existing.totalMinutes = 0;
-    existing.status = "checked_in";
-    existing.overriddenBy = null;
-    existing.overriddenAt = null;
+
+    const wasOpenSession = isAttendanceOpenSession(existing);
     const baseDayHistory = (existing.dayHistory || []).length
       ? existing.dayHistory
       : [
@@ -2247,8 +2231,37 @@ exports.checkIn = async (req) => {
           ]
           : [])
       ];
+
+    const nextDayHistory = wasOpenSession
+      ? [
+        ...baseDayHistory,
+        buildAttendancePunch({
+          action: "check_out",
+          at: now,
+          ip: checkInIp,
+          latitude: checkInLatitude,
+          longitude: checkInLongitude,
+          selfieProvided: checkInSelfieProvided,
+          selfieImage: checkInSelfieImage
+        })
+      ]
+      : baseDayHistory;
+
+    existing.checkInAt = now;
+    existing.checkInIp = checkInIp || null;
+    existing.checkInLatitude = Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null;
+    existing.checkInLongitude = Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null;
+    existing.checkInSelfieProvided = checkInSelfieProvided;
+    existing.checkInSelfieImage = checkInSelfieImage;
+    existing.checkOutAt = null;
+    existing.checkOutIp = null;
+    existing.checkOutSelfieProvided = false;
+    existing.checkOutSelfieImage = null;
+    existing.status = "checked_in";
+    existing.overriddenBy = null;
+    existing.overriddenAt = null;
     existing.dayHistory = [
-      ...baseDayHistory,
+      ...nextDayHistory,
       buildAttendancePunch({
         action: "check_in",
         at: now,
@@ -2259,6 +2272,7 @@ exports.checkIn = async (req) => {
         selfieImage: checkInSelfieImage
       })
     ];
+    existing.totalMinutes = sumInsideMinutesFromDayHistory(existing.dayHistory);
     normalizeAttendanceDocumentDateFields(existing, organizationTimeZone);
     await existing.save();
     return existing;
@@ -2286,7 +2300,7 @@ exports.checkIn = async (req) => {
         selfieImage: checkInSelfieImage
       })
     ];
-    existing.totalMinutes = 0;
+    existing.totalMinutes = sumInsideMinutesFromDayHistory(existing.dayHistory);
     existing.status = "checked_in";
     existing.overriddenBy = null;
     existing.overriddenAt = null;

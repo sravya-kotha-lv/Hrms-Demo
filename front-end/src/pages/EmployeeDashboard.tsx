@@ -1043,7 +1043,7 @@ const EmployeeDashboard = () => {
               <Button
                 className={primaryHeroButtonClassName}
                 onClick={handleCheckIn}
-                disabled={(checkInPolicy.attendanceMultiPunchEnabled ? isCheckedIn : hasCheckedInToday) || checkinLoading}
+                disabled={checkinLoading || (!checkInPolicy.attendanceMultiPunchEnabled && hasCheckedInToday)}
               >
                 <LogIn className="w-4 h-4 mr-2" /> Check In
               </Button>
@@ -1053,7 +1053,7 @@ const EmployeeDashboard = () => {
                 variant="outline"
                 className={secondaryHeroButtonClassName}
                 onClick={handleCheckOut}
-                disabled={!isCheckedIn || checkoutLoading}
+                disabled={checkoutLoading || (!isCheckedIn && !checkInPolicy.attendanceMultiPunchEnabled)}
               >
                 <LogOut className="w-4 h-4 mr-2" /> Check Out
               </Button>

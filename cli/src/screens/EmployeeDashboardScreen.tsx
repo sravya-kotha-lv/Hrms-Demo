@@ -32,6 +32,7 @@ const pressedStyle = {
 type CheckInPolicy = {
   attendanceIpEnabled: boolean;
   attendanceSelfieRequired: boolean;
+  attendanceMultiPunchEnabled: boolean;
   attendanceGeoFenceEnabled: boolean;
   attendanceGeoRadiusMeters: number;
 };
@@ -203,6 +204,7 @@ function EmployeeDashboardScreen() {
   const [checkInPolicy, setCheckInPolicy] = useState<CheckInPolicy>({
     attendanceIpEnabled: false,
     attendanceSelfieRequired: false,
+    attendanceMultiPunchEnabled: false,
     attendanceGeoFenceEnabled: false,
     attendanceGeoRadiusMeters: 200,
   });
@@ -240,6 +242,7 @@ function EmployeeDashboardScreen() {
     const nextPolicy: CheckInPolicy = {
       attendanceIpEnabled: Boolean(policyData?.attendanceIpEnabled),
       attendanceSelfieRequired: Boolean(policyData?.attendanceSelfieRequired),
+      attendanceMultiPunchEnabled: Boolean(policyData?.attendanceMultiPunchEnabled),
       attendanceGeoFenceEnabled: Boolean(policyData?.attendanceGeoFenceEnabled),
       attendanceGeoRadiusMeters: Number(policyData?.attendanceGeoRadiusMeters || 200),
     };
@@ -531,6 +534,8 @@ function EmployeeDashboardScreen() {
 
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
+  const isCheckInDisabled = checkinLoading || (!checkInPolicy.attendanceMultiPunchEnabled && hasCheckedInToday);
+  const isCheckOutDisabled = checkoutLoading || (!isCheckedIn && !checkInPolicy.attendanceMultiPunchEnabled);
 
   const checkInTimeText = attendanceToday?.checkInAt ? formatTime(attendanceToday.checkInAt) : '-';
   const checkOutTimeText = attendanceToday?.checkOutAt
@@ -844,10 +849,10 @@ function EmployeeDashboardScreen() {
                                 styles.primaryAction,
                                 isCheckedIn && styles.primaryActionInactive,
                                 pressed && styles.surfacePressed,
-                                isCheckedIn && styles.primaryDisabled,
+                                isCheckInDisabled && styles.primaryDisabled,
                               ]}
                               onPress={handleCheckIn}
-                              disabled={checkinLoading || isCheckedIn}
+                              disabled={isCheckInDisabled}
                             >
                               <LinearGradient
                                 colors={isCheckedIn ? ['#ffffff', '#f7f9fd'] : ['#5a7bea', '#456bde', '#3559cc']}
@@ -874,10 +879,10 @@ function EmployeeDashboardScreen() {
                                 styles.secondaryAction,
                                 isCheckedIn && styles.secondaryActionActive,
                                 pressed && styles.surfacePressed,
-                                !isCheckedIn && styles.secondaryDisabled,
+                                isCheckOutDisabled && styles.secondaryDisabled,
                               ]}
                               onPress={handleCheckOut}
-                              disabled={checkoutLoading || !isCheckedIn}
+                              disabled={isCheckOutDisabled}
                             >
                               <LinearGradient
                                 colors={isCheckedIn ? ['#5a7bea', '#456bde', '#3559cc'] : ['#ffffff', '#f7f9fd']}
