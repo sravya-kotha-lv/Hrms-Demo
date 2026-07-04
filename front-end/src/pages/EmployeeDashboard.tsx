@@ -21,11 +21,13 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useNavigate } from "react-router-dom";
 import { getApiWithToken, postApiWithToken } from "@/services/apiWrapper";
 import PermissionGate from "@/components/PermissionGate";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getDeviceId } from "@/utils/deviceId";
 import {
   formatDateInOrgTimeZone,
   formatDateTimeInOrgTimeZone,
@@ -47,6 +49,30 @@ const getWeekStart = (value: Date) => {
   const diff = (day + 6) % 7;
   d.setDate(d.getDate() - diff);
   return d;
+};
+
+let publicIpLookupPromise: Promise<string | null> | null = null;
+
+const getPublicIpAddress = async () => {
+  if (publicIpLookupPromise) return publicIpLookupPromise;
+
+  publicIpLookupPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 4000);
+      const response = await fetch("https://api.ipify.org?format=json", {
+        signal: controller.signal
+      });
+      window.clearTimeout(timeout);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return typeof data?.ip === "string" && data.ip.trim() ? data.ip.trim() : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  return publicIpLookupPromise;
 };
 
 
@@ -359,6 +385,7 @@ const EmployeeDashboard = () => {
   const [daysInMonth, setDaysInMonth] = useState<number>(31);
   const [myProfile, setMyProfile] = useState<MyProfile | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [attendanceRefreshLoading, setAttendanceRefreshLoading] = useState(false);
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
@@ -366,6 +393,7 @@ const EmployeeDashboard = () => {
   const [onlineDialogOpen, setOnlineDialogOpen] = useState(false);
   const [pendingDialogOpen, setPendingDialogOpen] = useState(false);
   const [weeklyDialogOpen, setWeeklyDialogOpen] = useState(false);
+  const [dayHistoryDialogOpen, setDayHistoryDialogOpen] = useState(false);
   const [checkInPolicy, setCheckInPolicy] = useState<CheckInPolicy>({
     attendanceIpEnabled: false,
     attendanceSelfieRequired: false,
@@ -539,12 +567,26 @@ const EmployeeDashboard = () => {
     if (!silent) setDashboardLoading(false);
   }, [weekStart]);
 
+  const refreshAttendanceToday = useCallback(async () => {
+    if (attendanceRefreshLoading) return;
+    setAttendanceRefreshLoading(true);
+    try {
+      const todayIso = toDateKeyInOrgTimeZone(new Date());
+      const attendanceRes = await getApiWithToken(`/timesheets/attendance/my?date=${todayIso}`, null, {
+        requiredPermissions: ["TIMESHEET_VIEW_SELF", "TIMESHEET_CHECKIN_SELF", "TIMESHEET_CHECKOUT_SELF"]
+      });
+
+      if (attendanceRes?.success) {
+        const record = (attendanceRes.data || [])[0];
+        setAttendanceToday(record || null);
+      }
+    } finally {
+      setAttendanceRefreshLoading(false);
+    }
+  }, [attendanceRefreshLoading]);
+
   useEffect(() => {
     loadDashboard();
-    const timer = window.setInterval(() => {
-      loadDashboard(true);
-    }, 30000);
-    return () => window.clearInterval(timer);
   }, [loadDashboard]);
 
   useEffect(() => {
@@ -665,8 +707,51 @@ const EmployeeDashboard = () => {
     || (Boolean(attendanceToday?.checkOutAt) && !isCheckedIn)
   );
 
-  const checkInTimeText = attendanceToday?.checkInAt
-    ? formatTimeInOrgTimeZone(attendanceToday.checkInAt)
+  const firstCheckInAt = useMemo(() => {
+    const punches = attendanceToday?.dayHistory || [];
+    const firstCheckIn = punches.find((entry) => entry?.action === "check_in" && entry?.at);
+    return firstCheckIn?.at || attendanceToday?.checkInAt || null;
+  }, [attendanceToday]);
+
+  const dayHistoryRows = useMemo(() => {
+    const punches = [...(attendanceToday?.dayHistory || [])]
+      .filter((entry) => entry?.action && entry?.at)
+      .sort((left, right) => new Date(left.at).getTime() - new Date(right.at).getTime());
+
+    if (punches.length > 0) {
+      return punches;
+    }
+
+    const fallbackRows: Array<Record<string, any>> = [];
+    if (attendanceToday?.checkInAt) {
+      fallbackRows.push({
+        action: "check_in",
+        at: attendanceToday.checkInAt,
+        ip: attendanceToday.checkInIp || null,
+        deviceId: attendanceToday.checkInDeviceId || null,
+        latitude: attendanceToday.checkInLatitude ?? null,
+        longitude: attendanceToday.checkInLongitude ?? null,
+        selfieProvided: Boolean(attendanceToday.checkInSelfieProvided),
+        source: "api"
+      });
+    }
+    if (attendanceToday?.checkOutAt) {
+      fallbackRows.push({
+        action: "check_out",
+        at: attendanceToday.checkOutAt,
+        ip: attendanceToday.checkOutIp || null,
+        deviceId: attendanceToday.checkOutDeviceId || null,
+        latitude: null,
+        longitude: null,
+        selfieProvided: Boolean(attendanceToday.checkOutSelfieProvided),
+        source: "api"
+      });
+    }
+    return fallbackRows;
+  }, [attendanceToday]);
+
+  const checkInTimeText = firstCheckInAt
+    ? formatTimeInOrgTimeZone(firstCheckInAt)
     : "-";
   const checkOutTimeText = attendanceToday?.checkOutAt
     ? formatTimeInOrgTimeZone(attendanceToday.checkOutAt)
@@ -824,6 +909,11 @@ const EmployeeDashboard = () => {
 
   const handleCheckIn = async () => {
     const payload: Record<string, unknown> = {};
+    const clientIp = await getPublicIpAddress();
+    if (clientIp) {
+      payload.clientIp = clientIp;
+    }
+    payload.deviceId = getDeviceId();
 
     if (checkInPolicy.attendanceGeoFenceEnabled) {
       let position: GeolocationPosition | null = null;
@@ -868,16 +958,22 @@ const EmployeeDashboard = () => {
     });
     setCheckinLoading(false);
     if (!res?.success) {
-      await loadDashboard(true);
       toast.error(res?.message || "Check-in failed");
       return;
     }
+    if (res.data) {
+      setAttendanceToday(res.data);
+    }
     toast.success("Checked in");
-    loadDashboard();
   };
 
   const handleCheckOut = async () => {
     const payload: Record<string, unknown> = {};
+    const clientIp = await getPublicIpAddress();
+    if (clientIp) {
+      payload.clientIp = clientIp;
+    }
+    payload.deviceId = getDeviceId();
 
     if (checkInPolicy.attendanceGeoFenceEnabled) {
       let position: GeolocationPosition | null = null;
@@ -924,8 +1020,10 @@ const EmployeeDashboard = () => {
       toast.error(res?.message || "Check-out failed");
       return;
     }
+    if (res.data) {
+      setAttendanceToday(res.data);
+    }
     toast.success("Checked out");
-    loadDashboard();
   };
 
   const firstDayOffset = new Date(today.getFullYear(), today.getMonth(), 1).getDay();
@@ -999,7 +1097,16 @@ const EmployeeDashboard = () => {
       ) : (
       <>
       <motion.div
-        className={`relative overflow-hidden rounded-2xl border p-5 shadow-sm ${statusHeroClassName}`}
+        role="button"
+        tabIndex={0}
+        onClick={refreshAttendanceToday}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            refreshAttendanceToday();
+          }
+        }}
+        className={`relative overflow-hidden rounded-2xl border p-5 shadow-sm ${attendanceRefreshLoading ? "cursor-wait" : "cursor-pointer"} ${statusHeroClassName}`}
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
       >
@@ -1010,6 +1117,7 @@ const EmployeeDashboard = () => {
               <CalendarCheck className="w-4 h-4" />
               Today Status
               {lateFlag && <Badge variant="destructive">Late</Badge>}
+              {attendanceRefreshLoading && <span className="text-xs text-muted-foreground">Refreshing…</span>}
             </div>
             <h2 className="text-2xl font-semibold tracking-tight">
               {isCheckedOut ? "Checked Out" : isCheckedIn ? "Pending Checkout" : "Attendance Not Marked"}
@@ -1042,8 +1150,11 @@ const EmployeeDashboard = () => {
             <PermissionGate permissions={["TIMESHEET_CHECKIN_SELF"]}>
               <Button
                 className={primaryHeroButtonClassName}
-                onClick={handleCheckIn}
-                disabled={(checkInPolicy.attendanceMultiPunchEnabled ? isCheckedIn : hasCheckedInToday) || checkinLoading}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleCheckIn();
+                }}
+                disabled={checkinLoading || (!checkInPolicy.attendanceMultiPunchEnabled && hasCheckedInToday)}
               >
                 <LogIn className="w-4 h-4 mr-2" /> Check In
               </Button>
@@ -1052,14 +1163,45 @@ const EmployeeDashboard = () => {
               <Button
                 variant="outline"
                 className={secondaryHeroButtonClassName}
-                onClick={handleCheckOut}
-                disabled={!isCheckedIn || checkoutLoading}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleCheckOut();
+                }}
+                disabled={checkoutLoading || (!isCheckedIn && !checkInPolicy.attendanceMultiPunchEnabled)}
               >
                 <LogOut className="w-4 h-4 mr-2" /> Check Out
               </Button>
             </PermissionGate>
-            <Button variant="outline" className={secondaryHeroButtonClassName} onClick={() => navigate("/leave/apply")}>Apply Leave</Button>
-            <Button variant="outline" className={secondaryHeroButtonClassName} onClick={() => navigate("/timesheets")}>Timesheet</Button>
+            <Button
+              variant="outline"
+              className={secondaryHeroButtonClassName}
+              onClick={(event) => {
+                event.stopPropagation();
+                setDayHistoryDialogOpen(true);
+              }}
+            >
+              Day History
+            </Button>
+            <Button
+              variant="outline"
+              className={secondaryHeroButtonClassName}
+              onClick={(event) => {
+                event.stopPropagation();
+                navigate("/leave/apply");
+              }}
+            >
+              Apply Leave
+            </Button>
+            <Button
+              variant="outline"
+              className={secondaryHeroButtonClassName}
+              onClick={(event) => {
+                event.stopPropagation();
+                navigate("/timesheets");
+              }}
+            >
+              Timesheet
+            </Button>
           </div>
         </div>
       </motion.div>
@@ -1497,6 +1639,56 @@ const EmployeeDashboard = () => {
                 </p>
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dayHistoryDialogOpen} onOpenChange={setDayHistoryDialogOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="px-6 pt-8">
+            <DialogTitle>Day History</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto px-6 pb-6 pt-2 custom-scroll">
+            {dayHistoryRows.length ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>IP</TableHead>
+                    <TableHead>Device ID</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Selfie</TableHead>
+                    <TableHead>Source</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dayHistoryRows.map((entry: any, index: number) => (
+                    <TableRow key={`${entry.action}-${entry.at}-${index}`}>
+                      <TableCell className="font-medium">{formatTimeInOrgTimeZone(entry.at)}</TableCell>
+                      <TableCell className="capitalize">
+                        {entry.action === "check_in" ? "Check In" : "Check Out"}
+                      </TableCell>
+                      <TableCell>{entry.ip || "-"}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {entry.deviceId || "-"}
+                      </TableCell>
+                      <TableCell>
+                        {entry.latitude !== null && entry.latitude !== undefined && entry.longitude !== null && entry.longitude !== undefined
+                          ? `${Number(entry.latitude).toFixed(5)}, ${Number(entry.longitude).toFixed(5)}`
+                          : "-"}
+                      </TableCell>
+                      <TableCell>{entry.selfieProvided ? "Yes" : "No"}</TableCell>
+                      <TableCell>{entry.source || "web"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                No day history available for today.
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

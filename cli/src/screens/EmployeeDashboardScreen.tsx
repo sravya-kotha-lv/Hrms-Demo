@@ -22,6 +22,7 @@ import Geolocation from 'react-native-geolocation-service';
 import AttendanceTab from '../components/AttendanceTab';
 import { AttendanceDay } from '../types/attendance';
 import { useResetScrollOnFocus } from '../utils/useResetScrollOnFocus';
+import { getDeviceId } from '../utils/deviceId';
 
 const pressedStyle = {
   transform: [{ scale: 0.96 }],
@@ -32,6 +33,7 @@ const pressedStyle = {
 type CheckInPolicy = {
   attendanceIpEnabled: boolean;
   attendanceSelfieRequired: boolean;
+  attendanceMultiPunchEnabled: boolean;
   attendanceGeoFenceEnabled: boolean;
   attendanceGeoRadiusMeters: number;
 };
@@ -72,6 +74,30 @@ const formatDateLong = (value: string | Date) =>
 
 const formatTime = (value: string | Date) =>
   new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+let publicIpLookupPromise: Promise<string | null> | null = null;
+
+const getPublicIpAddress = async () => {
+  if (publicIpLookupPromise) return publicIpLookupPromise;
+
+  publicIpLookupPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const response = await fetch('https://api.ipify.org?format=json', {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return typeof data?.ip === 'string' && data.ip.trim() ? data.ip.trim() : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  return publicIpLookupPromise;
+};
 
 const getOrganizationName = (...sources: any[]) => {
   for (const source of sources) {
@@ -203,6 +229,7 @@ function EmployeeDashboardScreen() {
   const [checkInPolicy, setCheckInPolicy] = useState<CheckInPolicy>({
     attendanceIpEnabled: false,
     attendanceSelfieRequired: false,
+    attendanceMultiPunchEnabled: false,
     attendanceGeoFenceEnabled: false,
     attendanceGeoRadiusMeters: 200,
   });
@@ -240,6 +267,7 @@ function EmployeeDashboardScreen() {
     const nextPolicy: CheckInPolicy = {
       attendanceIpEnabled: Boolean(policyData?.attendanceIpEnabled),
       attendanceSelfieRequired: Boolean(policyData?.attendanceSelfieRequired),
+      attendanceMultiPunchEnabled: Boolean(policyData?.attendanceMultiPunchEnabled),
       attendanceGeoFenceEnabled: Boolean(policyData?.attendanceGeoFenceEnabled),
       attendanceGeoRadiusMeters: Number(policyData?.attendanceGeoRadiusMeters || 200),
     };
@@ -531,8 +559,16 @@ function EmployeeDashboardScreen() {
 
   const hasCheckedInToday = Boolean(attendanceToday?.checkInAt);
   const isCheckedIn = hasCheckedInToday && !attendanceToday?.checkOutAt;
+  const isCheckInDisabled = checkinLoading || (!checkInPolicy.attendanceMultiPunchEnabled && hasCheckedInToday);
+  const isCheckOutDisabled = checkoutLoading || (!isCheckedIn && !checkInPolicy.attendanceMultiPunchEnabled);
 
-  const checkInTimeText = attendanceToday?.checkInAt ? formatTime(attendanceToday.checkInAt) : '-';
+  const firstCheckInAt = useMemo(() => {
+    const punches = attendanceToday?.dayHistory || [];
+    const firstCheckIn = punches.find((entry: any) => entry?.action === 'check_in' && entry?.at);
+    return firstCheckIn?.at || attendanceToday?.checkInAt || null;
+  }, [attendanceToday]);
+
+  const checkInTimeText = firstCheckInAt ? formatTime(firstCheckInAt) : '-';
   const checkOutTimeText = attendanceToday?.checkOutAt
     ? formatTime(attendanceToday.checkOutAt)
     : '-';
@@ -602,6 +638,11 @@ function EmployeeDashboardScreen() {
     }
     const latestPolicy = await loadLatestCheckInPolicy();
     const payload: Record<string, unknown> = {};
+    const clientIp = await getPublicIpAddress();
+    if (clientIp) {
+      payload.clientIp = clientIp;
+    }
+    payload.deviceId = await getDeviceId();
     if (latestPolicy.attendanceGeoFenceEnabled) {
       const ok = await requestLocationPermission();
       if (!ok) {
@@ -643,6 +684,11 @@ function EmployeeDashboardScreen() {
     }
     const latestPolicy = await loadLatestCheckInPolicy();
     const payload: Record<string, unknown> = {};
+    const clientIp = await getPublicIpAddress();
+    if (clientIp) {
+      payload.clientIp = clientIp;
+    }
+    payload.deviceId = await getDeviceId();
     if (latestPolicy.attendanceSelfieRequired) {
       const selfie = await captureSelfie();
       if (!selfie) {
@@ -844,10 +890,10 @@ function EmployeeDashboardScreen() {
                                 styles.primaryAction,
                                 isCheckedIn && styles.primaryActionInactive,
                                 pressed && styles.surfacePressed,
-                                isCheckedIn && styles.primaryDisabled,
+                                isCheckInDisabled && styles.primaryDisabled,
                               ]}
                               onPress={handleCheckIn}
-                              disabled={checkinLoading || isCheckedIn}
+                              disabled={isCheckInDisabled}
                             >
                               <LinearGradient
                                 colors={isCheckedIn ? ['#ffffff', '#f7f9fd'] : ['#5a7bea', '#456bde', '#3559cc']}
@@ -874,10 +920,10 @@ function EmployeeDashboardScreen() {
                                 styles.secondaryAction,
                                 isCheckedIn && styles.secondaryActionActive,
                                 pressed && styles.surfacePressed,
-                                !isCheckedIn && styles.secondaryDisabled,
+                                isCheckOutDisabled && styles.secondaryDisabled,
                               ]}
                               onPress={handleCheckOut}
-                              disabled={checkoutLoading || !isCheckedIn}
+                              disabled={isCheckOutDisabled}
                             >
                               <LinearGradient
                                 colors={isCheckedIn ? ['#5a7bea', '#456bde', '#3559cc'] : ['#ffffff', '#f7f9fd']}
