@@ -434,10 +434,7 @@ const FORMULA_PRESETS = [
 const ADVANCED_COMPONENT_EXCLUDE = new Set([
   "BASIC",
   "HRA",
-  "VARIABLE",
-  "EPF",
-  "ESI",
-  "EMPLOYER_EPF"
+  "VARIABLE"
 ]);
 
 const PREVIEW_EXCLUDED_EARNING_CODES = new Set([
@@ -1123,75 +1120,92 @@ const AddEmployee = () => {
   );
 
   const salaryComponentPreviewRows = useMemo(
-    () =>
-      [...payrollComponents]
-        .sort((a, b) =>
-          Number(a.priority ?? 100) - Number(b.priority ?? 100) ||
-          String(a.code || "").localeCompare(String(b.code || ""))
-        )
-        .map((component) => {
-          const key = String(component.code || "").toUpperCase();
-          const override = componentOverrides[key] || buildComponentOverrideState(component);
-          if (!override.enabled) return null;
-
-          const baseKey = String(override.base || "MONTHLY_GROSS").toUpperCase();
-          const baseAmount = salaryPreviewBaseAmounts[baseKey] ?? salaryBreakdown.monthlyGross;
-          let monthlyAmount: number | null = null;
-
-          try {
-            monthlyAmount =
-              override.calculationMode === "fixed" && !isBlankValue(override.amount)
-                ? Number(override.amount)
-                : override.calculationMode === "percentage" && !isBlankValue(override.amount)
-                  ? Number((baseAmount * Number(override.amount)) / 100)
-                  : override.calculationMode === "formula"
-                    ? evaluatePreviewFormula(override.formulaExpression || "0", {
-                        ...salaryPreviewBaseAmounts,
-                        ...Object.fromEntries(
-                          Object.entries(componentOverrides).map(([codeKey, rowOverride]) => [
-                            codeKey,
-                            Number(rowOverride.amount || 0)
-                          ])
-                        )
-                      })
-                    : override.calculationMode === "slab" && !isBlankValue(override.amount)
-                      ? Number(override.amount)
-                      : null;
-          } catch (_) {
-            monthlyAmount = null;
-          }
-
-          const detail =
-            override.calculationMode === "percentage"
-              ? `${override.amount || 0}% of ${override.base || "MONTHLY_GROSS"}`
-              : override.calculationMode === "formula"
-                ? override.formulaExpression || "Formula not set"
-                : override.calculationMode === "slab"
-                  ? "Slab-based amount"
-                  : monthlyAmount != null && Number.isFinite(monthlyAmount)
-                    ? formatInr(monthlyAmount)
-                    : "Amount not set";
-
-          return {
-            code: key,
-            label: override.name || component.name,
-            scope: component.scope,
-            mode: override.calculationMode,
-            detail,
-            monthlyAmount:
-              monthlyAmount != null && Number.isFinite(monthlyAmount)
-                ? Number(monthlyAmount.toFixed(2))
-                : null
-          };
-        })
-        .filter(Boolean) as Array<{
+    () => {
+      const previewValues: Record<string, number> = {
+        ...salaryPreviewBaseAmounts,
+        EPF: 0,
+        EMPLOYEE_EPF: 0,
+        EMPLOYEE_PROVIDENT_FUND: 0,
+        PF_EMPLOYEE_SHARE: 0
+      };
+      const previewRows: Array<{
         code: string;
         label: string;
         scope: PayrollComponent["scope"];
         mode: PayrollComponent["calculation_mode"];
         detail: string;
         monthlyAmount: number | null;
-      }>,
+      }> = [];
+
+      const setEmployeePfAliases = (amount: number) => {
+        previewValues.EPF = amount;
+        previewValues.EMPLOYEE_EPF = amount;
+        previewValues.EMPLOYEE_PROVIDENT_FUND = amount;
+        previewValues.PF_EMPLOYEE_SHARE = amount;
+      };
+
+      for (const component of [...payrollComponents].sort((a, b) =>
+        Number(a.priority ?? 100) - Number(b.priority ?? 100) ||
+        String(a.code || "").localeCompare(String(b.code || ""))
+      )) {
+        const key = String(component.code || "").toUpperCase();
+        const override = componentOverrides[key] || buildComponentOverrideState(component);
+        if (!override.enabled) continue;
+
+        const baseKey = String(override.base || "MONTHLY_GROSS").toUpperCase();
+        const baseAmount = previewValues[baseKey] ?? salaryPreviewBaseAmounts[baseKey] ?? salaryBreakdown.monthlyGross;
+        let monthlyAmount: number | null = null;
+
+        try {
+          monthlyAmount =
+            override.calculationMode === "fixed" && !isBlankValue(override.amount)
+              ? Number(override.amount)
+              : override.calculationMode === "percentage" && !isBlankValue(override.amount)
+                ? Number((baseAmount * Number(override.amount)) / 100)
+                : override.calculationMode === "formula"
+                  ? evaluatePreviewFormula(override.formulaExpression || "0", previewValues)
+                  : override.calculationMode === "slab" && !isBlankValue(override.amount)
+                    ? Number(override.amount)
+                    : null;
+        } catch (_) {
+          monthlyAmount = null;
+        }
+
+        const resolvedAmount =
+          monthlyAmount != null && Number.isFinite(monthlyAmount)
+            ? Number(monthlyAmount.toFixed(2))
+            : null;
+
+        if (resolvedAmount != null) {
+          previewValues[key] = resolvedAmount;
+          if (key === "EPF") {
+            setEmployeePfAliases(resolvedAmount);
+          }
+        }
+
+        const detail =
+          override.calculationMode === "percentage"
+            ? `${override.amount || 0}% of ${override.base || "MONTHLY_GROSS"}`
+            : override.calculationMode === "formula"
+              ? override.formulaExpression || "Formula not set"
+              : override.calculationMode === "slab"
+                ? "Slab-based amount"
+                : resolvedAmount != null
+                  ? formatInr(resolvedAmount)
+                  : "Amount not set";
+
+        previewRows.push({
+          code: key,
+          label: override.name || component.name,
+          scope: component.scope,
+          mode: override.calculationMode,
+          detail,
+          monthlyAmount: resolvedAmount
+        });
+      }
+
+      return previewRows;
+    },
     [componentOverrides, payrollComponents, salaryBreakdown.monthlyGross, salaryPreviewBaseAmounts]
   );
 
@@ -1213,7 +1227,20 @@ const AddEmployee = () => {
   const specialAllowancePreviewAmount = Number(
     Math.max(0, salaryBreakdown.fixedAllowance - customEarningPreviewTotal).toFixed(2)
   );
+  const employerContributionPreviewRows = useMemo(
+    () => salaryComponentPreviewRows.filter((row) => row.scope === "employer_contribution"),
+    [salaryComponentPreviewRows]
+  );
+  const deductionPreviewRows = useMemo(
+    () => salaryComponentPreviewRows.filter((row) => row.scope === "deduction"),
+    [salaryComponentPreviewRows]
+  );
   const earningsSummaryRows = useMemo(() => {
+    const fixedPayTotal =
+      salaryBreakdown.basicPay +
+      salaryBreakdown.hraAmount +
+      customEarningPreviewTotal +
+      specialAllowancePreviewAmount;
     const rows: Array<{
       label: string;
       amount: number;
@@ -1223,14 +1250,6 @@ const AddEmployee = () => {
       { label: "Basic Salary", amount: salaryBreakdown.basicPay },
       { label: "House Rent Allowance", amount: salaryBreakdown.hraAmount }
     ];
-
-    if (salaryForm.variablePayEnabled) {
-      rows.push({
-        label: "Variable Pay",
-        amount: salaryBreakdown.variablePay,
-        description: "Performance-linked target on earnings"
-      });
-    }
 
     rows.push(
       ...customEarningPreviewRows.map((component) => ({
@@ -1247,27 +1266,19 @@ const AddEmployee = () => {
     });
 
     rows.push({
-      label: "Earnings",
-      amount:
-        salaryBreakdown.basicPay +
-        salaryBreakdown.hraAmount +
-        salaryBreakdown.variablePay +
-        customEarningPreviewTotal +
-        specialAllowancePreviewAmount,
-      description: "Basic + HRA + Variable Pay + custom earnings + Special Allowance",
-      highlight: true
-    });
-    rows.push({
       label: "Fixed Pay",
-      amount:
-        salaryBreakdown.basicPay +
-        salaryBreakdown.hraAmount +
-        salaryBreakdown.variablePay +
-        customEarningPreviewTotal +
-        specialAllowancePreviewAmount,
-      description: "Fixed Pay = Earnings",
+      amount: fixedPayTotal,
+      description: "Basic + HRA + custom earnings + Special Allowance",
       highlight: true
     });
+
+    if (salaryForm.variablePayEnabled) {
+      rows.push({
+        label: "Variable Pay",
+        amount: salaryBreakdown.variablePay,
+        description: "Performance-linked target on earnings"
+      });
+    }
 
     return rows;
   }, [
@@ -1280,9 +1291,34 @@ const AddEmployee = () => {
     specialAllowancePreviewAmount
   ]);
   const earningsPreviewTotal = useMemo(
-    () => earningsSummaryRows.find((row) => row.label === "Earnings")?.amount || 0,
-    [earningsSummaryRows]
+    () => {
+      const fixedPayTotal = earningsSummaryRows.find((row) => row.label === "Fixed Pay")?.amount || 0;
+      return fixedPayTotal + (salaryForm.variablePayEnabled ? salaryBreakdown.variablePay : 0);
+    },
+    [earningsSummaryRows, salaryBreakdown.variablePay, salaryForm.variablePayEnabled]
   );
+
+  const payrollSummaryTotals = useMemo(() => {
+    const employerContributionTotal = employerContributionPreviewRows
+      .reduce((total, row) => total + Number(row.monthlyAmount || 0), 0);
+    const deductionTotal = deductionPreviewRows
+      .reduce((total, row) => total + Number(row.monthlyAmount || 0), 0);
+
+    return {
+      variablePay: salaryForm.variablePayEnabled ? Number(salaryBreakdown.variablePay || 0) : 0,
+      gross: Number(earningsPreviewTotal.toFixed(2)),
+      employerContributionTotal,
+      ctc: Number((earningsPreviewTotal + employerContributionTotal).toFixed(2)),
+      deductionTotal,
+      netSalary: Number((earningsPreviewTotal - deductionTotal).toFixed(2))
+    };
+  }, [
+    earningsPreviewTotal,
+    salaryBreakdown.variablePay,
+    employerContributionPreviewRows,
+    deductionPreviewRows,
+    salaryForm.variablePayEnabled
+  ]);
 
   const enabledEmployeeComponents = useMemo(
     () => {
@@ -2329,7 +2365,7 @@ const AddEmployee = () => {
             shouldCreateRevision ||
             Boolean(
               selectedSalaryStructure?.id &&
-                selectedSalaryStructure.id === currentSalaryRevision?.id
+                selectedSalaryStructure.id === openSalaryRevision?.id
             ),
           revisionReason: salaryForm.revisionReason || "Salary update",
           metadata: {
@@ -3924,12 +3960,12 @@ const AddEmployee = () => {
                         <Label>
                           Annual CTC <span className="text-red-600">*</span>
                         </Label>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Info className="h-3.5 w-3.5 cursor-help text-muted-foreground" />
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Annual CTC includes fixed pay, employer contributions, and variable pay target. Employee PF is a deduction and is not part of CTC.
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-3.5 w-3.5 cursor-help text-muted-foreground" />
+                            </TooltipTrigger>
+                      <TooltipContent>
+                            Annual CTC includes gross and employer contribution components from the payroll setup. Employee deductions are not part of CTC.
                           </TooltipContent>
                         </Tooltip>
                       </div>
@@ -3939,7 +3975,7 @@ const AddEmployee = () => {
                             Gross {formatInr(salaryBreakdown.monthlyGross)} / month
                           </span>
                           <span className="rounded-md border bg-muted/40 px-2 py-1">
-                            Employer PF {formatInr(salaryBreakdown.employerEpf)} / month
+                            Employer contribution components {formatInr(payrollSummaryTotals.employerContributionTotal)} / month
                           </span>
                         </div>
                       )}
@@ -3963,7 +3999,7 @@ const AddEmployee = () => {
                       <p className="mt-1 text-xs text-red-600">{getFieldError("annualCtc")}</p>
                     )}
                     <p className="mt-1 text-xs text-muted-foreground">
-                      CTC includes variable pay and employer contributions. Monthly gross is derived first, then Basic and HRA are calculated from gross. Employee PF is shown separately as a deduction.
+                      CTC includes gross, variable pay, and employer contribution components. Monthly gross is derived first, then Basic and HRA are calculated from gross. Employee deductions are shown separately from gross.
                     </p>
                   </div>
 
@@ -4035,7 +4071,7 @@ const AddEmployee = () => {
                     />
                     {salaryAutoCalc && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Gross is auto-balanced from Annual CTC after employer PF/ESI. Basic, HRA, and PF calculations use this gross value.
+                        Gross is auto-balanced from Annual CTC after employer contribution components. Basic, HRA, and deduction calculations use this gross value.
                       </p>
                     )}
                   </div>
@@ -4762,64 +4798,6 @@ const AddEmployee = () => {
                           ))}
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm bg-background/70 font-semibold">
                             <span className="flex items-center gap-1.5">
-                              <span>CTC</span>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Info
-                                    className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
-                                    aria-label="Monthly CTC formula"
-                                  />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="max-w-48 text-xs">
-                                    Fixed Pay + Variable Pay + Employer Contributions
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </span>
-                            <span className="text-right font-medium">{formatInr(salaryBreakdown.monthlyCtc)}</span>
-                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.monthlyCtc * 12)}</span>
-                          </div>
-                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                            <span className="flex items-center gap-1.5">
-                              <span>Employer Contributions</span>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Info
-                                    className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
-                                    aria-label="Employer contributions formula"
-                                  />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="max-w-48 text-xs">Calculated from the configured employer contribution rules.</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </span>
-                            <span className="text-right font-medium">{formatInr(salaryBreakdown.employerEpf)}</span>
-                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.employerEpf * 12)}</span>
-                          </div>
-                          {salaryForm.includeEsi && (
-                            <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                              <span className="flex items-center gap-1.5">
-                                <span>Employer ESI Contribution</span>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Info
-                                      className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
-                                      aria-label="Employer ESI contribution formula"
-                                    />
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="max-w-48 text-xs">Applied when ESI is enabled and wage thresholds are met.</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </span>
-                              <span className="text-right font-medium">{formatInr(salaryBreakdown.esiEmployerAmount)}</span>
-                              <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.esiEmployerAmount * 12)}</span>
-                            </div>
-                          )}
-                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm bg-background/70 font-semibold">
-                            <span className="flex items-center gap-1.5">
                               <span>Gross</span>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -4830,7 +4808,7 @@ const AddEmployee = () => {
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <p className="max-w-48 text-xs">
-                                    Basic + HRA + Variable Pay + custom earnings + Special Allowance
+                                    Fixed Pay + Variable Pay
                                   </p>
                                 </TooltipContent>
                               </Tooltip>
@@ -4838,33 +4816,83 @@ const AddEmployee = () => {
                             <span className="text-right font-medium">{formatInr(earningsPreviewTotal)}</span>
                             <span className="text-right text-muted-foreground">{formatInr(earningsPreviewTotal * 12)}</span>
                           </div>
-                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                            <span>Employee PF Deduction</span>
-                            <span className="text-right font-medium">{formatInr(salaryBreakdown.employeeEpf)}</span>
-                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.employeeEpf * 12)}</span>
-                          </div>
-                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                            <span>Employer PF Contribution</span>
-                            <span className="text-right font-medium">{formatInr(salaryBreakdown.employerEpf)}</span>
-                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.employerEpf * 12)}</span>
-                          </div>
-                          {salaryForm.includeEsi && (
-                            <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                              <span>Employee ESI Deduction</span>
-                              <span className="text-right font-medium">{formatInr(salaryBreakdown.esiEmployeeAmount)}</span>
-                              <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.esiEmployeeAmount * 12)}</span>
+                          {employerContributionPreviewRows.map((component) => (
+                            <div
+                              key={`employer-${component.code}`}
+                              className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm"
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <span>{component.label}</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Info
+                                      className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
+                                      aria-label={`${component.label} formula`}
+                                    />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="max-w-48 text-xs">{component.detail}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </span>
+                              <span className="text-right font-medium">
+                                {component.monthlyAmount != null ? formatInr(component.monthlyAmount) : "Dynamic"}
+                              </span>
+                              <span className="text-right text-muted-foreground">
+                                {component.monthlyAmount != null ? formatInr(component.monthlyAmount * 12) : "Dynamic"}
+                              </span>
                             </div>
-                          )}
-                          {statutoryForm.professionalTaxApplicable && (
-                            <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm">
-                              <span>Professional Tax Deduction</span>
-                              <span className="text-right font-medium">{formatInr(salaryBreakdown.professionalTaxAmount)}</span>
-                              <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.professionalTaxAmount * 12)}</span>
-                            </div>
-                          )}
+                          ))}
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm bg-background/70 font-semibold">
                             <span className="flex items-center gap-1.5">
-                              <span>Employee Deductions</span>
+                              <span>CTC</span>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info
+                                    className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
+                                    aria-label="Monthly CTC formula"
+                                  />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="max-w-48 text-xs">
+                                    Gross + employer contribution components
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </span>
+                            <span className="text-right font-medium">{formatInr(payrollSummaryTotals.ctc)}</span>
+                            <span className="text-right text-muted-foreground">{formatInr(payrollSummaryTotals.ctc * 12)}</span>
+                          </div>
+                          {deductionPreviewRows.map((component) => (
+                            <div
+                              key={`deduction-${component.code}`}
+                              className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm"
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <span>{component.label}</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Info
+                                      className="h-3.5 w-3.5 cursor-help text-muted-foreground transition-colors hover:text-foreground"
+                                      aria-label={`${component.label} formula`}
+                                    />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="max-w-48 text-xs">{component.detail}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </span>
+                              <span className="text-right font-medium">
+                                {component.monthlyAmount != null ? formatInr(component.monthlyAmount) : "Dynamic"}
+                              </span>
+                              <span className="text-right text-muted-foreground">
+                                {component.monthlyAmount != null ? formatInr(component.monthlyAmount * 12) : "Dynamic"}
+                              </span>
+                            </div>
+                          ))}
+                          <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm bg-background/70 font-semibold">
+                            <span className="flex items-center gap-1.5">
+                              <span>Deductions</span>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Info
@@ -4874,17 +4902,17 @@ const AddEmployee = () => {
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <p className="max-w-48 text-xs">
-                                    Employee PF + Employer PF + Employee ESI + PT
+                                    Sum of all configured deduction components
                                   </p>
                                 </TooltipContent>
                               </Tooltip>
                             </span>
-                            <span className="text-right font-medium">{formatInr(salaryBreakdown.totalDeductions)}</span>
-                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.totalDeductions * 12)}</span>
+                            <span className="text-right font-medium">{formatInr(payrollSummaryTotals.deductionTotal)}</span>
+                            <span className="text-right text-muted-foreground">{formatInr(payrollSummaryTotals.deductionTotal * 12)}</span>
                           </div>
                           <div className="grid grid-cols-[1fr_96px_96px] gap-2 border-b px-3 py-2 text-sm bg-background/70 font-semibold">
                             <span className="flex items-center gap-1.5">
-                              <span>Net Salary</span>
+                              <span>Net Pay</span>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Info
@@ -4894,13 +4922,13 @@ const AddEmployee = () => {
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <p className="max-w-48 text-xs">
-                                    CTC - Employee PF - Employer PF - Employee ESI - PT
+                                    CTC - employer contribution components - deductions
                                   </p>
                                 </TooltipContent>
                               </Tooltip>
                             </span>
-                            <span className="text-right font-medium">{formatInr(salaryBreakdown.netSalary)}</span>
-                            <span className="text-right text-muted-foreground">{formatInr(salaryBreakdown.netSalary * 12)}</span>
+                            <span className="text-right font-medium">{formatInr(payrollSummaryTotals.netSalary)}</span>
+                            <span className="text-right text-muted-foreground">{formatInr(payrollSummaryTotals.netSalary * 12)}</span>
                           </div>
                           <div className="border-t px-3 py-3">
                             <div className="flex items-center justify-between gap-3">
@@ -4940,9 +4968,9 @@ const AddEmployee = () => {
                             )}
                           </div>
                           <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-                            Admin summary: fixed pay is equal to earnings, gross is earnings plus
-                            variable pay, CTC adds employer contributions, and net salary removes PF,
-                            PT, and other employee-side deductions from CTC.
+                            Admin summary: earnings roll up into fixed pay and variable pay, gross is the
+                            pre-deduction earnings total, CTC adds employer contribution components, and net
+                            pay is CTC minus employer contribution components and deductions.
                           </div>
                         </section>
 
@@ -4972,9 +5000,9 @@ const AddEmployee = () => {
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
-                              <span className="text-muted-foreground">Employee PF</span>
+                              <span className="text-muted-foreground">Employee Deductions</span>
                               <span className="font-medium">
-                                {formatInr(salaryBreakdown.employeeEpf)}
+                                {formatInr(payrollSummaryTotals.deductionTotal)}
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-3">

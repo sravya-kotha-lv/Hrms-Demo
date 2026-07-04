@@ -851,7 +851,10 @@ const mergeAttendanceRowsByEmployeeDay = (rows = [], organizationTimeZone = "Asi
     }
     const checkInAt = row.checkInAt ? new Date(row.checkInAt) : null;
     const checkOutAt = row.checkOutAt ? new Date(row.checkOutAt) : null;
-    if (checkInAt && checkOutAt) {
+    const lastPunch = (row.dayHistory || []).length ? row.dayHistory[row.dayHistory.length - 1] : null;
+    if (lastPunch?.action === "check_in") {
+      row.status = "checked_in";
+    } else if (checkInAt && checkOutAt) {
       row.totalMinutes = Math.max(
         Number(row.totalMinutes || 0),
         Math.max(0, Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000))
@@ -2206,6 +2209,17 @@ exports.checkIn = async (req) => {
     if (isAttendanceOpenSession(existing)) {
       throw new Error("Already checked in");
     }
+    existing.checkInAt = now;
+    existing.checkInIp = checkInIp || null;
+    existing.checkInLatitude = Number.isFinite(checkInLatitude) ? Number(checkInLatitude) : null;
+    existing.checkInLongitude = Number.isFinite(checkInLongitude) ? Number(checkInLongitude) : null;
+    existing.checkInSelfieProvided = checkInSelfieProvided;
+    existing.checkInSelfieImage = checkInSelfieImage;
+    existing.checkOutAt = null;
+    existing.checkOutIp = null;
+    existing.checkOutSelfieProvided = false;
+    existing.checkOutSelfieImage = null;
+    existing.totalMinutes = 0;
     existing.status = "checked_in";
     existing.overriddenBy = null;
     existing.overriddenAt = null;
