@@ -245,6 +245,15 @@ type TimesheetSummary = {
 };
 
 type AttendanceTodayRecord = AttendanceDay & {
+  checkInIp?: string | null;
+  checkInDeviceId?: string | null;
+  checkInLatitude?: number | null;
+  checkInLongitude?: number | null;
+  checkInSelfieProvided?: boolean;
+  checkOutIp?: string | null;
+  checkOutDeviceId?: string | null;
+  checkOutLatitude?: number | null;
+  checkOutLongitude?: number | null;
   checkOutSelfieProvided?: boolean;
   lateByMinutes?: number;
   shiftStartTime?: string | null;
