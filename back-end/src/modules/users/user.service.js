@@ -19,6 +19,7 @@ const INVALID_CREDENTIALS_ERROR = {
   code: 400,
   message: "Invalid credentials"
 };
+const FALLBACK_EMPLOYEE_ROLE_SLUG = "employee";
 
 const getMaxActiveLoginsPerUser = async (organizationId) => {
   const settings = await OrgSettings.findOne({ organizationId }).select("maxActiveLoginsPerUser").lean();
@@ -253,6 +254,37 @@ const resolveLoginContext = async ({ email, password }) => {
     m.roleIds.find((role) => role?._id?.toString() === user.lastActiveRoleId?.toString()) ||
     m.roleIds[0] ||
     null;
+
+  if (activeRole) {
+    return {
+      user,
+      membership: m,
+      activeRole
+    };
+  }
+
+  const fallbackRole = await Role.findOne({
+    organizationId: m.organizationId?._id || m.organizationId,
+    slug: FALLBACK_EMPLOYEE_ROLE_SLUG
+  }).select("_id name slug");
+
+  if (fallbackRole) {
+    const hasFallbackRole = (m.roleIds || []).some((role) => String(role?._id || role) === String(fallbackRole._id));
+    if (!hasFallbackRole) {
+      await OrgUser.updateOne(
+        { _id: m._id },
+        { $addToSet: { roleIds: fallbackRole._id } }
+      );
+      m.roleIds = [...(m.roleIds || []), fallbackRole];
+    }
+
+    return {
+      user,
+      membership: m,
+      activeRole: fallbackRole
+    };
+  }
+
   return {
     user,
     membership: m,

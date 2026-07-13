@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
-import { getApiWithToken, postApiWithoutToken } from "@/services/apiWrapper";
+import { getApiWithToken, postApiWithoutToken, switchRole } from "@/services/apiWrapper";
 import { useAuth } from "@/context/useAuth";
 import { getIsSuperAdmin, getToken, setAdminRoleId, setAdminUserId, setIsSuperAdmin, setToken } from "@/utils/auth";
 import { Button } from "@/components/ui/button";
@@ -181,15 +181,60 @@ const Login = () => {
       return;
     }
 
+    const activeRoleId = resolvedActiveRole?._id || null;
+
+    const loadPermissionsForActiveRole = async () => {
+      try {
+        const permRes: any = await getApiWithToken("/users/me/permissions");
+        if (permRes?.success) {
+          return permRes.data || [];
+        }
+
+        const message = String(permRes?.message || "").toLowerCase();
+        if (permRes?.code === 403 && message.includes("active role not set") && activeRoleId) {
+          const switchRes: any = await switchRole(String(activeRoleId));
+          const switchedToken = switchRes?.data?.token;
+          if (switchedToken) {
+            setToken(switchedToken);
+          }
+          const retryPermRes: any = await getApiWithToken("/users/me/permissions");
+          if (retryPermRes?.success) {
+            return retryPermRes.data || [];
+          }
+        }
+      } catch {
+        // handled below
+      }
+
+      return [];
+    };
+
     try {
-      const [permRes] = await Promise.all([
-        getApiWithToken("/users/me/permissions"),
+      const [permissionsData] = await Promise.all([
+        loadPermissionsForActiveRole(),
         loadProfile()
       ]);
-      if (permRes?.success) {
-        setPermissions(permRes.data || []);
-      } else {
-        setPermissions([]);
+      setPermissions(permissionsData);
+
+      if (!resolvedActiveRole && permissionsData.length === 0) {
+        toast.info("Your account does not have an assigned role yet. Please complete your profile.");
+        setIsSuperAdmin(false);
+        setAdminUserId(null);
+        setAdminRoleId(null);
+        navigate("/complete-profile", { replace: true });
+        return;
+      }
+
+      const employeeRes = await getApiWithToken("/employees/me");
+      const profileCompleted = employeeRes?.success && employeeRes?.data?.profileCompleted !== false;
+
+      if (!isSuperAdmin && !profileCompleted) {
+        toast.success("Logged in successfully!");
+        setIsSuperAdmin(isSuperAdmin);
+        setAdminUserId(null);
+        setAdminRoleId(null);
+        navigate("/complete-profile", { replace: true });
+        return;
       }
     } catch {
       setPermissions([]);

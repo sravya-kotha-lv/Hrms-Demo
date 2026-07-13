@@ -1,9 +1,11 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/context/useAuth";
+import { getIsSuperAdmin } from "@/utils/auth";
 
 const RoleBasedHome = () => {
   const token = sessionStorage.getItem("token");
-  const { hasAnyPermission, isSuperAdmin, profile } = useAuth();
+  const { hasAnyPermission, permissions, profile } = useAuth();
+  const isSuperAdmin = getIsSuperAdmin();
 
   if (!token) {
     return <Navigate to="/login" replace />;
@@ -14,6 +16,10 @@ const RoleBasedHome = () => {
   }
 
   const activeRoleSlug = profile?.activeRole?.slug;
+  if (!activeRoleSlug && permissions.length === 0) {
+    return <Navigate to="/complete-profile" replace />;
+  }
+
   if (activeRoleSlug === "employee") {
     return <Navigate to="/employee-dashboard" replace />;
   }
