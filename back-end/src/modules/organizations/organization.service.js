@@ -129,7 +129,20 @@ exports.createOrganization = async ({
     throw { code: 403, message: "Only SuperAdmin can create organizations" };
   }
 
-  if (creator?.userId && adminUserId && String(creator.userId) === String(adminUserId)) {
+  const org = await Organization.create({
+    name,
+    code,
+    timezone,
+    currency
+  });
+
+  await seedOrgRolesAndPermissions(org._id);
+
+  if (!adminUserId) {
+    return org;
+  }
+
+  if (creator?.userId && String(creator.userId) === String(adminUserId)) {
     throw {
       code: 400,
       message: "SuperAdmin cannot be assigned as an organization admin"
@@ -148,15 +161,6 @@ exports.createOrganization = async ({
       message: "SuperAdmin cannot be assigned as an organization admin"
     };
   }
-
-  const org = await Organization.create({
-    name,
-    code,
-    timezone,
-    currency
-  });
-
-  await seedOrgRolesAndPermissions(org._id);
 
   let adminRole = null;
   if (adminRoleId) {
