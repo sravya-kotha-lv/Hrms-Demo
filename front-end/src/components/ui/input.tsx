@@ -82,9 +82,29 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, validationType, onChange, infoText, ...props }, ref) => {
     const [showPassword, setShowPassword] = React.useState(false);
     const [validationMessage, setValidationMessage] = React.useState("");
+    const inputRef = React.useRef<HTMLInputElement | null>(null);
     const isPasswordField = type === "password";
     const resolvedType = isPasswordField && showPassword ? "text" : type;
     const resolvedInfoText = infoText || getValidationMeta(validationType).infoText;
+
+    React.useImperativeHandle(ref, () => inputRef.current as HTMLInputElement, []);
+
+    React.useEffect(() => {
+      const node = inputRef.current;
+      if (!node || resolvedType !== "number") {
+        return;
+      }
+
+      const preventWheelStep = (event: WheelEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+      };
+
+      node.addEventListener("wheel", preventWheelStep, { passive: false });
+      return () => {
+        node.removeEventListener("wheel", preventWheelStep);
+      };
+    }, [resolvedType]);
 
     React.useEffect(() => {
       if (!validationType || typeof props.value !== "string") {
@@ -144,7 +164,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <input
             type={resolvedType}
             className={inputClassName}
-            ref={ref}
+            ref={inputRef}
             onChange={handleChange}
             {...props}
           />
@@ -156,7 +176,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             <input
               type={resolvedType}
               className={inputClassName}
-              ref={ref}
+              ref={inputRef}
               onChange={handleChange}
               {...props}
             />
@@ -175,7 +195,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <input
             type={resolvedType}
             className={inputClassName}
-            ref={ref}
+            ref={inputRef}
             onChange={handleChange}
             {...props}
           />
@@ -198,7 +218,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <input
             type={resolvedType}
             className={inputClassName}
-            ref={ref}
+            ref={inputRef}
             onChange={handleChange}
             {...props}
           />
