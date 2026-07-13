@@ -6,7 +6,7 @@ exports.createOrganizationSchema = Joi.object({
   code: buildCodeSchema({ required: true }),
   timezone: Joi.string().required(),
   currency: Joi.string().required(),
-  adminUserId: Joi.string().required(),
+  adminUserId: Joi.string().optional(),
   adminRoleId: Joi.string().optional()
 });
 
