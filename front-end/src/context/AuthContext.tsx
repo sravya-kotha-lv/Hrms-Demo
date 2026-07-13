@@ -51,9 +51,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const hasAnyPermission = useCallback((codes: string[]) => {
     if (!codes || codes.length === 0) return true;
-    if (permissions.includes("*")) return true;
-    return codes.some((code) => permissions.includes(code));
-  }, [permissions]);
+    const currentPermissions = getPermissions();
+    if (currentPermissions.includes("*")) return true;
+    return codes.some((code) => currentPermissions.includes(code));
+  }, []);
 
   const loadProfile = useCallback(async () => {
     try {
