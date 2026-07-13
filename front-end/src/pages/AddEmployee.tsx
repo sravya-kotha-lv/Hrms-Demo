@@ -445,6 +445,15 @@ const PREVIEW_EXCLUDED_EARNING_CODES = new Set([
   "SPECIAL_ALLOWANCE"
 ]);
 
+const STATUTORY_EMPLOYER_COMPONENT_CODES = new Set([
+  "EMPLOYER_EPF",
+  "EMPLOYER_PF",
+  "PF_EMPLOYER_SHARE",
+  "ESI_ER",
+  "EMPLOYER_ESI",
+  "ESI_EMPLOYER_AMOUNT"
+]);
+
 const EMPLOYEE_OVERRIDE_PRESETS: EmployeeOverridePreset[] = [
   {
     code: "BONUS",
@@ -627,6 +636,9 @@ const buildSalarySetupFingerprint = (payload: SalarySetupFingerprint) =>
     salaryForm: payload.salaryForm,
     componentOverrides: payload.componentOverrides
   });
+
+const replaceText = (value: string, search: string, replacement: string) =>
+  String(value || "").split(search).join(replacement);
 
 /* ================= COMPONENT ================= */
 
@@ -1299,8 +1311,20 @@ const AddEmployee = () => {
   );
 
   const payrollSummaryTotals = useMemo(() => {
-    const employerContributionTotal = employerContributionPreviewRows
+    const configuredEmployerContributionTotal = employerContributionPreviewRows
       .reduce((total, row) => total + Number(row.monthlyAmount || 0), 0);
+    const statutoryEmployerContributionTotal = Number(
+      (salaryBreakdown.employerEpf + salaryBreakdown.esiEmployerAmount).toFixed(2)
+    );
+    const hasStatutoryEmployerContributionRow = employerContributionPreviewRows.some((row) =>
+      STATUTORY_EMPLOYER_COMPONENT_CODES.has(row.code)
+    );
+    const employerContributionTotal = Number(
+      (
+        configuredEmployerContributionTotal +
+        (hasStatutoryEmployerContributionRow ? 0 : statutoryEmployerContributionTotal)
+      ).toFixed(2)
+    );
     const deductionTotal = deductionPreviewRows
       .reduce((total, row) => total + Number(row.monthlyAmount || 0), 0);
 
@@ -1314,6 +1338,8 @@ const AddEmployee = () => {
     };
   }, [
     earningsPreviewTotal,
+    salaryBreakdown.employerEpf,
+    salaryBreakdown.esiEmployerAmount,
     salaryBreakdown.variablePay,
     employerContributionPreviewRows,
     deductionPreviewRows,
@@ -2458,7 +2484,7 @@ const AddEmployee = () => {
         ? await postApiWithToken(
             `/payroll/employee-profiles/${profileId}/salary-structures`,
             {
-              structureCode: `SAL-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`,
+              structureCode: `SAL-${replaceText(new Date().toISOString().slice(0, 10), "-", "")}`,
               ...salaryPayload,
               effectiveFrom: salaryForm.effectiveFrom
             },
@@ -3771,7 +3797,7 @@ const AddEmployee = () => {
                     )}
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="secondary" className="rounded-md px-3 py-1">
-                        {salaryForm.payrollStatus.replaceAll("_", " ")}
+                        {replaceText(salaryForm.payrollStatus, "_", " ")}
                       </Badge>
                       {selectedPayGroup && (
                         <Badge variant="outline" className="rounded-md px-3 py-1">
@@ -4415,7 +4441,7 @@ const AddEmployee = () => {
                               <div>
                                 <p className="text-sm font-medium">{override.name}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  {component.scope.replaceAll("_", " ")} • {component.code}
+                                  {replaceText(component.scope, "_", " ")} • {component.code}
                                 </p>
                               </div>
                               <div className="flex items-center gap-2">
@@ -4744,11 +4770,11 @@ const AddEmployee = () => {
                             </div>
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-muted-foreground">Payroll status</span>
-                              <span className="font-medium capitalize">{salaryForm.payrollStatus.replaceAll("_", " ")}</span>
+                              <span className="font-medium capitalize">{replaceText(salaryForm.payrollStatus, "_", " ")}</span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-muted-foreground">Payment mode</span>
-                              <span className="font-medium capitalize">{salaryForm.defaultPaymentMode.replaceAll("_", " ")}</span>
+                              <span className="font-medium capitalize">{replaceText(salaryForm.defaultPaymentMode, "_", " ")}</span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-muted-foreground">Tax regime</span>
@@ -4950,7 +4976,7 @@ const AddEmployee = () => {
                                     <span className="min-w-0">
                                       <span className="block font-medium">{component.label}</span>
                                       <span className="block text-xs text-muted-foreground">
-                                        {component.scope.replaceAll("_", " ")} • {component.code} • {component.mode}
+                                        {replaceText(component.scope, "_", " ")} • {component.code} • {component.mode}
                                       </span>
                                       <span className="block text-xs text-muted-foreground">{component.detail}</span>
                                     </span>
@@ -5057,7 +5083,7 @@ const AddEmployee = () => {
                                     <div>
                                       <p className="text-sm font-medium">{override.name}</p>
                                       <p className="text-xs text-muted-foreground">
-                                        {override.scope.replaceAll("_", " ")} · {override.calculationMode}
+                                        {replaceText(override.scope, "_", " ")} · {override.calculationMode}
                                       </p>
                                     </div>
                                     <Badge variant="outline" className="rounded-md">
