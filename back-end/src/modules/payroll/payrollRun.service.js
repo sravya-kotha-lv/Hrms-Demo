@@ -413,24 +413,28 @@ const computeSalaryContextFromRules = ({ salary }) => {
       }
     : deriveGrossFromMonthlyCtc({ fixedBasicPay: storedBasicPay });
   const basicPay = derivedSalary.basicPay;
-  const employerEpf = computeEmployerEpfAmount({
-    basicPay,
-    epfMode,
-    epfFixedAmount,
-    epfEmployerRate,
-    restrictPfWage,
-    pfWageCeiling
-  });
+  const employerEpf = monthlyGrossConfigured > 0
+    ? computeEmployerEpfAmount({
+        basicPay,
+        epfMode,
+        epfFixedAmount,
+        epfEmployerRate,
+        restrictPfWage,
+        pfWageCeiling
+      })
+    : derivedSalary.employerEpf;
   const monthlyGross = derivedSalary.monthlyGross;
   const esiWages = toNumber(rules.esiWages, 0) || monthlyGross;
   const esiCovered = includeEsi && esiWages > 0 && esiWages <= esiEligibilityThreshold;
   const esiEmployeeAmount = esiCovered ? (esiWages * esiEmployeeRate) / 100 : 0;
-  const esiEmployerAmount = computeEmployerEsiAmount({
-    monthlyGross: esiWages,
-    includeEsi,
-    esiEligibilityThreshold,
-    esiEmployerRate
-  });
+  const esiEmployerAmount = monthlyGrossConfigured > 0
+    ? computeEmployerEsiAmount({
+        monthlyGross: esiWages,
+        includeEsi,
+        esiEligibilityThreshold,
+        esiEmployerRate
+      })
+    : derivedSalary.employerEsiAmount;
   const hraAmount = (basicPay * hraPercentOfBasic) / 100;
   const variablePay = toNumber(salary.variable_pay, monthlyGross - basicPay - hraAmount);
 

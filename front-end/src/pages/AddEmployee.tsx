@@ -445,15 +445,6 @@ const PREVIEW_EXCLUDED_EARNING_CODES = new Set([
   "SPECIAL_ALLOWANCE"
 ]);
 
-const STATUTORY_EMPLOYER_COMPONENT_CODES = new Set([
-  "EMPLOYER_EPF",
-  "EMPLOYER_PF",
-  "PF_EMPLOYER_SHARE",
-  "ESI_ER",
-  "EMPLOYER_ESI",
-  "ESI_EMPLOYER_AMOUNT"
-]);
-
 const EMPLOYEE_OVERRIDE_PRESETS: EmployeeOverridePreset[] = [
   {
     code: "BONUS",
@@ -1313,16 +1304,14 @@ const AddEmployee = () => {
   const payrollSummaryTotals = useMemo(() => {
     const configuredEmployerContributionTotal = employerContributionPreviewRows
       .reduce((total, row) => total + Number(row.monthlyAmount || 0), 0);
-    const statutoryEmployerContributionTotal = Number(
+    const derivedEmployerContributionTotal = Number(
       (salaryBreakdown.employerEpf + salaryBreakdown.esiEmployerAmount).toFixed(2)
-    );
-    const hasStatutoryEmployerContributionRow = employerContributionPreviewRows.some((row) =>
-      STATUTORY_EMPLOYER_COMPONENT_CODES.has(row.code)
     );
     const employerContributionTotal = Number(
       (
-        configuredEmployerContributionTotal +
-        (hasStatutoryEmployerContributionRow ? 0 : statutoryEmployerContributionTotal)
+        employerContributionPreviewRows.length > 0
+          ? configuredEmployerContributionTotal
+          : derivedEmployerContributionTotal
       ).toFixed(2)
     );
     const deductionTotal = deductionPreviewRows
