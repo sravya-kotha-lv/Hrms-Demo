@@ -167,7 +167,7 @@ const App = () => (
             <Route
               path="/employees/edit/:id"
               element={
-                <RequireAuth permissions={["EMP_UPDATE"]}>
+                <RequireAuth permissions={["EMP_VIEW", "EMP_UPDATE"]}>
                   <RequireProfile>
                     <AddEmployee />
                   </RequireProfile>
@@ -177,7 +177,7 @@ const App = () => (
             <Route
               path="/employees/:id"
               element={
-                <RequireAuth permissions={["EMP_VIEW"]}>
+                <RequireAuth permissions={["EMP_VIEW", "EMP_UPDATE"]}>
                   <RequireProfile>
                     <ViewEmployee />
                   </RequireProfile>

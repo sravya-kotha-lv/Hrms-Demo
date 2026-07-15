@@ -1574,22 +1574,34 @@ const AddEmployee = () => {
   };
 
   const fetchDepartments = async () => {
-    const res = await getApiWithToken("/departments");
+    const res = await getApiWithToken("/departments", null, {
+      requiredPermissions: ["DEPT_VIEW"],
+      suppressPermissionError: true
+    });
     if (res?.code == 200) setDepartments(res.data || []);
   };
 
   const fetchDesignations = async () => {
-    const res = await getApiWithToken("/designations");
+    const res = await getApiWithToken("/designations", null, {
+      requiredPermissions: ["DESIG_VIEW"],
+      suppressPermissionError: true
+    });
     if (res?.code == 200) setDesignations(res.data || []);
   };
 
   const fetchRoles = async () => {
-    const res = await getApiWithToken("/roles");
+    const res = await getApiWithToken("/roles", null, {
+      requiredPermissions: ["ROLE_VIEW"],
+      suppressPermissionError: true
+    });
     if (res?.code == 200) setRoles(res.data || []);
   };
 
   const fetchManagers = async () => {
-    const res = await getApiWithToken("/employees");
+    const res = await getApiWithToken("/employees", null, {
+      requiredPermissions: ["EMP_VIEW"],
+      suppressPermissionError: true
+    });
     if (res?.success) {
       const list = res.data?.items || [];
       setManagers(
@@ -1603,8 +1615,14 @@ const AddEmployee = () => {
 
   const fetchApprovalFlows = async () => {
     const [leaveRes, attendanceRes] = await Promise.all([
-      getApiWithToken("/approval-flows?moduleKey=leave"),
-      getApiWithToken("/approval-flows?moduleKey=attendance_request")
+      getApiWithToken("/approval-flows?moduleKey=leave", null, {
+        requiredPermissions: ["APPROVAL_FLOW_VIEW"],
+        suppressPermissionError: true
+      }),
+      getApiWithToken("/approval-flows?moduleKey=attendance_request", null, {
+        requiredPermissions: ["APPROVAL_FLOW_VIEW"],
+        suppressPermissionError: true
+      })
     ]);
 
     setLeaveApprovalFlows(
@@ -1620,7 +1638,10 @@ const AddEmployee = () => {
   };
 
   const fetchShifts = async () => {
-    const res = await getApiWithToken("/shifts", null, { requiredPermissions: ["SHIFT_VIEW"] });
+    const res = await getApiWithToken("/shifts", null, {
+      requiredPermissions: ["SHIFT_VIEW"],
+      suppressPermissionError: true
+    });
     if (res?.success) {
       setShifts((res.data || []).map((s: any) => ({ _id: s._id, name: `${s.name} (${s.startTime}-${s.endTime})` })));
     } else {

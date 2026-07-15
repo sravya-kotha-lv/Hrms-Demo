@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosResponse, RawAxiosRequestHeaders } from "axios";
+import axios, { AxiosError, AxiosHeaderValue, AxiosResponse, RawAxiosRequestHeaders } from "axios";
 import { toast } from "sonner";
 import { getToken, setToken, hasAnyPermission, clearAuth } from "../utils/auth";
 import { setOrgTimeZone } from "../utils/timezone";
@@ -17,7 +17,7 @@ export type ApiResponseEnvelope<TData = unknown> = {
   skipped?: boolean;
 };
 
-type PermissionOptions = { requiredPermissions?: string[] };
+type PermissionOptions = { requiredPermissions?: string[]; suppressPermissionError?: boolean };
 type RequestHeaders = RawAxiosRequestHeaders | null;
 type CachedResponse = ApiResponseEnvelope<unknown>;
 
@@ -25,13 +25,14 @@ const inflightGetRequests = new Map<string, Promise<CachedResponse>>();
 const recentGetResponses = new Map<string, { expiresAt: number; data: CachedResponse }>();
 const RECENT_GET_TTL_MS = 1500;
 
-const getRequestCacheKey = (apiUrl: string, headers: Record<string, string | undefined> = {}) =>
+const getRequestCacheKey = (apiUrl: string, headers: RawAxiosRequestHeaders = {}) =>
   JSON.stringify({
     apiUrl,
     headers: Object.keys(headers)
       .sort()
       .reduce((acc, key) => {
-        acc[key] = headers[key];
+        const value = headers[key];
+        acc[key] = value == null ? undefined : String(value);
         return acc;
       }, {} as Record<string, string | undefined>)
   });
@@ -66,8 +67,8 @@ const syncOrgTimeZoneFromResponse = (response: AxiosResponse<ApiResponseEnvelope
   }
 };
 
-const getHeaders = (headers: RequestHeaders) =>
-  headers ? { "Content-Type": undefined } : { "Content-Type": "application/json" };
+const getHeaders = (headers: RequestHeaders): RawAxiosRequestHeaders =>
+  headers ? { ...headers } : { "Content-Type": "application/json" as AxiosHeaderValue };
 
 const permissionDeniedResponse = (): ApiResponseEnvelope<null> => ({
   success: false,
@@ -112,7 +113,10 @@ api.interceptors.response.use(
     const requestUrl = error?.config?.url || "";
 
     if (status === 403) {
-      toast.error("You do not have access");
+      const suppressPermissionError = error?.config?.headers?.["x-suppress-permission-error"] === "true";
+      if (!suppressPermissionError) {
+        toast.error("You do not have access");
+      }
       // window.location.href = "/no-access";
     }
 
@@ -182,6 +186,9 @@ export const postApiWithToken = async (
       return permissionDeniedResponse();
     }
     const headers = getHeaders(_headers);
+    if (options.suppressPermissionError) {
+      headers["x-suppress-permission-error"] = "true";
+    }
 
     const response = await api.post(apiUrl, params, { headers });
     clearGetCaches();
@@ -202,6 +209,9 @@ export const getApiWithToken = async (
       return permissionDeniedResponse();
     }
     const headers = getHeaders(_headers);
+    if (options.suppressPermissionError) {
+      headers["x-suppress-permission-error"] = "true";
+    }
     const cacheKey = getRequestCacheKey(apiUrl, headers);
     const cachedResponse = readRecentGetResponse(cacheKey);
     if (cachedResponse !== null) {
@@ -241,6 +251,9 @@ export const putApiWithToken = async (
       return permissionDeniedResponse();
     }
     const headers = getHeaders(_headers);
+    if (options.suppressPermissionError) {
+      headers["x-suppress-permission-error"] = "true";
+    }
     const response = await api.put(apiUrl, params, { headers });
     clearGetCaches();
     return response.data;
