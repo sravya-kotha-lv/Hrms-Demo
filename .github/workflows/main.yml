@@ -1,55 +1,79 @@
-name: Upanya CI/CD
+name: HRMS CI
 
 on:
+  workflow_dispatch:
+
   push:
     branches:
-      - development
-      - testing
-      - production
+      - "**"
+
+  pull_request:
+    branches:
+      - "**"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: hrms-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  frontend:
+    name: Frontend Build
     runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+    defaults:
+      run:
+        working-directory: front-end
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: front-end/package-lock.json
 
-      - name: Install
-        working-directory: front-end
+      - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build
-        working-directory: front-end
+      - name: Run frontend lint
+        run: npm run lint --if-present
+
+      - name: Build frontend
         run: npm run build
 
-      - name: Select Folder
-        id: folder
-        run: |
-          if [ "${GITHUB_REF_NAME}" = "development" ]; then
-            echo "folder=devo" >> $GITHUB_OUTPUT
-          elif [ "${GITHUB_REF_NAME}" = "testing" ]; then
-            echo "folder=test" >> $GITHUB_OUTPUT
-          elif [ "${GITHUB_REF_NAME}" = "production" ]; then
-            echo "folder=prod" >> $GITHUB_OUTPUT
-          fi
+  backend:
+    name: Backend Validation
+    runs-on: ubuntu-latest
 
-      - name: Prepare Deploy Folder
-        run: |
-          mkdir deploy
-          cp -R front-end/dist/* deploy/
+    defaults:
+      run:
+        working-directory: back-end
 
-      - name: Deploy
-        uses: peaceiris/actions-gh-pages@v4
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: deploy
-          destination_dir: ${{ steps.folder.outputs.folder }}
-          keep_files: true
+          node-version: 20
+          cache: npm
+          cache-dependency-path: back-end/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Run backend lint
+        run: npm run lint --if-present
+
+      - name: Run backend tests
+        run: npm test --if-present
+
+      - name: Run backend build
+        run: npm run build --if-present
