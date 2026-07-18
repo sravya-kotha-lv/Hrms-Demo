@@ -11,14 +11,14 @@ on:
         type: choice
         options:
           - production
-          - dev
-          - test
+          - development
+          - testing
 
   push:
     branches:
       - production
-      - dev
-      - test
+      - development
+      - testing
 
 permissions:
   contents: read
