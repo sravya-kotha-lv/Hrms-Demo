@@ -32,9 +32,14 @@ jobs:
     name: Build and Deploy ${{ inputs.branch || github.ref_name }}
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: ./front-end
+
     steps:
       - name: Determine Deployment Branch
         id: branch
+        working-directory: .
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -53,6 +58,7 @@ jobs:
           fetch-depth: 1
 
       - name: Display Branch Information
+        working-directory: .
         shell: bash
         run: |
           echo "Building branch: ${{ steps.branch.outputs.name }}"
@@ -63,29 +69,48 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          package-manager-cache: false
 
-      - name: Verify Project Files
+      - name: Verify Frontend Project
         shell: bash
         run: |
-          echo "Repository root files:"
+          echo "Frontend folder files:"
           ls -la
 
           if [ ! -f "package.json" ]; then
-            echo "Error: package.json was not found in the repository root."
+            echo "Error: package.json was not found inside the front-end folder."
             exit 1
           fi
 
-      - name: Install Dependencies
+          echo "package.json found successfully."
+
+      - name: Install Frontend Dependencies
         run: npm install
 
-      - name: Build Application
+      - name: Build Frontend Application
         run: npm run build
 
+      - name: Verify Build Output
+        shell: bash
+        run: |
+          if [ -d "dist" ]; then
+            echo "Vite build output found in front-end/dist"
+            ls -la dist
+          elif [ -d "build" ]; then
+            echo "React build output found in front-end/build"
+            ls -la build
+          else
+            echo "Error: No dist or build folder was generated."
+            exit 1
+          fi
+
       - name: Build Completed
+        working-directory: .
         shell: bash
         run: |
           echo "=========================================="
-          echo "Build completed successfully"
+          echo "Frontend build completed successfully"
           echo "Branch: ${{ steps.branch.outputs.name }}"
+          echo "Frontend folder: front-end"
           echo "Commit: ${{ github.sha }}"
           echo "=========================================="
