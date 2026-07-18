@@ -1,12 +1,12 @@
-name: CI CD Build
+name: Build and Deploy GitHub Pages
 
-run-name: "Build #${{ github.run_number }} | ${{ inputs.branch || github.ref_name }} | ${{ github.actor }}"
+run-name: "Deploy #${{ github.run_number }} | ${{ inputs.branch || github.ref_name }} | ${{ github.actor }}"
 
 on:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Select branch to build"
+        description: "Select branch to deploy"
         required: true
         type: choice
         options:
@@ -22,24 +22,21 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 concurrency:
-  group: build-${{ inputs.branch || github.ref_name }}
+  group: github-pages
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build and Deploy ${{ inputs.branch || github.ref_name }}
+    name: Build ${{ inputs.branch || github.ref_name }}
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: ./front-end
 
     steps:
       - name: Determine Deployment Branch
         id: branch
-        working-directory: .
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -51,14 +48,14 @@ jobs:
           echo "Selected branch: $SELECTED_BRANCH"
           echo "name=$SELECTED_BRANCH" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout Source Code
+      - name: Checkout Selected Branch
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.branch.outputs.name }}
           fetch-depth: 1
+          submodules: false
 
       - name: Display Branch Information
-        working-directory: .
         shell: bash
         run: |
           echo "Building branch: ${{ steps.branch.outputs.name }}"
@@ -72,45 +69,63 @@ jobs:
           package-manager-cache: false
 
       - name: Verify Frontend Project
+        working-directory: ./front-end
         shell: bash
         run: |
-          echo "Frontend folder files:"
+          echo "Frontend files:"
           ls -la
 
           if [ ! -f "package.json" ]; then
-            echo "Error: package.json was not found inside the front-end folder."
+            echo "Error: front-end/package.json was not found."
             exit 1
           fi
 
-          echo "package.json found successfully."
-
       - name: Install Frontend Dependencies
+        working-directory: ./front-end
         run: npm install
 
       - name: Build Frontend Application
+        working-directory: ./front-end
         run: npm run build
 
-      - name: Verify Build Output
+      - name: Detect Build Folder
+        id: output
         shell: bash
         run: |
-          if [ -d "dist" ]; then
-            echo "Vite build output found in front-end/dist"
-            ls -la dist
-          elif [ -d "build" ]; then
-            echo "React build output found in front-end/build"
-            ls -la build
+          if [ -d "front-end/dist" ]; then
+            echo "directory=front-end/dist" >> "$GITHUB_OUTPUT"
+            echo "Build folder: front-end/dist"
+          elif [ -d "front-end/build" ]; then
+            echo "directory=front-end/build" >> "$GITHUB_OUTPUT"
+            echo "Build folder: front-end/build"
           else
-            echo "Error: No dist or build folder was generated."
+            echo "Error: Neither front-end/dist nor front-end/build exists."
             exit 1
           fi
 
-      - name: Build Completed
-        working-directory: .
+      - name: Disable Jekyll
         shell: bash
         run: |
-          echo "=========================================="
-          echo "Frontend build completed successfully"
-          echo "Branch: ${{ steps.branch.outputs.name }}"
-          echo "Frontend folder: front-end"
-          echo "Commit: ${{ github.sha }}"
-          echo "=========================================="
+          touch "${{ steps.output.outputs.directory }}/.nojekyll"
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ steps.output.outputs.directory }}
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
