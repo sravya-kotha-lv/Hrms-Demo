@@ -1,79 +1,65 @@
-name: Deploy Upanaya Environments
+name: CI CD Deploy
 
-run-name: "Deploy #${{ github.run_number }} | ${{ github.ref_name }} | ${{ github.actor }}"
+run-name: "Build #${{ github.run_number }} | ${{ inputs.branch || github.ref_name }} | ${{ github.actor }}"
 
 on:
-  push:
-    branches:
-      - prod
-      - dev
-      - test
-
   workflow_dispatch:
     inputs:
       branch:
-        description: "Select branch to deploy"
+        description: "Select branch to build and deploy"
         required: true
         type: choice
         options:
-          - prod
+          - production
           - dev
           - test
+
+  push:
+    branches:
+      - production
+      - dev
+      - test
 
 permissions:
   contents: read
 
 concurrency:
-  group: upanaya-${{ github.ref_name }}
+  group: deploy-${{ inputs.branch || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    name: Build and Deploy ${{ github.ref_name }}
+  build:
+    name: Build and Deploy ${{ inputs.branch || github.ref_name }}
     runs-on: ubuntu-latest
 
     steps:
+      # Determines whether the workflow was started manually
+      # or automatically through a branch push.
       - name: Determine Deployment Branch
-        id: environment
+        id: branch
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BRANCH="${{ inputs.branch }}"
+            SELECTED_BRANCH="${{ inputs.branch }}"
           else
-            BRANCH="${{ github.ref_name }}"
+            SELECTED_BRANCH="${{ github.ref_name }}"
           fi
 
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "Selected branch: $SELECTED_BRANCH"
+          echo "name=$SELECTED_BRANCH" >> "$GITHUB_OUTPUT"
 
-          case "$BRANCH" in
-            prod)
-              echo "build_command=npm run build:prod" >> "$GITHUB_OUTPUT"
-              echo "repository=upanaya-prod" >> "$GITHUB_OUTPUT"
-              echo "environment=production" >> "$GITHUB_OUTPUT"
-              ;;
-
-            dev)
-              echo "build_command=npm run build:dev" >> "$GITHUB_OUTPUT"
-              echo "repository=upanaya-dev" >> "$GITHUB_OUTPUT"
-              echo "environment=development" >> "$GITHUB_OUTPUT"
-              ;;
-
-            test)
-              echo "build_command=npm run build:test" >> "$GITHUB_OUTPUT"
-              echo "repository=upanaya-test" >> "$GITHUB_OUTPUT"
-              echo "environment=testing" >> "$GITHUB_OUTPUT"
-              ;;
-
-            *)
-              echo "Unsupported branch: $BRANCH"
-              exit 1
-              ;;
-          esac
-
+      # Checks out the exact selected branch.
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.environment.outputs.branch }}
+          ref: ${{ steps.branch.outputs.name }}
+          fetch-depth: 1
+
+      - name: Display Selected Branch
+        run: |
+          echo "Building branch: ${{ steps.branch.outputs.name }}"
+          git branch --show-current
+          git log -1 --oneline
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -85,22 +71,12 @@ jobs:
         run: npm ci
 
       - name: Build Application
-        run: ${{ steps.environment.outputs.build_command }}
+        run: npm run build
 
-      - name: Create SPA Fallback
-        run: cp dist/index.html dist/404.html
-
-      - name: Disable Jekyll
-        run: touch dist/.nojekyll
-
-      - name: Deploy Built Files
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          personal_token: ${{ secrets.DEPLOY_TOKEN }}
-          external_repository: ${{ github.repository_owner }}/${{ steps.environment.outputs.repository }}
-          publish_branch: main
-          publish_dir: ./dist
-          force_orphan: true
-          commit_message: >
-            Deploy ${{ steps.environment.outputs.environment }}
-            from ${{ github.repository }}@${{ github.sha }}
+      - name: Build Completed
+        run: |
+          echo "=========================================="
+          echo "Build completed successfully"
+          echo "Branch: ${{ steps.branch.outputs.name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "=========================================="
