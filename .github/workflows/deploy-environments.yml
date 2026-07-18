@@ -1,4 +1,4 @@
-name: CI CD Deploy
+name: CI CD Build
 
 run-name: "Build #${{ github.run_number }} | ${{ inputs.branch || github.ref_name }} | ${{ github.actor }}"
 
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Select branch to build and deploy"
+        description: "Select branch to build"
         required: true
         type: choice
         options:
@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ inputs.branch || github.ref_name }}
+  group: build-${{ inputs.branch || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -33,8 +33,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Determines whether the workflow was started manually
-      # or automatically through a branch push.
       - name: Determine Deployment Branch
         id: branch
         shell: bash
@@ -48,14 +46,14 @@ jobs:
           echo "Selected branch: $SELECTED_BRANCH"
           echo "name=$SELECTED_BRANCH" >> "$GITHUB_OUTPUT"
 
-      # Checks out the exact selected branch.
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.branch.outputs.name }}
           fetch-depth: 1
 
-      - name: Display Selected Branch
+      - name: Display Branch Information
+        shell: bash
         run: |
           echo "Building branch: ${{ steps.branch.outputs.name }}"
           git branch --show-current
@@ -64,16 +62,27 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: 24
+
+      - name: Verify Project Files
+        shell: bash
+        run: |
+          echo "Repository root files:"
+          ls -la
+
+          if [ ! -f "package.json" ]; then
+            echo "Error: package.json was not found in the repository root."
+            exit 1
+          fi
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build Application
         run: npm run build
 
       - name: Build Completed
+        shell: bash
         run: |
           echo "=========================================="
           echo "Build completed successfully"
