@@ -1,0 +1,106 @@
+name: Deploy Upanaya Environments
+
+run-name: "Deploy #${{ github.run_number }} | ${{ github.ref_name }} | ${{ github.actor }}"
+
+on:
+  push:
+    branches:
+      - prod
+      - dev
+      - test
+
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Select branch to deploy"
+        required: true
+        type: choice
+        options:
+          - prod
+          - dev
+          - test
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upanaya-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and Deploy ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine Deployment Branch
+        id: environment
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BRANCH="${{ inputs.branch }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+          fi
+
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          case "$BRANCH" in
+            prod)
+              echo "build_command=npm run build:prod" >> "$GITHUB_OUTPUT"
+              echo "repository=upanaya-prod" >> "$GITHUB_OUTPUT"
+              echo "environment=production" >> "$GITHUB_OUTPUT"
+              ;;
+
+            dev)
+              echo "build_command=npm run build:dev" >> "$GITHUB_OUTPUT"
+              echo "repository=upanaya-dev" >> "$GITHUB_OUTPUT"
+              echo "environment=development" >> "$GITHUB_OUTPUT"
+              ;;
+
+            test)
+              echo "build_command=npm run build:test" >> "$GITHUB_OUTPUT"
+              echo "repository=upanaya-test" >> "$GITHUB_OUTPUT"
+              echo "environment=testing" >> "$GITHUB_OUTPUT"
+              ;;
+
+            *)
+              echo "Unsupported branch: $BRANCH"
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.environment.outputs.branch }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Application
+        run: ${{ steps.environment.outputs.build_command }}
+
+      - name: Create SPA Fallback
+        run: cp dist/index.html dist/404.html
+
+      - name: Disable Jekyll
+        run: touch dist/.nojekyll
+
+      - name: Deploy Built Files
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          personal_token: ${{ secrets.DEPLOY_TOKEN }}
+          external_repository: ${{ github.repository_owner }}/${{ steps.environment.outputs.repository }}
+          publish_branch: main
+          publish_dir: ./dist
+          force_orphan: true
+          commit_message: >
+            Deploy ${{ steps.environment.outputs.environment }}
+            from ${{ github.repository }}@${{ github.sha }}
