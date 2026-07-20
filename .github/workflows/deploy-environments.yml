@@ -39,11 +39,22 @@ jobs:
         id: branch
         shell: bash
         run: |
+          set -euo pipefail
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             SELECTED_BRANCH="${{ inputs.branch }}"
           else
             SELECTED_BRANCH="${{ github.ref_name }}"
           fi
+
+          case "$SELECTED_BRANCH" in
+            production|development|testing)
+              ;;
+            *)
+              echo "Error: Invalid branch selected: $SELECTED_BRANCH"
+              exit 1
+              ;;
+          esac
 
           echo "Selected branch: $SELECTED_BRANCH"
           echo "name=$SELECTED_BRANCH" >> "$GITHUB_OUTPUT"
@@ -58,6 +69,8 @@ jobs:
       - name: Display Branch Information
         shell: bash
         run: |
+          set -euo pipefail
+
           echo "Building branch: ${{ steps.branch.outputs.name }}"
           git branch --show-current
           git log -1 --oneline
@@ -72,6 +85,8 @@ jobs:
         working-directory: ./front-end
         shell: bash
         run: |
+          set -euo pipefail
+
           echo "Frontend files:"
           ls -la
 
@@ -92,21 +107,44 @@ jobs:
         id: output
         shell: bash
         run: |
+          set -euo pipefail
+
           if [ -d "front-end/dist" ]; then
-            echo "directory=front-end/dist" >> "$GITHUB_OUTPUT"
-            echo "Build folder: front-end/dist"
+            BUILD_DIR="front-end/dist"
           elif [ -d "front-end/build" ]; then
-            echo "directory=front-end/build" >> "$GITHUB_OUTPUT"
-            echo "Build folder: front-end/build"
+            BUILD_DIR="front-end/build"
           else
             echo "Error: Neither front-end/dist nor front-end/build exists."
             exit 1
           fi
 
-      - name: Disable Jekyll
+          echo "Build folder: $BUILD_DIR"
+          echo "directory=$BUILD_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare GitHub Pages SPA
         shell: bash
         run: |
-          touch "${{ steps.output.outputs.directory }}/.nojekyll"
+          set -euo pipefail
+
+          BUILD_DIR="${{ steps.output.outputs.directory }}"
+
+          echo "Preparing GitHub Pages files from: $BUILD_DIR"
+
+          if [ ! -f "$BUILD_DIR/index.html" ]; then
+            echo "Error: index.html was not found in $BUILD_DIR"
+            exit 1
+          fi
+
+          # Prevent GitHub Pages from processing the build with Jekyll.
+          touch "$BUILD_DIR/.nojekyll"
+
+          # React BrowserRouter fallback:
+          # GitHub Pages serves this file when /login or another route
+          # does not match a physical file.
+          cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"
+
+          echo "Prepared build files:"
+          ls -la "$BUILD_DIR"
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
